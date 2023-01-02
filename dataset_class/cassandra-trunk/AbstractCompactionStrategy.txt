@@ -1,0 +1,172 @@
+Location: AbstractCompactionStrategy.java
+
+Content: 
+
+protected AbstractCompactionStrategy(ColumnFamilyStore cfs,Map<String,String> options){
+
+  assert cfs != null;
+
+  this.cfs=cfs;
+
+  this.options=ImmutableMap.copyOf(options);
+
+  try {
+
+    validateOptions(options);
+
+    String optionValue=options.get(TOMBSTONE_THRESHOLD_OPTION);
+
+    tombstoneThreshold=optionValue == null ? DEFAULT_TOMBSTONE_THRESHOLD : Float.parseFloat(optionValue);
+
+    optionValue=options.get(TOMBSTONE_COMPACTION_INTERVAL_OPTION);
+
+    tombstoneCompactionInterval=optionValue == null ? DEFAULT_TOMBSTONE_COMPACTION_INTERVAL : Long.parseLong(optionValue);
+
+    optionValue=options.get(UNCHECKED_TOMBSTONE_COMPACTION_OPTION);
+
+    uncheckedTombstoneCompaction=optionValue == null ? DEFAULT_UNCHECKED_TOMBSTONE_COMPACTION_OPTION : Boolean.parseBoolean(optionValue);
+
+    optionValue=options.get(LOG_ALL_OPTION);
+
+    logAll=optionValue == null ? DEFAULT_LOG_ALL_OPTION : Boolean.parseBoolean(optionValue);
+
+  }
+
+ catch (  ConfigurationException e) {
+
+    logger.warn("Error setting compaction strategy options ({}), defaults will be used",e.getMessage());
+
+    tombstoneThreshold=DEFAULT_TOMBSTONE_THRESHOLD;
+
+    tombstoneCompactionInterval=DEFAULT_TOMBSTONE_COMPACTION_INTERVAL;
+
+    uncheckedTombstoneCompaction=DEFAULT_UNCHECKED_TOMBSTONE_COMPACTION_OPTION;
+
+  }
+
+  directories=cfs.getDirectories();
+
+}
+
+Location: AbstractCompactionStrategy.java
+
+Content: 
+
+/** 
+
+ * Filters SSTables that are to be excluded from the given collection
+
+ * @param originalCandidates The collection to check for excluded SSTables
+
+ * @return list of the SSTables with excluded ones filtered out
+
+ */
+
+public static List<SSTableReader> filterSuspectSSTables(Iterable<SSTableReader> originalCandidates){
+
+  List<SSTableReader> filtered=new ArrayList<>();
+
+  for (  SSTableReader sstable : originalCandidates) {
+
+    if (!sstable.isMarkedSuspect())     filtered.add(sstable);
+
+  }
+
+  return filtered;
+
+}
+
+Location: AbstractCompactionStrategy.java
+
+Content: 
+
+public ScannerList getScanners(Collection<SSTableReader> sstables,Range<Token> range){
+
+  return range == null ? getScanners(sstables,(Collection<Range<Token>>)null) : getScanners(sstables,Collections.singleton(range));
+
+}
+
+Location: AbstractCompactionStrategy.java
+
+Content: 
+
+/** 
+
+ * Removes sstables from the strategy, implementations must be able to handle the sstables having already been removed.
+
+ */
+
+public void removeSSTables(Iterable<SSTableReader> removed){
+
+  for (  SSTableReader sstable : removed)   removeSSTable(sstable);
+
+}
+
+Location: AbstractCompactionStrategy.java
+
+Content: 
+
+/** 
+
+ * Check if given sstable is worth dropping tombstones at gcBefore. Check is skipped if tombstone_compaction_interval time does not elapse since sstable creation and returns false.
+
+ * @param sstable SSTable to check
+
+ * @param gcBefore time to drop tombstones
+
+ * @return true if given sstable's tombstones are expected to be removed
+
+ */
+
+protected boolean worthDroppingTombstones(SSTableReader sstable,int gcBefore){
+
+  if (disableTombstoneCompactions || CompactionController.NEVER_PURGE_TOMBSTONES || cfs.getNeverPurgeTombstones())   return false;
+
+  if (System.currentTimeMillis() < sstable.getCreationTimeFor(Component.DATA) + tombstoneCompactionInterval * 1000)   return false;
+
+  double droppableRatio=sstable.getEstimatedDroppableTombstoneRatio(gcBefore);
+
+  if (droppableRatio <= tombstoneThreshold)   return false;
+
+  if (uncheckedTombstoneCompaction)   return true;
+
+  Collection<SSTableReader> overlaps=cfs.getOverlappingLiveSSTables(Collections.singleton(sstable));
+
+  if (overlaps.isEmpty()) {
+
+    return true;
+
+  }
+
+ else   if (CompactionController.getFullyExpiredSSTables(cfs,Collections.singleton(sstable),overlaps,gcBefore).size() > 0) {
+
+    return true;
+
+  }
+
+ else {
+
+    if (sstable.getIndexSummarySize() < 2) {
+
+      return false;
+
+    }
+
+    long keys=sstable.estimatedKeys();
+
+    Set<Range<Token>> ranges=new HashSet<Range<Token>>(overlaps.size());
+
+    for (    SSTableReader overlap : overlaps)     ranges.add(new Range<>(overlap.first.getToken(),overlap.last.getToken()));
+
+    long remainingKeys=keys - sstable.estimatedKeysForRanges(ranges);
+
+    long columns=sstable.getEstimatedCellPerPartitionCount().mean() * remainingKeys;
+
+    double remainingColumnsRatio=((double)columns) / (sstable.getEstimatedCellPerPartitionCount().count() * sstable.getEstimatedCellPerPartitionCount().mean());
+
+    return remainingColumnsRatio * droppableRatio > tombstoneThreshold;
+
+  }
+
+}
+

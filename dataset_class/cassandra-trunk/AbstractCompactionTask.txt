@@ -1,0 +1,150 @@
+Location: AbstractCompactionTask.java
+
+Content: 
+
+/** 
+
+ * @param cfs
+
+ * @param transaction the modifying managing the status of the sstables we're replacing
+
+ */
+
+public AbstractCompactionTask(ColumnFamilyStore cfs,LifecycleTransaction transaction){
+
+  this.cfs=cfs;
+
+  this.transaction=transaction;
+
+  this.isUserDefined=false;
+
+  this.compactionType=OperationType.COMPACTION;
+
+  Set<SSTableReader> compacting=transaction.tracker.getCompacting();
+
+  for (  SSTableReader sstable : transaction.originals())   assert compacting.contains(sstable) : sstable.getFilename() + " is not correctly marked compacting";
+
+  validateSSTables(transaction.originals());
+
+}
+
+Location: AbstractCompactionTask.java
+
+Content: 
+
+protected abstract int executeInternal(ActiveCompactionsTracker activeCompactions);
+
+Location: AbstractCompactionTask.java
+
+Content: 
+
+/** 
+
+ * executes the task and unmarks sstables compacting
+
+ */
+
+public int execute(ActiveCompactionsTracker activeCompactions){
+
+  try {
+
+    return executeInternal(activeCompactions);
+
+  }
+
+ catch (  FSDiskFullWriteError e) {
+
+    RuntimeException cause=new RuntimeException("Converted from FSDiskFullWriteError: " + e.getMessage());
+
+    cause.setStackTrace(e.getStackTrace());
+
+    throw new RuntimeException("Throwing new Runtime to bypass exception handler when disk is full",cause);
+
+  }
+
+ finally {
+
+    transaction.close();
+
+  }
+
+}
+
+Location: AbstractCompactionTask.java
+
+Content: 
+
+public abstract CompactionAwareWriter getCompactionAwareWriter(ColumnFamilyStore cfs,Directories directories,LifecycleTransaction txn,Set<SSTableReader> nonExpiredSSTables);
+
+Location: AbstractCompactionTask.java
+
+Content: 
+
+public AbstractCompactionTask setCompactionType(OperationType compactionType){
+
+  this.compactionType=compactionType;
+
+  return this;
+
+}
+
+Location: AbstractCompactionTask.java
+
+Content: 
+
+public AbstractCompactionTask setUserDefined(boolean isUserDefined){
+
+  this.isUserDefined=isUserDefined;
+
+  return this;
+
+}
+
+Location: AbstractCompactionTask.java
+
+Content: 
+
+/** 
+
+ * Confirm that we're not attempting to compact repaired/unrepaired/pending repair sstables together
+
+ */
+
+private void validateSSTables(Set<SSTableReader> sstables){
+
+  if (!sstables.isEmpty()) {
+
+    Iterator<SSTableReader> iter=sstables.iterator();
+
+    SSTableReader first=iter.next();
+
+    boolean isRepaired=first.isRepaired();
+
+    UUID pendingRepair=first.getPendingRepair();
+
+    while (iter.hasNext()) {
+
+      SSTableReader next=iter.next();
+
+      Preconditions.checkArgument(isRepaired == next.isRepaired(),"Cannot compact repaired and unrepaired sstables");
+
+      if (pendingRepair == null) {
+
+        Preconditions.checkArgument(!next.isPendingRepair(),"Cannot compact pending repair and non-pending repair sstables");
+
+      }
+
+ else {
+
+        Preconditions.checkArgument(next.isPendingRepair(),"Cannot compact pending repair and non-pending repair sstables");
+
+        Preconditions.checkArgument(pendingRepair.equals(next.getPendingRepair()),"Cannot compact sstables from different pending repairs");
+
+      }
+
+    }
+
+  }
+
+}
+

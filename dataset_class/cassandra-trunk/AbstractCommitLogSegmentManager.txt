@@ -1,0 +1,398 @@
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+AbstractCommitLogSegmentManager(final CommitLog commitLog,String storageDirectory){
+
+  this.commitLog=commitLog;
+
+  this.storageDirectory=storageDirectory;
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Adjust the tracked on-disk size. Called by individual segments to reflect writes, allocations and discards.
+
+ * @param addedSize
+
+ */
+
+void addSize(long addedSize){
+
+  size.addAndGet(addedSize);
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Advances the allocatingFrom pointer to the next prepared segment, but only if it is currently the segment provided. WARNING: Assumes segment management thread always succeeds in allocating a new segment or kills the JVM.
+
+ */
+
+@DontInline void advanceAllocatingFrom(CommitLogSegment old){
+
+  while (true) {
+
+synchronized (this) {
+
+      if (allocatingFrom != old)       return;
+
+      if (availableSegment != null) {
+
+        activeSegments.add(allocatingFrom=availableSegment);
+
+        availableSegment=null;
+
+        break;
+
+      }
+
+    }
+
+    awaitAvailableSegment(old);
+
+  }
+
+  wakeManager();
+
+  if (old != null) {
+
+    commitLog.archiver.maybeArchive(old);
+
+    old.discardUnusedTail();
+
+  }
+
+  commitLog.requestExtraSync();
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Read-only access to current segment for subclasses. 
+
+ */
+
+CommitLogSegment allocatingFrom(){
+
+  return allocatingFrom;
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Indicates that a segment is no longer in use and that it should be discarded.
+
+ * @param segment segment that is no longer in use
+
+ */
+
+void archiveAndDiscard(final CommitLogSegment segment){
+
+  boolean archiveSuccess=commitLog.archiver.maybeWaitForArchiving(segment.getName());
+
+  if (!activeSegments.remove(segment))   return;
+
+  logger.debug("Segment {} is no longer active and will be deleted {}",segment,archiveSuccess ? "now" : "by the archive script");
+
+  discard(segment,archiveSuccess);
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+private boolean atSegmentBufferLimit(){
+
+  return CommitLogSegment.usesBufferPool(commitLog) && bufferPool.atLimit();
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+void awaitAvailableSegment(CommitLogSegment currentAllocatingFrom){
+
+  do {
+
+    WaitQueue.Signal prepared=segmentPrepared.register(commitLog.metrics.waitingOnSegmentAllocation.time());
+
+    if (availableSegment == null && allocatingFrom == currentAllocatingFrom)     prepared.awaitUninterruptibly();
+
+ else     prepared.cancel();
+
+  }
+
+ while (availableSegment == null && allocatingFrom == currentAllocatingFrom);
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * To be used by tests only. Not safe if mutation slots are being allocated concurrently.
+
+ */
+
+void awaitManagementTasksCompletion(){
+
+  if (availableSegment == null && !atSegmentBufferLimit()) {
+
+    awaitAvailableSegment(allocatingFrom);
+
+  }
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Explicitly for use only during resets in unit testing.
+
+ */
+
+private void closeAndDeleteSegmentUnsafe(CommitLogSegment segment,boolean delete){
+
+  try {
+
+    discard(segment,delete);
+
+  }
+
+ catch (  AssertionError ignored) {
+
+  }
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Force a flush on all CFs that are still dirty in @param segments.
+
+ * @return a Future that will finish when all the flushes are complete.
+
+ */
+
+private Future<?> flushDataFrom(List<CommitLogSegment> segments,boolean force){
+
+  if (segments.isEmpty())   return Futures.immediateFuture(null);
+
+  final CommitLogPosition maxCommitLogPosition=segments.get(segments.size() - 1).getCurrentCommitLogPosition();
+
+  final Map<TableId,ListenableFuture<?>> flushes=new LinkedHashMap<>();
+
+  for (  CommitLogSegment segment : segments) {
+
+    for (    TableId dirtyTableId : segment.getDirtyTableIds()) {
+
+      TableMetadata metadata=Schema.instance.getTableMetadata(dirtyTableId);
+
+      if (metadata == null) {
+
+        logger.trace("Marking clean CF {} that doesn't exist anymore",dirtyTableId);
+
+        segment.markClean(dirtyTableId,CommitLogPosition.NONE,segment.getCurrentCommitLogPosition());
+
+      }
+
+ else       if (!flushes.containsKey(dirtyTableId)) {
+
+        final ColumnFamilyStore cfs=Keyspace.open(metadata.keyspace).getColumnFamilyStore(dirtyTableId);
+
+        flushes.put(dirtyTableId,force ? cfs.forceFlush() : cfs.forceFlush(maxCommitLogPosition));
+
+      }
+
+    }
+
+  }
+
+  return Futures.allAsList(flushes.values());
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Switch to a new segment, regardless of how much is left in the current one. Flushes any dirty CFs for this segment and any older segments, and then discards the segments
+
+ */
+
+void forceRecycleAll(Iterable<TableId> droppedTables){
+
+  List<CommitLogSegment> segmentsToRecycle=new ArrayList<>(activeSegments);
+
+  CommitLogSegment last=segmentsToRecycle.get(segmentsToRecycle.size() - 1);
+
+  advanceAllocatingFrom(last);
+
+  last.waitForModifications();
+
+  Keyspace.writeOrder.awaitNewBarrier();
+
+  Future<?> future=flushDataFrom(segmentsToRecycle,true);
+
+  try {
+
+    future.get();
+
+    for (    CommitLogSegment segment : activeSegments)     for (    TableId tableId : droppedTables)     segment.markClean(tableId,CommitLogPosition.NONE,segment.getCurrentCommitLogPosition());
+
+    for (    CommitLogSegment segment : activeSegments) {
+
+      if (segment.isUnused())       archiveAndDiscard(segment);
+
+    }
+
+    CommitLogSegment first;
+
+    if ((first=activeSegments.peek()) != null && first.id <= last.id)     logger.error("Failed to force-recycle all segments; at least one segment is still in use with dirty CFs.");
+
+  }
+
+ catch (  Throwable t) {
+
+    logger.error("Failed waiting for a forced recycle of in-use commit log segments",t);
+
+  }
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * @return a read-only collection of the active commit log segments
+
+ */
+
+@VisibleForTesting public Collection<CommitLogSegment> getActiveSegments(){
+
+  return Collections.unmodifiableCollection(activeSegments);
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Used by compressed and encrypted segments to share a buffer pool across the CLSM.
+
+ */
+
+SimpleCachedBufferPool getBufferPool(){
+
+  return bufferPool;
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+private void maybeFlushToReclaim(){
+
+  long unused=unusedCapacity();
+
+  if (unused < 0) {
+
+    long flushingSize=0;
+
+    List<CommitLogSegment> segmentsToRecycle=new ArrayList<>();
+
+    for (    CommitLogSegment segment : activeSegments) {
+
+      if (segment == allocatingFrom)       break;
+
+      flushingSize+=segment.onDiskSize();
+
+      segmentsToRecycle.add(segment);
+
+      if (flushingSize + unused >= 0)       break;
+
+    }
+
+    flushDataFrom(segmentsToRecycle,false);
+
+  }
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+/** 
+
+ * Called by commit log segments when a buffer is freed to wake the management thread, which may be waiting for a buffer to become available.
+
+ */
+
+void notifyBufferFreed(){
+
+  wakeManager();
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+private long unusedCapacity(){
+
+  long total=DatabaseDescriptor.getTotalCommitlogSpaceInMB() * 1024 * 1024;
+
+  long currentSize=size.get();
+
+  logger.trace("Total active commitlog segment space used is {} out of {}",currentSize,total);
+
+  return total - currentSize;
+
+}
+
+Location: AbstractCommitLogSegmentManager.java
+
+Content: 
+
+void wakeManager(){
+
+  managerThreadWaitQueue.signalAll();
+
+}
+

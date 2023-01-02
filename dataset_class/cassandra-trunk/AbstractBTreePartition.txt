@@ -1,0 +1,140 @@
+Location: AbstractBTreePartition.java
+
+Content: 
+
+protected AbstractBTreePartition(DecoratedKey partitionKey){
+
+  this.partitionKey=partitionKey;
+
+}
+
+Location: AbstractBTreePartition.java
+
+Content: 
+
+protected static Holder build(RowIterator rows,DeletionInfo deletion,boolean buildEncodingStats,int initialRowCapacity){
+
+  TableMetadata metadata=rows.metadata();
+
+  RegularAndStaticColumns columns=rows.columns();
+
+  boolean reversed=rows.isReverseOrder();
+
+  BTree.Builder<Row> builder=BTree.builder(metadata.comparator,initialRowCapacity);
+
+  builder.auto(false);
+
+  while (rows.hasNext())   builder.add(rows.next());
+
+  if (reversed)   builder.reverse();
+
+  Row staticRow=rows.staticRow();
+
+  Object[] tree=builder.build();
+
+  EncodingStats stats=buildEncodingStats ? EncodingStats.Collector.collect(staticRow,BTree.iterator(tree),deletion) : EncodingStats.NO_STATS;
+
+  return new Holder(columns,tree,deletion,staticRow,stats);
+
+}
+
+Location: AbstractBTreePartition.java
+
+Content: 
+
+protected static Holder build(UnfilteredRowIterator iterator,int initialRowCapacity){
+
+  return build(iterator,initialRowCapacity,true);
+
+}
+
+Location: AbstractBTreePartition.java
+
+Content: 
+
+protected static Holder build(UnfilteredRowIterator iterator,int initialRowCapacity,boolean ordered){
+
+  TableMetadata metadata=iterator.metadata();
+
+  RegularAndStaticColumns columns=iterator.columns();
+
+  boolean reversed=iterator.isReverseOrder();
+
+  BTree.Builder<Row> builder=BTree.builder(metadata.comparator,initialRowCapacity);
+
+  builder.auto(!ordered);
+
+  MutableDeletionInfo.Builder deletionBuilder=MutableDeletionInfo.builder(iterator.partitionLevelDeletion(),metadata.comparator,reversed);
+
+  while (iterator.hasNext()) {
+
+    Unfiltered unfiltered=iterator.next();
+
+    if (unfiltered.kind() == Unfiltered.Kind.ROW)     builder.add((Row)unfiltered);
+
+ else     deletionBuilder.add((RangeTombstoneMarker)unfiltered);
+
+  }
+
+  if (reversed)   builder.reverse();
+
+  return new Holder(columns,builder.build(),deletionBuilder.build(),iterator.staticRow(),iterator.stats());
+
+}
+
+Location: AbstractBTreePartition.java
+
+Content: 
+
+public boolean hasRows(){
+
+  Holder holder=holder();
+
+  return !BTree.isEmpty(holder.tree);
+
+}
+
+Location: AbstractBTreePartition.java
+
+Content: 
+
+private RowAndDeletionMergeIterator merge(Iterator<Row> rowIter,Iterator<RangeTombstone> deleteIter,ColumnFilter selection,boolean reversed,Holder current,Row staticRow){
+
+  return new RowAndDeletionMergeIterator(metadata(),partitionKey(),current.deletionInfo.getPartitionDeletion(),selection,staticRow,reversed,current.stats,rowIter,deleteIter,canHaveShadowedData());
+
+}
+
+Location: AbstractBTreePartition.java
+
+Content: 
+
+private UnfilteredRowIterator sliceIterator(ColumnFilter selection,Slice slice,boolean reversed,Holder current,Row staticRow){
+
+  ClusteringBound<?> start=slice.start().isBottom() ? null : slice.start();
+
+  ClusteringBound<?> end=slice.end().isTop() ? null : slice.end();
+
+  Iterator<Row> rowIter=BTree.slice(current.tree,metadata().comparator,start,true,end,true,desc(reversed));
+
+  Iterator<RangeTombstone> deleteIter=current.deletionInfo.rangeIterator(slice,reversed);
+
+  return merge(rowIter,deleteIter,selection,reversed,current,staticRow);
+
+}
+
+Location: AbstractBTreePartition.java
+
+Content: 
+
+private Row staticRow(Holder current,ColumnFilter columns,boolean setActiveDeletionToRow){
+
+  DeletionTime partitionDeletion=current.deletionInfo.getPartitionDeletion();
+
+  if (columns.fetchedColumns().statics.isEmpty() || (current.staticRow.isEmpty() && partitionDeletion.isLive()))   return Rows.EMPTY_STATIC_ROW;
+
+  Row row=current.staticRow.filter(columns,partitionDeletion,setActiveDeletionToRow,metadata());
+
+  return row == null ? Rows.EMPTY_STATIC_ROW : row;
+
+}
+

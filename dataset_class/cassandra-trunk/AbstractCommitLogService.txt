@@ -1,0 +1,160 @@
+Location: AbstractCommitLogService.java
+
+Content: 
+
+/** 
+
+ * CommitLogService provides a fsync service for Allocations, fulfilling either the Batch or Periodic contract. Subclasses may be notified when a sync finishes by using the syncComplete WaitQueue.
+
+ */
+
+AbstractCommitLogService(final CommitLog commitLog,final String name,long syncIntervalMillis){
+
+  this(commitLog,name,syncIntervalMillis,false);
+
+}
+
+Location: AbstractCommitLogService.java
+
+Content: 
+
+/** 
+
+ * CommitLogService provides a fsync service for Allocations, fulfilling either the Batch or Periodic contract. Subclasses may be notified when a sync finishes by using the syncComplete WaitQueue.
+
+ * @param markHeadersFaster true if the chained markers should be updated more frequently than on the disk sync bounds.
+
+ */
+
+AbstractCommitLogService(final CommitLog commitLog,final String name,long syncIntervalMillis,boolean markHeadersFaster){
+
+  this.commitLog=commitLog;
+
+  this.name=name;
+
+  final long markerIntervalMillis;
+
+  if (markHeadersFaster && syncIntervalMillis > DEFAULT_MARKER_INTERVAL_MILLIS) {
+
+    markerIntervalMillis=DEFAULT_MARKER_INTERVAL_MILLIS;
+
+    long modulo=syncIntervalMillis % markerIntervalMillis;
+
+    if (modulo != 0) {
+
+      syncIntervalMillis-=modulo;
+
+      if (modulo >= markerIntervalMillis / 2)       syncIntervalMillis+=markerIntervalMillis;
+
+    }
+
+    logger.debug("Will update the commitlog markers every {}ms and flush every {}ms",markerIntervalMillis,syncIntervalMillis);
+
+  }
+
+ else {
+
+    markerIntervalMillis=syncIntervalMillis;
+
+  }
+
+  assert syncIntervalMillis % markerIntervalMillis == 0;
+
+  this.markerIntervalNanos=TimeUnit.NANOSECONDS.convert(markerIntervalMillis,TimeUnit.MILLISECONDS);
+
+  this.syncIntervalNanos=TimeUnit.NANOSECONDS.convert(syncIntervalMillis,TimeUnit.MILLISECONDS);
+
+}
+
+Location: AbstractCommitLogService.java
+
+Content: 
+
+void awaitSyncAt(long syncTime,Context context){
+
+  do {
+
+    WaitQueue.Signal signal=context != null ? syncComplete.register(context) : syncComplete.register();
+
+    if (lastSyncedAt < syncTime)     signal.awaitUninterruptibly();
+
+ else     signal.cancel();
+
+  }
+
+ while (lastSyncedAt < syncTime);
+
+}
+
+Location: AbstractCommitLogService.java
+
+Content: 
+
+public void awaitTermination() throws InterruptedException {
+
+  if (thread != null)   thread.join();
+
+}
+
+Location: AbstractCommitLogService.java
+
+Content: 
+
+/** 
+
+ * Block for @param alloc to be sync'd as necessary, and handle bookkeeping
+
+ */
+
+public void finishWriteFor(Allocation alloc){
+
+  maybeWaitForSync(alloc);
+
+  written.incrementAndGet();
+
+}
+
+Location: AbstractCommitLogService.java
+
+Content: 
+
+protected abstract void maybeWaitForSync(Allocation alloc);
+
+Location: AbstractCommitLogService.java
+
+Content: 
+
+/** 
+
+ * Request an additional sync cycle without blocking.
+
+ */
+
+void requestExtraSync(){
+
+  syncRequested=true;
+
+  LockSupport.unpark(thread);
+
+}
+
+Location: AbstractCommitLogService.java
+
+Content: 
+
+/** 
+
+ * Request sync and wait until the current state is synced. Note: If a sync is in progress at the time of this request, the call will return after both it and a cycle initiated immediately afterwards complete.
+
+ */
+
+public void syncBlocking(){
+
+  long requestTime=System.nanoTime();
+
+  requestExtraSync();
+
+  awaitSyncAt(requestTime,null);
+
+}
+
