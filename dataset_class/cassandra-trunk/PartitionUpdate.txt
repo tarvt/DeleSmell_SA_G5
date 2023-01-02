@@ -1,0 +1,366 @@
+Location: PartitionUpdate.java
+
+Content: 
+
+private static void addMarksForRow(Row row,List<CounterMark> marks){
+
+  for (  Cell<?> cell : row.cells()) {
+
+    if (cell.isCounterCell())     marks.add(new CounterMark(row,cell.column(),cell.path()));
+
+  }
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * For an update on a counter table, returns a list containing a  {@code CounterMark} forevery counter contained in the update.
+
+ * @return a list with counter marks for every counter in this update.
+
+ */
+
+public List<CounterMark> collectCounterMarks(){
+
+  assert metadata().isCounter();
+
+  List<CounterMark> marks=new ArrayList<>();
+
+  addMarksForRow(staticRow(),marks);
+
+  for (  Row row : this)   addMarksForRow(row,marks);
+
+  return marks;
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+@Override public DeletionInfo deletionInfo(){
+
+  return deletionInfo;
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Creates a empty immutable partition update.
+
+ * @param metadata the metadata for the created update.
+
+ * @param key the partition key for the created update.
+
+ * @return the newly created empty (and immutable) update.
+
+ */
+
+public static PartitionUpdate emptyUpdate(TableMetadata metadata,DecoratedKey key){
+
+  MutableDeletionInfo deletionInfo=MutableDeletionInfo.live();
+
+  Holder holder=new Holder(RegularAndStaticColumns.NONE,BTree.empty(),deletionInfo,Rows.EMPTY_STATIC_ROW,EncodingStats.NO_STATS);
+
+  return new PartitionUpdate(metadata,key,holder,deletionInfo,false);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Deserialize a partition update from a provided byte buffer.
+
+ * @param bytes the byte buffer that contains the serialized update.
+
+ * @param version the version with which the update is serialized.
+
+ * @return the deserialized update or {@code null} if {@code bytes == null}.
+
+ */
+
+@SuppressWarnings("resource") public static PartitionUpdate fromBytes(ByteBuffer bytes,int version){
+
+  if (bytes == null)   return null;
+
+  try {
+
+    return serializer.deserialize(new DataInputBuffer(bytes,true),version,DeserializationHelper.Flag.LOCAL);
+
+  }
+
+ catch (  IOException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Turns the given iterator into an update.
+
+ * @param iterator the iterator to turn into updates.
+
+ * @param filter the column filter used when querying {@code iterator}. This is used to make sure we don't include data for which the value has been skipped while reading (as we would then be writing something incorrect). Warning: this method does not close the provided iterator, it is up to the caller to close it.
+
+ */
+
+@SuppressWarnings("resource") public static PartitionUpdate fromIterator(RowIterator iterator,ColumnFilter filter){
+
+  iterator=RowIterators.withOnlyQueriedData(iterator,filter);
+
+  MutableDeletionInfo deletionInfo=MutableDeletionInfo.live();
+
+  Holder holder=build(iterator,deletionInfo,true,16);
+
+  return new PartitionUpdate(iterator.metadata(),iterator.partitionKey(),holder,deletionInfo,false);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Turns the given iterator into an update.
+
+ * @param iterator the iterator to turn into updates.
+
+ * @param filter the column filter used when querying {@code iterator}. This is used to make sure we don't include data for which the value has been skipped while reading (as we would then be writing something incorrect). Warning: this method does not close the provided iterator, it is up to the caller to close it.
+
+ */
+
+@SuppressWarnings("resource") public static PartitionUpdate fromIterator(UnfilteredRowIterator iterator,ColumnFilter filter){
+
+  iterator=UnfilteredRowIterators.withOnlyQueriedData(iterator,filter);
+
+  Holder holder=build(iterator,16);
+
+  MutableDeletionInfo deletionInfo=(MutableDeletionInfo)holder.deletionInfo;
+
+  return new PartitionUpdate(iterator.metadata(),iterator.partitionKey(),holder,deletionInfo,false);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Creates a partition update that entirely deletes a given partition.
+
+ * @param metadata the metadata for the created update.
+
+ * @param key the partition key for the partition that the created update should delete.
+
+ * @param timestamp the timestamp for the deletion.
+
+ * @param nowInSec the current time in seconds to use as local deletion time for the partition deletion.
+
+ * @return the newly created partition deletion update.
+
+ */
+
+public static PartitionUpdate fullPartitionDelete(TableMetadata metadata,ByteBuffer key,long timestamp,int nowInSec){
+
+  return fullPartitionDelete(metadata,metadata.partitioner.decorateKey(key),timestamp,nowInSec);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Creates an immutable partition update that entirely deletes a given partition.
+
+ * @param metadata the metadata for the created update.
+
+ * @param key the partition key for the partition that the created update should delete.
+
+ * @param timestamp the timestamp for the deletion.
+
+ * @param nowInSec the current time in seconds to use as local deletion time for the partition deletion.
+
+ * @return the newly created partition deletion update.
+
+ */
+
+public static PartitionUpdate fullPartitionDelete(TableMetadata metadata,DecoratedKey key,long timestamp,int nowInSec){
+
+  MutableDeletionInfo deletionInfo=new MutableDeletionInfo(timestamp,nowInSec);
+
+  Holder holder=new Holder(RegularAndStaticColumns.NONE,BTree.empty(),deletionInfo,Rows.EMPTY_STATIC_ROW,EncodingStats.NO_STATS);
+
+  return new PartitionUpdate(metadata,key,holder,deletionInfo,false);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * The number of "operations" contained in the update. <p> This is used by  {@code Memtable} to approximate how much work this update does. In practice, thiscount how many rows are updated and how many ranges are deleted by the partition update.
+
+ * @return the number of "operations" performed by the update.
+
+ */
+
+public int operationCount(){
+
+  return rowCount() + (staticRow().isEmpty() ? 0 : 1) + deletionInfo.rangeCount()+ (deletionInfo.getPartitionDeletion().isLive() ? 0 : 1);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+private PartitionUpdate(TableMetadata metadata,DecoratedKey key,Holder holder,MutableDeletionInfo deletionInfo,boolean canHaveShadowedData){
+
+  super(key);
+
+  this.metadata=metadata;
+
+  this.holder=holder;
+
+  this.deletionInfo=deletionInfo;
+
+  this.canHaveShadowedData=canHaveShadowedData;
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Creates an immutable partition update that contains a single row update.
+
+ * @param metadata the metadata for the created update.
+
+ * @param key the partition key for the partition to update.
+
+ * @param row the row for the update.
+
+ * @return the newly created partition update containing only {@code row}.
+
+ */
+
+public static PartitionUpdate singleRowUpdate(TableMetadata metadata,ByteBuffer key,Row row){
+
+  return singleRowUpdate(metadata,metadata.partitioner.decorateKey(key),row);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Creates an immutable partition update that contains a single row update.
+
+ * @param metadata the metadata for the created update.
+
+ * @param key the partition key for the partition to update.
+
+ * @param row the row for the update (may be static).
+
+ * @return the newly created partition update containing only {@code row}.
+
+ */
+
+public static PartitionUpdate singleRowUpdate(TableMetadata metadata,DecoratedKey key,Row row){
+
+  return singleRowUpdate(metadata,key,row.isStatic() ? null : row,row.isStatic() ? row : null);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Creates an immutable partition update that contains a single row update.
+
+ * @param metadata the metadata for the created update.
+
+ * @param key the partition key for the partition to update.
+
+ * @param row the row for the update (may be null).
+
+ * @param row the static row for the update (may be null).
+
+ * @return the newly created partition update containing only {@code row}.
+
+ */
+
+public static PartitionUpdate singleRowUpdate(TableMetadata metadata,DecoratedKey key,Row row,Row staticRow){
+
+  MutableDeletionInfo deletionInfo=MutableDeletionInfo.live();
+
+  Holder holder=new Holder(new RegularAndStaticColumns(staticRow == null ? Columns.NONE : Columns.from(staticRow.columns()),row == null ? Columns.NONE : Columns.from(row.columns())),row == null ? BTree.empty() : BTree.singleton(row),deletionInfo,staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow,EncodingStats.NO_STATS);
+
+  return new PartitionUpdate(metadata,key,holder,deletionInfo,false);
+
+}
+
+Location: PartitionUpdate.java
+
+Content: 
+
+/** 
+
+ * Serialize a partition update as a byte buffer.
+
+ * @param update the partition update to serialize.
+
+ * @param version the version to serialize the update into.
+
+ * @return a newly allocated byte buffer containing the serialized update.
+
+ */
+
+public static ByteBuffer toBytes(PartitionUpdate update,int version){
+
+  try (DataOutputBuffer out=new DataOutputBuffer()){
+
+    serializer.serialize(update,out,version);
+
+    return out.buffer();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+

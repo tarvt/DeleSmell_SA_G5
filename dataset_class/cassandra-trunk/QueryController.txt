@@ -1,0 +1,260 @@
+Location: QueryController.java
+
+Content: 
+
+private Set<SSTableIndex> applyScope(Set<SSTableIndex> indexes){
+
+  return Sets.filter(indexes,index -> {
+
+    SSTableReader sstable=index.getSSTable();
+
+    return range.startKey().compareTo(sstable.last) <= 0 && (range.stopKey().isMinimum() || sstable.first.compareTo(range.stopKey()) <= 0);
+
+  }
+
+);
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+private Pair<Expression,Set<SSTableIndex>> calculatePrimary(Collection<Expression> expressions){
+
+  Expression expression=null;
+
+  Set<SSTableIndex> primaryIndexes=Collections.emptySet();
+
+  for (  Expression e : expressions) {
+
+    if (!e.isIndexed())     continue;
+
+    View view=e.index.getView();
+
+    if (view == null)     continue;
+
+    Set<SSTableIndex> indexes=applyScope(view.match(e));
+
+    if (expression == null || primaryIndexes.size() > indexes.size()) {
+
+      primaryIndexes=indexes;
+
+      expression=e;
+
+    }
+
+  }
+
+  return expression == null ? null : Pair.create(expression,primaryIndexes);
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public void checkpoint(){
+
+  long executionTime=(System.nanoTime() - executionStart);
+
+  if (executionTime >= executionQuota)   throw new TimeQuotaExceededException("Command '" + command + "' took too long "+ "("+ TimeUnit.NANOSECONDS.toMillis(executionTime)+ " >= "+ TimeUnit.NANOSECONDS.toMillis(executionQuota)+ "ms).");
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public DataRange dataRange(){
+
+  return command.dataRange();
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public Collection<RowFilter.Expression> getExpressions(){
+
+  return command.rowFilter().getExpressions();
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+/** 
+
+ * Build a range iterator from the given list of expressions by applying given operation (OR/AND). Building of such iterator involves index search, results of which are persisted in the internal resources list and can be released later via  {@link QueryController#releaseIndexes(Operation)}.
+
+ * @param op The operation type to coalesce expressions with.
+
+ * @param expressions The expressions to build range iterator from (expressions with not results are ignored).
+
+ * @return The range builder based on given expressions and operation type.
+
+ */
+
+public RangeIterator.Builder<Long,Token> getIndexes(OperationType op,Collection<Expression> expressions){
+
+  if (resources.containsKey(expressions))   throw new IllegalArgumentException("Can't process the same expressions multiple times.");
+
+  RangeIterator.Builder<Long,Token> builder=op == OperationType.OR ? RangeUnionIterator.<Long,Token>builder() : RangeIntersectionIterator.<Long,Token>builder();
+
+  Set<Map.Entry<Expression,Set<SSTableIndex>>> view=getView(op,expressions).entrySet();
+
+  List<RangeIterator<Long,Token>> perIndexUnions=new ArrayList<>(view.size());
+
+  for (  Map.Entry<Expression,Set<SSTableIndex>> e : view) {
+
+    @SuppressWarnings("resource") RangeIterator<Long,Token> index=TermIterator.build(e.getKey(),e.getValue());
+
+    builder.add(index);
+
+    perIndexUnions.add(index);
+
+  }
+
+  resources.put(expressions,perIndexUnions);
+
+  return builder;
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public ColumnIndex getIndex(RowFilter.Expression expression){
+
+  Optional<Index> index=cfs.indexManager.getBestIndexFor(expression);
+
+  return index.isPresent() ? ((SASIIndex)index.get()).getIndex() : null;
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public AbstractType<?> getKeyValidator(){
+
+  return cfs.metadata().partitionKeyType;
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public UnfilteredRowIterator getPartition(DecoratedKey key,ReadExecutionController executionController){
+
+  if (key == null)   throw new NullPointerException();
+
+  try {
+
+    SinglePartitionReadCommand partition=SinglePartitionReadCommand.create(cfs.metadata(),command.nowInSec(),command.columnFilter(),command.rowFilter().withoutExpressions(),DataLimits.NONE,key,command.clusteringIndexFilter(key));
+
+    return partition.queryMemtableAndDisk(cfs,executionController);
+
+  }
+
+  finally {
+
+    checkpoint();
+
+  }
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+private Map<Expression,Set<SSTableIndex>> getView(OperationType op,Collection<Expression> expressions){
+
+  Pair<Expression,Set<SSTableIndex>> primary=(op == OperationType.AND) ? calculatePrimary(expressions) : null;
+
+  Map<Expression,Set<SSTableIndex>> indexes=new HashMap<>();
+
+  for (  Expression e : expressions) {
+
+    if (!e.isIndexed() || e.getOp() == Expression.Op.NOT_EQ)     continue;
+
+    if (primary != null && e.equals(primary.left)) {
+
+      indexes.put(primary.left,primary.right);
+
+      continue;
+
+    }
+
+    View view=e.index.getView();
+
+    if (view == null)     continue;
+
+    Set<SSTableIndex> readers=new HashSet<>();
+
+    if (primary != null && primary.right.size() > 0) {
+
+      for (      SSTableIndex index : primary.right)       readers.addAll(view.match(index.minKey(),index.maxKey()));
+
+    }
+
+ else {
+
+      readers.addAll(applyScope(view.match(e)));
+
+    }
+
+    indexes.put(e,readers);
+
+  }
+
+  return indexes;
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public QueryController(ColumnFamilyStore cfs,PartitionRangeReadCommand command,long timeQuotaMs){
+
+  this.cfs=cfs;
+
+  this.command=command;
+
+  this.range=command.dataRange();
+
+  this.executionQuota=TimeUnit.MILLISECONDS.toNanos(timeQuotaMs);
+
+  this.executionStart=System.nanoTime();
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+private void releaseIndexes(List<RangeIterator<Long,Token>> indexes){
+
+  if (indexes == null)   return;
+
+  indexes.forEach(FileUtils::closeQuietly);
+
+}
+
+Location: QueryController.java
+
+Content: 
+
+public void releaseIndexes(Operation operation){
+
+  if (operation.expressions != null)   releaseIndexes(resources.remove(operation.expressions.values()));
+
+}
+

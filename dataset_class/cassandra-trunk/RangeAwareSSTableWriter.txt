@@ -1,0 +1,84 @@
+Location: RangeAwareSSTableWriter.java
+
+Content: 
+
+public String getFilename(){
+
+  return String.join("/",cfs.keyspace.getName(),cfs.getTableName());
+
+}
+
+Location: RangeAwareSSTableWriter.java
+
+Content: 
+
+private void maybeSwitchWriter(DecoratedKey key){
+
+  if (boundaries == null)   return;
+
+  boolean switched=false;
+
+  while (currentIndex < 0 || key.compareTo(boundaries.get(currentIndex)) > 0) {
+
+    switched=true;
+
+    currentIndex++;
+
+  }
+
+  if (switched) {
+
+    if (currentWriter != null)     finishedWriters.add(currentWriter);
+
+    Descriptor desc=cfs.newSSTableDescriptor(cfs.getDirectories().getLocationForDisk(directories.get(currentIndex)),format);
+
+    currentWriter=cfs.createSSTableMultiWriter(desc,estimatedKeys,repairedAt,pendingRepair,isTransient,sstableLevel,header,lifecycleNewTracker);
+
+  }
+
+}
+
+Location: RangeAwareSSTableWriter.java
+
+Content: 
+
+public RangeAwareSSTableWriter(ColumnFamilyStore cfs,long estimatedKeys,long repairedAt,UUID pendingRepair,boolean isTransient,SSTableFormat.Type format,int sstableLevel,long totalSize,LifecycleNewTracker lifecycleNewTracker,SerializationHeader header) throws IOException {
+
+  DiskBoundaries db=cfs.getDiskBoundaries();
+
+  directories=db.directories;
+
+  this.sstableLevel=sstableLevel;
+
+  this.cfs=cfs;
+
+  this.estimatedKeys=estimatedKeys / directories.size();
+
+  this.repairedAt=repairedAt;
+
+  this.pendingRepair=pendingRepair;
+
+  this.isTransient=isTransient;
+
+  this.format=format;
+
+  this.lifecycleNewTracker=lifecycleNewTracker;
+
+  this.header=header;
+
+  boundaries=db.positions;
+
+  if (boundaries == null) {
+
+    Directories.DataDirectory localDir=cfs.getDirectories().getWriteableLocation(totalSize);
+
+    if (localDir == null)     throw new IOException(String.format("Insufficient disk space to store %s",FBUtilities.prettyPrintMemory(totalSize)));
+
+    Descriptor desc=cfs.newSSTableDescriptor(cfs.getDirectories().getLocationForDisk(localDir),format);
+
+    currentWriter=cfs.createSSTableMultiWriter(desc,estimatedKeys,repairedAt,pendingRepair,isTransient,sstableLevel,header,lifecycleNewTracker);
+
+  }
+
+}
+

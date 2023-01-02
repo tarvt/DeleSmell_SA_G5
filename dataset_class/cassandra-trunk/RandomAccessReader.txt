@@ -1,0 +1,130 @@
+Location: RandomAccessReader.java
+
+Content: 
+
+public long bytesPastMark(){
+
+  long bytes=current() - markedPointer;
+
+  assert bytes >= 0;
+
+  return bytes;
+
+}
+
+Location: RandomAccessReader.java
+
+Content: 
+
+protected long current(){
+
+  return bufferHolder.offset() + buffer.position();
+
+}
+
+Location: RandomAccessReader.java
+
+Content: 
+
+public ChannelProxy getChannel(){
+
+  return rebufferer.channel();
+
+}
+
+Location: RandomAccessReader.java
+
+Content: 
+
+public long getPosition(){
+
+  return current();
+
+}
+
+Location: RandomAccessReader.java
+
+Content: 
+
+public long length(){
+
+  return rebufferer.fileLength();
+
+}
+
+Location: RandomAccessReader.java
+
+Content: 
+
+/** 
+
+ * Open a RandomAccessReader (not compressed, not mmapped, no read throttling) that will own its channel.
+
+ * @param file File to open for reading
+
+ * @return new RandomAccessReader that owns the channel opened in this method.
+
+ */
+
+@SuppressWarnings("resource") public static RandomAccessReader open(File file){
+
+  ChannelProxy channel=new ChannelProxy(file);
+
+  try {
+
+    ChunkReader reader=new SimpleChunkReader(channel,-1,BufferType.OFF_HEAP,DEFAULT_BUFFER_SIZE);
+
+    Rebufferer rebufferer=reader.instantiateRebufferer();
+
+    return new RandomAccessReaderWithOwnChannel(rebufferer);
+
+  }
+
+ catch (  Throwable t) {
+
+    channel.close();
+
+    throw t;
+
+  }
+
+}
+
+Location: RandomAccessReader.java
+
+Content: 
+
+/** 
+
+ * Only created through Builder
+
+ * @param rebufferer Rebufferer to use
+
+ */
+
+RandomAccessReader(Rebufferer rebufferer){
+
+  super(Rebufferer.EMPTY.buffer());
+
+  this.rebufferer=rebufferer;
+
+}
+
+Location: RandomAccessReader.java
+
+Content: 
+
+private void reBufferAt(long position){
+
+  bufferHolder.release();
+
+  bufferHolder=rebufferer.rebuffer(position);
+
+  buffer=bufferHolder.buffer();
+
+  buffer.position(Ints.checkedCast(position - bufferHolder.offset()));
+
+  assert buffer.order() == ByteOrder.BIG_ENDIAN : "Buffer must have BIG ENDIAN byte ordering";
+
+}
+

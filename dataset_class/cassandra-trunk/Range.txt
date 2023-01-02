@@ -1,0 +1,594 @@
+Location: Range.java
+
+Content: 
+
+public List<String> asList(){
+
+  ArrayList<String> ret=new ArrayList<String>(2);
+
+  ret.add(left.toString());
+
+  ret.add(right.toString());
+
+  return ret;
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static <T extends RingPosition<T>>void assertNormalized(List<Range<T>> ranges){
+
+  Range<T> lastRange=null;
+
+  for (  Range<T> range : ranges) {
+
+    if (lastRange == null) {
+
+      lastRange=range;
+
+    }
+
+ else     if (lastRange.left.compareTo(range.left) >= 0 || lastRange.intersects(range)) {
+
+      throw new AssertionError(String.format("Ranges aren't properly normalized. lastRange %s, range %s, compareTo %d, intersects %b, all ranges %s%n",lastRange,range,lastRange.compareTo(range),lastRange.intersects(range),ranges));
+
+    }
+
+  }
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * Note: this class has a natural ordering that is inconsistent with equals
+
+ */
+
+public int compareTo(Range<T> rhs){
+
+  boolean lhsWrap=isWrapAround(left,right);
+
+  boolean rhsWrap=isWrapAround(rhs.left,rhs.right);
+
+  if (lhsWrap != rhsWrap)   return Boolean.compare(!lhsWrap,!rhsWrap);
+
+  return right.compareTo(rhs.right);
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static <T extends RingPosition<T>>boolean contains(T left,T right,T point){
+
+  if (isWrapAround(left,right)) {
+
+    if (point.compareTo(left) > 0)     return true;
+
+ else     return right.compareTo(point) >= 0;
+
+  }
+
+ else {
+
+    return point.compareTo(left) > 0 && right.compareTo(point) >= 0;
+
+  }
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * Given a list of unwrapped ranges sorted by left position, return an equivalent list of ranges but with no overlapping ranges.
+
+ */
+
+private static <T extends RingPosition<T>>List<Range<T>> deoverlap(List<Range<T>> ranges){
+
+  if (ranges.isEmpty())   return ranges;
+
+  List<Range<T>> output=new ArrayList<Range<T>>();
+
+  Iterator<Range<T>> iter=ranges.iterator();
+
+  Range<T> current=iter.next();
+
+  T min=current.left.minValue();
+
+  while (iter.hasNext()) {
+
+    if (current.right.equals(min)) {
+
+      if (current.left.equals(min))       return Collections.<Range<T>>singletonList(current);
+
+      output.add(new Range<T>(current.left,min));
+
+      return output;
+
+    }
+
+    Range<T> next=iter.next();
+
+    if (next.left.compareTo(current.right) <= 0) {
+
+      if (next.right.equals(min) || current.right.compareTo(next.right) < 0)       current=new Range<T>(current.left,next.right);
+
+    }
+
+ else {
+
+      output.add(current);
+
+      current=next;
+
+    }
+
+  }
+
+  output.add(current);
+
+  return output;
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * Calculate set of the difference ranges of given two ranges (as current (A, B] and rhs is (C, D]) which node will need to fetch when moving to a given new token
+
+ * @param rhs range to calculate difference
+
+ * @return set of difference ranges
+
+ */
+
+public Set<Range<T>> differenceToFetch(Range<T> rhs){
+
+  Set<Range<T>> result;
+
+  Set<Range<T>> intersectionSet=this.intersectionWith(rhs);
+
+  if (intersectionSet.isEmpty()) {
+
+    result=new HashSet<Range<T>>();
+
+    result.add(rhs);
+
+  }
+
+ else {
+
+    @SuppressWarnings("unchecked") Range<T>[] intersections=new Range[intersectionSet.size()];
+
+    intersectionSet.toArray(intersections);
+
+    if (intersections.length == 1) {
+
+      result=new HashSet<Range<T>>(rhs.subtractContained(intersections[0]));
+
+    }
+
+ else {
+
+      Range<T> first=intersections[0];
+
+      Range<T> second=intersections[1];
+
+      List<Range<T>> temp=rhs.subtractContained(first);
+
+      Range<T> single=temp.get(0);
+
+      result=new HashSet<Range<T>>(single.subtractContained(second));
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: Range.java
+
+Content: 
+
+private static <T extends RingPosition<T>>Set<Range<T>> intersectionBothWrapping(Range<T> first,Range<T> that){
+
+  Set<Range<T>> intersection=new HashSet<Range<T>>(2);
+
+  if (that.right.compareTo(first.left) > 0)   intersection.add(new Range<T>(first.left,that.right));
+
+  intersection.add(new Range<T>(that.left,first.right));
+
+  return Collections.unmodifiableSet(intersection);
+
+}
+
+Location: Range.java
+
+Content: 
+
+private static <T extends RingPosition<T>>Set<Range<T>> intersectionOneWrapping(Range<T> wrapping,Range<T> other){
+
+  Set<Range<T>> intersection=new HashSet<Range<T>>(2);
+
+  if (other.contains(wrapping.right))   intersection.add(new Range<T>(other.left,wrapping.right));
+
+  if (other.contains(wrapping.left) && wrapping.left.compareTo(other.right) < 0)   intersection.add(new Range<T>(wrapping.left,other.right));
+
+  return Collections.unmodifiableSet(intersection);
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * @param that
+
+ * @return the intersection of the two Ranges.  this can be two disjoint Ranges if one is wrapping and one is not.say you have nodes G and M, with query range (D,T]; the intersection is (M-T] and (D-G]. If there is no intersection, an empty list is returned.
+
+ */
+
+public Set<Range<T>> intersectionWith(Range<T> that){
+
+  if (that.contains(this))   return rangeSet(this);
+
+  if (this.contains(that))   return rangeSet(that);
+
+  boolean thiswraps=isWrapAround(left,right);
+
+  boolean thatwraps=isWrapAround(that.left,that.right);
+
+  if (!thiswraps && !thatwraps) {
+
+    if (!(left.compareTo(that.right) < 0 && that.left.compareTo(right) < 0))     return Collections.emptySet();
+
+    return rangeSet(new Range<T>(ObjectUtils.max(this.left,that.left),ObjectUtils.min(this.right,that.right)));
+
+  }
+
+  if (thiswraps && thatwraps) {
+
+    assert !this.left.equals(that.left);
+
+    return this.left.compareTo(that.left) < 0 ? intersectionBothWrapping(this,that) : intersectionBothWrapping(that,this);
+
+  }
+
+  if (thiswraps)   return intersectionOneWrapping(this,that);
+
+  return intersectionOneWrapping(that,this);
+
+}
+
+Location: Range.java
+
+Content: 
+
+public boolean intersects(AbstractBounds<T> that){
+
+  if (that instanceof Range)   return intersects((Range<T>)that);
+
+  if (that instanceof Bounds)   return intersects((Bounds<T>)that);
+
+  throw new UnsupportedOperationException("Intersection is only supported for Bounds and Range objects; found " + that.getClass());
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static boolean intersects(Iterable<Range<Token>> l,Iterable<Range<Token>> r){
+
+  return Iterables.any(l,rng -> rng.intersects(r));
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * @param that range to check for intersection
+
+ * @return true if the given range intersects with this range.
+
+ */
+
+public boolean intersects(Range<T> that){
+
+  return intersectionWith(that).size() > 0;
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * Tells if the given range covers the entire ring
+
+ */
+
+private static <T extends RingPosition<T>>boolean isFull(T left,T right){
+
+  return left.equals(right);
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static <T extends RingPosition<T>>boolean isInRanges(T token,Iterable<Range<T>> ranges){
+
+  assert ranges != null;
+
+  for (  Range<T> range : ranges) {
+
+    if (range.contains(token)) {
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: Range.java
+
+Content: 
+
+public boolean isWrapAround(){
+
+  return isWrapAround(left,right);
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * Tells if the given range is a wrap around.
+
+ */
+
+public static <T extends RingPosition<T>>boolean isWrapAround(T left,T right){
+
+  return left.compareTo(right) >= 0;
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static Range<PartitionPosition> makeRowRange(Range<Token> tokenBounds){
+
+  return makeRowRange(tokenBounds.left,tokenBounds.right);
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * Compute a range of keys corresponding to a given range of token.
+
+ */
+
+public static Range<PartitionPosition> makeRowRange(Token left,Token right){
+
+  return new Range<PartitionPosition>(left.maxKeyBound(),right.maxKeyBound());
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * @return A copy of the given list of with all ranges unwrapped, sorted by left bound and with overlapping bounds merged.
+
+ */
+
+public static <T extends RingPosition<T>>List<Range<T>> normalize(Collection<Range<T>> ranges){
+
+  List<Range<T>> output=new ArrayList<Range<T>>(ranges.size());
+
+  for (  Range<T> range : ranges)   output.addAll(range.unwrap());
+
+  Collections.sort(output,new Comparator<Range<T>>(){
+
+    public int compare(    Range<T> b1,    Range<T> b2){
+
+      return b1.left.compareTo(b2.left);
+
+    }
+
+  }
+
+);
+
+  return deoverlap(output);
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static <T extends RingPosition<T>>Set<Range<T>> rangeSet(Range<T> range){
+
+  return Collections.singleton(range);
+
+}
+
+Location: Range.java
+
+Content: 
+
+public Range(T left,T right){
+
+  super(left,right);
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static <T extends RingPosition<T>>List<Range<T>> sort(Collection<Range<T>> ranges){
+
+  List<Range<T>> output=new ArrayList<>(ranges.size());
+
+  for (  Range<T> r : ranges)   output.addAll(r.unwrap());
+
+  Collections.sort(output,new Comparator<Range<T>>(){
+
+    public int compare(    Range<T> b1,    Range<T> b2){
+
+      return b1.left.compareTo(b2.left);
+
+    }
+
+  }
+
+);
+
+  return output;
+
+}
+
+Location: Range.java
+
+Content: 
+
+private static <T extends RingPosition<T>>Set<Range<T>> substractAllFromToken(Set<Range<T>> ranges,Range<T> subtract){
+
+  Set<Range<T>> result=new HashSet<>();
+
+  for (  Range<T> range : ranges) {
+
+    result.addAll(range.subtract(subtract));
+
+  }
+
+  return result;
+
+}
+
+Location: Range.java
+
+Content: 
+
+public Set<Range<T>> subtractAll(Collection<Range<T>> ranges){
+
+  Set<Range<T>> result=new HashSet<>();
+
+  result.add(this);
+
+  for (  Range<T> range : ranges) {
+
+    result=substractAllFromToken(result,range);
+
+  }
+
+  return result;
+
+}
+
+Location: Range.java
+
+Content: 
+
+/** 
+
+ * Subtracts a portion of this range.
+
+ * @param contained The range to subtract from this. It must be totallycontained by this range.
+
+ * @return A List of the Ranges left after subtracting containedfrom this.
+
+ */
+
+private List<Range<T>> subtractContained(Range<T> contained){
+
+  if (isFull(left,right) && isFull(contained.left,contained.right)) {
+
+    return Collections.emptyList();
+
+  }
+
+  if (isFull(left,right)) {
+
+    return Collections.singletonList(new Range<>(contained.right,contained.left));
+
+  }
+
+  List<Range<T>> difference=new ArrayList<>(2);
+
+  if (!left.equals(contained.left))   difference.add(new Range<T>(left,contained.left));
+
+  if (!right.equals(contained.right))   difference.add(new Range<T>(contained.right,right));
+
+  return difference;
+
+}
+
+Location: Range.java
+
+Content: 
+
+public static <T extends RingPosition<T>>Set<Range<T>> subtract(Collection<Range<T>> ranges,Collection<Range<T>> subtract){
+
+  Set<Range<T>> result=new HashSet<>();
+
+  for (  Range<T> range : ranges) {
+
+    result.addAll(range.subtractAll(subtract));
+
+  }
+
+  return result;
+
+}
+
+Location: Range.java
+
+Content: 
+
+public Set<Range<T>> subtract(Range<T> rhs){
+
+  return rhs.differenceToFetch(this);
+
+}
+

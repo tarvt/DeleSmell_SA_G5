@@ -1,0 +1,118 @@
+Location: RebufferingInputStream.java
+
+Content: 
+
+/** 
+
+ * Equivalent to  {@link #read(byte[],int,int)}, where offset is  {@code dst.position()} and length is {@code dst.remaining()}
+
+ */
+
+public void readFully(ByteBuffer dst) throws IOException {
+
+  int offset=dst.position();
+
+  int len=dst.limit() - offset;
+
+  int copied=0;
+
+  while (copied < len) {
+
+    int position=buffer.position();
+
+    int remaining=buffer.limit() - position;
+
+    if (remaining == 0) {
+
+      reBuffer();
+
+      position=buffer.position();
+
+      remaining=buffer.limit() - position;
+
+      if (remaining == 0)       throw new EOFException("EOF after " + copied + " bytes out of "+ len);
+
+    }
+
+    int toCopy=min(len - copied,remaining);
+
+    FastByteOperations.copy(buffer,position,dst,offset + copied,toCopy);
+
+    buffer.position(position + toCopy);
+
+    copied+=toCopy;
+
+  }
+
+}
+
+Location: RebufferingInputStream.java
+
+Content: 
+
+@DontInline protected long readPrimitiveSlowly(int bytes) throws IOException {
+
+  long result=0;
+
+  for (int i=0; i < bytes; i++)   result=(result << 8) | (readByte() & 0xFFL);
+
+  return result;
+
+}
+
+Location: RebufferingInputStream.java
+
+Content: 
+
+public long readUnsignedVInt() throws IOException {
+
+  if (buffer.remaining() < 9)   return VIntCoding.readUnsignedVInt(this);
+
+  byte firstByte=buffer.get();
+
+  if (firstByte >= 0)   return firstByte;
+
+  int extraBytes=VIntCoding.numberOfExtraBytesToRead(firstByte);
+
+  int position=buffer.position();
+
+  int extraBits=extraBytes * 8;
+
+  long retval=buffer.getLong(position);
+
+  if (buffer.order() == ByteOrder.LITTLE_ENDIAN)   retval=Long.reverseBytes(retval);
+
+  buffer.position(position + extraBytes);
+
+  retval>>>=64 - extraBits;
+
+  firstByte&=VIntCoding.firstByteValueMask(extraBytes);
+
+  retval|=(long)firstByte << extraBits;
+
+  return retval;
+
+}
+
+Location: RebufferingInputStream.java
+
+Content: 
+
+public long readVInt() throws IOException {
+
+  return VIntCoding.decodeZigZag64(readUnsignedVInt());
+
+}
+
+Location: RebufferingInputStream.java
+
+Content: 
+
+protected RebufferingInputStream(ByteBuffer buffer){
+
+  Preconditions.checkArgument(buffer == null || buffer.order() == ByteOrder.BIG_ENDIAN,"Buffer must have BIG ENDIAN byte ordering");
+
+  this.buffer=buffer;
+
+}
+

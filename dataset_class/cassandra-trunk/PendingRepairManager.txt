@@ -1,0 +1,318 @@
+Location: PendingRepairManager.java
+
+Content: 
+
+boolean canCleanup(UUID sessionID){
+
+  return !ActiveRepairService.instance.consistent.local.isSessionInProgress(sessionID);
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+private static void checkPendingID(UUID pendingID){
+
+  if (pendingID == null) {
+
+    throw new IllegalSSTableArgumentException("sstable is not pending repair");
+
+  }
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+public Collection<AbstractCompactionTask> createUserDefinedTasks(Collection<SSTableReader> sstables,int gcBefore){
+
+  Map<UUID,List<SSTableReader>> group=sstables.stream().collect(Collectors.groupingBy(s -> s.getSSTableMetadata().pendingRepair));
+
+  return group.entrySet().stream().map(g -> strategies.get(g.getKey()).getUserDefinedTask(g.getValue(),gcBefore)).collect(Collectors.toList());
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+private int getEstimatedRemainingTasks(UUID sessionID,AbstractCompactionStrategy strategy){
+
+  if (canCleanup(sessionID)) {
+
+    return 0;
+
+  }
+
+ else {
+
+    return strategy.getEstimatedRemainingTasks();
+
+  }
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+/** 
+
+ * @return the highest max remaining tasks of all contained compaction strategies
+
+ */
+
+int getMaxEstimatedRemainingTasks(){
+
+  int tasks=0;
+
+  for (  Map.Entry<UUID,AbstractCompactionStrategy> entry : strategies.entrySet()) {
+
+    tasks=Math.max(tasks,getEstimatedRemainingTasks(entry.getKey(),entry.getValue()));
+
+  }
+
+  return tasks;
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+synchronized int getNumPendingRepairFinishedTasks(){
+
+  int count=0;
+
+  for (  UUID sessionID : strategies.keySet()) {
+
+    if (canCleanup(sessionID)) {
+
+      count++;
+
+    }
+
+  }
+
+  return count;
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+AbstractCompactionStrategy getOrCreate(SSTableReader sstable){
+
+  return getOrCreate(sstable.getSSTableMetadata().pendingRepair);
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+AbstractCompactionStrategy getOrCreate(UUID id){
+
+  checkPendingID(id);
+
+  assert id != null;
+
+  AbstractCompactionStrategy strategy=get(id);
+
+  if (strategy == null) {
+
+synchronized (this) {
+
+      strategy=get(id);
+
+      if (strategy == null) {
+
+        logger.debug("Creating {}.{} compaction strategy for pending repair: {}",cfs.metadata.keyspace,cfs.metadata.name,id);
+
+        strategy=cfs.createCompactionStrategyInstance(params);
+
+        strategies=mapBuilder().putAll(strategies).put(id,strategy).build();
+
+      }
+
+    }
+
+  }
+
+  return strategy;
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+@SuppressWarnings("resource") private RepairFinishedCompactionTask getRepairFinishedCompactionTask(UUID sessionID){
+
+  Preconditions.checkState(canCleanup(sessionID));
+
+  AbstractCompactionStrategy compactionStrategy=get(sessionID);
+
+  if (compactionStrategy == null)   return null;
+
+  Set<SSTableReader> sstables=compactionStrategy.getSSTables();
+
+  long repairedAt=ActiveRepairService.instance.consistent.local.getFinalSessionRepairedAt(sessionID);
+
+  LifecycleTransaction txn=cfs.getTracker().tryModify(sstables,OperationType.COMPACTION);
+
+  return txn == null ? null : new RepairFinishedCompactionTask(cfs,txn,sessionID,repairedAt);
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+Set<UUID> getSessions(){
+
+  return strategies.keySet();
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+AbstractCompactionStrategy get(SSTableReader sstable){
+
+  assert sstable.isPendingRepair();
+
+  return get(sstable.getSSTableMetadata().pendingRepair);
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+public boolean hasStrategy(AbstractCompactionStrategy strategy){
+
+  return strategies.values().contains(strategy);
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+private ImmutableMap.Builder<UUID,AbstractCompactionStrategy> mapBuilder(){
+
+  return ImmutableMap.builder();
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+PendingRepairManager(ColumnFamilyStore cfs,CompactionParams params,boolean isTransient){
+
+  this.cfs=cfs;
+
+  this.params=params;
+
+  this.isTransient=isTransient;
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+public CleanupTask releaseSessionData(Collection<UUID> sessionIDs){
+
+  List<Pair<UUID,RepairFinishedCompactionTask>> tasks=new ArrayList<>(sessionIDs.size());
+
+  for (  UUID session : sessionIDs) {
+
+    if (hasDataForSession(session)) {
+
+      tasks.add(Pair.create(session,getRepairFinishedCompactionTask(session)));
+
+    }
+
+  }
+
+  return new CleanupTask(cfs,tasks);
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+private synchronized void removeSessionIfEmpty(UUID sessionID){
+
+  if (!strategies.containsKey(sessionID) || !strategies.get(sessionID).getSSTables().isEmpty())   return;
+
+  logger.debug("Removing compaction strategy for pending repair {} on  {}.{}",sessionID,cfs.metadata.keyspace,cfs.metadata.name);
+
+  strategies=ImmutableMap.copyOf(Maps.filterKeys(strategies,k -> !k.equals(sessionID)));
+
+}
+
+Location: PendingRepairManager.java
+
+Content: 
+
+synchronized void replaceSSTables(Set<SSTableReader> removed,Set<SSTableReader> added){
+
+  if (removed.isEmpty() && added.isEmpty())   return;
+
+  Map<UUID,Pair<Set<SSTableReader>,Set<SSTableReader>>> groups=new HashMap<>();
+
+  for (  SSTableReader sstable : removed) {
+
+    UUID sessionID=sstable.getSSTableMetadata().pendingRepair;
+
+    if (!groups.containsKey(sessionID)) {
+
+      groups.put(sessionID,Pair.create(new HashSet<>(),new HashSet<>()));
+
+    }
+
+    groups.get(sessionID).left.add(sstable);
+
+  }
+
+  for (  SSTableReader sstable : added) {
+
+    UUID sessionID=sstable.getSSTableMetadata().pendingRepair;
+
+    if (!groups.containsKey(sessionID)) {
+
+      groups.put(sessionID,Pair.create(new HashSet<>(),new HashSet<>()));
+
+    }
+
+    groups.get(sessionID).right.add(sstable);
+
+  }
+
+  for (  Map.Entry<UUID,Pair<Set<SSTableReader>,Set<SSTableReader>>> entry : groups.entrySet()) {
+
+    AbstractCompactionStrategy strategy=getOrCreate(entry.getKey());
+
+    Set<SSTableReader> groupRemoved=entry.getValue().left;
+
+    Set<SSTableReader> groupAdded=entry.getValue().right;
+
+    if (!groupRemoved.isEmpty())     strategy.replaceSSTables(groupRemoved,groupAdded);
+
+ else     strategy.addSSTables(groupAdded);
+
+    removeSessionIfEmpty(entry.getKey());
+
+  }
+
+}
+

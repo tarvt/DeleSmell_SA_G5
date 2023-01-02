@@ -1,0 +1,166 @@
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+/** 
+
+ * Creates a new read command that query all the data in the table.
+
+ * @param metadata the table to query.
+
+ * @param nowInSec the time in seconds to use are "now" for this query.
+
+ * @return a newly created read command that queries everything in the table.
+
+ */
+
+public static PartitionRangeReadCommand allDataRead(TableMetadata metadata,int nowInSec){
+
+  return new PartitionRangeReadCommand(false,0,false,metadata,nowInSec,ColumnFilter.all(metadata),RowFilter.NONE,DataLimits.NONE,DataRange.allData(metadata.partitioner),null);
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+private UnfilteredPartitionIterator checkCacheFilter(UnfilteredPartitionIterator iter,final ColumnFamilyStore cfs){
+
+class CacheFilter extends Transformation {
+
+    @Override public BaseRowIterator applyToPartition(    BaseRowIterator iter){
+
+      DecoratedKey dk=iter.partitionKey();
+
+      CachedPartition cached=cfs.getRawCachedPartition(dk);
+
+      ClusteringIndexFilter filter=dataRange().clusteringIndexFilter(dk);
+
+      if (cached != null && cfs.isFilterFullyCoveredBy(filter,limits(),cached,nowInSec(),iter.metadata().enforceStrictLiveness())) {
+
+        iter.close();
+
+        return filter.getUnfilteredRowIterator(columnFilter(),cached);
+
+      }
+
+      return iter;
+
+    }
+
+  }
+
+  return Transformation.apply(iter,new CacheFilter());
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+public static PartitionRangeReadCommand create(TableMetadata metadata,int nowInSec,ColumnFilter columnFilter,RowFilter rowFilter,DataLimits limits,DataRange dataRange){
+
+  return new PartitionRangeReadCommand(false,0,false,metadata,nowInSec,columnFilter,rowFilter,limits,dataRange,findIndex(metadata,rowFilter));
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+/** 
+
+ * Returns an equivalent command but that only queries data within the provided range.
+
+ * @param range the sub-range to restrict the command to. This method <b>assumes</b> that this is a proper sub-rangeof the command this is applied to.
+
+ * @param isRangeContinuation whether {@code range} is a direct continuation of whatever previous range we havequeried. This matters for the  {@code DataLimits} that may contain states when we do paging and in the context ofparallel queries: that state only make sense if the range queried is indeed the follow-up of whatever range we've previously query (that yield said state). In practice this means that ranges for which  {@code isRangeContinuation}is false may have to be slightly pessimistic when counting data and may include a little bit than necessary, and this should be dealt with post-query (in the case of  {@code StorageProxy.getRangeSlice()}, which uses this method for replica queries, this is dealt with by re-counting results on the coordinator). Note that if this is the first range we queried, then the  {@code DataLimits} will have not state and the value of this parameter doesn'tmatter.
+
+ */
+
+public PartitionRangeReadCommand forSubRange(AbstractBounds<PartitionPosition> range,boolean isRangeContinuation){
+
+  return new PartitionRangeReadCommand(isDigestQuery(),digestVersion(),acceptsTransient(),metadata(),nowInSec(),columnFilter(),rowFilter(),isRangeContinuation ? limits() : limits().withoutState(),dataRange().forSubRange(range),indexMetadata());
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+public boolean isNamesQuery(){
+
+  return dataRange.isNamesQuery();
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+/** 
+
+ * Creates a new  {@code SSTableReadsListener} to update the SSTables read counts.
+
+ * @return a new {@code SSTableReadsListener} to update the SSTables read counts.
+
+ */
+
+private static SSTableReadsListener newReadCountUpdater(){
+
+  return new SSTableReadsListener(){
+
+    @Override public void onScanningStarted(    SSTableReader sstable){
+
+      sstable.incrementReadCount();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+private PartitionRangeReadCommand(boolean isDigest,int digestVersion,boolean acceptsTransient,TableMetadata metadata,int nowInSec,ColumnFilter columnFilter,RowFilter rowFilter,DataLimits limits,DataRange dataRange,IndexMetadata index){
+
+  super(Kind.PARTITION_RANGE,isDigest,digestVersion,acceptsTransient,metadata,nowInSec,columnFilter,rowFilter,limits,index);
+
+  this.dataRange=dataRange;
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+/** 
+
+ * Allow to post-process the result of the query after it has been reconciled on the coordinator but before it is passed to the CQL layer to return the ResultSet. See CASSANDRA-8717 for why this exists.
+
+ */
+
+public PartitionIterator postReconciliationProcessing(PartitionIterator result){
+
+  ColumnFamilyStore cfs=Keyspace.open(metadata().keyspace).getColumnFamilyStore(metadata().name);
+
+  Index index=getIndex(cfs);
+
+  return index == null ? result : index.postProcessorFor(this).apply(result,this);
+
+}
+
+Location: PartitionRangeReadCommand.java
+
+Content: 
+
+@Override public PartitionRangeReadCommand withUpdatedLimitsAndDataRange(DataLimits newLimits,DataRange newDataRange){
+
+  return new PartitionRangeReadCommand(isDigestQuery(),digestVersion(),acceptsTransient(),metadata(),nowInSec(),columnFilter(),rowFilter(),newLimits,newDataRange,indexMetadata());
+
+}
+

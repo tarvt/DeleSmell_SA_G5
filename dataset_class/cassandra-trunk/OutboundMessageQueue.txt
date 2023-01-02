@@ -1,0 +1,394 @@
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Add the provided message to the queue. Always succeeds.
+
+ */
+
+void add(Message<?> m){
+
+  maybePruneExpired();
+
+  externalQueue.offer(m);
+
+  nextExpirationDeadlineUpdater.accumulateAndGet(this,maybeUpdateEarliestExpiresAt(clock.now(),m.expiresAtNanos()),Math::min);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Try to obtain the lock; if this fails, a callback will be registered to be invoked when the lock is relinquished. This callback will run WITHOUT ownership of the lock, so must re-obtain the lock.
+
+ * @return null if failed to obtain the lock
+
+ */
+
+WithLock lockOrCallback(long nowNanos,Runnable callbackIfDeferred){
+
+  if (!lockOrCallback(callbackIfDeferred))   return null;
+
+  return new WithLock(nowNanos);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Try to obtain the lock; if this fails, a callback will be registered to be invoked when the lock is relinquished. This callback will run WITHOUT ownership of the lock, so must re-obtain the lock.
+
+ * @return true iff the caller now owns the lock
+
+ */
+
+private boolean lockOrCallback(Runnable callbackWhenAvailable){
+
+  if (callbackWhenAvailable == null)   return tryLock();
+
+  while (true) {
+
+    Locked current=locked;
+
+    if (current == null && lockedUpdater.compareAndSet(this,null,LOCKED))     return true;
+
+ else     if (current != null && lockedUpdater.compareAndSet(this,current,current.andThen(callbackWhenAvailable)))     return false;
+
+  }
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Call periodically if cannot expect to promptly invoke consume()
+
+ */
+
+boolean maybePruneExpired(){
+
+  return maybePruneExpired(clock.now());
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+private boolean maybePruneExpired(long nowNanos){
+
+  if (clock.isAfter(nowNanos,nextExpirationDeadline))   return tryRun(() -> pruneWithLock(nowNanos));
+
+  return false;
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Update  {@code earliestExpiresAt} with the given {@code candidateTime} if less than the current value ORif the current value is past the current  {@code nowNanos} time: this last condition is needed to make sure we keeptracking the earliest expiry time even while we prune previous values, so that at the end of the pruning task, we can reconcile between the earliest expiry time recorded at pruning and the one recorded at insert time.
+
+ */
+
+private long maybeUpdateEarliestExpiresAt(long nowNanos,long candidateTime){
+
+  return earliestExpiresAtUpdater.accumulateAndGet(this,candidateTime,(oldTime,newTime) -> {
+
+    if (clock.isAfter(nowNanos,oldTime))     return newTime;
+
+ else     return min(oldTime,newTime);
+
+  }
+
+);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Update  {@code nextExpirationDeadline} with the given {@code candidateDeadline} if less than the currentdeadline, unless the current deadline is passed in relation to  {@code nowNanos}: this is needed to resolve a race where both  {@link #add(org.apache.cassandra.net.Message) } and {@link #pruneInternalQueueWithLock(long) }try to update the expiration deadline.
+
+ */
+
+private long maybeUpdateNextExpirationDeadline(long nowNanos,long candidateDeadline){
+
+  return nextExpirationDeadlineUpdater.accumulateAndGet(this,candidateDeadline,(oldDeadline,newDeadline) -> {
+
+    if (clock.isAfter(nowNanos,oldDeadline))     return newDeadline;
+
+ else     return min(oldDeadline,newDeadline);
+
+  }
+
+);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+@VisibleForTesting long nextExpirationIn(long nowNanos,TimeUnit unit){
+
+  return unit.convert(nextExpirationDeadline - nowNanos,TimeUnit.NANOSECONDS);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+OutboundMessageQueue(MonotonicClock clock,MessageConsumer<RuntimeException> onExpired){
+
+  this.clock=clock;
+
+  this.onExpired=onExpired;
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+private void pruneInternalQueueWithLock(long nowNanos){
+
+class Pruner implements PrunableArrayQueue.Pruner<Message<?>> {
+
+    private long earliestExpiresAt=Long.MAX_VALUE;
+
+    public boolean shouldPrune(    Message<?> message){
+
+      return !shouldSend(message,clock,nowNanos);
+
+    }
+
+    public void onPruned(    Message<?> message){
+
+      onExpired.accept(message);
+
+    }
+
+    public void onKept(    Message<?> message){
+
+      earliestExpiresAt=min(message.expiresAtNanos(),earliestExpiresAt);
+
+    }
+
+  }
+
+  Pruner pruner=new Pruner();
+
+  internalQueue.prune(pruner);
+
+  maybeUpdateNextExpirationDeadline(nowNanos,maybeUpdateEarliestExpiresAt(nowNanos,pruner.earliestExpiresAt));
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+private void pruneWithLock(long nowNanos){
+
+  externalQueue.drain(internalQueue::offer);
+
+  pruneInternalQueueWithLock(nowNanos);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Remove the provided Message from the queue, if present. WARNING: This is a blocking call.
+
+ */
+
+boolean remove(Message<?> remove){
+
+  if (remove == null)   throw new NullPointerException();
+
+  RemoveRunner runner;
+
+  while (true) {
+
+    runner=removeRunner;
+
+    if (runner != null && runner.undo(remove))     break;
+
+    if (runner == null && removeRunnerUpdater.compareAndSet(this,null,runner=new RemoveRunner())) {
+
+      runner.undo(remove);
+
+      runEventually(runner);
+
+      break;
+
+    }
+
+  }
+
+  Uninterruptibles.awaitUninterruptibly(runner.done);
+
+  return runner.removed.contains(remove);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Try to obtain the lock. If successful, invoke the provided consumer immediately, otherwise register it to be invoked when the lock is relinquished.
+
+ */
+
+void runEventually(Consumer<WithLock> runEventually){
+
+  try (WithLock withLock=lockOrCallback(clock.now(),() -> runEventually(runEventually))){
+
+    if (withLock != null)     runEventually.accept(withLock);
+
+  }
+
+ }
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * Run runOnceLocked either immediately in the calling thread if we can obtain the lock, or ask the lock's current owner attempt to run it when the lock is released.  This may be passed between a sequence of owners, as the present owner releases the lock before trying to acquire it again and execute the task.
+
+ */
+
+private void runEventually(Runnable runEventually){
+
+  if (!lockOrCallback(() -> runEventually(runEventually)))   return;
+
+  try {
+
+    runEventually.run();
+
+  }
+
+  finally {
+
+    unlock();
+
+  }
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+private static boolean shouldSend(Message<?> m,MonotonicClock clock,long nowNanos){
+
+  return !clock.isAfter(nowNanos,m.expiresAtNanos());
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * @return true iff the caller now owns the lock
+
+ */
+
+private boolean tryLock(){
+
+  return locked == null && lockedUpdater.compareAndSet(this,null,LOCKED);
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * If succeeds to obtain the lock, polls the queue, otherwise registers the provided callback to be invoked when the lock is relinquished. May return null when the queue is non-empty - if the lock could not be acquired.
+
+ */
+
+Message<?> tryPoll(long nowNanos,Runnable elseIfDeferred){
+
+  try (WithLock withLock=lockOrCallback(nowNanos,elseIfDeferred)){
+
+    if (withLock == null)     return null;
+
+    return withLock.poll();
+
+  }
+
+ }
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+/** 
+
+ * If we can immediately obtain the lock, execute runIfLocked and return true; otherwise do nothing and return false.
+
+ */
+
+private boolean tryRun(Runnable runIfAvailable){
+
+  if (!tryLock())   return false;
+
+  try {
+
+    runIfAvailable.run();
+
+    return true;
+
+  }
+
+  finally {
+
+    unlock();
+
+  }
+
+}
+
+Location: OutboundMessageQueue.java
+
+Content: 
+
+private void unlock(){
+
+  Locked locked=lockedUpdater.getAndSet(this,null);
+
+  locked.run();
+
+}
+

@@ -1,0 +1,34 @@
+Location: ReadCommandVerbHandler.java
+
+Content: 
+
+private void validateTransientStatus(Message<ReadCommand> message){
+
+  ReadCommand command=message.payload;
+
+  Token token;
+
+  if (command instanceof SinglePartitionReadCommand)   token=((SinglePartitionReadCommand)command).partitionKey().getToken();
+
+ else   token=((PartitionRangeReadCommand)command).dataRange().keyRange().right.getToken();
+
+  Replica replica=Keyspace.open(command.metadata().keyspace).getReplicationStrategy().getLocalReplicaFor(token);
+
+  if (replica == null) {
+
+    logger.warn("Received a read request from {} for a range that is not owned by the current replica {}.",message.from(),command);
+
+    return;
+
+  }
+
+  if (!command.acceptsTransient() && replica.isTransient()) {
+
+    MessagingService.instance().metrics.recordDroppedMessage(message,message.elapsedSinceCreated(NANOSECONDS),NANOSECONDS);
+
+    throw new InvalidRequestException(String.format("Attempted to serve %s data request from %s node in %s",command.acceptsTransient() ? "transient" : "full",replica.isTransient() ? "transient" : "full",this));
+
+  }
+
+}
+

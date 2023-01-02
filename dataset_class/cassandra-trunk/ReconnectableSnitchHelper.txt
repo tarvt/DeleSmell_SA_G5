@@ -1,0 +1,154 @@
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public void beforeChange(InetAddressAndPort endpoint,EndpointState currentState,ApplicationState newStateKey,VersionedValue newValue){
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public void onAlive(InetAddressAndPort endpoint,EndpointState state){
+
+  VersionedValue internalIP=state.getApplicationState(ApplicationState.INTERNAL_IP);
+
+  VersionedValue internalIPAndPorts=state.getApplicationState(ApplicationState.INTERNAL_ADDRESS_AND_PORT);
+
+  if (preferLocal && internalIP != null)   reconnect(endpoint,internalIPAndPorts != null ? internalIPAndPorts : internalIP);
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public void onChange(InetAddressAndPort endpoint,ApplicationState state,VersionedValue value){
+
+  if (preferLocal && !Gossiper.instance.isDeadState(Gossiper.instance.getEndpointStateForEndpoint(endpoint))) {
+
+    if (state == ApplicationState.INTERNAL_ADDRESS_AND_PORT) {
+
+      reconnect(endpoint,value);
+
+    }
+
+ else     if (state == ApplicationState.INTERNAL_IP && null == Gossiper.instance.getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.INTERNAL_ADDRESS_AND_PORT)) {
+
+      reconnect(endpoint,value);
+
+    }
+
+  }
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public void onDead(InetAddressAndPort endpoint,EndpointState state){
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public void onJoin(InetAddressAndPort endpoint,EndpointState epState){
+
+  if (preferLocal && !Gossiper.instance.isDeadState(epState)) {
+
+    VersionedValue address=epState.getApplicationState(ApplicationState.INTERNAL_ADDRESS_AND_PORT);
+
+    if (address == null) {
+
+      address=epState.getApplicationState(ApplicationState.INTERNAL_ADDRESS_AND_PORT);
+
+    }
+
+    if (address != null) {
+
+      reconnect(endpoint,address);
+
+    }
+
+  }
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public void onRemove(InetAddressAndPort endpoint){
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public void onRestart(InetAddressAndPort endpoint,EndpointState state){
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+public ReconnectableSnitchHelper(IEndpointSnitch snitch,String localDc,boolean preferLocal){
+
+  this.snitch=snitch;
+
+  this.localDc=localDc;
+
+  this.preferLocal=preferLocal;
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+@VisibleForTesting static void reconnect(InetAddressAndPort publicAddress,InetAddressAndPort localAddress,IEndpointSnitch snitch,String localDc){
+
+  if (!new OutboundConnectionSettings(publicAddress,localAddress).withDefaults(ConnectionCategory.MESSAGING).authenticate()) {
+
+    logger.debug("InternodeAuthenticator said don't reconnect to {} on {}",publicAddress,localAddress);
+
+    return;
+
+  }
+
+  if (snitch.getDatacenter(publicAddress).equals(localDc)) {
+
+    MessagingService.instance().maybeReconnectWithNewIp(publicAddress,localAddress);
+
+    logger.debug("Initiated reconnect to an Internal IP {} for the {}",localAddress,publicAddress);
+
+  }
+
+}
+
+Location: ReconnectableSnitchHelper.java
+
+Content: 
+
+private void reconnect(InetAddressAndPort publicAddress,VersionedValue localAddressValue){
+
+  try {
+
+    reconnect(publicAddress,InetAddressAndPort.getByName(localAddressValue.value),snitch,localDc);
+
+  }
+
+ catch (  UnknownHostException e) {
+
+    logger.error("Error in getting the IP address resolved: ",e);
+
+  }
+
+}
+

@@ -1,0 +1,290 @@
+Location: RequestCallbacks.java
+
+Content: 
+
+public void addWithExpiration(AbstractWriteResponseHandler<?> cb,Message<?> message,Replica to,ConsistencyLevel consistencyLevel,boolean allowHints){
+
+  assert message.verb() == Verb.MUTATION_REQ || message.verb() == Verb.COUNTER_MUTATION_REQ || message.verb() == Verb.PAXOS_COMMIT_REQ;
+
+  CallbackInfo previous=callbacks.put(key(message.id(),to.endpoint()),new WriteCallbackInfo(message,to,cb,consistencyLevel,allowHints));
+
+  assert previous == null : format("Callback already exists for id %d/%s! (%s)",message.id(),to.endpoint(),previous);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+/** 
+
+ * Register the provided  {@link RequestCallback}, inferring expiry and id from the provided  {@link Message}.
+
+ */
+
+void addWithExpiration(RequestCallback cb,Message message,InetAddressAndPort to){
+
+  assert message.verb() != Verb.MUTATION_REQ && message.verb() != Verb.COUNTER_MUTATION_REQ && message.verb() != Verb.PAXOS_COMMIT_REQ;
+
+  CallbackInfo previous=callbacks.put(key(message.id(),to),new CallbackInfo(message,to,cb));
+
+  assert previous == null : format("Callback already exists for id %d/%s! (%s)",message.id(),to,previous);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+void awaitTerminationUntil(long deadlineNanos) throws TimeoutException, InterruptedException {
+
+  if (!executor.isTerminated()) {
+
+    long wait=deadlineNanos - System.nanoTime();
+
+    if (wait <= 0 || !executor.awaitTermination(wait,NANOSECONDS))     throw new TimeoutException();
+
+  }
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+private void forceExpire(){
+
+  for (  Map.Entry<CallbackKey,CallbackInfo> entry : callbacks.entrySet())   if (callbacks.remove(entry.getKey(),entry.getValue()))   onExpired(entry.getValue());
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+/** 
+
+ * @return the registered {@link CallbackInfo} for this id and peer, or {@code null} if unset or expired.
+
+ */
+
+@Nullable CallbackInfo get(long id,InetAddressAndPort peer){
+
+  return callbacks.get(key(id,peer));
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+private static CallbackKey key(long id,InetAddressAndPort peer){
+
+  return new CallbackKey(id,peer);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+@Override public void onDiscardOnClose(Message<?> message,InetAddressAndPort peer){
+
+  removeAndExpire(message,peer);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+private void onExpired(CallbackInfo info){
+
+  messagingService.latencySubscribers.maybeAdd(info.callback,info.peer,info.timeout(),NANOSECONDS);
+
+  InternodeOutboundMetrics.totalExpiredCallbacks.mark();
+
+  messagingService.markExpiredCallback(info.peer);
+
+  if (info.invokeOnFailure())   INTERNAL_RESPONSE.submit(() -> info.callback.onFailure(info.peer,RequestFailureReason.TIMEOUT));
+
+  if (info.shouldHint()) {
+
+    WriteCallbackInfo writeCallbackInfo=((WriteCallbackInfo)info);
+
+    Mutation mutation=writeCallbackInfo.mutation();
+
+    StorageProxy.submitHint(mutation,writeCallbackInfo.getReplica(),null);
+
+  }
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+@Override public void onExpired(Message<?> message,InetAddressAndPort peer){
+
+  removeAndExpire(message,peer);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+@Override public void onFailedSerialize(Message<?> message,InetAddressAndPort peer,int messagingVersion,int bytesWrittenToNetwork,Throwable failure){
+
+  removeAndExpire(message,peer);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+@Override public void onOverloaded(Message<?> message,InetAddressAndPort peer){
+
+  removeAndExpire(message,peer);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+private void removeAndExpire(long id,InetAddressAndPort peer){
+
+  CallbackInfo ci=remove(id,peer);
+
+  if (null != ci)   onExpired(ci);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+private void removeAndExpire(Message message,InetAddressAndPort peer){
+
+  removeAndExpire(message.id(),peer);
+
+  ForwardingInfo forwardTo=message.forwardTo();
+
+  if (null != forwardTo)   forwardTo.forEach(this::removeAndExpire);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+@VisibleForTesting public void removeAndRespond(long id,InetAddressAndPort peer,Message message){
+
+  CallbackInfo ci=remove(id,peer);
+
+  if (null != ci)   ci.callback.onResponse(message);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+/** 
+
+ * Remove and return the  {@link CallbackInfo} associated with given id and peer, if known.
+
+ */
+
+@Nullable CallbackInfo remove(long id,InetAddressAndPort peer){
+
+  return callbacks.remove(key(id,peer));
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+RequestCallbacks(MessagingService messagingService){
+
+  this.messagingService=messagingService;
+
+  long expirationInterval=DatabaseDescriptor.getMinRpcTimeout(NANOSECONDS) / 2;
+
+  executor.scheduleWithFixedDelay(this::expire,expirationInterval,expirationInterval,NANOSECONDS);
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+<T>IVersionedAsymmetricSerializer<?,T> responseSerializer(long id,InetAddressAndPort peer){
+
+  CallbackInfo info=get(id,peer);
+
+  return info == null ? null : info.responseVerb.serializer();
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+void shutdownGracefully(){
+
+  hongshuai();
+
+  long start=preciseTime.now();
+
+  int n=0;
+
+  for (  Map.Entry<CallbackKey,CallbackInfo> entry : callbacks.entrySet()) {
+
+    if (entry.getValue().isReadyToDieAt(start)) {
+
+      if (callbacks.remove(entry.getKey(),entry.getValue())) {
+
+        n++;
+
+        onExpired(entry.getValue());
+
+      }
+
+    }
+
+  }
+
+  logger.trace("Expired {} entries",n);
+
+  if (!callbacks.isEmpty())   executor.schedule(this::shutdownGracefully,100L,MILLISECONDS);
+
+ else   executor.shutdownNow();
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+void shutdownNow(boolean expireCallbacks){
+
+  executor.shutdownNow();
+
+  if (expireCallbacks)   forceExpire();
+
+}
+
+Location: RequestCallbacks.java
+
+Content: 
+
+@VisibleForTesting public void unsafeClear(){
+
+  callbacks.clear();
+
+}
+

@@ -1,0 +1,182 @@
+Location: PrunableArrayQueue.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private void doubleCapacity(){
+
+  assert head == tail;
+
+  int newCapacity=capacity << 1;
+
+  E[] newBuffer=(E[])new Object[newCapacity];
+
+  int headPortionLen=capacity - head;
+
+  System.arraycopy(buffer,head,newBuffer,0,headPortionLen);
+
+  System.arraycopy(buffer,0,newBuffer,headPortionLen,tail);
+
+  head=0;
+
+  tail=capacity;
+
+  capacity=newCapacity;
+
+  mask=newCapacity - 1;
+
+  buffer=newBuffer;
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+private static int findNextPositivePowerOfTwo(int value){
+
+  return 1 << (32 - Integer.numberOfLeadingZeros(value - 1));
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+boolean isEmpty(){
+
+  return head == tail;
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+@SuppressWarnings("UnusedReturnValue") boolean offer(E e){
+
+  buffer[tail]=e;
+
+  if ((tail=(tail + 1) & mask) == head)   doubleCapacity();
+
+  return true;
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+E peek(){
+
+  return buffer[head];
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+E poll(){
+
+  E result=buffer[head];
+
+  if (null == result)   return null;
+
+  buffer[head]=null;
+
+  head=(head + 1) & mask;
+
+  return result;
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+@SuppressWarnings("unchecked") PrunableArrayQueue(int requestedCapacity){
+
+  capacity=Math.max(8,findNextPositivePowerOfTwo(requestedCapacity));
+
+  mask=capacity - 1;
+
+  buffer=(E[])new Object[capacity];
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+/** 
+
+ * Prunes the queue using the specified  {@link Pruner}
+
+ * @return count of removed elements.
+
+ */
+
+int prune(Pruner<E> pruner){
+
+  E e;
+
+  int removed=0;
+
+  try {
+
+    int size=size();
+
+    for (int i=0; i < size; i++) {
+
+      int k=(tail - 1 - i) & mask;
+
+      e=buffer[k];
+
+      if (pruner.shouldPrune(e)) {
+
+        buffer[k]=null;
+
+        removed++;
+
+        pruner.onPruned(e);
+
+      }
+
+ else {
+
+        if (removed > 0) {
+
+          buffer[(k + removed) & mask]=e;
+
+          buffer[k]=null;
+
+        }
+
+        pruner.onKept(e);
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    head=(head + removed) & mask;
+
+  }
+
+  return removed;
+
+}
+
+Location: PrunableArrayQueue.java
+
+Content: 
+
+int size(){
+
+  return (tail - head) & mask;
+
+}
+

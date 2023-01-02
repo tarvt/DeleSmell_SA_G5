@@ -1,0 +1,128 @@
+Location: OutboundConnectionInitiator.java
+
+Content: 
+
+/** 
+
+ * Create the  {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,and thus does not block.
+
+ */
+
+private Bootstrap createBootstrap(EventLoop eventLoop){
+
+  Bootstrap bootstrap=settings.socketFactory.newClientBootstrap(eventLoop,settings.tcpUserTimeoutInMS).option(ChannelOption.ALLOCATOR,GlobalBufferPoolAllocator.instance).option(ChannelOption.CONNECT_TIMEOUT_MILLIS,settings.tcpConnectTimeoutInMS).option(ChannelOption.SO_KEEPALIVE,true).option(ChannelOption.SO_REUSEADDR,true).option(ChannelOption.TCP_NODELAY,settings.tcpNoDelay).option(ChannelOption.MESSAGE_SIZE_ESTIMATOR,NoSizeEstimator.instance).handler(new Initializer());
+
+  if (settings.socketSendBufferSizeInBytes > 0)   bootstrap.option(ChannelOption.SO_SNDBUF,settings.socketSendBufferSizeInBytes);
+
+  InetAddressAndPort remoteAddress=settings.connectTo;
+
+  bootstrap.remoteAddress(new InetSocketAddress(remoteAddress.address,remoteAddress.port));
+
+  return bootstrap;
+
+}
+
+Location: OutboundConnectionInitiator.java
+
+Content: 
+
+/** 
+
+ * Initiate a connection with the requested messaging version. if the other node supports a newer version, or doesn't support this version, we will fail to connect and try again with the version they reported The returned  {@code Future} is guaranteed to be completed on the supplied eventLoop.
+
+ */
+
+static Future<Result<MessagingSuccess>> initiateMessaging(EventLoop eventLoop,ConnectionType type,OutboundConnectionSettings settings,int requestMessagingVersion,Promise<Result<MessagingSuccess>> result){
+
+  return new OutboundConnectionInitiator<>(type,settings,requestMessagingVersion,result).initiate(eventLoop);
+
+}
+
+Location: OutboundConnectionInitiator.java
+
+Content: 
+
+/** 
+
+ * Initiate a connection with the requested messaging version. if the other node supports a newer version, or doesn't support this version, we will fail to connect and try again with the version they reported The returned  {@code Future} is guaranteed to be completed on the supplied eventLoop.
+
+ */
+
+public static Future<Result<StreamingSuccess>> initiateStreaming(EventLoop eventLoop,OutboundConnectionSettings settings,int requestMessagingVersion){
+
+  return new OutboundConnectionInitiator<StreamingSuccess>(STREAMING,settings,requestMessagingVersion,new AsyncPromise<>(eventLoop)).initiate(eventLoop);
+
+}
+
+Location: OutboundConnectionInitiator.java
+
+Content: 
+
+private Future<Result<SuccessType>> initiate(EventLoop eventLoop){
+
+  if (logger.isTraceEnabled())   logger.trace("creating outbound bootstrap to {}, requestVersion: {}",settings,requestMessagingVersion);
+
+  if (!settings.authenticate()) {
+
+    MessagingService.instance().interruptOutbound(settings.to);
+
+    return new FailedFuture<>(eventLoop,new IOException("authentication failed to " + settings.connectToId()));
+
+  }
+
+  AtomicBoolean timedout=new AtomicBoolean();
+
+  Future<Void> bootstrap=createBootstrap(eventLoop).connect().addListener(future -> {
+
+    eventLoop.execute(() -> {
+
+      if (!future.isSuccess()) {
+
+        if (future.isCancelled() && !timedout.get())         resultPromise.cancel(true);
+
+ else         if (future.isCancelled())         resultPromise.tryFailure(new IOException("Timeout handshaking with " + settings.connectToId()));
+
+ else         resultPromise.tryFailure(future.cause());
+
+      }
+
+    }
+
+);
+
+  }
+
+);
+
+  ScheduledFuture<?> timeout=eventLoop.schedule(() -> {
+
+    timedout.set(true);
+
+    bootstrap.cancel(false);
+
+  }
+
+,TIMEOUT_MILLIS,MILLISECONDS);
+
+  bootstrap.addListener(future -> timeout.cancel(true));
+
+  return new FutureResult<>(resultPromise,bootstrap);
+
+}
+
+Location: OutboundConnectionInitiator.java
+
+Content: 
+
+private OutboundConnectionInitiator(ConnectionType type,OutboundConnectionSettings settings,int requestMessagingVersion,Promise<Result<SuccessType>> resultPromise){
+
+  this.type=type;
+
+  this.requestMessagingVersion=requestMessagingVersion;
+
+  this.settings=settings;
+
+  this.resultPromise=resultPromise;
+
+}
+

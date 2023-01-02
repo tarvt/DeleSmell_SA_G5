@@ -1,0 +1,660 @@
+Location: ReplicaPlans.java
+
+Content: 
+
+static void assureSufficientLiveReplicasForRead(Keyspace keyspace,ConsistencyLevel consistencyLevel,Endpoints<?> liveReplicas) throws UnavailableException {
+
+  assureSufficientLiveReplicas(keyspace,consistencyLevel,liveReplicas,consistencyLevel.blockFor(keyspace),1);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+static void assureSufficientLiveReplicasForWrite(Keyspace keyspace,ConsistencyLevel consistencyLevel,Endpoints<?> allLive,Endpoints<?> pendingWithDown) throws UnavailableException {
+
+  assureSufficientLiveReplicas(keyspace,consistencyLevel,allLive,consistencyLevel.blockForWrite(keyspace,pendingWithDown),0);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+static void assureSufficientLiveReplicas(Keyspace keyspace,ConsistencyLevel consistencyLevel,Endpoints<?> allLive,int blockFor,int blockForFullReplicas) throws UnavailableException {
+
+switch (consistencyLevel) {
+
+case ANY:
+
+    break;
+
+case LOCAL_ONE:
+
+{
+
+    Replicas.ReplicaCount localLive=countInOurDc(allLive);
+
+    if (!localLive.hasAtleast(blockFor,blockForFullReplicas))     throw UnavailableException.create(consistencyLevel,1,blockForFullReplicas,localLive.allReplicas(),localLive.fullReplicas());
+
+    break;
+
+  }
+
+case LOCAL_QUORUM:
+
+{
+
+  Replicas.ReplicaCount localLive=countInOurDc(allLive);
+
+  if (!localLive.hasAtleast(blockFor,blockForFullReplicas)) {
+
+    if (logger.isTraceEnabled()) {
+
+      logger.trace(String.format("Local replicas %s are insufficient to satisfy LOCAL_QUORUM requirement of %d live replicas and %d full replicas in '%s'",allLive.filter(InOurDcTester.replicas()),blockFor,blockForFullReplicas,DatabaseDescriptor.getLocalDataCenter()));
+
+    }
+
+    throw UnavailableException.create(consistencyLevel,blockFor,blockForFullReplicas,localLive.allReplicas(),localLive.fullReplicas());
+
+  }
+
+  break;
+
+}
+
+case EACH_QUORUM:
+
+if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy) {
+
+int total=0;
+
+int totalFull=0;
+
+Collection<String> dcs=((NetworkTopologyStrategy)keyspace.getReplicationStrategy()).getDatacenters();
+
+for (ObjectObjectCursor<String,Replicas.ReplicaCount> entry : countPerDc(dcs,allLive)) {
+
+  int dcBlockFor=localQuorumFor(keyspace,entry.key);
+
+  Replicas.ReplicaCount dcCount=entry.value;
+
+  if (!dcCount.hasAtleast(dcBlockFor,0))   throw UnavailableException.create(consistencyLevel,entry.key,dcBlockFor,dcCount.allReplicas(),0,dcCount.fullReplicas());
+
+  totalFull+=dcCount.fullReplicas();
+
+  total+=dcCount.allReplicas();
+
+}
+
+if (totalFull < blockForFullReplicas) throw UnavailableException.create(consistencyLevel,blockFor,total,blockForFullReplicas,totalFull);
+
+break;
+
+}
+
+default :
+
+int live=allLive.size();
+
+int full=Replicas.countFull(allLive);
+
+if (live < blockFor || full < blockForFullReplicas) {
+
+if (logger.isTraceEnabled()) logger.trace("Live nodes {} do not satisfy ConsistencyLevel ({} required)",Iterables.toString(allLive),blockFor);
+
+throw UnavailableException.create(consistencyLevel,blockFor,blockForFullReplicas,live,full);
+
+}
+
+break;
+
+}
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+private static <E extends Endpoints<E>>E candidatesForRead(ConsistencyLevel consistencyLevel,E liveNaturalReplicas){
+
+  return consistencyLevel.isDatacenterLocal() ? liveNaturalReplicas.filter(InOurDcTester.replicas()) : liveNaturalReplicas;
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+private static <E extends Endpoints<E>>E contactForEachQuorumRead(Keyspace keyspace,E candidates){
+
+  assert keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy;
+
+  ObjectIntHashMap<String> perDc=eachQuorumForRead(keyspace);
+
+  final IEndpointSnitch snitch=DatabaseDescriptor.getEndpointSnitch();
+
+  return candidates.filter(replica -> {
+
+    String dc=snitch.getDatacenter(replica);
+
+    return perDc.addTo(dc,-1) >= 0;
+
+  }
+
+);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+private static <E extends Endpoints<E>>E contactForRead(Keyspace keyspace,ConsistencyLevel consistencyLevel,boolean alwaysSpeculate,E candidates){
+
+  if (consistencyLevel == EACH_QUORUM && keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)   return contactForEachQuorumRead(keyspace,candidates);
+
+  int count=consistencyLevel.blockFor(keyspace) + (alwaysSpeculate ? 1 : 0);
+
+  return candidates.subList(0,Math.min(count,candidates.size()));
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+private static Collection<InetAddressAndPort> filterBatchlogEndpoints(String localRack,Multimap<String,InetAddressAndPort> endpoints){
+
+  return filterBatchlogEndpoints(localRack,endpoints,Collections::shuffle,FailureDetector.isEndpointAlive,ThreadLocalRandom.current()::nextInt);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+@VisibleForTesting public static Collection<InetAddressAndPort> filterBatchlogEndpoints(String localRack,Multimap<String,InetAddressAndPort> endpoints,Consumer<List<?>> shuffle,Predicate<InetAddressAndPort> isAlive,Function<Integer,Integer> indexPicker){
+
+  if (endpoints.values().size() == 1)   return endpoints.values();
+
+  ListMultimap<String,InetAddressAndPort> validated=ArrayListMultimap.create();
+
+  for (  Map.Entry<String,InetAddressAndPort> entry : endpoints.entries()) {
+
+    InetAddressAndPort addr=entry.getValue();
+
+    if (!addr.equals(FBUtilities.getBroadcastAddressAndPort()) && isAlive.test(addr))     validated.put(entry.getKey(),entry.getValue());
+
+  }
+
+  if (validated.size() <= 2)   return validated.values();
+
+  if (validated.size() - validated.get(localRack).size() >= 2) {
+
+    validated.removeAll(localRack);
+
+  }
+
+  if (validated.keySet().size() == 1) {
+
+    List<InetAddressAndPort> otherRack=Lists.newArrayList(validated.values());
+
+    shuffle.accept(otherRack);
+
+    return otherRack.subList(0,2);
+
+  }
+
+  Collection<String> racks;
+
+  if (validated.keySet().size() == 2) {
+
+    racks=validated.keySet();
+
+  }
+
+ else {
+
+    racks=Lists.newArrayList(validated.keySet());
+
+    shuffle.accept((List<?>)racks);
+
+  }
+
+  List<InetAddressAndPort> result=new ArrayList<>(2);
+
+  for (  String rack : Iterables.limit(racks,2)) {
+
+    List<InetAddressAndPort> rackMembers=validated.get(rack);
+
+    result.add(rackMembers.get(indexPicker.apply(rackMembers.size())));
+
+  }
+
+  return result;
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Requires that the provided endpoints are alive.  Converts them to their relevant system replicas. Note that the liveAndDown collection and live are equal to the provided endpoints.
+
+ * @param isAny if batch consistency level is ANY, in which case a local node will be picked
+
+ */
+
+public static ReplicaPlan.ForTokenWrite forBatchlogWrite(boolean isAny) throws UnavailableException {
+
+  Token token=DatabaseDescriptor.getPartitioner().getMinimumToken();
+
+  TokenMetadata.Topology topology=StorageService.instance.getTokenMetadata().cachedOnlyTokenMap().getTopology();
+
+  IEndpointSnitch snitch=DatabaseDescriptor.getEndpointSnitch();
+
+  Multimap<String,InetAddressAndPort> localEndpoints=HashMultimap.create(topology.getDatacenterRacks().get(snitch.getLocalDatacenter()));
+
+  Collection<InetAddressAndPort> chosenEndpoints=filterBatchlogEndpoints(snitch.getLocalRack(),localEndpoints);
+
+  if (chosenEndpoints.isEmpty() && isAny)   chosenEndpoints=Collections.singleton(FBUtilities.getBroadcastAddressAndPort());
+
+  ReplicaLayout.ForTokenWrite liveAndDown=ReplicaLayout.forTokenWrite(SystemReplicas.getSystemReplicas(chosenEndpoints).forToken(token),EndpointsForToken.empty(token));
+
+  ConsistencyLevel consistencyLevel=liveAndDown.all().size() == 1 ? ConsistencyLevel.ONE : ConsistencyLevel.TWO;
+
+  Keyspace systemKeypsace=Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME);
+
+  return forWrite(systemKeypsace,consistencyLevel,liveAndDown,liveAndDown,writeAll);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * A forwarding counter write is always sent to a single owning coordinator for the range, by the original coordinator (if it is not itself an owner)
+
+ */
+
+public static ReplicaPlan.ForTokenWrite forForwardingCounterWrite(Keyspace keyspace,Token token,Replica replica){
+
+  return forSingleReplicaWrite(keyspace,token,replica);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+public static ReplicaPlan.ForTokenWrite forLocalBatchlogWrite(){
+
+  Token token=DatabaseDescriptor.getPartitioner().getMinimumToken();
+
+  Keyspace systemKeypsace=Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME);
+
+  Replica localSystemReplica=SystemReplicas.getSystemReplica(FBUtilities.getBroadcastAddressAndPort());
+
+  ReplicaLayout.ForTokenWrite liveAndDown=ReplicaLayout.forTokenWrite(EndpointsForToken.of(token,localSystemReplica),EndpointsForToken.empty(token));
+
+  return forWrite(systemKeypsace,ConsistencyLevel.ONE,liveAndDown,liveAndDown,writeAll);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Construct the plan for a paxos round - NOT the write or read consistency level for either the write or comparison, but for the paxos linearisation agreement. This will select all live nodes as the candidates for the operation.  Only the required number of participants
+
+ */
+
+public static ReplicaPlan.ForPaxosWrite forPaxos(Keyspace keyspace,DecoratedKey key,ConsistencyLevel consistencyForPaxos) throws UnavailableException {
+
+  Token tk=key.getToken();
+
+  ReplicaLayout.ForTokenWrite liveAndDown=ReplicaLayout.forTokenWriteLiveAndDown(keyspace,tk);
+
+  Replicas.temporaryAssertFull(liveAndDown.all());
+
+  if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL) {
+
+    liveAndDown=liveAndDown.filter(InOurDcTester.replicas());
+
+  }
+
+  ReplicaLayout.ForTokenWrite live=liveAndDown.filter(FailureDetector.isReplicaAlive);
+
+  int participants=liveAndDown.all().size();
+
+  int requiredParticipants=participants / 2 + 1;
+
+  EndpointsForToken contacts=live.all();
+
+  if (contacts.size() < requiredParticipants)   throw UnavailableException.create(consistencyForPaxos,requiredParticipants,contacts.size());
+
+  if (liveAndDown.pending().size() > 1)   throw new UnavailableException(String.format("Cannot perform LWT operation as there is more than one (%d) pending range movement",liveAndDown.all().size()),consistencyForPaxos,participants + 1,contacts.size());
+
+  return new ReplicaPlan.ForPaxosWrite(keyspace,consistencyForPaxos,liveAndDown.pending(),liveAndDown.all(),live.all(),contacts,requiredParticipants);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Construct a plan for reading the provided range at the provided consistency level.  This translates to a collection of - candidates who are: alive, replicate the range, and are sorted by their snitch scores - contacts who are: the first blockFor candidates There is no speculation for range read queries at present, so we never 'always speculate' here, and a failed response fails the query.
+
+ */
+
+public static ReplicaPlan.ForRangeRead forRangeRead(Keyspace keyspace,ConsistencyLevel consistencyLevel,AbstractBounds<PartitionPosition> range,int vnodeCount){
+
+  EndpointsForRange candidates=candidatesForRead(consistencyLevel,ReplicaLayout.forRangeReadLiveSorted(keyspace,range).natural());
+
+  EndpointsForRange contacts=contactForRead(keyspace,consistencyLevel,false,candidates);
+
+  assureSufficientLiveReplicasForRead(keyspace,consistencyLevel,contacts);
+
+  return new ReplicaPlan.ForRangeRead(keyspace,consistencyLevel,range,candidates,contacts,vnodeCount);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+public static ReplicaPlan.ForTokenWrite forReadRepair(Token token,ReplicaPlan.ForRead<?> readPlan) throws UnavailableException {
+
+  return forWrite(readPlan.keyspace,readPlan.consistencyLevel,token,writeReadRepair(readPlan));
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Construct a plan for reading the provided token at the provided consistency level.  This translates to a collection of - candidates who are: alive, replicate the token, and are sorted by their snitch scores - contacts who are: the first blockFor + (retry == ALWAYS ? 1 : 0) candidates The candidate collection can be used for speculation, although at present it would break EACH_QUORUM to do so without further filtering
+
+ */
+
+public static ReplicaPlan.ForTokenRead forRead(Keyspace keyspace,Token token,ConsistencyLevel consistencyLevel,SpeculativeRetryPolicy retry){
+
+  EndpointsForToken candidates=candidatesForRead(consistencyLevel,ReplicaLayout.forTokenReadLiveSorted(keyspace,token).natural());
+
+  EndpointsForToken contacts=contactForRead(keyspace,consistencyLevel,retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE),candidates);
+
+  assureSufficientLiveReplicasForRead(keyspace,consistencyLevel,contacts);
+
+  return new ReplicaPlan.ForTokenRead(keyspace,consistencyLevel,candidates,contacts);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Construct a plan for reading from a single node - this permits no speculation or read-repair
+
+ */
+
+public static ReplicaPlan.ForRangeRead forSingleReplicaRead(Keyspace keyspace,AbstractBounds<PartitionPosition> range,Replica replica,int vnodeCount){
+
+  EndpointsForRange one=EndpointsForRange.of(replica);
+
+  return new ReplicaPlan.ForRangeRead(keyspace,ConsistencyLevel.ONE,range,one,one,vnodeCount);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Construct a plan for reading from a single node - this permits no speculation or read-repair
+
+ */
+
+public static ReplicaPlan.ForTokenRead forSingleReplicaRead(Keyspace keyspace,Token token,Replica replica){
+
+  EndpointsForToken one=EndpointsForToken.of(token,replica);
+
+  return new ReplicaPlan.ForTokenRead(keyspace,ConsistencyLevel.ONE,one,one);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Construct a ReplicaPlan for writing to exactly one node, with CL.ONE. This node is *assumed* to be alive.
+
+ */
+
+public static ReplicaPlan.ForTokenWrite forSingleReplicaWrite(Keyspace keyspace,Token token,Replica replica){
+
+  EndpointsForToken one=EndpointsForToken.of(token,replica);
+
+  EndpointsForToken empty=EndpointsForToken.empty(token);
+
+  return new ReplicaPlan.ForTokenWrite(keyspace,ConsistencyLevel.ONE,empty,one,one,one);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+@VisibleForTesting public static ReplicaPlan.ForTokenWrite forWrite(Keyspace keyspace,ConsistencyLevel consistencyLevel,EndpointsForToken natural,EndpointsForToken pending,Predicate<Replica> isAlive,Selector selector) throws UnavailableException {
+
+  return forWrite(keyspace,consistencyLevel,ReplicaLayout.forTokenWrite(natural,pending),isAlive,selector);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+@VisibleForTesting public static ReplicaPlan.ForTokenWrite forWrite(Keyspace keyspace,ConsistencyLevel consistencyLevel,ReplicaLayout.ForTokenWrite liveAndDown,Predicate<Replica> isAlive,Selector selector) throws UnavailableException {
+
+  ReplicaLayout.ForTokenWrite live=liveAndDown.filter(isAlive);
+
+  return forWrite(keyspace,consistencyLevel,liveAndDown,live,selector);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+public static ReplicaPlan.ForTokenWrite forWrite(Keyspace keyspace,ConsistencyLevel consistencyLevel,ReplicaLayout.ForTokenWrite liveAndDown,ReplicaLayout.ForTokenWrite live,Selector selector) throws UnavailableException {
+
+  EndpointsForToken contacts=selector.select(keyspace,consistencyLevel,liveAndDown,live);
+
+  assureSufficientLiveReplicasForWrite(keyspace,consistencyLevel,live.all(),liveAndDown.pending());
+
+  return new ReplicaPlan.ForTokenWrite(keyspace,consistencyLevel,liveAndDown.pending(),liveAndDown.all(),live.all(),contacts);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+public static ReplicaPlan.ForTokenWrite forWrite(Keyspace keyspace,ConsistencyLevel consistencyLevel,ReplicaLayout.ForTokenWrite liveAndDown,Selector selector) throws UnavailableException {
+
+  return forWrite(keyspace,consistencyLevel,liveAndDown,FailureDetector.isReplicaAlive,selector);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+public static ReplicaPlan.ForTokenWrite forWrite(Keyspace keyspace,ConsistencyLevel consistencyLevel,Token token,Selector selector) throws UnavailableException {
+
+  return forWrite(keyspace,consistencyLevel,ReplicaLayout.forTokenWriteLiveAndDown(keyspace,token),selector);
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+public static boolean isSufficientLiveReplicasForRead(Keyspace keyspace,ConsistencyLevel consistencyLevel,Endpoints<?> liveReplicas){
+
+switch (consistencyLevel) {
+
+case ANY:
+
+    return true;
+
+case LOCAL_ONE:
+
+  return countInOurDc(liveReplicas).hasAtleast(1,1);
+
+case LOCAL_QUORUM:
+
+return countInOurDc(liveReplicas).hasAtleast(localQuorumForOurDc(keyspace),1);
+
+case EACH_QUORUM:
+
+if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy) {
+
+int fullCount=0;
+
+Collection<String> dcs=((NetworkTopologyStrategy)keyspace.getReplicationStrategy()).getDatacenters();
+
+for (ObjectObjectCursor<String,Replicas.ReplicaCount> entry : countPerDc(dcs,liveReplicas)) {
+
+  Replicas.ReplicaCount count=entry.value;
+
+  if (!count.hasAtleast(localQuorumFor(keyspace,entry.key),0))   return false;
+
+  fullCount+=count.fullReplicas();
+
+}
+
+return fullCount > 0;
+
+}
+
+default :
+
+return liveReplicas.size() >= consistencyLevel.blockFor(keyspace) && Replicas.countFull(liveReplicas) > 0;
+
+}
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * Take two range read plans for adjacent ranges, and check if it is OK (and worthwhile) to combine them into a single plan
+
+ */
+
+public static ReplicaPlan.ForRangeRead maybeMerge(Keyspace keyspace,ConsistencyLevel consistencyLevel,ReplicaPlan.ForRangeRead left,ReplicaPlan.ForRangeRead right){
+
+  AbstractBounds<PartitionPosition> newRange=left.range().withNewRight(right.range().right);
+
+  EndpointsForRange mergedCandidates=left.candidates().keep(right.candidates().endpoints());
+
+  if (!isSufficientLiveReplicasForRead(keyspace,consistencyLevel,mergedCandidates))   return null;
+
+  EndpointsForRange contacts=contactForRead(keyspace,consistencyLevel,false,mergedCandidates);
+
+  if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(contacts,left.contacts(),right.contacts()))   return null;
+
+  return new ReplicaPlan.ForRangeRead(keyspace,consistencyLevel,newRange,mergedCandidates,contacts,left.vnodeCount() + right.vnodeCount());
+
+}
+
+Location: ReplicaPlans.java
+
+Content: 
+
+/** 
+
+ * TODO: Transient Replication C-14404/C-14665 TODO: We employ this even when there is no monotonicity to guarantee, e.g. in case of CL.TWO, CL.ONE with speculation, etc. Construct a read-repair write plan to provide monotonicity guarantees on any data we return as part of a read. Since this is not a regular write, this is just to guarantee future reads will read this data, we select only the minimal number of nodes to meet the consistency level, and prefer nodes we contacted on read to minimise data transfer.
+
+ */
+
+public static Selector writeReadRepair(ReplicaPlan.ForRead<?> readPlan){
+
+  return new Selector(){
+
+    @Override public <E extends Endpoints<E>,L extends ReplicaLayout.ForWrite<E>>E select(    Keyspace keyspace,    ConsistencyLevel consistencyLevel,    L liveAndDown,    L live){
+
+      assert !any(liveAndDown.all(),Replica::isTransient);
+
+      ReplicaCollection.Builder<E> contacts=live.all().newBuilder(live.all().size());
+
+      contacts.addAll(filter(live.all(),r -> readPlan.contacts().endpoints().contains(r.endpoint())));
+
+      if (consistencyLevel != EACH_QUORUM) {
+
+        int add=consistencyLevel.blockForWrite(keyspace,liveAndDown.pending()) - contacts.size();
+
+        if (add > 0) {
+
+          for (          Replica replica : filter(live.all(),r -> !contacts.contains(r))) {
+
+            contacts.add(replica);
+
+            if (--add == 0)             break;
+
+          }
+
+        }
+
+      }
+
+ else {
+
+        ObjectIntHashMap<String> requiredPerDc=eachQuorumForWrite(keyspace,liveAndDown.pending());
+
+        addToCountPerDc(requiredPerDc,contacts.snapshot(),-1);
+
+        IEndpointSnitch snitch=DatabaseDescriptor.getEndpointSnitch();
+
+        for (        Replica replica : filter(live.all(),r -> !contacts.contains(r))) {
+
+          String dc=snitch.getDatacenter(replica);
+
+          if (requiredPerDc.addTo(dc,-1) >= 0)           contacts.add(replica);
+
+        }
+
+      }
+
+      return contacts.build();
+
+    }
+
+  }
+
+;
+
+}
+

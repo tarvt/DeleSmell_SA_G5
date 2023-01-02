@@ -1,0 +1,144 @@
+Location: ReadExecutionController.java
+
+Content: 
+
+private void addSample(){
+
+  String cql=command.toCQLString();
+
+  int timeMicros=(int)Math.min(TimeUnit.NANOSECONDS.toMicros(clock.now() - createdAtNanos),Integer.MAX_VALUE);
+
+  ColumnFamilyStore cfs=ColumnFamilyStore.getIfExists(baseMetadata.id);
+
+  if (cfs != null)   cfs.metric.topLocalReadQueryTime.addSample(cql,timeMicros);
+
+}
+
+Location: ReadExecutionController.java
+
+Content: 
+
+/** 
+
+ * Creates an execution controller for the provided command. <p> Note: no code should use this method outside of  {@link ReadCommand#executionController} (forconsistency sake) and you should use that latter method if you need an execution controller.
+
+ * @param command the command for which to create a controller.
+
+ * @return the created execution controller, which must always be closed.
+
+ */
+
+@SuppressWarnings("resource") static ReadExecutionController forCommand(ReadCommand command){
+
+  ColumnFamilyStore baseCfs=Keyspace.openAndGetStore(command.metadata());
+
+  ColumnFamilyStore indexCfs=maybeGetIndexCfs(baseCfs,command);
+
+  long createdAtNanos=baseCfs.metric.topLocalReadQueryTime.isEnabled() ? clock.now() : NO_SAMPLING;
+
+  if (indexCfs == null)   return new ReadExecutionController(command,baseCfs.readOrdering.start(),baseCfs.metadata(),null,null,createdAtNanos);
+
+  OpOrder.Group baseOp=null;
+
+  WriteContext writeContext=null;
+
+  ReadExecutionController indexController=null;
+
+  try {
+
+    baseOp=baseCfs.readOrdering.start();
+
+    indexController=new ReadExecutionController(command,indexCfs.readOrdering.start(),indexCfs.metadata(),null,null,NO_SAMPLING);
+
+    writeContext=baseCfs.keyspace.getWriteHandler().createContextForRead();
+
+    return new ReadExecutionController(command,baseOp,baseCfs.metadata(),indexController,writeContext,createdAtNanos);
+
+  }
+
+ catch (  RuntimeException e) {
+
+    assert writeContext == null;
+
+    try {
+
+      if (baseOp != null)       baseOp.close();
+
+    }
+
+  finally {
+
+      if (indexController != null)       indexController.close();
+
+    }
+
+    throw e;
+
+  }
+
+}
+
+Location: ReadExecutionController.java
+
+Content: 
+
+public WriteContext getWriteContext(){
+
+  return writeContext;
+
+}
+
+Location: ReadExecutionController.java
+
+Content: 
+
+public ReadExecutionController indexReadController(){
+
+  return indexController;
+
+}
+
+Location: ReadExecutionController.java
+
+Content: 
+
+private static ColumnFamilyStore maybeGetIndexCfs(ColumnFamilyStore baseCfs,ReadCommand command){
+
+  Index index=command.getIndex(baseCfs);
+
+  return index == null ? null : index.getBackingTable().orElse(null);
+
+}
+
+Location: ReadExecutionController.java
+
+Content: 
+
+private ReadExecutionController(ReadCommand command,OpOrder.Group baseOp,TableMetadata baseMetadata,ReadExecutionController indexController,WriteContext writeContext,long createdAtNanos){
+
+  assert (baseOp == null) == (baseMetadata == null);
+
+  this.baseOp=baseOp;
+
+  this.baseMetadata=baseMetadata;
+
+  this.indexController=indexController;
+
+  this.writeContext=writeContext;
+
+  this.command=command;
+
+  this.createdAtNanos=createdAtNanos;
+
+}
+
+Location: ReadExecutionController.java
+
+Content: 
+
+boolean validForReadOn(ColumnFamilyStore cfs){
+
+  return baseOp != null && cfs.metadata.id.equals(baseMetadata.id);
+
+}
+

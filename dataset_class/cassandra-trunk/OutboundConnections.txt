@@ -1,0 +1,258 @@
+Location: OutboundConnections.java
+
+Content: 
+
+/** 
+
+ * Apply the given function to each of the connections we are pooling, returning the results as a list
+
+ */
+
+private <V>List<V> apply(Function<OutboundConnection,V> f){
+
+  return ImmutableList.of(f.apply(urgent),f.apply(small),f.apply(large));
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+@VisibleForTesting final OutboundConnection connectionFor(ConnectionType type){
+
+switch (type) {
+
+case SMALL_MESSAGES:
+
+    return small;
+
+case LARGE_MESSAGES:
+
+  return large;
+
+case URGENT_MESSAGES:
+
+return urgent;
+
+default :
+
+throw new IllegalArgumentException("unsupported connection type: " + type);
+
+}
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+@VisibleForTesting OutboundConnection connectionFor(Message<?> message){
+
+  return connectionFor(message,null);
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+private OutboundConnection connectionFor(Message msg,ConnectionType forceConnection){
+
+  return connectionFor(connectionTypeFor(msg,forceConnection));
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+private static ConnectionType connectionTypeFor(Message<?> msg,ConnectionType specifyConnection){
+
+  if (specifyConnection != null)   return specifyConnection;
+
+  if (msg.verb().priority == Verb.Priority.P0)   return URGENT_MESSAGES;
+
+  return msg.serializedSize(current_version) <= LARGE_MESSAGE_THRESHOLD ? SMALL_MESSAGES : LARGE_MESSAGES;
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+/** 
+
+ * Select the appropriate connection for the provided message and use it to send the message.
+
+ */
+
+public void enqueue(Message msg,ConnectionType type) throws ClosedChannelException {
+
+  connectionFor(msg,type).enqueue(msg);
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+long expiredCallbacks(){
+
+  return metrics.expiredCallbacks.getCount();
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+void incrementExpiredCallbackCount(){
+
+  metrics.expiredCallbacks.mark();
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+private OutboundConnections(OutboundConnectionSettings template){
+
+  this.template=template=template.withDefaultReserveLimits();
+
+  reserveCapacity=new ResourceLimits.Concurrent(template.applicationSendQueueReserveEndpointCapacityInBytes);
+
+  ResourceLimits.EndpointAndGlobal reserveCapacityInBytes=new ResourceLimits.EndpointAndGlobal(reserveCapacity,template.applicationSendQueueReserveGlobalCapacityInBytes);
+
+  this.small=new OutboundConnection(SMALL_MESSAGES,template,reserveCapacityInBytes);
+
+  this.large=new OutboundConnection(LARGE_MESSAGES,template,reserveCapacityInBytes);
+
+  this.urgent=new OutboundConnection(URGENT_MESSAGES,template,reserveCapacityInBytes);
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+/** 
+
+ * Reconnect to the peer using the given  {@code addr}. Outstanding messages in each channel will be sent on the current channel. Typically this function is used for something like EC2 public IP addresses which need to be used for communication between EC2 regions.
+
+ * @param addr IP Address to use (and prefer) going forward for connecting to the peer
+
+ */
+
+synchronized Future<Void> reconnectWithNewIp(InetAddressAndPort addr){
+
+  template=template.withConnectTo(addr);
+
+  return new FutureCombiner(apply(c -> c.reconnectWith(template)));
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+private void releaseMetrics(){
+
+  try {
+
+    metricsReady.await();
+
+  }
+
+ catch (  InterruptedException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+  if (metrics != null)   metrics.release();
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+static void scheduleUnusedConnectionMonitoring(MessagingService messagingService,ScheduledExecutorService executor,long delay,TimeUnit units){
+
+  executor.scheduleWithFixedDelay(new UnusedConnectionMonitor(messagingService)::closeUnusedSinceLastRun,0L,delay,units);
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+OutboundConnectionSettings template(){
+
+  return template;
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+static <K>OutboundConnections tryRegister(ConcurrentMap<K,OutboundConnections> in,K key,OutboundConnectionSettings settings){
+
+  OutboundConnections connections=in.get(key);
+
+  if (connections == null) {
+
+    connections=new OutboundConnections(settings);
+
+    OutboundConnections existing=in.putIfAbsent(key,connections);
+
+    if (existing == null) {
+
+      connections.metrics=new InternodeOutboundMetrics(settings.to,connections);
+
+      connections.metricsReady.signalAll();
+
+    }
+
+ else {
+
+      connections.metricsReady.signalAll();
+
+      connections.close(false);
+
+      connections=existing;
+
+    }
+
+  }
+
+  return connections;
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+@VisibleForTesting static OutboundConnections unsafeCreate(OutboundConnectionSettings template){
+
+  OutboundConnections connections=new OutboundConnections(template);
+
+  connections.metricsReady.signalAll();
+
+  return connections;
+
+}
+
+Location: OutboundConnections.java
+
+Content: 
+
+public long usingReserveBytes(){
+
+  return reserveCapacity.using();
+
+}
+

@@ -1,0 +1,150 @@
+Location: PendingRangeMaps.java
+
+Content: 
+
+static final void addIntersections(EndpointsForToken.Builder replicasToAdd,NavigableMap<Range<Token>,EndpointsForRange.Builder> smallerMap,NavigableMap<Range<Token>,EndpointsForRange.Builder> biggerMap){
+
+  for (  Range<Token> range : smallerMap.keySet()) {
+
+    EndpointsForRange.Builder replicas=biggerMap.get(range);
+
+    if (replicas != null) {
+
+      replicasToAdd.addAll(replicas);
+
+    }
+
+  }
+
+}
+
+Location: PendingRangeMaps.java
+
+Content: 
+
+public void addPendingRange(Range<Token> range,Replica replica){
+
+  if (Range.isWrapAround(range.left,range.right)) {
+
+    addToMap(range,replica,ascendingMapForWrapAround,descendingMapForWrapAround);
+
+  }
+
+ else {
+
+    addToMap(range,replica,ascendingMap,descendingMap);
+
+  }
+
+}
+
+Location: PendingRangeMaps.java
+
+Content: 
+
+static final void addToMap(Range<Token> range,Replica replica,NavigableMap<Range<Token>,EndpointsForRange.Builder> ascendingMap,NavigableMap<Range<Token>,EndpointsForRange.Builder> descendingMap){
+
+  EndpointsForRange.Builder replicas=ascendingMap.get(range);
+
+  if (replicas == null) {
+
+    replicas=new EndpointsForRange.Builder(range,1);
+
+    ascendingMap.put(range,replicas);
+
+    descendingMap.put(range,replicas);
+
+  }
+
+  replicas.add(replica,Conflict.DUPLICATE);
+
+}
+
+Location: PendingRangeMaps.java
+
+Content: 
+
+public EndpointsForToken pendingEndpointsFor(Token token){
+
+  EndpointsForToken.Builder replicas=EndpointsForToken.builder(token);
+
+  Range<Token> searchRange=new Range<>(token,token);
+
+  NavigableMap<Range<Token>,EndpointsForRange.Builder> ascendingTailMap=ascendingMap.tailMap(searchRange,true);
+
+  NavigableMap<Range<Token>,EndpointsForRange.Builder> descendingTailMap=descendingMap.tailMap(searchRange,false);
+
+  if (ascendingTailMap.size() < descendingTailMap.size()) {
+
+    addIntersections(replicas,ascendingTailMap,descendingTailMap);
+
+  }
+
+ else {
+
+    addIntersections(replicas,descendingTailMap,ascendingTailMap);
+
+  }
+
+  ascendingTailMap=ascendingMapForWrapAround.tailMap(searchRange,true);
+
+  descendingTailMap=descendingMapForWrapAround.tailMap(searchRange,false);
+
+  for (  Map.Entry<Range<Token>,EndpointsForRange.Builder> entry : ascendingTailMap.entrySet()) {
+
+    replicas.addAll(entry.getValue());
+
+  }
+
+  for (  Map.Entry<Range<Token>,EndpointsForRange.Builder> entry : descendingTailMap.entrySet()) {
+
+    replicas.addAll(entry.getValue());
+
+  }
+
+  return replicas.build();
+
+}
+
+Location: PendingRangeMaps.java
+
+Content: 
+
+public PendingRangeMaps(){
+
+  this.ascendingMap=new TreeMap<>(ascendingComparator);
+
+  this.descendingMap=new TreeMap<>(descendingComparator);
+
+  this.ascendingMapForWrapAround=new TreeMap<>(ascendingComparatorForWrapAround);
+
+  this.descendingMapForWrapAround=new TreeMap<>(descendingComparatorForWrapAround);
+
+}
+
+Location: PendingRangeMaps.java
+
+Content: 
+
+public String printPendingRanges(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Map.Entry<Range<Token>,EndpointsForRange.Builder> entry : this) {
+
+    Range<Token> range=entry.getKey();
+
+    for (    Replica replica : entry.getValue()) {
+
+      sb.append(replica).append(':').append(range);
+
+      sb.append(LINE_SEPARATOR.getString());
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
