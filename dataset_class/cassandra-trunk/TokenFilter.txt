@@ -1,0 +1,366 @@
+Location: TokenFilter.java
+
+Content: 
+
+@Override public void addRowFilterTo(RowFilter filter,IndexRegistry indexRegistry,QueryOptions options){
+
+  restrictions.addRowFilterTo(filter,indexRegistry,options);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public List<ByteBuffer> bounds(Bound bound,QueryOptions options) throws InvalidRequestException {
+
+  return isOnToken() ? tokenRestriction.bounds(bound,options) : restrictions.bounds(bound,options);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+/** 
+
+ * Deserializes the token corresponding to the specified buffer.
+
+ * @param buffer the buffer
+
+ * @return the token corresponding to the specified buffer
+
+ */
+
+private Token deserializeToken(ByteBuffer buffer){
+
+  return partitioner.getTokenFactory().fromByteArray(buffer);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+/** 
+
+ * Filter out the values for which the tokens are not included within the specified range.
+
+ * @param tokens the tokens range
+
+ * @param values the restricted values
+
+ * @return the values for which the tokens are not included within the specified range.
+
+ */
+
+private List<ByteBuffer> filterWithRangeSet(RangeSet<Token> tokens,List<ByteBuffer> values){
+
+  List<ByteBuffer> remaining=new ArrayList<>();
+
+  for (  ByteBuffer value : values) {
+
+    Token token=partitioner.getToken(value);
+
+    if (!tokens.contains(token))     continue;
+
+    remaining.add(value);
+
+  }
+
+  return remaining;
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+/** 
+
+ * Filter the values returned by the restriction.
+
+ * @param values the values returned by the decorated restriction
+
+ * @param options the query options
+
+ * @return the values matching the token restriction
+
+ * @throws InvalidRequestException if the request is invalid
+
+ */
+
+private List<ByteBuffer> filter(List<ByteBuffer> values,QueryOptions options) throws InvalidRequestException {
+
+  RangeSet<Token> rangeSet=tokenRestriction.hasSlice() ? toRangeSet(tokenRestriction,options) : toRangeSet(tokenRestriction.values(options));
+
+  return filterWithRangeSet(rangeSet,values);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public List<ColumnMetadata> getColumnDefs(){
+
+  return restrictions.getColumnDefs();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public ColumnMetadata getFirstColumn(){
+
+  return restrictions.getFirstColumn();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public ColumnMetadata getLastColumn(){
+
+  return restrictions.getLastColumn();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public Set<Restriction> getRestrictions(ColumnMetadata columnDef){
+
+  Set<Restriction> set=new HashSet<>();
+
+  set.addAll(restrictions.getRestrictions(columnDef));
+
+  set.addAll(tokenRestriction.getRestrictions(columnDef));
+
+  return set;
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public boolean hasBound(Bound bound){
+
+  return isOnToken() ? tokenRestriction.hasBound(bound) : restrictions.hasBound(bound);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+public boolean hasContains(){
+
+  return isOnToken() ? false : restrictions.hasContains();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+public boolean hasIN(){
+
+  return isOnToken() ? false : restrictions.hasIN();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+public boolean hasOnlyEqualityRestrictions(){
+
+  return isOnToken() ? false : restrictions.hasOnlyEqualityRestrictions();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public boolean hasSlice(){
+
+  return restrictions.hasSlice();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public boolean hasSupportingIndex(IndexRegistry indexRegistry){
+
+  return restrictions.hasSupportingIndex(indexRegistry);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public boolean hasUnrestrictedPartitionKeyComponents(TableMetadata table){
+
+  return restrictions.hasUnrestrictedPartitionKeyComponents(table);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public boolean isInclusive(Bound bound){
+
+  return isOnToken() ? tokenRestriction.isInclusive(bound) : restrictions.isInclusive(bound);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public boolean isOnToken(){
+
+  return needFiltering(tokenRestriction.metadata) || restrictions.size() < tokenRestriction.size();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public PartitionKeyRestrictions mergeWith(Restriction restriction) throws InvalidRequestException {
+
+  if (restriction.isOnToken())   return new TokenFilter(restrictions,(TokenRestriction)tokenRestriction.mergeWith(restriction));
+
+  return new TokenFilter(restrictions.mergeWith(restriction),tokenRestriction);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public boolean needFiltering(TableMetadata table){
+
+  return restrictions.needFiltering(table);
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+private static BoundType toBoundType(boolean inclusive){
+
+  return inclusive ? BoundType.CLOSED : BoundType.OPEN;
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+public TokenFilter(PartitionKeyRestrictions restrictions,TokenRestriction tokenRestriction){
+
+  this.restrictions=restrictions;
+
+  this.tokenRestriction=tokenRestriction;
+
+  this.partitioner=tokenRestriction.metadata.partitioner;
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+/** 
+
+ * Converts the specified list into a range set.
+
+ * @param buffers the token restriction values
+
+ * @return the range set corresponding to the specified list
+
+ */
+
+private RangeSet<Token> toRangeSet(List<ByteBuffer> buffers){
+
+  ImmutableRangeSet.Builder<Token> builder=ImmutableRangeSet.builder();
+
+  for (  ByteBuffer buffer : buffers)   builder.add(Range.singleton(deserializeToken(buffer)));
+
+  return builder.build();
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+/** 
+
+ * Converts the specified slice into a range set.
+
+ * @param slice the slice to convert
+
+ * @param options the query option
+
+ * @return the range set corresponding to the specified slice
+
+ * @throws InvalidRequestException if the request is invalid
+
+ */
+
+private RangeSet<Token> toRangeSet(TokenRestriction slice,QueryOptions options) throws InvalidRequestException {
+
+  if (slice.hasBound(START)) {
+
+    Token start=deserializeToken(slice.bounds(START,options).get(0));
+
+    BoundType startBoundType=toBoundType(slice.isInclusive(START));
+
+    if (slice.hasBound(END)) {
+
+      BoundType endBoundType=toBoundType(slice.isInclusive(END));
+
+      Token end=deserializeToken(slice.bounds(END,options).get(0));
+
+      if (start.equals(end) && (BoundType.OPEN == startBoundType || BoundType.OPEN == endBoundType))       return ImmutableRangeSet.of();
+
+      if (start.compareTo(end) <= 0)       return ImmutableRangeSet.of(Range.range(start,startBoundType,end,endBoundType));
+
+      return ImmutableRangeSet.<Token>builder().add(Range.upTo(end,endBoundType)).add(Range.downTo(start,startBoundType)).build();
+
+    }
+
+    return ImmutableRangeSet.of(Range.downTo(start,startBoundType));
+
+  }
+
+  Token end=deserializeToken(slice.bounds(END,options).get(0));
+
+  return ImmutableRangeSet.of(Range.upTo(end,toBoundType(slice.isInclusive(END))));
+
+}
+
+Location: TokenFilter.java
+
+Content: 
+
+@Override public List<ByteBuffer> values(QueryOptions options) throws InvalidRequestException {
+
+  return filter(restrictions.values(options),options);
+
+}
+

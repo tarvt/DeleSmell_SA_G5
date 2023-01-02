@@ -1,0 +1,152 @@
+Location: TermIterator.java
+
+Content: 
+
+@SuppressWarnings("resource") public static TermIterator build(final Expression e,Set<SSTableIndex> perSSTableIndexes){
+
+  final List<RangeIterator<Long,Token>> tokens=new CopyOnWriteArrayList<>();
+
+  final AtomicLong tokenCount=new AtomicLong(0);
+
+  RangeIterator<Long,Token> memtableIterator=e.index.searchMemtable(e);
+
+  if (memtableIterator != null) {
+
+    tokens.add(memtableIterator);
+
+    tokenCount.addAndGet(memtableIterator.getCount());
+
+  }
+
+  final Set<SSTableIndex> referencedIndexes=new CopyOnWriteArraySet<>();
+
+  try {
+
+    final CountDownLatch latch=new CountDownLatch(perSSTableIndexes.size());
+
+    final ExecutorService searchExecutor=SEARCH_EXECUTOR.get();
+
+    for (    final SSTableIndex index : perSSTableIndexes) {
+
+      if (e.getOp() == Expression.Op.PREFIX && index.mode() == OnDiskIndexBuilder.Mode.CONTAINS && !index.hasMarkedPartials())       throw new UnsupportedOperationException(String.format("The index %s has not yet been upgraded " + "to support prefix queries in CONTAINS mode. " + "Wait for compaction or rebuild the index.",index.getPath()));
+
+      if (!index.reference()) {
+
+        latch.countDown();
+
+        continue;
+
+      }
+
+      referencedIndexes.add(index);
+
+      searchExecutor.submit((Runnable)() -> {
+
+        try {
+
+          e.checkpoint();
+
+          RangeIterator<Long,Token> keyIterator=index.search(e);
+
+          if (keyIterator == null) {
+
+            releaseIndex(referencedIndexes,index);
+
+            return;
+
+          }
+
+          tokens.add(keyIterator);
+
+          tokenCount.getAndAdd(keyIterator.getCount());
+
+        }
+
+ catch (        Throwable e1) {
+
+          releaseIndex(referencedIndexes,index);
+
+          if (logger.isDebugEnabled())           logger.debug(String.format("Failed search an index %s, skipping.",index.getPath()),e1);
+
+        }
+
+ finally {
+
+          latch.countDown();
+
+        }
+
+      }
+
+);
+
+    }
+
+    Uninterruptibles.awaitUninterruptibly(latch);
+
+    e.checkpoint();
+
+    RangeIterator<Long,Token> ranges=RangeUnionIterator.build(tokens);
+
+    return new TermIterator(e,ranges,referencedIndexes);
+
+  }
+
+ catch (  Throwable ex) {
+
+    referencedIndexes.forEach(TermIterator::releaseQuietly);
+
+    throw ex;
+
+  }
+
+}
+
+Location: TermIterator.java
+
+Content: 
+
+private static void releaseIndex(Set<SSTableIndex> indexes,SSTableIndex index){
+
+  indexes.remove(index);
+
+  releaseQuietly(index);
+
+}
+
+Location: TermIterator.java
+
+Content: 
+
+private static void releaseQuietly(SSTableIndex index){
+
+  try {
+
+    index.release();
+
+  }
+
+ catch (  Throwable e) {
+
+    logger.error(String.format("Failed to release index %s",index.getPath()),e);
+
+  }
+
+}
+
+Location: TermIterator.java
+
+Content: 
+
+private TermIterator(Expression e,RangeIterator<Long,Token> union,Set<SSTableIndex> referencedIndexes){
+
+  super(union.getMinimum(),union.getMaximum(),union.getCount());
+
+  this.expression=e;
+
+  this.union=union;
+
+  this.referencedIndexes=referencedIndexes;
+
+}
+

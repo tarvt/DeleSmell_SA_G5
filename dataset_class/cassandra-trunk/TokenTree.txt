@@ -1,0 +1,212 @@
+Location: TokenTree.java
+
+Content: 
+
+public OnDiskToken get(final long searchToken,Function<Long,DecoratedKey> keyFetcher){
+
+  seekToLeaf(searchToken,file);
+
+  long leafStart=file.position();
+
+  short leafSize=file.getShort(leafStart + 1);
+
+  file.position(leafStart + TokenTreeBuilder.BLOCK_HEADER_BYTES);
+
+  short tokenIndex=searchLeaf(searchToken,leafSize);
+
+  file.position(leafStart + TokenTreeBuilder.BLOCK_HEADER_BYTES);
+
+  OnDiskToken token=OnDiskToken.getTokenAt(file,tokenIndex,leafSize,keyFetcher);
+
+  return token.get().equals(searchToken) ? token : null;
+
+}
+
+Location: TokenTree.java
+
+Content: 
+
+public RangeIterator<Long,Token> iterator(Function<Long,DecoratedKey> keyFetcher){
+
+  return new TokenTreeIterator(file.duplicate(),keyFetcher);
+
+}
+
+Location: TokenTree.java
+
+Content: 
+
+private short searchBlock(long searchToken,short tokenCount,MappedBuffer file){
+
+  short offsetIndex=0;
+
+  for (int i=0; i < tokenCount; i++) {
+
+    long readToken=file.getLong();
+
+    if (searchToken < readToken)     break;
+
+    offsetIndex++;
+
+  }
+
+  return offsetIndex;
+
+}
+
+Location: TokenTree.java
+
+Content: 
+
+private short searchLeaf(long searchToken,short tokenCount){
+
+  long base=file.position();
+
+  int start=0;
+
+  int end=tokenCount;
+
+  int middle=0;
+
+  while (start <= end) {
+
+    middle=start + ((end - start) >> 1);
+
+    long token=file.getLong(base + (middle * (2 * LONG_BYTES) + 4));
+
+    if (token == searchToken)     break;
+
+    if (token < searchToken)     start=middle + 1;
+
+ else     end=middle - 1;
+
+  }
+
+  return (short)middle;
+
+}
+
+Location: TokenTree.java
+
+Content: 
+
+private void seekToLeaf(long token,MappedBuffer file){
+
+  long blockStart=startPos;
+
+  while (true) {
+
+    file.position(blockStart);
+
+    byte info=file.get();
+
+    boolean isLeaf=(info & 1) == 1;
+
+    if (isLeaf) {
+
+      file.position(blockStart);
+
+      break;
+
+    }
+
+    short tokenCount=file.getShort();
+
+    long minToken=file.getLong();
+
+    long maxToken=file.getLong();
+
+    long seekBase=blockStart + TokenTreeBuilder.BLOCK_HEADER_BYTES;
+
+    if (minToken > token) {
+
+      file.position(seekBase + tokenCount * LONG_BYTES);
+
+      blockStart=(startPos + (int)file.getLong());
+
+    }
+
+ else     if (maxToken < token) {
+
+      file.position(seekBase + (2 * tokenCount) * LONG_BYTES);
+
+      blockStart=(startPos + (int)file.getLong());
+
+    }
+
+ else {
+
+      file.position(seekBase);
+
+      short offsetIndex=searchBlock(token,tokenCount,file);
+
+      if (offsetIndex == tokenCount)       file.position(file.position() + (offsetIndex * LONG_BYTES));
+
+ else       file.position(file.position() + ((tokenCount - offsetIndex - 1) + offsetIndex) * LONG_BYTES);
+
+      blockStart=(startPos + (int)file.getLong());
+
+    }
+
+  }
+
+}
+
+Location: TokenTree.java
+
+Content: 
+
+public TokenTree(Descriptor d,MappedBuffer tokenTree){
+
+  descriptor=d;
+
+  file=tokenTree;
+
+  startPos=file.position();
+
+  file.position(startPos + TokenTreeBuilder.SHARED_HEADER_BYTES);
+
+  if (!validateMagic())   throw new IllegalArgumentException("invalid token tree");
+
+  tokenCount=file.getLong();
+
+  treeMinToken=file.getLong();
+
+  treeMaxToken=file.getLong();
+
+}
+
+Location: TokenTree.java
+
+Content: 
+
+@VisibleForTesting protected TokenTree(MappedBuffer tokenTree){
+
+  this(Descriptor.CURRENT,tokenTree);
+
+}
+
+Location: TokenTree.java
+
+Content: 
+
+private boolean validateMagic(){
+
+switch (descriptor.version.toString()) {
+
+case Descriptor.VERSION_AA:
+
+    return true;
+
+case Descriptor.VERSION_AB:
+
+  return TokenTreeBuilder.AB_MAGIC == file.getShort();
+
+default :
+
+return false;
+
+}
+
+}
+

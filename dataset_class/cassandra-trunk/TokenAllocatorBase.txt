@@ -1,0 +1,146 @@
+Location: TokenAllocatorBase.java
+
+Content: 
+
+protected Map<Unit,UnitInfo<Unit>> createUnitInfos(Map<Object,GroupInfo> groups){
+
+  Map<Unit,UnitInfo<Unit>> map=Maps.newHashMap();
+
+  for (  Unit n : sortedTokens.values()) {
+
+    UnitInfo<Unit> ni=map.get(n);
+
+    if (ni == null)     map.put(n,ni=new UnitInfo<>(n,0,groups,strategy));
+
+    ni.tokenCount++;
+
+  }
+
+  return map;
+
+}
+
+Location: TokenAllocatorBase.java
+
+Content: 
+
+/** 
+
+ * Selects tokens by repeatedly splitting the largest range in the ring at the given ratio. This is used to choose tokens for the first nodes in the ring where the algorithm cannot be applied (e.g. when number of nodes < RF). It generates a reasonably chaotic initial token split, after which the algorithm behaves well for an unbounded number of nodes.
+
+ */
+
+Collection<Token> generateSplits(Unit newUnit,int numTokens,double minRatio,double maxRatio){
+
+  Random random=new Random(sortedTokens.size());
+
+  double potentialRatioGrowth=maxRatio - minRatio;
+
+  List<Token> tokens=Lists.newArrayListWithExpectedSize(numTokens);
+
+  if (sortedTokens.isEmpty()) {
+
+    Token t=partitioner.getRandomToken();
+
+    tokens.add(t);
+
+    sortedTokens.put(t,newUnit);
+
+  }
+
+  while (tokens.size() < numTokens) {
+
+    Token prev=sortedTokens.lastKey();
+
+    double maxsz=0;
+
+    Token t1=null;
+
+    Token t2=null;
+
+    for (    Token curr : sortedTokens.keySet()) {
+
+      double sz=prev.size(curr);
+
+      if (sz > maxsz) {
+
+        maxsz=sz;
+
+        t1=prev;
+
+        t2=curr;
+
+      }
+
+      prev=curr;
+
+    }
+
+    assert t1 != null;
+
+    Token t=partitioner.split(t1,t2,minRatio + potentialRatioGrowth * random.nextDouble());
+
+    tokens.add(t);
+
+    sortedTokens.put(t,newUnit);
+
+  }
+
+  return tokens;
+
+}
+
+Location: TokenAllocatorBase.java
+
+Content: 
+
+private static <Unit>GroupInfo getGroup(Unit unit,Map<Object,GroupInfo> groupMap,ReplicationStrategy<Unit> strategy){
+
+  Object groupClass=strategy.getGroup(unit);
+
+  GroupInfo group=groupMap.get(groupClass);
+
+  if (group == null)   groupMap.put(groupClass,group=new GroupInfo(groupClass));
+
+  return group;
+
+}
+
+Location: TokenAllocatorBase.java
+
+Content: 
+
+private Map.Entry<Token,Unit> mapEntryFor(Token t){
+
+  Map.Entry<Token,Unit> en=sortedTokens.floorEntry(t);
+
+  if (en == null)   en=sortedTokens.lastEntry();
+
+  return en;
+
+}
+
+Location: TokenAllocatorBase.java
+
+Content: 
+
+protected TokenAllocatorBase(NavigableMap<Token,Unit> sortedTokens,ReplicationStrategy<Unit> strategy,IPartitioner partitioner){
+
+  this.sortedTokens=sortedTokens;
+
+  this.strategy=strategy;
+
+  this.partitioner=partitioner;
+
+}
+
+Location: TokenAllocatorBase.java
+
+Content: 
+
+Unit unitFor(Token t){
+
+  return mapEntryFor(t).getValue();
+
+}
+

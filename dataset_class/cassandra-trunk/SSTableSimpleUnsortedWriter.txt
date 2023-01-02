@@ -1,0 +1,114 @@
+Location: SSTableSimpleUnsortedWriter.java
+
+Content: 
+
+private void checkForWriterException() throws IOException {
+
+  if (diskWriter.exception != null) {
+
+    if (diskWriter.exception instanceof IOException)     throw (IOException)diskWriter.exception;
+
+ else     throw Throwables.propagate(diskWriter.exception);
+
+  }
+
+}
+
+Location: SSTableSimpleUnsortedWriter.java
+
+Content: 
+
+private void countRow(Row row){
+
+  currentSize+=UnfilteredSerializer.serializer.serializedSize(row,helper,0,formatType.info.getLatestVersion().correspondingMessagingVersion());
+
+}
+
+Location: SSTableSimpleUnsortedWriter.java
+
+Content: 
+
+private PartitionUpdate.Builder createPartitionUpdateBuilder(DecoratedKey key){
+
+  return new PartitionUpdate.Builder(metadata.get(),key,columns,4){
+
+    @Override public void add(    Row row){
+
+      super.add(row);
+
+      countRow(row);
+
+      maybeSync();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: SSTableSimpleUnsortedWriter.java
+
+Content: 
+
+private void maybeSync() throws SyncException {
+
+  try {
+
+    if (currentSize > bufferSize)     sync();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new SyncException(e);
+
+  }
+
+}
+
+Location: SSTableSimpleUnsortedWriter.java
+
+Content: 
+
+private void put(Buffer buffer) throws IOException {
+
+  while (true) {
+
+    checkForWriterException();
+
+    try {
+
+      if (writeQueue.offer(buffer,1,TimeUnit.SECONDS))       break;
+
+    }
+
+ catch (    InterruptedException e) {
+
+      throw new RuntimeException(e);
+
+    }
+
+  }
+
+}
+
+Location: SSTableSimpleUnsortedWriter.java
+
+Content: 
+
+SSTableSimpleUnsortedWriter(File directory,TableMetadataRef metadata,RegularAndStaticColumns columns,long bufferSizeInMB){
+
+  super(directory,metadata,columns);
+
+  this.bufferSize=bufferSizeInMB * 1024L * 1024L;
+
+  this.header=new SerializationHeader(true,metadata.get(),columns,EncodingStats.NO_STATS);
+
+  this.helper=new SerializationHelper(this.header);
+
+  diskWriter.start();
+
+}
+

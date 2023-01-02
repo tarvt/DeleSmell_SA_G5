@@ -1,0 +1,190 @@
+Location: TokenRelation.java
+
+Content: 
+
+/** 
+
+ * Returns the definition of the columns to which apply the token restriction.
+
+ * @param table the table metadata
+
+ * @return the definition of the columns to which apply the token restriction.
+
+ * @throws InvalidRequestException if the entity cannot be resolved
+
+ */
+
+private List<ColumnMetadata> getColumnDefinitions(TableMetadata table){
+
+  List<ColumnMetadata> columnDefs=new ArrayList<>(entities.size());
+
+  for (  ColumnIdentifier id : entities)   columnDefs.add(table.getExistingColumn(id));
+
+  return columnDefs;
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+public List<? extends Term.Raw> getInValues(){
+
+  return null;
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+public Term.Raw getValue(){
+
+  return value;
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override protected Restriction newContainsRestriction(TableMetadata table,VariableSpecifications boundNames,boolean isKey){
+
+  throw invalidRequest("%s cannot be used with the token function",operator());
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override protected Restriction newEQRestriction(TableMetadata table,VariableSpecifications boundNames){
+
+  List<ColumnMetadata> columnDefs=getColumnDefinitions(table);
+
+  Term term=toTerm(toReceivers(table,columnDefs),value,table.keyspace,boundNames);
+
+  return new TokenRestriction.EQRestriction(table,columnDefs,term);
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override protected Restriction newINRestriction(TableMetadata table,VariableSpecifications boundNames){
+
+  throw invalidRequest("%s cannot be used with the token function",operator());
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override protected Restriction newIsNotRestriction(TableMetadata table,VariableSpecifications boundNames){
+
+  throw invalidRequest("%s cannot be used with the token function",operator());
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override protected Restriction newLikeRestriction(TableMetadata table,VariableSpecifications boundNames,Operator operator){
+
+  throw invalidRequest("%s cannot be used with the token function",operator);
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override protected Restriction newSliceRestriction(TableMetadata table,VariableSpecifications boundNames,Bound bound,boolean inclusive){
+
+  List<ColumnMetadata> columnDefs=getColumnDefinitions(table);
+
+  Term term=toTerm(toReceivers(table,columnDefs),value,table.keyspace,boundNames);
+
+  return new TokenRestriction.SliceRestriction(table,columnDefs,bound,inclusive,term);
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override public boolean onToken(){
+
+  return true;
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+public TokenRelation(List<ColumnIdentifier> entities,Operator type,Term.Raw value){
+
+  this.entities=entities;
+
+  this.relationType=type;
+
+  this.value=value;
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+/** 
+
+ * Returns the receivers for this relation.
+
+ * @param table the table meta data
+
+ * @param columnDefs the column definitions
+
+ * @return the receivers for the specified relation.
+
+ * @throws InvalidRequestException if the relation is invalid
+
+ */
+
+private static List<? extends ColumnSpecification> toReceivers(TableMetadata table,List<ColumnMetadata> columnDefs) throws InvalidRequestException {
+
+  if (!columnDefs.equals(table.partitionKeyColumns())) {
+
+    checkTrue(columnDefs.containsAll(table.partitionKeyColumns()),"The token() function must be applied to all partition key components or none of them");
+
+    checkContainsNoDuplicates(columnDefs,"The token() function contains duplicate partition key components");
+
+    checkContainsOnly(columnDefs,table.partitionKeyColumns(),"The token() function must contains only partition key components");
+
+    throw invalidRequest("The token function arguments must be in the partition key order: %s",Joiner.on(", ").join(ColumnMetadata.toIdentifiers(table.partitionKeyColumns())));
+
+  }
+
+  ColumnMetadata firstColumn=columnDefs.get(0);
+
+  return Collections.singletonList(new ColumnSpecification(firstColumn.ksName,firstColumn.cfName,new ColumnIdentifier("partition key token",true),table.partitioner.getTokenValidator()));
+
+}
+
+Location: TokenRelation.java
+
+Content: 
+
+@Override protected Term toTerm(List<? extends ColumnSpecification> receivers,Raw raw,String keyspace,VariableSpecifications boundNames) throws InvalidRequestException {
+
+  Term term=raw.prepare(keyspace,receivers.get(0));
+
+  term.collectMarkerSpecification(boundNames);
+
+  return term;
+
+}
+

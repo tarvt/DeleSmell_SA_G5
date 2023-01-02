@@ -1,0 +1,298 @@
+Location: SSTableRewriter.java
+
+Content: 
+
+private static long calculateOpenInterval(boolean shouldOpenEarly){
+
+  long interval=DatabaseDescriptor.getSSTablePreemptiveOpenIntervalInMB() * (1L << 20);
+
+  if (disableEarlyOpeningForTests || !shouldOpenEarly || interval < 0)   interval=Long.MAX_VALUE;
+
+  return interval;
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+public static SSTableRewriter constructKeepingOriginals(ILifecycleTransaction transaction,boolean keepOriginals,long maxAge){
+
+  return new SSTableRewriter(transaction,maxAge,calculateOpenInterval(true),keepOriginals);
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+@Deprecated public static SSTableRewriter constructKeepingOriginals(ILifecycleTransaction transaction,boolean keepOriginals,long maxAge,boolean isOffline){
+
+  return constructKeepingOriginals(transaction,keepOriginals,maxAge);
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+public static SSTableRewriter constructWithoutEarlyOpening(ILifecycleTransaction transaction,boolean keepOriginals,long maxAge){
+
+  return new SSTableRewriter(transaction,maxAge,calculateOpenInterval(false),keepOriginals);
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+public static SSTableRewriter construct(ColumnFamilyStore cfs,ILifecycleTransaction transaction,boolean keepOriginals,long maxAge){
+
+  return new SSTableRewriter(transaction,maxAge,calculateOpenInterval(cfs.supportsEarlyOpen()),keepOriginals);
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+public SSTableWriter currentWriter(){
+
+  return writer;
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+private void maybeReopenEarly(DecoratedKey key){
+
+  if (writer.getFilePointer() - currentlyOpenedEarlyAt > preemptiveOpenInterval) {
+
+    if (transaction.isOffline()) {
+
+      for (      SSTableReader reader : transaction.originals()) {
+
+        RowIndexEntry index=reader.getPosition(key,SSTableReader.Operator.GE);
+
+        NativeLibrary.trySkipCache(reader.getFilename(),0,index == null ? 0 : index.position);
+
+      }
+
+    }
+
+ else {
+
+      SSTableReader reader=writer.setMaxDataAge(maxAge).openEarly();
+
+      if (reader != null) {
+
+        transaction.update(reader,false);
+
+        currentlyOpenedEarlyAt=writer.getFilePointer();
+
+        moveStarts(reader,reader.last);
+
+        transaction.checkpoint();
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+/** 
+
+ * Replace the readers we are rewriting with cloneWithNewStart, reclaiming any page cache that is no longer needed, and transferring any key cache entries over to the new reader, expiring them from the old. if reset is true, we are instead restoring the starts of the readers from before the rewriting began note that we replace an existing sstable with a new *instance* of the same sstable, the replacement sstable .equals() the old one, BUT, it is a new instance, so, for example, since we releaseReference() on the old one, the old *instance* will have reference count == 0 and if we were to start a new compaction with that old instance, we would get exceptions.
+
+ * @param newReader the rewritten reader that replaces them for this region
+
+ * @param lowerbound if !reset, must be non-null, and marks the exclusive lowerbound of the start for each sstable
+
+ */
+
+private void moveStarts(SSTableReader newReader,DecoratedKey lowerbound){
+
+  if (transaction.isOffline() || preemptiveOpenInterval == Long.MAX_VALUE)   return;
+
+  newReader.setupOnline();
+
+  List<DecoratedKey> invalidateKeys=null;
+
+  if (!cachedKeys.isEmpty()) {
+
+    invalidateKeys=new ArrayList<>(cachedKeys.size());
+
+    for (    Map.Entry<DecoratedKey,RowIndexEntry> cacheKey : cachedKeys.entrySet()) {
+
+      invalidateKeys.add(cacheKey.getKey());
+
+      newReader.cacheKey(cacheKey.getKey(),cacheKey.getValue());
+
+    }
+
+  }
+
+  cachedKeys.clear();
+
+  for (  SSTableReader sstable : transaction.originals()) {
+
+    final SSTableReader latest=transaction.current(sstable);
+
+    if (latest.first.compareTo(lowerbound) > 0)     continue;
+
+    Runnable runOnClose=invalidateKeys != null ? new InvalidateKeys(latest,invalidateKeys) : null;
+
+    if (lowerbound.compareTo(latest.last) >= 0) {
+
+      if (!transaction.isObsolete(latest)) {
+
+        if (runOnClose != null) {
+
+          latest.runOnClose(runOnClose);
+
+        }
+
+        transaction.obsolete(latest);
+
+      }
+
+      continue;
+
+    }
+
+    DecoratedKey newStart=latest.firstKeyBeyond(lowerbound);
+
+    assert newStart != null;
+
+    SSTableReader replacement=latest.cloneWithNewStart(newStart,runOnClose);
+
+    transaction.update(replacement,true);
+
+  }
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+@Deprecated public SSTableRewriter(ILifecycleTransaction transaction,long maxAge,boolean isOffline){
+
+  this(transaction,maxAge,isOffline,true);
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+@Deprecated public SSTableRewriter(ILifecycleTransaction transaction,long maxAge,boolean isOffline,boolean shouldOpenEarly){
+
+  this(transaction,maxAge,calculateOpenInterval(shouldOpenEarly),false);
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+@VisibleForTesting public SSTableRewriter(ILifecycleTransaction transaction,long maxAge,long preemptiveOpenInterval,boolean keepOriginals){
+
+  this.transaction=transaction;
+
+  this.maxAge=maxAge;
+
+  this.keepOriginals=keepOriginals;
+
+  this.preemptiveOpenInterval=preemptiveOpenInterval;
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+public void switchWriter(SSTableWriter newWriter){
+
+  if (newWriter != null)   writers.add(newWriter.setMaxDataAge(maxAge));
+
+  if (writer == null || writer.getFilePointer() == 0) {
+
+    if (writer != null) {
+
+      writer.abort();
+
+      transaction.untrackNew(writer);
+
+      writers.remove(writer);
+
+    }
+
+    writer=newWriter;
+
+    return;
+
+  }
+
+  if (preemptiveOpenInterval != Long.MAX_VALUE) {
+
+    SSTableReader reader=writer.setMaxDataAge(maxAge).openFinalEarly();
+
+    transaction.update(reader,false);
+
+    moveStarts(reader,reader.last);
+
+    transaction.checkpoint();
+
+  }
+
+  currentlyOpenedEarlyAt=0;
+
+  writer=newWriter;
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+public void throwDuringPrepare(boolean earlyException){
+
+  if (earlyException)   throwEarly=true;
+
+ else   throwLate=true;
+
+}
+
+Location: SSTableRewriter.java
+
+Content: 
+
+public RowIndexEntry tryAppend(UnfilteredRowIterator partition){
+
+  writer.mark();
+
+  try {
+
+    return append(partition);
+
+  }
+
+ catch (  Throwable t) {
+
+    writer.resetAndTruncate();
+
+    throw t;
+
+  }
+
+}
+

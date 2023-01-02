@@ -1,0 +1,76 @@
+Location: ThrottledUnfilteredIterator.java
+
+Content: 
+
+@VisibleForTesting ThrottledUnfilteredIterator(UnfilteredRowIterator origin,int throttle){
+
+  assert origin != null;
+
+  assert throttle > 1 : "Throttle size must be higher than 1 to properly support open and close tombstone boundaries.";
+
+  this.origin=origin;
+
+  this.throttle=throttle;
+
+  this.throttledItr=null;
+
+}
+
+Location: ThrottledUnfilteredIterator.java
+
+Content: 
+
+/** 
+
+ * Splits a  {@link UnfilteredPartitionIterator} in {@link UnfilteredRowIterator} batches with size no higher than<b>maxBatchSize</b>
+
+ * @param partitionIterator
+
+ * @param maxBatchSize max number of unfiltereds in the UnfilteredRowIterator. if 0 is given, it means no throttle.
+
+ * @return
+
+ */
+
+public static CloseableIterator<UnfilteredRowIterator> throttle(UnfilteredPartitionIterator partitionIterator,int maxBatchSize){
+
+  if (maxBatchSize == 0)   return partitionIterator;
+
+  return new AbstractIterator<UnfilteredRowIterator>(){
+
+    ThrottledUnfilteredIterator current=null;
+
+    protected UnfilteredRowIterator computeNext(){
+
+      if (current != null && !current.hasNext()) {
+
+        current.close();
+
+        current=null;
+
+      }
+
+      if (current == null && partitionIterator.hasNext()) {
+
+        current=new ThrottledUnfilteredIterator(partitionIterator.next(),maxBatchSize);
+
+      }
+
+      if (current != null && current.hasNext())       return current.next();
+
+      return endOfData();
+
+    }
+
+    public void close(){
+
+      if (current != null)       current.close();
+
+    }
+
+  }
+
+;
+
+}
+
