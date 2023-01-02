@@ -1,0 +1,66 @@
+Location: AuthConfig.java
+
+Content: 
+
+public static void applyAuth(){
+
+  if (initialized)   return;
+
+  initialized=true;
+
+  Config conf=DatabaseDescriptor.getRawConfig();
+
+  IAuthenticator authenticator=new AllowAllAuthenticator();
+
+  if (conf.authenticator != null)   authenticator=FBUtilities.newAuthenticator(conf.authenticator);
+
+  if (!(authenticator instanceof PasswordAuthenticator) && (conf.credentials_update_interval_in_ms != -1 || conf.credentials_validity_in_ms != 2000 || conf.credentials_cache_max_entries != 1000)) {
+
+    logger.info("Configuration options credentials_update_interval_in_ms, credentials_validity_in_ms and " + "credentials_cache_max_entries may not be applicable for the configured authenticator ({})",authenticator.getClass().getName());
+
+  }
+
+  DatabaseDescriptor.setAuthenticator(authenticator);
+
+  IAuthorizer authorizer=new AllowAllAuthorizer();
+
+  if (conf.authorizer != null)   authorizer=FBUtilities.newAuthorizer(conf.authorizer);
+
+  if (!authenticator.requireAuthentication() && authorizer.requireAuthorization())   throw new ConfigurationException(conf.authenticator + " can't be used with " + conf.authorizer,false);
+
+  DatabaseDescriptor.setAuthorizer(authorizer);
+
+  IRoleManager roleManager;
+
+  if (conf.role_manager != null)   roleManager=FBUtilities.newRoleManager(conf.role_manager);
+
+ else   roleManager=new CassandraRoleManager();
+
+  if (authenticator instanceof PasswordAuthenticator && !(roleManager instanceof CassandraRoleManager))   throw new ConfigurationException("CassandraRoleManager must be used with PasswordAuthenticator",false);
+
+  DatabaseDescriptor.setRoleManager(roleManager);
+
+  if (conf.internode_authenticator != null)   DatabaseDescriptor.setInternodeAuthenticator(FBUtilities.construct(conf.internode_authenticator,"internode_authenticator"));
+
+  INetworkAuthorizer networkAuthorizer=FBUtilities.newNetworkAuthorizer(conf.network_authorizer);
+
+  DatabaseDescriptor.setNetworkAuthorizer(networkAuthorizer);
+
+  if (networkAuthorizer.requireAuthorization() && !authenticator.requireAuthentication()) {
+
+    throw new ConfigurationException(conf.network_authorizer + " can't be used with " + conf.authenticator,false);
+
+  }
+
+  authenticator.validateConfiguration();
+
+  authorizer.validateConfiguration();
+
+  roleManager.validateConfiguration();
+
+  networkAuthorizer.validateConfiguration();
+
+  DatabaseDescriptor.getInternodeAuthenticator().validateConfiguration();
+
+}
+

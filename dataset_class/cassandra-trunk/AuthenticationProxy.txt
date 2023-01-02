@@ -1,0 +1,78 @@
+Location: AuthenticationProxy.java
+
+Content: 
+
+/** 
+
+ * Perform authentication of the client opening the  {@code}MBeanServerConnection {@code}
+
+ * @param credentials optionally these credentials may be supplied by the JMX user.Out of the box, the JDK's  {@code}RMIServerImpl {@code} is capableof supplying a two element String[], containing username and password. If present, these credentials will be made available to configured {@code}LoginModule {@code}s via  {@code}JMXCallbackHandler {@code}.
+
+ * @return the authenticated subject containing any {@code}Principal {@code}s added by the  {@code}LoginModule {@code}s
+
+ * @throws SecurityException if the server cannot authenticate the userwith the provided credentials.
+
+ */
+
+public Subject authenticate(Object credentials){
+
+  JMXCallbackHandler callbackHandler=new JMXCallbackHandler(credentials);
+
+  try {
+
+    LoginContext loginContext=new LoginContext(loginConfigName,callbackHandler);
+
+    loginContext.login();
+
+    final Subject subject=loginContext.getSubject();
+
+    if (!subject.isReadOnly()) {
+
+      AccessController.doPrivileged((PrivilegedAction<Void>)() -> {
+
+        subject.setReadOnly();
+
+        return null;
+
+      }
+
+);
+
+    }
+
+    return subject;
+
+  }
+
+ catch (  LoginException e) {
+
+    logger.trace("Authentication exception",e);
+
+    throw new SecurityException("Authentication error",e);
+
+  }
+
+}
+
+Location: AuthenticationProxy.java
+
+Content: 
+
+/** 
+
+ * Creates an instance of <code>JMXPluggableAuthenticator</code> and initializes it with a  {@link LoginContext}.
+
+ * @param loginConfigName name of the specifig JAAS login configuration touse when authenticating JMX connections
+
+ * @throws SecurityException if the authentication mechanism cannot beinitialized.
+
+ */
+
+public AuthenticationProxy(String loginConfigName){
+
+  if (loginConfigName == null)   throw new ConfigurationException("JAAS login configuration missing for JMX authenticator setup");
+
+  this.loginConfigName=loginConfigName;
+
+}
+

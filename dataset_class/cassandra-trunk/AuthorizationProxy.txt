@@ -1,0 +1,408 @@
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Authorize execution of a method on an MBean (or set of MBeans) which may be managed by the MBeanServer. Note that this also includes the queryMBeans and queryNames methods of MBeanServer as those both take an ObjectName (possibly a pattern containing wildcards) as their first argument. They both of those methods also accept null arguments, in which case they will be handled by authorizedMBeanServerMethod
+
+ * @param role
+
+ * @param methodName
+
+ * @param args
+
+ * @return the result of the method invocation, if authorized
+
+ * @throws Throwable
+
+ * @throws SecurityException if authorization fails
+
+ */
+
+private boolean authorizeMBeanMethod(RoleResource role,String methodName,Object[] args){
+
+  ObjectName targetBean=(ObjectName)args[0];
+
+  Permission requiredPermission=getRequiredPermission(methodName);
+
+  if (null == requiredPermission)   return false;
+
+  logger.trace("JMX invocation of {} on {} requires permission {}",methodName,targetBean,requiredPermission);
+
+  Set<JMXResource> permittedResources=getPermittedResources(role,requiredPermission);
+
+  if (permittedResources.isEmpty())   return false;
+
+  return targetBean.isPattern() ? checkPattern(targetBean,permittedResources) : checkExact(targetBean,permittedResources);
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Authorize execution of a method on the MBeanServer which does not take an MBean ObjectName as its first argument. The allowed methods that match this criteria are generally descriptive methods concerned with the MBeanServer itself, rather than with any particular set of MBeans managed by the server and so we check the DESCRIBE permission on the root JMXResource (representing the MBeanServer)
+
+ * @param subject
+
+ * @param methodName
+
+ * @return the result of the method invocation, if authorized
+
+ * @throws Throwable
+
+ * @throws SecurityException if authorization fails
+
+ */
+
+private boolean authorizeMBeanServerMethod(RoleResource subject,String methodName){
+
+  logger.trace("JMX invocation of {} on MBeanServer requires permission {}",methodName,Permission.DESCRIBE);
+
+  return (MBEAN_SERVER_ALLOWED_METHODS.contains(methodName) && hasPermission(subject,Permission.DESCRIBE,JMXResource.root()));
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Performs the actual authorization of an identified subject to execute a remote method invocation.
+
+ * @param subject The principal making the execution request. A null value represents a local invocationfrom the JMX connector itself
+
+ * @param methodName Name of the method being invoked
+
+ * @param args Array containing invocation argument. If the first element is an ObjectName instance, forauthz purposes we consider this an invocation of an MBean method, otherwise it is treated as an invocation of a method on the MBeanServer.
+
+ */
+
+@VisibleForTesting boolean authorize(Subject subject,String methodName,Object[] args){
+
+  logger.trace("Authorizing JMX method invocation {} for {}",methodName,subject == null ? "" : subject.toString().replaceAll("\\n"," "));
+
+  if (!isAuthSetupComplete.getAsBoolean()) {
+
+    logger.trace("Auth setup is not complete, refusing access");
+
+    return false;
+
+  }
+
+  if (!isAuthzRequired.getAsBoolean())   return true;
+
+  if (subject == null)   return true;
+
+  if (DENIED_METHODS.contains(methodName)) {
+
+    logger.trace("Access denied to restricted method {}",methodName);
+
+    return false;
+
+  }
+
+  Set<Principal> principals=subject.getPrincipals();
+
+  if (principals == null || principals.isEmpty())   return false;
+
+  RoleResource userResource=RoleResource.role(principals.iterator().next().getName());
+
+  if (isSuperuser.test(userResource))   return true;
+
+  if (args != null && args[0] instanceof ObjectName)   return authorizeMBeanMethod(userResource,methodName,args);
+
+ else   return authorizeMBeanServerMethod(userResource,methodName);
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Given a set of JMXResources upon which the Subject has been granted a particular permission, check whether any match the ObjectName representing the target of the method invocation. At this point, we are sure that whatever the required permission, the Subject has definitely been granted it against this set of JMXResources. The job of this method is only to verify that the target of the invocation is matched by a member of the set.
+
+ * @param target
+
+ * @param permittedResources
+
+ * @return true if at least one of the permitted resources matches the target; false otherwise
+
+ */
+
+private boolean checkExact(ObjectName target,Set<JMXResource> permittedResources){
+
+  if (permittedResources.contains(JMXResource.root()))   return true;
+
+  for (  JMXResource resource : permittedResources) {
+
+    try {
+
+      if (ObjectName.getInstance(resource.getObjectName()).apply(target))       return true;
+
+    }
+
+ catch (    MalformedObjectNameException e) {
+
+      logger.warn("Permissions for JMX resource contains invalid ObjectName {}",resource.getObjectName());
+
+    }
+
+  }
+
+  logger.trace("Subject does not have sufficient permissions on target MBean {}",target);
+
+  return false;
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Given a set of JMXResources upon which the Subject has been granted a particular permission, check whether any match the pattern-type ObjectName representing the target of the method invocation. At this point, we are sure that whatever the required permission, the Subject has definitely been granted it against this set of JMXResources. The job of this method is only to verify that the target of the invocation is covered by the members of the set.
+
+ * @param target
+
+ * @param permittedResources
+
+ * @return true if all registered beans which match the target can also be matched by theJMXResources the subject has been granted permissions on; false otherwise
+
+ */
+
+private boolean checkPattern(ObjectName target,Set<JMXResource> permittedResources){
+
+  if (permittedResources.contains(JMXResource.root()))   return true;
+
+  Set<ObjectName> targetNames=queryNames.apply(target);
+
+  for (  JMXResource resource : permittedResources) {
+
+    try {
+
+      Set<ObjectName> matchingNames=queryNames.apply(ObjectName.getInstance(resource.getObjectName()));
+
+      targetNames.removeAll(matchingNames);
+
+      if (targetNames.isEmpty())       return true;
+
+    }
+
+ catch (    MalformedObjectNameException e) {
+
+      logger.warn("Permissions for JMX resource contains invalid ObjectName {}",resource.getObjectName());
+
+    }
+
+  }
+
+  logger.trace("Subject does not have sufficient permissions on all MBeans matching the target pattern {}",target);
+
+  return false;
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Get any grants of the required permission for the authenticated subject, regardless of the resource the permission applies to as we'll do the filtering & matching in the calling method
+
+ * @param subject
+
+ * @param required
+
+ * @return the set of JMXResources upon which the subject has been granted the required permission
+
+ */
+
+private Set<JMXResource> getPermittedResources(RoleResource subject,Permission required){
+
+  return getPermissions.apply(subject).stream().filter(details -> details.permission == required).map(details -> (JMXResource)details.resource).collect(Collectors.toSet());
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Mapping between method names and the permission required to invoke them. Note, these names refer to methods on MBean instances invoked via the MBeanServer.
+
+ * @param methodName
+
+ * @return
+
+ */
+
+private static Permission getRequiredPermission(String methodName){
+
+switch (methodName) {
+
+case "getAttribute":
+
+case "getAttributes":
+
+    return Permission.SELECT;
+
+case "setAttribute":
+
+case "setAttributes":
+
+  return Permission.MODIFY;
+
+case "invoke":
+
+return Permission.EXECUTE;
+
+case "getInstanceOf":
+
+case "getMBeanInfo":
+
+case "hashCode":
+
+case "isInstanceOf":
+
+case "isRegistered":
+
+case "queryMBeans":
+
+case "queryNames":
+
+return Permission.DESCRIBE;
+
+default :
+
+logger.debug("Access denied, method name {} does not map to any defined permission",methodName);
+
+return null;
+
+}
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Check whether a required permission has been granted to the authenticated subject on a specific resource
+
+ * @param subject
+
+ * @param permission
+
+ * @param resource
+
+ * @return true if the Subject has been granted the required permission on the specified resource; false otherwise
+
+ */
+
+private boolean hasPermission(RoleResource subject,Permission permission,JMXResource resource){
+
+  return getPermissions.apply(subject).stream().anyMatch(details -> details.permission == permission && details.resource.equals(resource));
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Invoke a method on the MBeanServer instance. This is called when authorization is not required (because AllowAllAuthorizer is configured, or because the invocation is being performed by the JMXConnector itself rather than by a connected client), and also when a call from an authenticated subject has been successfully authorized
+
+ * @param method
+
+ * @param args
+
+ * @return
+
+ * @throws Throwable
+
+ */
+
+private Object invoke(Method method,Object[] args) throws Throwable {
+
+  try {
+
+    return method.invoke(mbs,args);
+
+  }
+
+ catch (  InvocationTargetException e) {
+
+    Throwable t=e.getCause();
+
+    throw t;
+
+  }
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+@Override public Object invoke(Object proxy,Method method,Object[] args) throws Throwable {
+
+  String methodName=method.getName();
+
+  if ("getMBeanServer".equals(methodName))   throw new SecurityException("Access denied");
+
+  AccessControlContext acc=AccessController.getContext();
+
+  Subject subject=Subject.getSubject(acc);
+
+  if (("setMBeanServer").equals(methodName)) {
+
+    if (subject != null)     throw new SecurityException("Access denied");
+
+    if (args[0] == null)     throw new IllegalArgumentException("Null MBeanServer");
+
+    if (mbs != null)     throw new IllegalArgumentException("MBeanServer already initialized");
+
+    mbs=(MBeanServer)args[0];
+
+    return null;
+
+  }
+
+  if (authorize(subject,methodName,args))   return invoke(method,args);
+
+  throw new SecurityException("Access Denied");
+
+}
+
+Location: AuthorizationProxy.java
+
+Content: 
+
+/** 
+
+ * Query the configured IAuthorizer for the set of all permissions granted on JMXResources to a specific subject
+
+ * @param subject
+
+ * @return All permissions granted to the specfied subject (including those transitively inherited fromany roles the subject has been granted), filtered to include only permissions granted on JMXResources
+
+ */
+
+private static Set<PermissionDetails> loadPermissions(RoleResource subject){
+
+  return DatabaseDescriptor.getAuthorizer().list(AuthenticatedUser.SYSTEM_USER,Permission.ALL,null,subject).stream().filter(details -> details.resource instanceof JMXResource).collect(Collectors.toSet());
+
+}
+

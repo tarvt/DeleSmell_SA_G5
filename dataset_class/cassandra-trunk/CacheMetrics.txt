@@ -1,0 +1,74 @@
+Location: CacheMetrics.java
+
+Content: 
+
+/** 
+
+ * Create metrics for given cache.
+
+ * @param type Type of Cache to identify metrics.
+
+ * @param cache Cache to measure metrics
+
+ */
+
+public CacheMetrics(String type,CacheSize cache){
+
+  factory=new DefaultNameFactory("Cache",type);
+
+  capacity=Metrics.register(factory.createMetricName("Capacity"),cache::capacity);
+
+  size=Metrics.register(factory.createMetricName("Size"),cache::weightedSize);
+
+  entries=Metrics.register(factory.createMetricName("Entries"),cache::size);
+
+  hits=Metrics.meter(factory.createMetricName("Hits"));
+
+  misses=Metrics.meter(factory.createMetricName("Misses"));
+
+  requests=Metrics.meter(factory.createMetricName("Requests"));
+
+  hitRate=Metrics.register(factory.createMetricName("HitRate"),ratioGauge(hits::getCount,requests::getCount));
+
+  oneMinuteHitRate=Metrics.register(factory.createMetricName("OneMinuteHitRate"),ratioGauge(hits::getOneMinuteRate,requests::getOneMinuteRate));
+
+  fiveMinuteHitRate=Metrics.register(factory.createMetricName("FiveMinuteHitRate"),ratioGauge(hits::getFiveMinuteRate,requests::getFiveMinuteRate));
+
+  fifteenMinuteHitRate=Metrics.register(factory.createMetricName("FifteenMinuteHitRate"),ratioGauge(hits::getFifteenMinuteRate,requests::getFifteenMinuteRate));
+
+}
+
+Location: CacheMetrics.java
+
+Content: 
+
+private static RatioGauge ratioGauge(DoubleSupplier numeratorSupplier,DoubleSupplier denominatorSupplier){
+
+  return new RatioGauge(){
+
+    @Override public Ratio getRatio(){
+
+      return Ratio.of(numeratorSupplier.getAsDouble(),denominatorSupplier.getAsDouble());
+
+    }
+
+  }
+
+;
+
+}
+
+Location: CacheMetrics.java
+
+Content: 
+
+@VisibleForTesting public void reset(){
+
+  hits.mark(-hits.getCount());
+
+  misses.mark(-misses.getCount());
+
+  requests.mark(-requests.getCount());
+
+}
+

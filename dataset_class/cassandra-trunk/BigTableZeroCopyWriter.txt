@@ -1,0 +1,168 @@
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+public BigTableZeroCopyWriter(Descriptor descriptor,TableMetadataRef metadata,LifecycleNewTracker lifecycleNewTracker,final Collection<Component> components){
+
+  super(descriptor,ImmutableSet.copyOf(components),metadata,DatabaseDescriptor.getDiskOptimizationStrategy());
+
+  lifecycleNewTracker.trackNew(this);
+
+  this.metadata=metadata;
+
+  this.componentWriters=new EnumMap<>(Component.Type.class);
+
+  if (!SUPPORTED_COMPONENTS.containsAll(components))   throw new AssertionError(format("Unsupported streaming component detected %s",Sets.difference(ImmutableSet.copyOf(components),SUPPORTED_COMPONENTS)));
+
+  for (  Component c : components)   componentWriters.put(c.type,makeWriter(descriptor,c));
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+@Override public Collection<SSTableReader> finished(){
+
+  if (finalReader == null)   finalReader=SSTableReader.open(descriptor,components,metadata);
+
+  return ImmutableList.of(finalReader);
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+@Override public Collection<SSTableReader> finish(boolean openResult){
+
+  setOpenResult(openResult);
+
+  return finished();
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+@Override public Collection<SSTableReader> finish(long repairedAt,long maxDataAge,boolean openResult){
+
+  return finish(openResult);
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+@Override public TableId getTableId(){
+
+  return metadata.id;
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+private static SequentialWriter makeWriter(Descriptor descriptor,Component component){
+
+  return new SequentialWriter(new File(descriptor.filenameFor(component)),WRITER_OPTION,false);
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+@Override public SSTableMultiWriter setOpenResult(boolean openResult){
+
+  return null;
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+public void writeComponent(Component.Type type,DataInputPlus in,long size){
+
+  logger.info("Writing component {} to {} length {}",type,componentWriters.get(type).getPath(),prettyPrintMemory(size));
+
+  if (in instanceof AsyncStreamingInputPlus)   write((AsyncStreamingInputPlus)in,size,componentWriters.get(type));
+
+ else   write(in,size,componentWriters.get(type));
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+private void write(AsyncStreamingInputPlus in,long size,SequentialWriter writer){
+
+  logger.info("Block Writing component to {} length {}",writer.getPath(),prettyPrintMemory(size));
+
+  try {
+
+    in.consume(writer::writeDirectlyToChannel,size);
+
+    writer.sync();
+
+  }
+
+ catch (  EOFException|AsyncStreamingInputPlus.InputTimeoutException e) {
+
+    in.close();
+
+  }
+
+catch (  IOException e) {
+
+    throw new FSWriteError(e,writer.getPath());
+
+  }
+
+}
+
+Location: BigTableZeroCopyWriter.java
+
+Content: 
+
+private void write(DataInputPlus in,long size,SequentialWriter out) throws FSWriteError {
+
+  final int BUFFER_SIZE=1 << 20;
+
+  long bytesRead=0;
+
+  byte[] buff=new byte[BUFFER_SIZE];
+
+  try {
+
+    while (bytesRead < size) {
+
+      int toRead=(int)Math.min(size - bytesRead,BUFFER_SIZE);
+
+      in.readFully(buff,0,toRead);
+
+      int count=Math.min(toRead,BUFFER_SIZE);
+
+      out.write(buff,0,count);
+
+      bytesRead+=count;
+
+    }
+
+    out.sync();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,out.getPath());
+
+  }
+
+}
+

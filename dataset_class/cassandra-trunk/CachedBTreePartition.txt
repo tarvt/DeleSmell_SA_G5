@@ -1,0 +1,70 @@
+Location: CachedBTreePartition.java
+
+Content: 
+
+private CachedBTreePartition(TableMetadata metadata,DecoratedKey partitionKey,Holder holder,int createdAtInSec,int cachedLiveRows,int rowsWithNonExpiringCells){
+
+  super(metadata,partitionKey,holder);
+
+  this.createdAtInSec=createdAtInSec;
+
+  this.cachedLiveRows=cachedLiveRows;
+
+  this.rowsWithNonExpiringCells=rowsWithNonExpiringCells;
+
+}
+
+Location: CachedBTreePartition.java
+
+Content: 
+
+/** 
+
+ * Creates an  {@code ArrayBackedCachedPartition} holding all the data of the provided iterator.Warning: Note that this method does not close the provided iterator and it is up to the caller to do so.
+
+ * @param iterator the iterator got gather in memory.
+
+ * @param initialRowCapacity sizing hint (in rows) to use for the created partition. It should ideallycorrespond or be a good estimation of the number or rows in  {@code iterator}.
+
+ * @param nowInSec the time of the creation in seconds. This is the time at which {@link #cachedLiveRows} applies.
+
+ * @return the created partition.
+
+ */
+
+public static CachedBTreePartition create(UnfilteredRowIterator iterator,int initialRowCapacity,int nowInSec){
+
+  Holder holder=ImmutableBTreePartition.build(iterator,initialRowCapacity);
+
+  int cachedLiveRows=0;
+
+  int rowsWithNonExpiringCells=0;
+
+  boolean enforceStrictLiveness=iterator.metadata().enforceStrictLiveness();
+
+  for (  Row row : BTree.<Row>iterable(holder.tree)) {
+
+    if (row.hasLiveData(nowInSec,enforceStrictLiveness))     ++cachedLiveRows;
+
+    boolean hasNonExpiringLiveCell=false;
+
+    for (    Cell<?> cell : row.cells()) {
+
+      if (!cell.isTombstone() && !cell.isExpiring()) {
+
+        hasNonExpiringLiveCell=true;
+
+        break;
+
+      }
+
+    }
+
+    if (hasNonExpiringLiveCell)     ++rowsWithNonExpiringCells;
+
+  }
+
+  return new CachedBTreePartition(iterator.metadata(),iterator.partitionKey(),holder,nowInSec,cachedLiveRows,rowsWithNonExpiringCells);
+
+}
+

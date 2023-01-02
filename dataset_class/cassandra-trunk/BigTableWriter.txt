@@ -1,0 +1,368 @@
+Location: BigTableWriter.java
+
+Content: 
+
+private void afterAppend(DecoratedKey decoratedKey,long dataEnd,RowIndexEntry index,ByteBuffer indexInfo) throws IOException {
+
+  metadataCollector.addKey(decoratedKey.getKey());
+
+  lastWrittenKey=decoratedKey;
+
+  last=lastWrittenKey;
+
+  if (first == null)   first=lastWrittenKey;
+
+  if (logger.isTraceEnabled())   logger.trace("wrote {} at {}",decoratedKey,dataEnd);
+
+  iwriter.append(decoratedKey,index,dataEnd,indexInfo);
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+/** 
+
+ * Appends partition data to this writer.
+
+ * @param iterator the partition to write
+
+ * @return the created index entry if something was written, that is if {@code iterator}wasn't empty,  {@code null} otherwise.
+
+ * @throws FSWriteError if a write to the dataFile fails
+
+ */
+
+public RowIndexEntry append(UnfilteredRowIterator iterator){
+
+  DecoratedKey key=iterator.partitionKey();
+
+  if (key.getKey().remaining() > FBUtilities.MAX_UNSIGNED_SHORT) {
+
+    logger.error("Key size {} exceeds maximum of {}, skipping row",key.getKey().remaining(),FBUtilities.MAX_UNSIGNED_SHORT);
+
+    return null;
+
+  }
+
+  if (iterator.isEmpty())   return null;
+
+  long startPosition=beforeAppend(key);
+
+  observers.forEach((o) -> o.startPartition(key,iwriter.indexFile.position()));
+
+  columnIndexWriter.reset();
+
+  try (UnfilteredRowIterator collecting=Transformation.apply(iterator,new StatsCollector(metadataCollector))){
+
+    columnIndexWriter.buildRowIndex(collecting);
+
+    long indexFilePosition=ByteBufferUtil.serializedSizeWithShortLength(key.getKey()) + iwriter.indexFile.position();
+
+    RowIndexEntry entry=RowIndexEntry.create(startPosition,indexFilePosition,collecting.partitionLevelDeletion(),columnIndexWriter.headerLength,columnIndexWriter.columnIndexCount,columnIndexWriter.indexInfoSerializedSize(),columnIndexWriter.indexSamples(),columnIndexWriter.offsets(),getRowIndexEntrySerializer().indexInfoSerializer());
+
+    long endPosition=dataFile.position();
+
+    long rowSize=endPosition - startPosition;
+
+    maybeLogLargePartitionWarning(key,rowSize);
+
+    metadataCollector.addPartitionSizeInBytes(rowSize);
+
+    afterAppend(key,endPosition,entry,columnIndexWriter.buffer());
+
+    return entry;
+
+  }
+
+ catch (  BufferOverflowException boe) {
+
+    throw new PartitionSerializationException(iterator,boe);
+
+  }
+
+catch (  IOException e) {
+
+    throw new FSWriteError(e,dataFile.getPath());
+
+  }
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+/** 
+
+ * Perform sanity checks on @param decoratedKey and @return the position in the data file before any data is written
+
+ */
+
+protected long beforeAppend(DecoratedKey decoratedKey){
+
+  assert decoratedKey != null : "Keys must not be null";
+
+  if (lastWrittenKey != null && lastWrittenKey.compareTo(decoratedKey) >= 0)   throw new RuntimeException("Last written key " + lastWrittenKey + " >= current key "+ decoratedKey+ " writing into "+ getFilename());
+
+  return (lastWrittenKey == null) ? 0 : dataFile.position();
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+public BigTableWriter(Descriptor descriptor,long keyCount,long repairedAt,UUID pendingRepair,boolean isTransient,TableMetadataRef metadata,MetadataCollector metadataCollector,SerializationHeader header,Collection<SSTableFlushObserver> observers,LifecycleNewTracker lifecycleNewTracker){
+
+  super(descriptor,keyCount,repairedAt,pendingRepair,isTransient,metadata,metadataCollector,header,observers);
+
+  lifecycleNewTracker.trackNew(this);
+
+  if (compression) {
+
+    final CompressionParams compressionParams=compressionFor(lifecycleNewTracker.opType());
+
+    dataFile=new CompressedSequentialWriter(new File(getFilename()),descriptor.filenameFor(Component.COMPRESSION_INFO),new File(descriptor.filenameFor(Component.DIGEST)),writerOption,compressionParams,metadataCollector);
+
+  }
+
+ else {
+
+    dataFile=new ChecksummedSequentialWriter(new File(getFilename()),new File(descriptor.filenameFor(Component.CRC)),new File(descriptor.filenameFor(Component.DIGEST)),writerOption);
+
+  }
+
+  dbuilder=new FileHandle.Builder(descriptor.filenameFor(Component.DATA)).compressed(compression).mmapped(DatabaseDescriptor.getDiskAccessMode() == Config.DiskAccessMode.mmap);
+
+  chunkCache.ifPresent(dbuilder::withChunkCache);
+
+  iwriter=new IndexWriter(keyCount);
+
+  columnIndexWriter=new ColumnIndex(this.header,dataFile,descriptor.version,this.observers,getRowIndexEntrySerializer().indexInfoSerializer());
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+/** 
+
+ * Given an OpType, determine the correct Compression Parameters
+
+ * @param opType
+
+ * @return {@link org.apache.cassandra.schema.CompressionParams}
+
+ */
+
+private CompressionParams compressionFor(final OperationType opType){
+
+  CompressionParams compressionParams=metadata().params.compression;
+
+  final ICompressor compressor=compressionParams.getSstableCompressor();
+
+  if (null != compressor && opType == OperationType.FLUSH) {
+
+switch (DatabaseDescriptor.getFlushCompression()) {
+
+case none:
+
+      compressionParams=CompressionParams.NOOP;
+
+    break;
+
+case fast:
+
+  if (!compressor.recommendedUses().contains(ICompressor.Uses.FAST_COMPRESSION)) {
+
+    compressionParams=CompressionParams.DEFAULT;
+
+    break;
+
+  }
+
+case table:
+
+default :
+
+}
+
+}
+
+return compressionParams;
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+private RowIndexEntry.IndexSerializer<IndexInfo> getRowIndexEntrySerializer(){
+
+  return (RowIndexEntry.IndexSerializer<IndexInfo>)rowIndexEntrySerializer;
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+void invalidateCacheAtBoundary(FileHandle dfile){
+
+  chunkCache.ifPresent(cache -> {
+
+    if (lastEarlyOpenLength != 0 && dfile.dataLength() > lastEarlyOpenLength)     cache.invalidatePosition(dfile,lastEarlyOpenLength);
+
+  }
+
+);
+
+  lastEarlyOpenLength=dfile.dataLength();
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+private void maybeLogLargePartitionWarning(DecoratedKey key,long rowSize){
+
+  if (rowSize > DatabaseDescriptor.getCompactionLargePartitionWarningThreshold()) {
+
+    String keyString=metadata().partitionKeyType.getString(key.getKey());
+
+    logger.warn("Writing large partition {}/{}:{} ({}) to sstable {}",metadata.keyspace,metadata.name,keyString,FBUtilities.prettyPrintMemory(rowSize),getFilename());
+
+  }
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+@SuppressWarnings("resource") public SSTableReader openEarly(){
+
+  IndexSummaryBuilder.ReadableBoundary boundary=iwriter.getMaxReadable();
+
+  if (boundary == null)   return null;
+
+  StatsMetadata stats=statsMetadata();
+
+  assert boundary.indexLength > 0 && boundary.dataLength > 0;
+
+  IndexSummary indexSummary=iwriter.summary.build(metadata().partitioner,boundary);
+
+  long indexFileLength=new File(descriptor.filenameFor(Component.PRIMARY_INDEX)).length();
+
+  int indexBufferSize=optimizationStrategy.bufferSize(indexFileLength / indexSummary.size());
+
+  FileHandle ifile=iwriter.builder.bufferSize(indexBufferSize).complete(boundary.indexLength);
+
+  if (compression)   dbuilder.withCompressionMetadata(((CompressedSequentialWriter)dataFile).open(boundary.dataLength));
+
+  int dataBufferSize=optimizationStrategy.bufferSize(stats.estimatedPartitionSize.percentile(DatabaseDescriptor.getDiskOptimizationEstimatePercentile()));
+
+  FileHandle dfile=dbuilder.bufferSize(dataBufferSize).complete(boundary.dataLength);
+
+  invalidateCacheAtBoundary(dfile);
+
+  SSTableReader sstable=SSTableReader.internalOpen(descriptor,components,metadata,ifile,dfile,indexSummary,iwriter.bf.sharedCopy(),maxDataAge,stats,SSTableReader.OpenReason.EARLY,header);
+
+  sstable.first=getMinimalKey(first);
+
+  sstable.last=getMinimalKey(boundary.lastKey);
+
+  return sstable;
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+public SSTableReader openFinalEarly(){
+
+  dataFile.sync();
+
+  iwriter.indexFile.sync();
+
+  return openFinal(SSTableReader.OpenReason.EARLY);
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+@SuppressWarnings("resource") private SSTableReader openFinal(SSTableReader.OpenReason openReason){
+
+  if (maxDataAge < 0)   maxDataAge=System.currentTimeMillis();
+
+  StatsMetadata stats=statsMetadata();
+
+  IndexSummary indexSummary=iwriter.summary.build(metadata().partitioner);
+
+  long indexFileLength=new File(descriptor.filenameFor(Component.PRIMARY_INDEX)).length();
+
+  int dataBufferSize=optimizationStrategy.bufferSize(stats.estimatedPartitionSize.percentile(DatabaseDescriptor.getDiskOptimizationEstimatePercentile()));
+
+  int indexBufferSize=optimizationStrategy.bufferSize(indexFileLength / indexSummary.size());
+
+  FileHandle ifile=iwriter.builder.bufferSize(indexBufferSize).complete();
+
+  if (compression)   dbuilder.withCompressionMetadata(((CompressedSequentialWriter)dataFile).open(0));
+
+  FileHandle dfile=dbuilder.bufferSize(dataBufferSize).complete();
+
+  invalidateCacheAtBoundary(dfile);
+
+  SSTableReader sstable=SSTableReader.internalOpen(descriptor,components,metadata,ifile,dfile,indexSummary,iwriter.bf.sharedCopy(),maxDataAge,stats,openReason,header);
+
+  sstable.first=getMinimalKey(first);
+
+  sstable.last=getMinimalKey(last);
+
+  return sstable;
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+public void resetAndTruncate(){
+
+  dataFile.resetAndTruncate(dataMark);
+
+  iwriter.resetAndTruncate();
+
+}
+
+Location: BigTableWriter.java
+
+Content: 
+
+private void writeMetadata(Descriptor desc,Map<MetadataType,MetadataComponent> components){
+
+  File file=new File(desc.filenameFor(Component.STATS));
+
+  try (SequentialWriter out=new SequentialWriter(file,writerOption)){
+
+    desc.getMetadataSerializer().serialize(components,out,desc.version);
+
+    out.finish();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,file.getPath());
+
+  }
+
+}
+

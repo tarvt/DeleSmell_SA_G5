@@ -1,0 +1,282 @@
+Location: BatchlogManager.java
+
+Content: 
+
+public BatchlogManager(){
+
+  ScheduledThreadPoolExecutor executor=new DebuggableScheduledThreadPoolExecutor("BatchlogTasks");
+
+  executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+
+  batchlogTasks=executor;
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+static int calculatePageSize(ColumnFamilyStore store){
+
+  double averageRowSize=store.getMeanPartitionSize();
+
+  if (averageRowSize <= 0)   return DEFAULT_PAGE_SIZE;
+
+  return (int)Math.max(1,Math.min(DEFAULT_PAGE_SIZE,4 * 1024 * 1024 / averageRowSize));
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+private void finishAndClearBatches(ArrayList<ReplayingBatch> batches,Set<InetAddressAndPort> hintedNodes,Set<UUID> replayedBatches){
+
+  for (  ReplayingBatch batch : batches) {
+
+    batch.finish(hintedNodes);
+
+    replayedBatches.add(batch.id);
+
+  }
+
+  totalBatchesReplayed+=batches.size();
+
+  batches.clear();
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+public static long getBatchlogTimeout(){
+
+  return BATCHLOG_REPLAY_TIMEOUT;
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+void performInitialReplay() throws InterruptedException, ExecutionException {
+
+  batchlogTasks.submit(this::replayFailedBatches).get();
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+private void processBatchlogEntries(UntypedResultSet batches,int pageSize,RateLimiter rateLimiter){
+
+  int positionInPage=0;
+
+  ArrayList<ReplayingBatch> unfinishedBatches=new ArrayList<>(pageSize);
+
+  Set<InetAddressAndPort> hintedNodes=new HashSet<>();
+
+  Set<UUID> replayedBatches=new HashSet<>();
+
+  Exception caughtException=null;
+
+  int skipped=0;
+
+  for (  UntypedResultSet.Row row : batches) {
+
+    UUID id=row.getUUID("id");
+
+    int version=row.getInt("version");
+
+    try {
+
+      ReplayingBatch batch=new ReplayingBatch(id,version,row.getList("mutations",BytesType.instance));
+
+      if (batch.replay(rateLimiter,hintedNodes) > 0) {
+
+        unfinishedBatches.add(batch);
+
+      }
+
+ else {
+
+        remove(id);
+
+        ++totalBatchesReplayed;
+
+      }
+
+    }
+
+ catch (    IOException e) {
+
+      logger.warn("Skipped batch replay of {} due to {}",id,e.getMessage());
+
+      caughtException=e;
+
+      remove(id);
+
+      ++skipped;
+
+    }
+
+    if (++positionInPage == pageSize) {
+
+      finishAndClearBatches(unfinishedBatches,hintedNodes,replayedBatches);
+
+      positionInPage=0;
+
+    }
+
+  }
+
+  finishAndClearBatches(unfinishedBatches,hintedNodes,replayedBatches);
+
+  if (caughtException != null)   logger.warn(String.format("Encountered %d unexpected exceptions while sending out batches",skipped),caughtException);
+
+  HintsService.instance.flushAndFsyncBlockingly(transform(hintedNodes,StorageService.instance::getHostIdForEndpoint));
+
+  replayedBatches.forEach(BatchlogManager::remove);
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+public static void remove(UUID id){
+
+  new Mutation(PartitionUpdate.fullPartitionDelete(SystemKeyspace.Batches,UUIDType.instance.decompose(id),FBUtilities.timestampMicros(),FBUtilities.nowInSeconds())).apply();
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+private void replayFailedBatches(){
+
+  logger.trace("Started replayFailedBatches");
+
+  int endpointsCount=StorageService.instance.getTokenMetadata().getSizeOfAllEndpoints();
+
+  if (endpointsCount <= 0) {
+
+    logger.trace("Replay cancelled as there are no peers in the ring.");
+
+    return;
+
+  }
+
+  setRate(DatabaseDescriptor.getBatchlogReplayThrottleInKB());
+
+  UUID limitUuid=UUIDGen.maxTimeUUID(System.currentTimeMillis() - getBatchlogTimeout());
+
+  ColumnFamilyStore store=Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME).getColumnFamilyStore(SystemKeyspace.BATCHES);
+
+  int pageSize=calculatePageSize(store);
+
+  String query=String.format("SELECT id, mutations, version FROM %s.%s WHERE token(id) > token(?) AND token(id) <= token(?)",SchemaConstants.SYSTEM_KEYSPACE_NAME,SystemKeyspace.BATCHES);
+
+  UntypedResultSet batches=executeInternalWithPaging(query,pageSize,lastReplayedUuid,limitUuid);
+
+  processBatchlogEntries(batches,pageSize,rateLimiter);
+
+  lastReplayedUuid=limitUuid;
+
+  logger.trace("Finished replayFailedBatches");
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+/** 
+
+ * Sets the rate for the current rate limiter. When  {@code throttleInKB} is 0, this sets the rate to{@link Double#MAX_VALUE} bytes per second.
+
+ * @param throttleInKB throughput to set in KB per second
+
+ */
+
+public void setRate(final int throttleInKB){
+
+  int endpointsCount=StorageService.instance.getTokenMetadata().getSizeOfAllEndpoints();
+
+  if (endpointsCount > 0) {
+
+    int endpointThrottleInKB=throttleInKB / endpointsCount;
+
+    double throughput=endpointThrottleInKB == 0 ? Double.MAX_VALUE : endpointThrottleInKB * 1024.0;
+
+    if (rateLimiter.getRate() != throughput) {
+
+      logger.debug("Updating batchlog replay throttle to {} KB/s, {} KB/s per endpoint",throttleInKB,endpointThrottleInKB);
+
+      rateLimiter.setRate(throughput);
+
+    }
+
+  }
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+public Future<?> startBatchlogReplay(){
+
+  return batchlogTasks.submit(this::replayFailedBatches);
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+public static void store(Batch batch){
+
+  store(batch,true);
+
+}
+
+Location: BatchlogManager.java
+
+Content: 
+
+public static void store(Batch batch,boolean durableWrites){
+
+  List<ByteBuffer> mutations=new ArrayList<>(batch.encodedMutations.size() + batch.decodedMutations.size());
+
+  mutations.addAll(batch.encodedMutations);
+
+  for (  Mutation mutation : batch.decodedMutations) {
+
+    try (DataOutputBuffer buffer=new DataOutputBuffer()){
+
+      Mutation.serializer.serialize(mutation,buffer,MessagingService.current_version);
+
+      mutations.add(buffer.buffer());
+
+    }
+
+ catch (    IOException e) {
+
+      throw new AssertionError(e);
+
+    }
+
+  }
+
+  PartitionUpdate.SimpleBuilder builder=PartitionUpdate.simpleBuilder(SystemKeyspace.Batches,batch.id);
+
+  builder.row().timestamp(batch.creationTime).add("version",MessagingService.current_version).appendAll("mutations",mutations);
+
+  builder.buildAsMutation().apply(durableWrites);
+
+}
+

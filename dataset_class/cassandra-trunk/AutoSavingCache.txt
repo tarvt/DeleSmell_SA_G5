@@ -1,0 +1,250 @@
+Location: AutoSavingCache.java
+
+Content: 
+
+public AutoSavingCache(ICache<K,V> cache,CacheService.CacheType cacheType,CacheSerializer<K,V> cacheloader){
+
+  super(cacheType.toString(),cache);
+
+  this.cacheType=cacheType;
+
+  this.cacheLoader=cacheloader;
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public File getCacheCrcPath(String version){
+
+  return DatabaseDescriptor.getSerializedCachePath(cacheType,version,"crc");
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public File getCacheDataPath(String version){
+
+  return DatabaseDescriptor.getSerializedCachePath(cacheType,version,"db");
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public Writer getWriter(int keysToSave){
+
+  return new Writer(keysToSave);
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public int loadSaved(){
+
+  int count=0;
+
+  long start=System.nanoTime();
+
+  File dataPath=getCacheDataPath(CURRENT_VERSION);
+
+  File crcPath=getCacheCrcPath(CURRENT_VERSION);
+
+  if (dataPath.exists() && crcPath.exists()) {
+
+    DataInputStreamPlus in=null;
+
+    try {
+
+      logger.info("reading saved cache {}",dataPath);
+
+      in=new DataInputStreamPlus(new LengthAvailableInputStream(new BufferedInputStream(streamFactory.getInputStream(dataPath,crcPath)),dataPath.length()));
+
+      UUID schemaVersion=new UUID(in.readLong(),in.readLong());
+
+      if (!schemaVersion.equals(Schema.instance.getVersion()))       throw new RuntimeException("Cache schema version " + schemaVersion + " does not match current schema version "+ Schema.instance.getVersion());
+
+      ArrayDeque<Future<Pair<K,V>>> futures=new ArrayDeque<Future<Pair<K,V>>>();
+
+      while (in.available() > 0) {
+
+        TableId tableId=TableId.deserialize(in);
+
+        String indexName=in.readUTF();
+
+        if (indexName.isEmpty())         indexName=null;
+
+        ColumnFamilyStore cfs=Schema.instance.getColumnFamilyStoreInstance(tableId);
+
+        if (indexName != null && cfs != null)         cfs=cfs.indexManager.getIndexByName(indexName).getBackingTable().orElse(null);
+
+        Future<Pair<K,V>> entryFuture=cacheLoader.deserialize(in,cfs);
+
+        if (entryFuture == null)         continue;
+
+        futures.offer(entryFuture);
+
+        count++;
+
+        do {
+
+          while (futures.peek() != null && futures.peek().isDone()) {
+
+            Future<Pair<K,V>> future=futures.poll();
+
+            Pair<K,V> entry=future.get();
+
+            if (entry != null && entry.right != null)             put(entry.left,entry.right);
+
+          }
+
+          if (futures.size() > 1000)           Thread.yield();
+
+        }
+
+ while (futures.size() > 1000);
+
+      }
+
+      Future<Pair<K,V>> future=null;
+
+      while ((future=futures.poll()) != null) {
+
+        Pair<K,V> entry=future.get();
+
+        if (entry != null && entry.right != null)         put(entry.left,entry.right);
+
+      }
+
+    }
+
+ catch (    CorruptFileException e) {
+
+      JVMStabilityInspector.inspectThrowable(e);
+
+      logger.warn(String.format("Non-fatal checksum error reading saved cache %s",dataPath.getAbsolutePath()),e);
+
+    }
+
+catch (    Throwable t) {
+
+      JVMStabilityInspector.inspectThrowable(t);
+
+      logger.info(String.format("Harmless error reading saved cache %s",dataPath.getAbsolutePath()),t);
+
+    }
+
+ finally {
+
+      FileUtils.closeQuietly(in);
+
+    }
+
+  }
+
+  if (logger.isTraceEnabled())   logger.trace("completed reading ({} ms; {} keys) saved cache {}",TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start),count,dataPath);
+
+  return count;
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public ListenableFuture<Integer> loadSavedAsync(){
+
+  final ListeningExecutorService es=MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor());
+
+  final long start=System.nanoTime();
+
+  ListenableFuture<Integer> cacheLoad=es.submit(new Callable<Integer>(){
+
+    @Override public Integer call(){
+
+      return loadSaved();
+
+    }
+
+  }
+
+);
+
+  cacheLoad.addListener(new Runnable(){
+
+    @Override public void run(){
+
+      if (size() > 0)       logger.info("Completed loading ({} ms; {} keys) {} cache",TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start),CacheService.instance.keyCache.size(),cacheType);
+
+      es.shutdown();
+
+    }
+
+  }
+
+,MoreExecutors.directExecutor());
+
+  return cacheLoad;
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public void scheduleSaving(int savePeriodInSeconds,final int keysToSave){
+
+  if (saveTask != null) {
+
+    saveTask.cancel(false);
+
+    saveTask=null;
+
+  }
+
+  if (savePeriodInSeconds > 0) {
+
+    Runnable runnable=new Runnable(){
+
+      public void run(){
+
+        submitWrite(keysToSave);
+
+      }
+
+    }
+
+;
+
+    saveTask=ScheduledExecutors.optionalTasks.scheduleWithFixedDelay(runnable,savePeriodInSeconds,savePeriodInSeconds,TimeUnit.SECONDS);
+
+  }
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public static void setStreamFactory(IStreamFactory streamFactory){
+
+  AutoSavingCache.streamFactory=streamFactory;
+
+}
+
+Location: AutoSavingCache.java
+
+Content: 
+
+public Future<?> submitWrite(int keysToSave){
+
+  return CompactionManager.instance.submitCacheWrite(getWriter(keysToSave));
+
+}
+
