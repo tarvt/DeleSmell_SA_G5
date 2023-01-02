@@ -1,0 +1,192 @@
+Location: ElementsSelector.java
+
+Content: 
+
+protected ElementsSelector(Selector selected){
+
+  this.selected=selected;
+
+}
+
+Location: ElementsSelector.java
+
+Content: 
+
+protected abstract ByteBuffer extractSelection(ByteBuffer collection);
+
+Location: ElementsSelector.java
+
+Content: 
+
+private static boolean isUnset(ByteBuffer bb){
+
+  return bb == ByteBufferUtil.UNSET_BYTE_BUFFER;
+
+}
+
+Location: ElementsSelector.java
+
+Content: 
+
+private static AbstractType<?> keyType(CollectionType<?> type){
+
+  return type.nameComparator();
+
+}
+
+Location: ElementsSelector.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@code Selector.Factory} for the selection of an element of a collection.
+
+ * @param name a string representing the selection the factory is for. Something like "c[x]".
+
+ * @param factory the {@code Selector.Factory} corresponding to the collection on which an elementis selected.
+
+ * @param type the type of the collection.
+
+ * @param key the element within the value represented by {@code factory} that is selected.
+
+ * @return the created factory.
+
+ */
+
+public static Factory newElementFactory(String name,Selector.Factory factory,CollectionType<?> type,final Term key){
+
+  return new AbstractFactory(name,factory,type){
+
+    protected AbstractType<?> getReturnType(){
+
+      return valueType(type);
+
+    }
+
+    public Selector newInstance(    QueryOptions options) throws InvalidRequestException {
+
+      ByteBuffer keyValue=key.bindAndGet(options);
+
+      if (keyValue == null)       throw new InvalidRequestException("Invalid null value for element selection on " + factory.getColumnName());
+
+      if (keyValue == ByteBufferUtil.UNSET_BYTE_BUFFER)       throw new InvalidRequestException("Invalid unset value for element selection on " + factory.getColumnName());
+
+      return new ElementSelector(factory.newInstance(options),keyValue);
+
+    }
+
+    public boolean areAllFetchedColumnsKnown(){
+
+      return factory.areAllFetchedColumnsKnown() && (!type.isMultiCell() || !factory.isSimpleSelectorFactory() || key.isTerminal());
+
+    }
+
+    public void addFetchedColumns(    ColumnFilter.Builder builder){
+
+      if (!type.isMultiCell() || !factory.isSimpleSelectorFactory()) {
+
+        factory.addFetchedColumns(builder);
+
+        return;
+
+      }
+
+      ColumnMetadata column=((SimpleSelectorFactory)factory).getColumn();
+
+      builder.select(column,CellPath.create(((Term.Terminal)key).get(ProtocolVersion.V3)));
+
+    }
+
+  }
+
+;
+
+}
+
+Location: ElementsSelector.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@code Selector.Factory} for the selection of a slice of a collection.
+
+ * @param name a string representing the selection the factory is for. Something like "c[x..y]".
+
+ * @param factory the {@code Selector.Factory} corresponding to the collection on which a sliceis selected.
+
+ * @param type the type of the collection.
+
+ * @param from the starting bound of the selected slice. This cannot be {@code null} but can be{@code Constants.UNSET_VALUE} if the slice doesn't have a start.
+
+ * @param to the ending bound of the selected slice. This cannot be {@code null} but can be{@code Constants.UNSET_VALUE} if the slice doesn't have an end.
+
+ * @return the created factory.
+
+ */
+
+public static Factory newSliceFactory(String name,Selector.Factory factory,CollectionType<?> type,final Term from,final Term to){
+
+  return new AbstractFactory(name,factory,type){
+
+    protected AbstractType<?> getReturnType(){
+
+      return type;
+
+    }
+
+    public Selector newInstance(    QueryOptions options) throws InvalidRequestException {
+
+      ByteBuffer fromValue=from.bindAndGet(options);
+
+      ByteBuffer toValue=to.bindAndGet(options);
+
+      if (fromValue == null || toValue == null)       throw new InvalidRequestException("Invalid null value for slice selection on " + factory.getColumnName());
+
+      return new SliceSelector(factory.newInstance(options),from.bindAndGet(options),to.bindAndGet(options));
+
+    }
+
+    public boolean areAllFetchedColumnsKnown(){
+
+      return factory.areAllFetchedColumnsKnown() && (!type.isMultiCell() || !factory.isSimpleSelectorFactory() || (from.isTerminal() && to.isTerminal()));
+
+    }
+
+    public void addFetchedColumns(    ColumnFilter.Builder builder){
+
+      if (!type.isMultiCell() || !factory.isSimpleSelectorFactory()) {
+
+        factory.addFetchedColumns(builder);
+
+        return;
+
+      }
+
+      ColumnMetadata column=((SimpleSelectorFactory)factory).getColumn();
+
+      ByteBuffer fromBB=((Term.Terminal)from).get(ProtocolVersion.V3);
+
+      ByteBuffer toBB=((Term.Terminal)to).get(ProtocolVersion.V3);
+
+      builder.slice(column,isUnset(fromBB) ? CellPath.BOTTOM : CellPath.create(fromBB),isUnset(toBB) ? CellPath.TOP : CellPath.create(toBB));
+
+    }
+
+  }
+
+;
+
+}
+
+Location: ElementsSelector.java
+
+Content: 
+
+public static AbstractType<?> valueType(CollectionType<?> type){
+
+  return type instanceof MapType ? type.valueComparator() : type.nameComparator();
+
+}
+

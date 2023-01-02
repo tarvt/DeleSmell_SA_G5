@@ -1,0 +1,250 @@
+Location: FullQueryLogger.java
+
+Content: 
+
+/** 
+
+ * Log an invocation of a batch of queries
+
+ * @param type The type of the batch
+
+ * @param statements the prepared cql statements (unused here)
+
+ * @param queries CQL text of the queries
+
+ * @param values Values to bind to as parameters for the queries
+
+ * @param queryOptions Options associated with the query invocation
+
+ * @param queryState Timestamp state associated with the query invocation
+
+ * @param batchTimeMillis Approximate time in milliseconds since the epoch since the batch was invoked
+
+ * @param response the response from the batch query
+
+ */
+
+public void batchSuccess(BatchStatement.Type type,List<? extends CQLStatement> statements,List<String> queries,List<List<ByteBuffer>> values,QueryOptions queryOptions,QueryState queryState,long batchTimeMillis,Message.Response response){
+
+  Preconditions.checkNotNull(type,"type was null");
+
+  Preconditions.checkNotNull(queries,"queries was null");
+
+  Preconditions.checkNotNull(values,"value was null");
+
+  Preconditions.checkNotNull(queryOptions,"queryOptions was null");
+
+  Preconditions.checkNotNull(queryState,"queryState was null");
+
+  Preconditions.checkArgument(batchTimeMillis > 0,"batchTimeMillis must be > 0");
+
+  BinLog binLog=this.binLog;
+
+  if (binLog == null) {
+
+    return;
+
+  }
+
+  Batch wrappedBatch=new Batch(type,queries,values,queryOptions,queryState,batchTimeMillis);
+
+  binLog.logRecord(wrappedBatch);
+
+}
+
+Location: FullQueryLogger.java
+
+Content: 
+
+public synchronized void enable(Path path,String rollCycle,boolean blocking,int maxQueueWeight,long maxLogSize,String archiveCommand,int maxArchiveRetries){
+
+  if (this.binLog != null)   throw new IllegalStateException("Binlog is already configured");
+
+  this.binLog=new BinLog.Builder().path(path).rollCycle(rollCycle).blocking(blocking).maxQueueWeight(maxQueueWeight).maxLogSize(maxLogSize).archiveCommand(archiveCommand).maxArchiveRetries(maxArchiveRetries).build(true);
+
+  QueryEvents.instance.registerListener(this);
+
+}
+
+Location: FullQueryLogger.java
+
+Content: 
+
+public void executeSuccess(CQLStatement statement,String query,QueryOptions options,QueryState state,long queryTime,Message.Response response){
+
+  querySuccess(statement,query,options,state,queryTime,response);
+
+}
+
+Location: FullQueryLogger.java
+
+Content: 
+
+public FullQueryLoggerOptions getFullQueryLoggerOptions(){
+
+  if (isEnabled()) {
+
+    final FullQueryLoggerOptions options=new FullQueryLoggerOptions();
+
+    final BinLogOptions binLogOptions=binLog.getBinLogOptions();
+
+    options.archive_command=binLogOptions.archive_command;
+
+    options.roll_cycle=binLogOptions.roll_cycle;
+
+    options.block=binLogOptions.block;
+
+    options.max_archive_retries=binLogOptions.max_archive_retries;
+
+    options.max_queue_weight=binLogOptions.max_queue_weight;
+
+    options.max_log_size=binLogOptions.max_log_size;
+
+    options.log_dir=binLog.path.toString();
+
+    return options;
+
+  }
+
+ else {
+
+    return DatabaseDescriptor.getFullQueryLogOptions();
+
+  }
+
+}
+
+Location: FullQueryLogger.java
+
+Content: 
+
+/** 
+
+ * Log a single CQL query
+
+ * @param query CQL query text
+
+ * @param queryOptions Options associated with the query invocation
+
+ * @param queryState Timestamp state associated with the query invocation
+
+ * @param queryTimeMillis Approximate time in milliseconds since the epoch since the batch was invoked
+
+ * @param response the response from this query
+
+ */
+
+public void querySuccess(CQLStatement statement,String query,QueryOptions queryOptions,QueryState queryState,long queryTimeMillis,Message.Response response){
+
+  Preconditions.checkNotNull(query,"query was null");
+
+  Preconditions.checkNotNull(queryOptions,"queryOptions was null");
+
+  Preconditions.checkNotNull(queryState,"queryState was null");
+
+  Preconditions.checkArgument(queryTimeMillis > 0,"queryTimeMillis must be > 0");
+
+  BinLog binLog=this.binLog;
+
+  if (binLog == null)   return;
+
+  Query wrappedQuery=new Query(query,queryOptions,queryState,queryTimeMillis);
+
+  binLog.logRecord(wrappedQuery);
+
+}
+
+Location: FullQueryLogger.java
+
+Content: 
+
+/** 
+
+ * Need the path as a parameter as well because if the process is restarted the config file might be the only location for retrieving the path to the full query log files, but JMX also allows you to specify a path that isn't persisted anywhere so we have to clean that one as well.
+
+ */
+
+public synchronized void reset(String fullQueryLogPath){
+
+  try {
+
+    Set<File> pathsToClean=Sets.newHashSet();
+
+    if (fullQueryLogPath != null) {
+
+      File fullQueryLogPathFile=new File(fullQueryLogPath);
+
+      if (fullQueryLogPathFile.exists()) {
+
+        pathsToClean.add(fullQueryLogPathFile);
+
+      }
+
+    }
+
+    if (binLog != null && binLog.path != null) {
+
+      File pathFile=binLog.path.toFile();
+
+      if (pathFile.exists()) {
+
+        pathsToClean.add(pathFile);
+
+      }
+
+    }
+
+    logger.info("Reset (and deactivation) of full query log requested.");
+
+    if (binLog != null) {
+
+      logger.info("Stopping full query log. Cleaning {}.",pathsToClean);
+
+      binLog.stop();
+
+      binLog=null;
+
+    }
+
+ else {
+
+      logger.info("Full query log already deactivated. Cleaning {}.",pathsToClean);
+
+    }
+
+    Throwable accumulate=null;
+
+    for (    File f : pathsToClean) {
+
+      accumulate=BinLog.cleanDirectory(f,accumulate);
+
+    }
+
+    if (accumulate != null) {
+
+      throw new RuntimeException(accumulate);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    if (e instanceof RuntimeException) {
+
+      throw (RuntimeException)e;
+
+    }
+
+    throw new RuntimeException(e);
+
+  }
+
+ finally {
+
+    QueryEvents.instance.unregisterListener(this);
+
+  }
+
+}
+

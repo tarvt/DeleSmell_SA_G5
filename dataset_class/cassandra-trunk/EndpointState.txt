@@ -1,0 +1,318 @@
+Location: EndpointState.java
+
+Content: 
+
+public void addApplicationStates(Map<ApplicationState,VersionedValue> values){
+
+  addApplicationStates(values.entrySet());
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public void addApplicationStates(Set<Map.Entry<ApplicationState,VersionedValue>> values){
+
+  while (true) {
+
+    Map<ApplicationState,VersionedValue> orig=applicationState.get();
+
+    Map<ApplicationState,VersionedValue> copy=new EnumMap<>(orig);
+
+    for (    Map.Entry<ApplicationState,VersionedValue> value : values)     copy.put(value.getKey(),value.getValue());
+
+    if (applicationState.compareAndSet(orig,copy))     return;
+
+  }
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public void addApplicationState(ApplicationState key,VersionedValue value){
+
+  addApplicationStates(Collections.singletonMap(key,value));
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public EndpointState(EndpointState other){
+
+  this(new HeartBeatState(other.hbState),new EnumMap<>(other.applicationState.get()));
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public EndpointState(HeartBeatState initialHbState){
+
+  this(initialHbState,new EnumMap<ApplicationState,VersionedValue>(ApplicationState.class));
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+EndpointState(HeartBeatState initialHbState,Map<ApplicationState,VersionedValue> states){
+
+  hbState=initialHbState;
+
+  applicationState=new AtomicReference<Map<ApplicationState,VersionedValue>>(new EnumMap<>(states));
+
+  updateTimestamp=System.nanoTime();
+
+  isAlive=true;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public VersionedValue getApplicationState(ApplicationState key){
+
+  return applicationState.get().get(key);
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+HeartBeatState getHeartBeatState(){
+
+  return hbState;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+@Nullable public CassandraVersion getReleaseVersion(){
+
+  VersionedValue applicationState=getApplicationState(ApplicationState.RELEASE_VERSION);
+
+  return applicationState != null ? new CassandraVersion(applicationState.value) : null;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+@Nullable public UUID getSchemaVersion(){
+
+  VersionedValue applicationState=getApplicationState(ApplicationState.SCHEMA);
+
+  return applicationState != null ? UUID.fromString(applicationState.value) : null;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public String getStatus(){
+
+  VersionedValue status=getApplicationState(ApplicationState.STATUS_WITH_PORT);
+
+  if (status == null) {
+
+    status=getApplicationState(ApplicationState.STATUS);
+
+  }
+
+  if (status == null) {
+
+    return "";
+
+  }
+
+  String[] pieces=status.value.split(VersionedValue.DELIMITER_STR,-1);
+
+  assert (pieces.length > 0);
+
+  return pieces[0];
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+/** 
+
+ * @return System.nanoTime() when state was updated last time.
+
+ */
+
+public long getUpdateTimestamp(){
+
+  return updateTimestamp;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public boolean isAlive(){
+
+  return isAlive;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+/** 
+
+ * @return true if {@link HeartBeatState#isEmpty()} is true and no STATUS application state exists
+
+ */
+
+public boolean isEmptyWithoutStatus(){
+
+  Map<ApplicationState,VersionedValue> state=applicationState.get();
+
+  return hbState.isEmpty() && !(state.containsKey(ApplicationState.STATUS_WITH_PORT) || state.containsKey(ApplicationState.STATUS));
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public boolean isNormalState(){
+
+  return getStatus().equals(VersionedValue.STATUS_NORMAL);
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public boolean isRpcReady(){
+
+  VersionedValue rpcState=getApplicationState(ApplicationState.RPC_READY);
+
+  return rpcState != null && Boolean.parseBoolean(rpcState.value);
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+void markAlive(){
+
+  isAlive=true;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+void markDead(){
+
+  isAlive=false;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public long serializedSize(EndpointState epState,int version){
+
+  long size=HeartBeatState.serializer.serializedSize(epState.getHeartBeatState(),version);
+
+  Set<Map.Entry<ApplicationState,VersionedValue>> states=epState.states();
+
+  size+=TypeSizes.sizeof(states.size());
+
+  for (  Map.Entry<ApplicationState,VersionedValue> state : states) {
+
+    VersionedValue value=state.getValue();
+
+    size+=TypeSizes.sizeof(state.getKey().ordinal());
+
+    size+=VersionedValue.serializer.serializedSize(value,version);
+
+  }
+
+  return size;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public void serialize(EndpointState epState,DataOutputPlus out,int version) throws IOException {
+
+  HeartBeatState hbState=epState.getHeartBeatState();
+
+  HeartBeatState.serializer.serialize(hbState,out,version);
+
+  Set<Map.Entry<ApplicationState,VersionedValue>> states=epState.states();
+
+  out.writeInt(states.size());
+
+  for (  Map.Entry<ApplicationState,VersionedValue> state : states) {
+
+    VersionedValue value=state.getValue();
+
+    out.writeInt(state.getKey().ordinal());
+
+    VersionedValue.serializer.serialize(value,out,version);
+
+  }
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+void setHeartBeatState(HeartBeatState newHbState){
+
+  updateTimestamp();
+
+  hbState=newHbState;
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+public Set<Map.Entry<ApplicationState,VersionedValue>> states(){
+
+  return applicationState.get().entrySet();
+
+}
+
+Location: EndpointState.java
+
+Content: 
+
+void updateTimestamp(){
+
+  updateTimestamp=System.nanoTime();
+
+}
+

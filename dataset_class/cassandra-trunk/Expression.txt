@@ -1,0 +1,362 @@
+Location: Expression.java
+
+Content: 
+
+public Expression addExclusion(ByteBuffer value){
+
+  exclusions.add(value);
+
+  return this;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Expression add(Operator op,ByteBuffer value){
+
+  boolean lowerInclusive=false, upperInclusive=false;
+
+switch (op) {
+
+case LIKE_PREFIX:
+
+case LIKE_SUFFIX:
+
+case LIKE_CONTAINS:
+
+case LIKE_MATCHES:
+
+case EQ:
+
+    lower=new Bound(value,true);
+
+  upper=lower;
+
+operation=Op.valueOf(op);
+
+break;
+
+case NEQ:
+
+if (operation == null) {
+
+operation=Op.NOT_EQ;
+
+lower=new Bound(value,true);
+
+upper=lower;
+
+}
+
+ else exclusions.add(value);
+
+break;
+
+case LTE:
+
+if (index.getDefinition().isReversedType()) lowerInclusive=true;
+
+ else upperInclusive=true;
+
+case LT:
+
+operation=Op.RANGE;
+
+if (index.getDefinition().isReversedType()) lower=new Bound(value,lowerInclusive);
+
+ else upper=new Bound(value,upperInclusive);
+
+break;
+
+case GTE:
+
+if (index.getDefinition().isReversedType()) upperInclusive=true;
+
+ else lowerInclusive=true;
+
+case GT:
+
+operation=Op.RANGE;
+
+if (index.getDefinition().isReversedType()) upper=new Bound(value,upperInclusive);
+
+ else lower=new Bound(value,lowerInclusive);
+
+break;
+
+}
+
+return this;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Expression(Expression other){
+
+  this(other.controller,other.index);
+
+  operation=other.operation;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Expression(QueryController controller,ColumnIndex columnIndex){
+
+  this.controller=controller;
+
+  this.index=columnIndex;
+
+  this.analyzer=columnIndex.getAnalyzer();
+
+  this.validator=columnIndex.getValidator();
+
+  this.isLiteral=columnIndex.isLiteral();
+
+}
+
+Location: Expression.java
+
+Content: 
+
+@VisibleForTesting public Expression(String name,AbstractType<?> validator){
+
+  this(null,new ColumnIndex(UTF8Type.instance,ColumnMetadata.regularColumn("sasi","internal",name,validator),null));
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Op getOp(){
+
+  return operation;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean hasLower(){
+
+  return lower != null;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean hasUpper(){
+
+  return upper != null;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean isIndexed(){
+
+  return index.isIndexed();
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean isLowerSatisfiedBy(OnDiskIndex.DataTerm term){
+
+  if (!hasLower())   return true;
+
+  int cmp=term.compareTo(validator,lower.value,operation == Op.RANGE && !isLiteral);
+
+  return cmp > 0 || cmp == 0 && lower.inclusive;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean isSatisfiedBy(ByteBuffer value){
+
+  if (!TypeUtil.isValid(value,validator)) {
+
+    int size=value.remaining();
+
+    if ((value=TypeUtil.tryUpcast(value,validator)) == null) {
+
+      logger.error("Can't cast value for {} to size accepted by {}, value size is {}.",index.getColumnName(),validator,FBUtilities.prettyPrintMemory(size));
+
+      return false;
+
+    }
+
+  }
+
+  if (lower != null) {
+
+    if (isLiteral) {
+
+      if (!validateStringValue(value,lower.value))       return false;
+
+    }
+
+ else {
+
+      int cmp=validator.compare(lower.value,value);
+
+      if (operation == Op.EQ || operation == Op.NOT_EQ)       return cmp == 0;
+
+      if (cmp > 0 || (cmp == 0 && !lower.inclusive))       return false;
+
+    }
+
+  }
+
+  if (upper != null && lower != upper) {
+
+    if (isLiteral) {
+
+      if (!validateStringValue(value,upper.value))       return false;
+
+    }
+
+ else {
+
+      int cmp=validator.compare(upper.value,value);
+
+      if (cmp < 0 || (cmp == 0 && !upper.inclusive))       return false;
+
+    }
+
+  }
+
+  for (  ByteBuffer term : exclusions) {
+
+    if (isLiteral && validateStringValue(value,term))     return false;
+
+ else     if (validator.compare(term,value) == 0)     return false;
+
+  }
+
+  return true;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean isUpperSatisfiedBy(OnDiskIndex.DataTerm term){
+
+  if (!hasUpper())   return true;
+
+  int cmp=term.compareTo(validator,upper.value,operation == Op.RANGE && !isLiteral);
+
+  return cmp < 0 || cmp == 0 && upper.inclusive;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Expression setLower(Bound newLower){
+
+  lower=newLower == null ? null : new Bound(newLower.value,newLower.inclusive);
+
+  return this;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Expression setOp(Op op){
+
+  this.operation=op;
+
+  return this;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Expression setUpper(Bound newUpper){
+
+  upper=newUpper == null ? null : new Bound(newUpper.value,newUpper.inclusive);
+
+  return this;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+private boolean validateStringValue(ByteBuffer columnValue,ByteBuffer requestedValue){
+
+  analyzer.reset(columnValue.duplicate());
+
+  while (analyzer.hasNext()) {
+
+    ByteBuffer term=analyzer.next();
+
+    boolean isMatch=false;
+
+switch (operation) {
+
+case EQ:
+
+case MATCH:
+
+case NOT_EQ:
+
+      isMatch=validator.compare(term,requestedValue) == 0;
+
+    break;
+
+case PREFIX:
+
+  isMatch=ByteBufferUtil.startsWith(term,requestedValue);
+
+break;
+
+case SUFFIX:
+
+isMatch=ByteBufferUtil.endsWith(term,requestedValue);
+
+break;
+
+case CONTAINS:
+
+isMatch=ByteBufferUtil.contains(term,requestedValue);
+
+break;
+
+}
+
+if (isMatch) return true;
+
+}
+
+return false;
+
+}
+

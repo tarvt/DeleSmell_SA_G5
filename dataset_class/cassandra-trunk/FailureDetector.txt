@@ -1,0 +1,314 @@
+Location: FailureDetector.java
+
+Content: 
+
+public void add(long interval){
+
+  if (index == arrivalIntervals.length) {
+
+    isFilled=true;
+
+    index=0;
+
+  }
+
+  if (isFilled)   sum=sum - arrivalIntervals[index];
+
+  arrivalIntervals[index++]=interval;
+
+  sum+=interval;
+
+  mean=(double)sum / size();
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+synchronized void add(long value,InetAddressAndPort ep){
+
+  assert tLast >= 0;
+
+  if (tLast > 0L) {
+
+    long interArrivalTime=(value - tLast);
+
+    if (interArrivalTime <= MAX_INTERVAL_IN_NANO) {
+
+      arrivalIntervals.add(interArrivalTime);
+
+      logger.trace("Reporting interval time of {}ns for {}",interArrivalTime,ep);
+
+    }
+
+ else {
+
+      logger.trace("Ignoring interval time of {}ns for {}",interArrivalTime,ep);
+
+    }
+
+  }
+
+ else {
+
+    arrivalIntervals.add(FailureDetector.INITIAL_VALUE_NANOS);
+
+  }
+
+  tLast=value;
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+private void appendEndpointState(StringBuilder sb,EndpointState endpointState){
+
+  sb.append("  generation:").append(endpointState.getHeartBeatState().getGeneration()).append("\n");
+
+  sb.append("  heartbeat:").append(endpointState.getHeartBeatState().getHeartBeatVersion()).append("\n");
+
+  for (  Map.Entry<ApplicationState,VersionedValue> state : endpointState.states()) {
+
+    if (state.getKey() == ApplicationState.TOKENS)     continue;
+
+    sb.append("  ").append(state.getKey()).append(":").append(state.getValue().version).append(":").append(state.getValue().value).append("\n");
+
+  }
+
+  VersionedValue tokens=endpointState.getApplicationState(ApplicationState.TOKENS);
+
+  if (tokens != null) {
+
+    sb.append("  TOKENS:").append(tokens.version).append(":<hidden>\n");
+
+  }
+
+ else {
+
+    sb.append("  TOKENS: not present\n");
+
+  }
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+public ArrayBackedBoundedStats(final int size){
+
+  arrivalIntervals=new long[size];
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+ArrivalWindow(int size){
+
+  arrivalIntervals=new ArrayBackedBoundedStats(size);
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+public FailureDetector(){
+
+  MBeanWrapper.instance.registerMBean(this,MBEAN_NAME);
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+public String getAllEndpointStates(boolean withPort){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Map.Entry<InetAddressAndPort,EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet()) {
+
+    sb.append(entry.getKey().toString(withPort)).append("\n");
+
+    appendEndpointState(sb,entry.getValue());
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+public long[] getArrivalIntervals(){
+
+  return arrivalIntervals;
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+private static long getInitialValue(){
+
+  String newvalue=System.getProperty("cassandra.fd_initial_value_ms");
+
+  if (newvalue == null) {
+
+    return Gossiper.intervalInMillis * 2;
+
+  }
+
+ else {
+
+    logger.info("Overriding FD INITIAL_VALUE to {}ms",newvalue);
+
+    return Integer.parseInt(newvalue);
+
+  }
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+double getLastReportedPhi(){
+
+  return lastReportedPhi;
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+private static long getMaxInterval(){
+
+  String newvalue=System.getProperty("cassandra.fd_max_interval_ms");
+
+  if (newvalue == null) {
+
+    return FailureDetector.INITIAL_VALUE_NANOS;
+
+  }
+
+ else {
+
+    logger.info("Overriding FD MAX_INTERVAL to {}ms",newvalue);
+
+    return TimeUnit.NANOSECONDS.convert(Integer.parseInt(newvalue),TimeUnit.MILLISECONDS);
+
+  }
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+private static long getMaxLocalPause(){
+
+  if (System.getProperty("cassandra.max_local_pause_in_ms") != null) {
+
+    long pause=Long.parseLong(System.getProperty("cassandra.max_local_pause_in_ms"));
+
+    logger.warn("Overriding max local pause time to {}ms",pause);
+
+    return pause * 1000000L;
+
+  }
+
+ else   return DEFAULT_MAX_PAUSE;
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+private TabularData getPhiValues(boolean withPort) throws OpenDataException {
+
+  final CompositeType ct=new CompositeType("Node","Node",new String[]{"Endpoint","PHI"},new String[]{"IP of the endpoint","PHI value"},new OpenType[]{SimpleType.STRING,SimpleType.DOUBLE});
+
+  final TabularDataSupport results=new TabularDataSupport(new TabularType("PhiList","PhiList",ct,new String[]{"Endpoint"}));
+
+  for (  final Map.Entry<InetAddressAndPort,ArrivalWindow> entry : arrivalSamples.entrySet()) {
+
+    final ArrivalWindow window=entry.getValue();
+
+    if (window.mean() > 0) {
+
+      final double phi=window.getLastReportedPhi();
+
+      if (phi != Double.MIN_VALUE) {
+
+        final CompositeData data=new CompositeDataSupport(ct,new String[]{"Endpoint","PHI"},new Object[]{entry.getKey().toString(withPort),phi * PHI_FACTOR});
+
+        results.put(data);
+
+      }
+
+    }
+
+  }
+
+  return results;
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+private Map<String,String> getSimpleStates(boolean withPort){
+
+  Map<String,String> nodesStatus=new HashMap<String,String>(Gossiper.instance.endpointStateMap.size());
+
+  for (  Map.Entry<InetAddressAndPort,EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet()) {
+
+    if (entry.getValue().isAlive())     nodesStatus.put(entry.getKey().toString(withPort),"UP");
+
+ else     nodesStatus.put(entry.getKey().toString(withPort),"DOWN");
+
+  }
+
+  return nodesStatus;
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+double mean(){
+
+  return arrivalIntervals.mean();
+
+}
+
+Location: FailureDetector.java
+
+Content: 
+
+double phi(long tnow){
+
+  assert arrivalIntervals.mean() > 0 && tLast > 0;
+
+  long t=tnow - tLast;
+
+  lastReportedPhi=t / mean();
+
+  return lastReportedPhi;
+
+}
+

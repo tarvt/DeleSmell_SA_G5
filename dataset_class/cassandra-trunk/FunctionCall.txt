@@ -1,0 +1,132 @@
+Location: FunctionCall.java
+
+Content: 
+
+public ByteBuffer bindAndGet(QueryOptions options) throws InvalidRequestException {
+
+  List<ByteBuffer> buffers=new ArrayList<>(terms.size());
+
+  for (  Term t : terms) {
+
+    ByteBuffer functionArg=t.bindAndGet(options);
+
+    RequestValidations.checkBindValueSet(functionArg,"Invalid unset value for argument in call to function %s",fun.name().name);
+
+    buffers.add(functionArg);
+
+  }
+
+  return executeInternal(options.getProtocolVersion(),fun,buffers);
+
+}
+
+Location: FunctionCall.java
+
+Content: 
+
+public Term.Terminal bind(QueryOptions options) throws InvalidRequestException {
+
+  return makeTerminal(fun,bindAndGet(options),options.getProtocolVersion());
+
+}
+
+Location: FunctionCall.java
+
+Content: 
+
+public void collectMarkerSpecification(VariableSpecifications boundNames){
+
+  for (  Term t : terms)   t.collectMarkerSpecification(boundNames);
+
+}
+
+Location: FunctionCall.java
+
+Content: 
+
+public boolean containsBindMarker(){
+
+  for (  Term t : terms) {
+
+    if (t.containsBindMarker())     return true;
+
+  }
+
+  return false;
+
+}
+
+Location: FunctionCall.java
+
+Content: 
+
+private static ByteBuffer executeInternal(ProtocolVersion protocolVersion,ScalarFunction fun,List<ByteBuffer> params) throws InvalidRequestException {
+
+  ByteBuffer result=fun.execute(protocolVersion,params);
+
+  try {
+
+    if (result != null)     fun.returnType().validate(result);
+
+    return result;
+
+  }
+
+ catch (  MarshalException e) {
+
+    throw new RuntimeException(String.format("Return of function %s (%s) is not a valid value for its declared return type %s",fun,ByteBufferUtil.bytesToHex(result),fun.returnType().asCQL3Type()),e);
+
+  }
+
+}
+
+Location: FunctionCall.java
+
+Content: 
+
+private FunctionCall(ScalarFunction fun,List<Term> terms){
+
+  this.fun=fun;
+
+  this.terms=terms;
+
+}
+
+Location: FunctionCall.java
+
+Content: 
+
+private static Term.Terminal makeTerminal(Function fun,ByteBuffer result,ProtocolVersion version) throws InvalidRequestException {
+
+  if (result == null)   return null;
+
+  if (fun.returnType().isCollection()) {
+
+switch (((CollectionType)fun.returnType()).kind) {
+
+case LIST:
+
+      return Lists.Value.fromSerialized(result,(ListType)fun.returnType(),version);
+
+case SET:
+
+    return Sets.Value.fromSerialized(result,(SetType)fun.returnType(),version);
+
+case MAP:
+
+  return Maps.Value.fromSerialized(result,(MapType)fun.returnType(),version);
+
+}
+
+}
+
+ else if (fun.returnType().isUDT()) {
+
+return UserTypes.Value.fromSerialized(result,(UserType)fun.returnType());
+
+}
+
+return new Constants.Value(result);
+
+}
+

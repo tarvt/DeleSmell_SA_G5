@@ -1,0 +1,186 @@
+Location: Endpoints.java
+
+Content: 
+
+public static <E extends Endpoints<E>>E append(E replicas,Replica extraReplica){
+
+  Builder<E> builder=replicas.newBuilder(replicas.size() + 1);
+
+  builder.addAll(replicas);
+
+  builder.add(extraReplica,Conflict.NONE);
+
+  return builder.build();
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+public Map<InetAddressAndPort,Replica> byEndpoint(){
+
+  ReplicaMap<InetAddressAndPort> map=byEndpoint;
+
+  if (map == null)   byEndpoint=map=endpointMap(list);
+
+  return map;
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+/** 
+
+ * Care must be taken to ensure no conflicting ranges occur in pending and natural. Conflicts can occur for two reasons: 1) due to lack of isolation when reading pending/natural 2) because a movement that changes the type of replication from transient to full must be handled differently for reads and writes (with the reader treating it as transient, and writer as full) The method  {@link ReplicaLayout#haveWriteConflicts} can be used to detect and resolve any issues
+
+ */
+
+public static <E extends Endpoints<E>>E concat(E natural,E pending){
+
+  return AbstractReplicaCollection.concat(natural,pending,Conflict.NONE);
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+public List<InetAddressAndPort> endpointList(){
+
+  return new AbstractList<InetAddressAndPort>(){
+
+    public InetAddressAndPort get(    int index){
+
+      return list.get(index).endpoint();
+
+    }
+
+    public int size(){
+
+      return list.size;
+
+    }
+
+  }
+
+;
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+static ReplicaMap<InetAddressAndPort> endpointMap(ReplicaList list){
+
+  return new ReplicaMap<>(list,Replica::endpoint);
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+Endpoints(ReplicaList list,ReplicaMap<InetAddressAndPort> byEndpoint){
+
+  super(list);
+
+  this.byEndpoint=byEndpoint;
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+/** 
+
+ * @return a collection with only the provided endpoints (ignoring any not present), otherwise in the same order as this collection
+
+ */
+
+public E keep(Set<InetAddressAndPort> keep){
+
+  return filter(r -> keep.contains(r.endpoint()));
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+/** 
+
+ * @return a collection containing the Replica from this collection for the provided endpoints, in the order of the provided endpoints
+
+ */
+
+public E select(Iterable<InetAddressAndPort> endpoints,boolean ignoreMissing){
+
+  Builder<E> copy=newBuilder(endpoints instanceof Collection<?> ? ((Collection<InetAddressAndPort>)endpoints).size() : size());
+
+  Map<InetAddressAndPort,Replica> byEndpoint=byEndpoint();
+
+  for (  InetAddressAndPort endpoint : endpoints) {
+
+    Replica select=byEndpoint.get(endpoint);
+
+    if (select == null) {
+
+      if (!ignoreMissing)       throw new IllegalArgumentException(endpoint + " is not present in " + this);
+
+      continue;
+
+    }
+
+    copy.add(select,Builder.Conflict.DUPLICATE);
+
+  }
+
+  return copy.build();
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+public Replica selfIfPresent(){
+
+  InetAddressAndPort self=FBUtilities.getBroadcastAddressAndPort();
+
+  return byEndpoint().get(self);
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+public E withoutSelf(){
+
+  InetAddressAndPort self=FBUtilities.getBroadcastAddressAndPort();
+
+  return filter(r -> !self.equals(r.endpoint()));
+
+}
+
+Location: Endpoints.java
+
+Content: 
+
+/** 
+
+ * @return a collection without the provided endpoints, otherwise in the same order as this collection
+
+ */
+
+public E without(Set<InetAddressAndPort> remove){
+
+  return filter(r -> !remove.contains(r.endpoint()));
+
+}
+

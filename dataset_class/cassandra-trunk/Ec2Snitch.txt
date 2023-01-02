@@ -1,0 +1,132 @@
+Location: Ec2Snitch.java
+
+Content: 
+
+String awsApiCall(String url) throws IOException, ConfigurationException {
+
+  HttpURLConnection conn=(HttpURLConnection)new URL(url).openConnection();
+
+  DataInputStream d=null;
+
+  try {
+
+    conn.setRequestMethod("GET");
+
+    if (conn.getResponseCode() != 200)     throw new ConfigurationException("Ec2Snitch was unable to execute the API call. Not an ec2 node?");
+
+    int cl=conn.getContentLength();
+
+    byte[] b=new byte[cl];
+
+    d=new DataInputStream((FilterInputStream)conn.getContent());
+
+    d.readFully(b);
+
+    return new String(b,StandardCharsets.UTF_8);
+
+  }
+
+  finally {
+
+    FileUtils.close(d);
+
+    conn.disconnect();
+
+  }
+
+}
+
+Location: Ec2Snitch.java
+
+Content: 
+
+public Ec2Snitch() throws IOException, ConfigurationException {
+
+  this(new SnitchProperties());
+
+}
+
+Location: Ec2Snitch.java
+
+Content: 
+
+public Ec2Snitch(SnitchProperties props) throws IOException, ConfigurationException {
+
+  String az=awsApiCall(ZONE_NAME_QUERY_URL);
+
+  usingLegacyNaming=isUsingLegacyNaming(props);
+
+  String region;
+
+  if (usingLegacyNaming) {
+
+    String[] splits=az.split("-");
+
+    ec2zone=splits[splits.length - 1];
+
+    region=az.substring(0,az.length() - 1);
+
+    if (region.endsWith("1"))     region=az.substring(0,az.length() - 3);
+
+  }
+
+ else {
+
+    region=az.replaceFirst("[a-z]+$","");
+
+    ec2zone=az;
+
+  }
+
+  String datacenterSuffix=props.get("dc_suffix","");
+
+  ec2region=region.concat(datacenterSuffix);
+
+  logger.info("EC2Snitch using region: {}, zone: {}.",ec2region,ec2zone);
+
+}
+
+Location: Ec2Snitch.java
+
+Content: 
+
+private static boolean isUsingLegacyNaming(SnitchProperties props){
+
+  return props.get(SNITCH_PROP_NAMING_SCHEME,EC2_NAMING_STANDARD).equalsIgnoreCase(EC2_NAMING_LEGACY);
+
+}
+
+Location: Ec2Snitch.java
+
+Content: 
+
+@VisibleForTesting static boolean validate(Set<String> datacenters,Set<String> racks,boolean usingLegacyNaming){
+
+  boolean valid=true;
+
+  for (  String dc : datacenters) {
+
+    boolean dcUsesLegacyFormat=dc.matches("^[a-z]+-[a-z]+$");
+
+    if (dcUsesLegacyFormat && !usingLegacyNaming)     valid=false;
+
+  }
+
+  for (  String rack : racks) {
+
+    boolean rackUsesLegacyFormat=rack.matches("[\\d][a-z]");
+
+    if (rackUsesLegacyFormat != usingLegacyNaming)     valid=false;
+
+  }
+
+  if (!valid) {
+
+    logger.error("This ec2-enabled snitch appears to be using the {} naming scheme for regions, " + "but existing nodes in cluster are using the opposite: region(s) = {}, availability zone(s) = {}. " + "Please check the {} property in the {} configuration file for more details.",usingLegacyNaming ? "legacy" : "standard",datacenters,racks,SNITCH_PROP_NAMING_SCHEME,SnitchProperties.RACKDC_PROPERTY_FILENAME);
+
+  }
+
+  return valid;
+
+}
+

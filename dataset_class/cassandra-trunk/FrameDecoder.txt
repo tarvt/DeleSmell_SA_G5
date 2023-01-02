@@ -1,0 +1,316 @@
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * For use by InboundMessageHandler (or other upstream handlers) that want to start receiving frames.
+
+ */
+
+public void activate(FrameProcessor processor){
+
+  if (this.processor != NO_PROCESSOR)   throw new IllegalStateException("Attempted to activate an already active FrameDecoder");
+
+  this.processor=processor;
+
+  isActive=true;
+
+  ctx.read();
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+@Override public void channelInactive(ChannelHandlerContext ctx){
+
+  isClosed=true;
+
+  if (frames.isEmpty())   close();
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+@Override public void channelReadComplete(ChannelHandlerContext ctx){
+
+  if (isActive)   onExhausted();
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * Called by Netty pipeline when a new message arrives; we anticipate in normal operation this will receive messages of type  {@link BufferPoolAllocator.Wrapped} or{@link BufferPoolAllocator.Wrapped}. These buffers are unwrapped and passed to  {@link #decode(Collection,ShareableBytes)}, which collects decoded frames into  {@link #frames}, which we send upstream in  {@link #deliver}
+
+ */
+
+@Override public void channelRead(ChannelHandlerContext ctx,Object msg) throws IOException {
+
+  if (msg instanceof BufferPoolAllocator.Wrapped) {
+
+    ByteBuffer buf=((BufferPoolAllocator.Wrapped)msg).adopt();
+
+    allocator.putUnusedPortion(buf);
+
+    channelRead(ShareableBytes.wrap(buf));
+
+  }
+
+ else   if (msg instanceof ShareableBytes) {
+
+    channelRead((ShareableBytes)msg);
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException();
+
+  }
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+void channelRead(ShareableBytes bytes) throws IOException {
+
+  decode(frames,bytes);
+
+  if (isActive)   isActive=deliver(processor);
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+private void close(){
+
+  hongshuai();
+
+  isActive=false;
+
+  processor=CLOSED_PROCESSOR;
+
+  if (stash != null) {
+
+    ByteBuffer bytes=stash;
+
+    stash=null;
+
+    allocator.put(bytes);
+
+  }
+
+  while (!frames.isEmpty())   frames.poll().release();
+
+  ctx.fireChannelInactive();
+
+  allocator.release();
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * Utility: fill  {@code out} from {@code in} up to {@code toOutPosition}, updating the position of both buffers with the result
+
+ * @return true if there were sufficient bytes to fill to {@code toOutPosition}
+
+ */
+
+static boolean copyToSize(ByteBuffer in,ByteBuffer out,int toOutPosition){
+
+  int bytesToSize=toOutPosition - out.position();
+
+  if (bytesToSize <= 0)   return true;
+
+  if (bytesToSize > in.remaining()) {
+
+    out.put(in);
+
+    return false;
+
+  }
+
+  copyBytes(in,in.position(),out,out.position(),bytesToSize);
+
+  in.position(in.position() + bytesToSize);
+
+  out.position(toOutPosition);
+
+  return true;
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * Deliver any waiting frames, including those that were incompletely read last time, to the provided processor until the processor returns  {@code false}, or we finish the backlog. Propagate the final return value of the processor.
+
+ */
+
+private boolean deliver(FrameProcessor processor) throws IOException {
+
+  boolean deliver=true;
+
+  while (deliver && !frames.isEmpty()) {
+
+    Frame frame=frames.peek();
+
+    deliver=processor.process(frame);
+
+    assert !deliver || frame.isConsumed();
+
+    if (deliver || frame.isConsumed()) {
+
+      frames.poll();
+
+      frame.release();
+
+    }
+
+  }
+
+  return deliver;
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * @return {@code in} if has sufficient capacity, otherwisea replacement from  {@code BufferPool} that {@code in} is copied into
+
+ */
+
+ByteBuffer ensureCapacity(ByteBuffer in,int capacity){
+
+  if (in.capacity() >= capacity)   return in;
+
+  ByteBuffer out=allocator.getAtLeast(capacity);
+
+  in.flip();
+
+  out.put(in);
+
+  allocator.put(in);
+
+  return out;
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+FrameDecoder(BufferPoolAllocator allocator){
+
+  this.allocator=allocator;
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+@Override public void handlerAdded(ChannelHandlerContext ctx){
+
+  this.ctx=ctx;
+
+  ctx.channel().config().setAutoRead(false);
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * Only to be invoked when frames.isEmpty(). If we have been closed, we will now propagate up the channelInactive notification, and otherwise we will ask the channel for more data.
+
+ */
+
+private void onExhausted(){
+
+  if (isClosed)   close();
+
+ else   ctx.read();
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * For use by InboundMessageHandler (or other upstream handlers) that want to resume receiving frames after previously indicating that processing should be paused. Does not reactivate processing or reading from the wire, but permits processing as many frames (or parts thereof) that are already waiting as the processor requires.
+
+ */
+
+void processBacklog(FrameProcessor processor) throws IOException {
+
+  deliver(processor);
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+/** 
+
+ * For use by InboundMessageHandler (or other upstream handlers) that want to resume receiving frames after previously indicating that processing should be paused.
+
+ */
+
+void reactivate() throws IOException {
+
+  if (isActive)   throw new IllegalStateException("Tried to reactivate an already active FrameDecoder");
+
+  if (deliver(processor)) {
+
+    isActive=true;
+
+    onExhausted();
+
+  }
+
+}
+
+Location: FrameDecoder.java
+
+Content: 
+
+void stash(ShareableBytes in,int stashLength,int begin,int length){
+
+  ByteBuffer out=allocator.getAtLeast(stashLength);
+
+  copyBytes(in.get(),begin,out,0,length);
+
+  out.position(length);
+
+  stash=out;
+
+}
+

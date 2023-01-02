@@ -1,0 +1,198 @@
+Location: FileHandle.java
+
+Content: 
+
+@Override public void addTo(Ref.IdentityCollection identities){
+
+  super.addTo(identities);
+
+  compressionMetadata.ifPresent(metadata -> metadata.addTo(identities));
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+public Optional<CompressionMetadata> compressionMetadata(){
+
+  return compressionMetadata;
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+/** 
+
+ * Create  {@link RandomAccessReader} with configured method of reading content of the file.
+
+ * @return RandomAccessReader for the file
+
+ */
+
+public RandomAccessReader createReader(){
+
+  return createReader(null);
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+public FileDataInput createReader(long position){
+
+  RandomAccessReader reader=createReader();
+
+  reader.seek(position);
+
+  return reader;
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+/** 
+
+ * Create  {@link RandomAccessReader} with configured method of reading content of the file.Reading from file will be rate limited by given  {@link RateLimiter}.
+
+ * @param limiter RateLimiter to use for rate limiting read
+
+ * @return RandomAccessReader for the file
+
+ */
+
+public RandomAccessReader createReader(RateLimiter limiter){
+
+  return new RandomAccessReader(instantiateRebufferer(limiter));
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+public long dataLength(){
+
+  return compressionMetadata.map(c -> c.dataLength).orElseGet(rebuffererFactory::fileLength);
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+/** 
+
+ * Drop page cache from start to given  {@code before}.
+
+ * @param before uncompressed position from start of the file to be dropped from cache. if 0, to end of file.
+
+ */
+
+public void dropPageCache(long before){
+
+  long position=compressionMetadata.map(metadata -> {
+
+    if (before >= metadata.dataLength)     return 0L;
+
+ else     return metadata.chunkFor(before).offset;
+
+  }
+
+).orElse(before);
+
+  NativeLibrary.trySkipCache(channel.getFileDescriptor(),0,position,path());
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+private FileHandle(Cleanup cleanup,ChannelProxy channel,RebuffererFactory rebuffererFactory,CompressionMetadata compressionMetadata,long onDiskLength){
+
+  super(cleanup);
+
+  this.rebuffererFactory=rebuffererFactory;
+
+  this.channel=channel;
+
+  this.compressionMetadata=Optional.ofNullable(compressionMetadata);
+
+  this.onDiskLength=onDiskLength;
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+private FileHandle(FileHandle copy){
+
+  super(copy);
+
+  channel=copy.channel;
+
+  rebuffererFactory=copy.rebuffererFactory;
+
+  compressionMetadata=copy.compressionMetadata;
+
+  onDiskLength=copy.onDiskLength;
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+private Rebufferer instantiateRebufferer(RateLimiter limiter){
+
+  Rebufferer rebufferer=rebuffererFactory.instantiateRebufferer();
+
+  if (limiter != null)   rebufferer=new LimitingRebufferer(rebufferer,limiter,DiskOptimizationStrategy.MAX_BUFFER_SIZE);
+
+  return rebufferer;
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+/** 
+
+ * @return Path to the file this factory is referencing
+
+ */
+
+public String path(){
+
+  return channel.filePath();
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+public RebuffererFactory rebuffererFactory(){
+
+  return rebuffererFactory;
+
+}
+
+Location: FileHandle.java
+
+Content: 
+
+@Override public FileHandle sharedCopy(){
+
+  return new FileHandle(this);
+
+}
+

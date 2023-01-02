@@ -1,0 +1,170 @@
+Location: FrameDecoderCrc.java
+
+Content: 
+
+void addLastTo(ChannelPipeline pipeline){
+
+  pipeline.addLast("frameDecoderCrc",this);
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+public static FrameDecoderCrc create(BufferPoolAllocator allocator){
+
+  return new FrameDecoderCrc(allocator);
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+void decode(Collection<Frame> into,ShareableBytes bytes){
+
+  decode(into,bytes,HEADER_LENGTH);
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+public FrameDecoderCrc(BufferPoolAllocator allocator){
+
+  super(allocator);
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+final int frameLength(long header6b){
+
+  return payloadLength(header6b) + HEADER_AND_TRAILER_LENGTH;
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+private static int headerCrc(long header6b){
+
+  return ((int)(header6b >>> 24)) & 0xFFFFFF;
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+static boolean isSelfContained(long header6b){
+
+  return 0 != (header6b & (1L << 17));
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+static int payloadLength(long header6b){
+
+  return ((int)header6b) & 0x1FFFF;
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+static long readHeader6b(ByteBuffer frame,int begin){
+
+  long header6b;
+
+  if (frame.limit() - begin >= 8) {
+
+    header6b=frame.getLong(begin);
+
+    if (frame.order() == ByteOrder.BIG_ENDIAN)     header6b=Long.reverseBytes(header6b);
+
+    header6b&=0xffffffffffffL;
+
+  }
+
+ else {
+
+    header6b=0;
+
+    for (int i=0; i < HEADER_LENGTH; ++i)     header6b|=(0xffL & frame.get(begin + i)) << (8 * i);
+
+  }
+
+  return header6b;
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+final long readHeader(ByteBuffer frame,int begin){
+
+  return readHeader6b(frame,begin);
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+final Frame unpackFrame(ShareableBytes bytes,int begin,int end,long header6b){
+
+  ByteBuffer in=bytes.get();
+
+  boolean isSelfContained=isSelfContained(header6b);
+
+  CRC32 crc=crc32();
+
+  int readFullCrc=in.getInt(end - TRAILER_LENGTH);
+
+  if (in.order() == ByteOrder.BIG_ENDIAN)   readFullCrc=Integer.reverseBytes(readFullCrc);
+
+  updateCrc32(crc,in,begin + HEADER_LENGTH,end - TRAILER_LENGTH);
+
+  int computeFullCrc=(int)crc.getValue();
+
+  if (readFullCrc != computeFullCrc)   return CorruptFrame.recoverable(isSelfContained,(end - begin) - HEADER_AND_TRAILER_LENGTH,readFullCrc,computeFullCrc);
+
+  return new IntactFrame(isSelfContained,bytes.slice(begin + HEADER_LENGTH,end - TRAILER_LENGTH));
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+static CorruptFrame verifyHeader6b(long header6b){
+
+  int computeLengthCrc=crc24(header6b,3);
+
+  int readLengthCrc=headerCrc(header6b);
+
+  return readLengthCrc == computeLengthCrc ? null : CorruptFrame.unrecoverable(readLengthCrc,computeLengthCrc);
+
+}
+
+Location: FrameDecoderCrc.java
+
+Content: 
+
+final CorruptFrame verifyHeader(long header6b){
+
+  return verifyHeader6b(header6b);
+
+}
+

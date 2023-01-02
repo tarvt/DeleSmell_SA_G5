@@ -1,0 +1,72 @@
+Location: FrameEncoderLegacyLZ4.java
+
+Content: 
+
+private int calculateMaxFrameLength(ByteBuffer payload){
+
+  int payloadLength=payload.remaining();
+
+  int blockCount=payloadLength / DEFAULT_BLOCK_LENGTH + (payloadLength % DEFAULT_BLOCK_LENGTH != 0 ? 1 : 0);
+
+  return compressor.maxCompressedLength(payloadLength) + HEADER_LENGTH * blockCount;
+
+}
+
+Location: FrameEncoderLegacyLZ4.java
+
+Content: 
+
+private int compressBlock(ByteBuffer frame,int frameOffset,ByteBuffer payload,int payloadOffset,int blockLength){
+
+  int frameBytesRemaining=frame.limit() - (frameOffset + HEADER_LENGTH);
+
+  int compressedLength=compressor.compress(payload,payloadOffset,blockLength,frame,frameOffset + HEADER_LENGTH,frameBytesRemaining);
+
+  if (compressedLength >= blockLength) {
+
+    ByteBufferUtil.copyBytes(payload,payloadOffset,frame,frameOffset + HEADER_LENGTH,blockLength);
+
+    compressedLength=blockLength;
+
+  }
+
+  int checksum=xxhash.hash(payload,payloadOffset,blockLength,XXHASH_SEED) & XXHASH_MASK;
+
+  writeHeader(frame,frameOffset,compressedLength,blockLength,checksum);
+
+  return HEADER_LENGTH + compressedLength;
+
+}
+
+Location: FrameEncoderLegacyLZ4.java
+
+Content: 
+
+private FrameEncoderLegacyLZ4(XXHash32 xxhash,LZ4Compressor compressor){
+
+  this.xxhash=xxhash;
+
+  this.compressor=compressor;
+
+}
+
+Location: FrameEncoderLegacyLZ4.java
+
+Content: 
+
+private static void writeHeader(ByteBuffer frame,int frameOffset,int compressedLength,int uncompressedLength,int checksum){
+
+  byte token=compressedLength == uncompressedLength ? TOKEN_NON_COMPRESSED : TOKEN_COMPRESSED;
+
+  frame.putLong(frameOffset + MAGIC_NUMBER_OFFSET,MAGIC_NUMBER);
+
+  frame.put(frameOffset + TOKEN_OFFSET,token);
+
+  frame.putInt(frameOffset + COMPRESSED_LENGTH_OFFSET,reverseBytes(compressedLength));
+
+  frame.putInt(frameOffset + UNCOMPRESSED_LENGTH_OFFSET,reverseBytes(uncompressedLength));
+
+  frame.putInt(frameOffset + CHECKSUM_OFFSET,reverseBytes(checksum));
+
+}
+

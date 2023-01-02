@@ -1,0 +1,1232 @@
+Location: FileUtils.java
+
+Content: 
+
+public static void appendAndSync(File file,String... lines){
+
+  if (file.exists())   write(file,Arrays.asList(lines),StandardOpenOption.APPEND,StandardOpenOption.SYNC);
+
+ else   write(file,Arrays.asList(lines),StandardOpenOption.CREATE,StandardOpenOption.SYNC);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void append(File file,String... lines){
+
+  if (file.exists())   write(file,Arrays.asList(lines),StandardOpenOption.APPEND);
+
+ else   write(file,Arrays.asList(lines),StandardOpenOption.CREATE);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Move a file atomically, if it fails, it falls back to a non-atomic operation
+
+ * @param from
+
+ * @param to
+
+ * @throws IOException
+
+ */
+
+private static void atomicMoveWithFallback(Path from,Path to) throws IOException {
+
+  try {
+
+    Files.move(from,to,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+
+  }
+
+ catch (  AtomicMoveNotSupportedException e) {
+
+    logger.trace("Could not do an atomic move",e);
+
+    Files.move(from,to,StandardCopyOption.REPLACE_EXISTING);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void clean(ByteBuffer buffer){
+
+  if (buffer == null || !buffer.isDirect())   return;
+
+  try {
+
+    Object cleaner=mhDirectBufferCleaner.bindTo(buffer).invoke();
+
+    if (cleaner != null) {
+
+      mhCleanerClean.bindTo(cleaner).invoke();
+
+    }
+
+  }
+
+ catch (  RuntimeException e) {
+
+    throw e;
+
+  }
+
+catch (  Throwable e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void closeQuietly(AutoCloseable c){
+
+  try {
+
+    if (c != null)     c.close();
+
+  }
+
+ catch (  Exception e) {
+
+    logger.warn("Failed closing {}",c,e);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void closeQuietly(Closeable c){
+
+  try {
+
+    if (c != null)     c.close();
+
+  }
+
+ catch (  Exception e) {
+
+    logger.warn("Failed closing {}",c,e);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void closeQuietly(Iterable<? extends AutoCloseable> cs){
+
+  for (  AutoCloseable c : cs) {
+
+    try {
+
+      if (c != null)       c.close();
+
+    }
+
+ catch (    Exception ex) {
+
+      logger.warn("Failed closing {}",c,ex);
+
+    }
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void close(Closeable... cs) throws IOException {
+
+  close(Arrays.asList(cs));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void close(Iterable<? extends Closeable> cs) throws IOException {
+
+  Throwable e=null;
+
+  for (  Closeable c : cs) {
+
+    try {
+
+      if (c != null)       c.close();
+
+    }
+
+ catch (    Throwable ex) {
+
+      if (e == null)       e=ex;
+
+ else       e.addSuppressed(ex);
+
+      logger.warn("Failed closing stream {}",c,ex);
+
+    }
+
+  }
+
+  maybeFail(e,IOException.class);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void copyTo(DataInput in,OutputStream out,int length) throws IOException {
+
+  byte[] buffer=new byte[64 * 1024];
+
+  int copiedBytes=0;
+
+  while (copiedBytes + buffer.length < length) {
+
+    in.readFully(buffer);
+
+    out.write(buffer);
+
+    copiedBytes+=buffer.length;
+
+  }
+
+  if (copiedBytes < length) {
+
+    int left=length - copiedBytes;
+
+    in.readFully(buffer,0,left);
+
+    out.write(buffer,0,left);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static File createDeletableTempFile(String prefix,String suffix){
+
+  File f=createTempFile(prefix,suffix,getTempDir());
+
+  f.deleteOnExit();
+
+  return f;
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void createDirectory(File directory){
+
+  if (!directory.exists()) {
+
+    if (!directory.mkdirs())     throw new FSWriteError(new IOException("Failed to mkdirs " + directory),directory);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void createDirectory(String directory){
+
+  createDirectory(new File(directory));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void createHardLink(File from,File to){
+
+  if (to.exists())   throw new RuntimeException("Tried to create duplicate hard link to " + to);
+
+  if (!from.exists())   throw new RuntimeException("Tried to hard link to file that does not exist " + from);
+
+  try {
+
+    Files.createLink(to.toPath(),from.toPath());
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,to);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void createHardLink(String from,String to){
+
+  createHardLink(new File(from),new File(to));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static File createTempFile(String prefix,String suffix){
+
+  return createTempFile(prefix,suffix,tempDir);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Pretty much like  {@link File#createTempFile(String,String,File)}, but with the guarantee that the "random" part of the generated file name between {@code prefix} and {@code suffix} is a positive, increasing {@code long} value.
+
+ */
+
+public static File createTempFile(String prefix,String suffix,File directory){
+
+  try {
+
+    while (true) {
+
+      long num=tempFileNum.getAndIncrement();
+
+      String fileName=prefix + Long.toString(num) + suffix;
+
+      File candidate=new File(directory,fileName);
+
+      if (candidate.createNewFile())       return candidate;
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,directory);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void deleteAsync(final String file){
+
+  Runnable runnable=new Runnable(){
+
+    public void run(){
+
+      deleteWithConfirm(new File(file));
+
+    }
+
+  }
+
+;
+
+  ScheduledExecutors.nonPeriodicTasks.execute(runnable);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Deletes all files and subdirectories under "dir".
+
+ * @param dir Directory to be deleted
+
+ * @throws FSWriteError if any part of the tree cannot be deleted
+
+ */
+
+public static void deleteChildrenRecursive(File dir){
+
+  if (dir.isDirectory()) {
+
+    String[] children=dir.list();
+
+    for (    String child : children)     deleteRecursive(new File(dir,child));
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Schedules deletion of all file and subdirectories under "dir" on JVM shutdown.
+
+ * @param dir Directory to be deleted
+
+ */
+
+public static void deleteRecursiveOnExit(File dir){
+
+  if (dir.isDirectory()) {
+
+    String[] children=dir.list();
+
+    for (    String child : children)     deleteRecursiveOnExit(new File(dir,child));
+
+  }
+
+  logger.trace("Scheduling deferred deletion of file: {}",dir);
+
+  dir.deleteOnExit();
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Deletes all files and subdirectories under "dir".
+
+ * @param dir Directory to be deleted
+
+ * @throws FSWriteError if any part of the tree cannot be deleted
+
+ */
+
+public static void deleteRecursiveWithThrottle(File dir,RateLimiter rateLimiter){
+
+  if (dir.isDirectory()) {
+
+    String[] children=dir.list();
+
+    for (    String child : children)     deleteRecursiveWithThrottle(new File(dir,child),rateLimiter);
+
+  }
+
+  deleteWithConfirmWithThrottle(dir,rateLimiter);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Deletes the specified directory after having deleted its content.
+
+ * @param dir Directory to be deleted
+
+ * @throws FSWriteError if any part of the tree cannot be deleted
+
+ */
+
+public static void deleteRecursive(File dir){
+
+  deleteChildrenRecursive(dir);
+
+  deleteWithConfirm(dir);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void deleteWithConfirmWithThrottle(File file,RateLimiter rateLimiter){
+
+  maybeFail(deleteWithConfirm(file,null,rateLimiter));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void deleteWithConfirm(File file){
+
+  maybeFail(deleteWithConfirm(file,null,null));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static Throwable deleteWithConfirm(File file,Throwable accumulate){
+
+  return deleteWithConfirm(file,accumulate,null);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static Throwable deleteWithConfirm(File file,Throwable accumulate,RateLimiter rateLimiter){
+
+  try {
+
+    if (rateLimiter != null) {
+
+      double throttled=rateLimiter.acquire();
+
+      if (throttled > 0.0)       nospam1m.warn("Throttling file deletion: waited {} seconds to delete {}",throttled,file);
+
+    }
+
+    Files.delete(file.toPath());
+
+  }
+
+ catch (  Throwable t) {
+
+    try {
+
+      throw new FSWriteError(t,file);
+
+    }
+
+ catch (    Throwable t2) {
+
+      accumulate=merge(accumulate,t2);
+
+    }
+
+  }
+
+  return accumulate;
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void deleteWithConfirm(String file){
+
+  deleteWithConfirm(new File(file));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static Throwable deleteWithConfirm(String filePath,Throwable accumulate){
+
+  return deleteWithConfirm(new File(filePath),accumulate,null);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void delete(File... files){
+
+  for (  File file : files) {
+
+    if (!StorageService.instance.isDaemonSetupCompleted())     logger.info("Deleting file during startup: {}",file);
+
+    file.delete();
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static boolean delete(String file){
+
+  if (!StorageService.instance.isDaemonSetupCompleted())   logger.info("Deleting file during startup: {}",file);
+
+  File f=new File(file);
+
+  return f.delete();
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Private constructor as the class contains only static methods.
+
+ */
+
+private FileUtils(){
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Get the size of a directory in bytes
+
+ * @param folder The directory for which we need size.
+
+ * @return The size of the directory
+
+ */
+
+public static long folderSize(File folder){
+
+  final long[] sizeArr={0L};
+
+  try {
+
+    Files.walkFileTree(folder.toPath(),new SimpleFileVisitor<Path>(){
+
+      @Override public FileVisitResult visitFile(      Path file,      BasicFileAttributes attrs){
+
+        sizeArr[0]+=attrs.size();
+
+        return FileVisitResult.CONTINUE;
+
+      }
+
+    }
+
+);
+
+  }
+
+ catch (  IOException e) {
+
+    logger.error("Error while getting {} folder size. {}",folder,e.getMessage());
+
+  }
+
+  return sizeArr[0];
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static String getCanonicalPath(File file){
+
+  try {
+
+    return file.getCanonicalPath();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSReadError(e,file);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static String getCanonicalPath(String filename){
+
+  try {
+
+    return new File(filename).getCanonicalPath();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSReadError(e,filename);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Returns the  {@link FileStore} representing the file store where a fileis located. This  {@link FileStore} handles large file system by returning {@code Long.MAX_VALUE}from  {@code FileStore#getTotalSpace()},  {@code FileStore#getUnallocatedSpace()} and {@code FileStore#getUsableSpace()}it the value is bigger than  {@code Long.MAX_VALUE}. See <a href='https://bugs.openjdk.java.net/browse/JDK-8162520'>JDK-8162520</a> for more information.
+
+ * @param path the path to the file
+
+ * @return the file store where the file is stored
+
+ */
+
+public static FileStore getFileStore(Path path) throws IOException {
+
+  return new SafeFileStore(Files.getFileStore(path));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Returns the number of unallocated bytes on the specified partition. <p>This method handles large file system by returning  {@code Long.MAX_VALUE} if the  number of unallocated bytesoverflow. See <a href='https://bugs.openjdk.java.net/browse/JDK-8179320'>JDK-8179320</a> for more information</p>
+
+ * @param file the partition
+
+ * @return the number of unallocated bytes on the partition or {@code 0L}if the abstract pathname does not name a partition.
+
+ */
+
+public static long getFreeSpace(File file){
+
+  return handleLargeFileSystem(file.getFreeSpace());
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Convert absolute path into a path relative to the base path 
+
+ */
+
+public static String getRelativePath(String basePath,String path){
+
+  try {
+
+    return Paths.get(basePath).relativize(Paths.get(path)).toString();
+
+  }
+
+ catch (  Exception ex) {
+
+    String absDataPath=FileUtils.getCanonicalPath(basePath);
+
+    return Paths.get(absDataPath).relativize(Paths.get(path)).toString();
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static File getTempDir(){
+
+  return tempDir;
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Returns the size of the specified partition. <p>This method handles large file system by returning  {@code Long.MAX_VALUE} if the  size overflow.See <a href='https://bugs.openjdk.java.net/browse/JDK-8179320'>JDK-8179320</a> for more information.</p>
+
+ * @param file the partition
+
+ * @return the size, in bytes, of the partition or {@code 0L} if the abstract pathname does not name a partition
+
+ */
+
+public static long getTotalSpace(File file){
+
+  return handleLargeFileSystem(file.getTotalSpace());
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Returns the number of available bytes on the specified partition. <p>This method handles large file system by returning  {@code Long.MAX_VALUE} if the  number of available bytesoverflow. See <a href='https://bugs.openjdk.java.net/browse/JDK-8179320'>JDK-8179320</a> for more information</p>
+
+ * @param file the partition
+
+ * @return the number of available bytes on the partition or {@code 0L}if the abstract pathname does not name a partition.
+
+ */
+
+public static long getUsableSpace(File file){
+
+  return handleLargeFileSystem(file.getUsableSpace());
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void handleCorruptSSTable(CorruptSSTableException e){
+
+  fsErrorHandler.get().ifPresent(handler -> handler.handleCorruptSSTable(e));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * handleFSErrorAndPropagate will invoke the disk failure policy error handler, which may or may not stop the daemon or transports. However, if we don't exit, we still want to propagate the exception to the caller in case they have custom exception handling
+
+ * @param e A filesystem error
+
+ */
+
+public static void handleFSErrorAndPropagate(FSError e){
+
+  JVMStabilityInspector.inspectThrowable(e);
+
+  throw propagate(e);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void handleFSError(FSError e){
+
+  fsErrorHandler.get().ifPresent(handler -> handler.handleFSError(e));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Handle large file system by returning  {@code Long.MAX_VALUE} when the size overflows.
+
+ * @param size returned by the Java's FileStore methods
+
+ * @return the size or {@code Long.MAX_VALUE} if the size was bigger than {@code Long.MAX_VALUE}
+
+ */
+
+private static long handleLargeFileSystem(long size){
+
+  return size < 0 ? Long.MAX_VALUE : size;
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Return true if file is contained in folder 
+
+ */
+
+public static boolean isContained(File folder,File file){
+
+  Path folderPath=Paths.get(getCanonicalPath(folder));
+
+  Path filePath=Paths.get(getCanonicalPath(file));
+
+  return filePath.startsWith(folderPath);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static boolean isSubDirectory(File parent,File child) throws IOException {
+
+  parent=parent.getCanonicalFile();
+
+  child=child.getCanonicalFile();
+
+  File toCheck=child;
+
+  while (toCheck != null) {
+
+    if (parent.equals(toCheck))     return true;
+
+    toCheck=toCheck.getParentFile();
+
+  }
+
+  return false;
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static long parseFileSize(String value){
+
+  long result;
+
+  if (!value.matches("\\d+(\\.\\d+)? (GiB|KiB|MiB|TiB|bytes)")) {
+
+    throw new IllegalArgumentException(String.format("value %s is not a valid human-readable file size",value));
+
+  }
+
+  if (value.endsWith(" TiB")) {
+
+    result=Math.round(Double.valueOf(value.replace(" TiB","")) * ONE_TB);
+
+    return result;
+
+  }
+
+ else   if (value.endsWith(" GiB")) {
+
+    result=Math.round(Double.valueOf(value.replace(" GiB","")) * ONE_GB);
+
+    return result;
+
+  }
+
+ else   if (value.endsWith(" KiB")) {
+
+    result=Math.round(Double.valueOf(value.replace(" KiB","")) * ONE_KB);
+
+    return result;
+
+  }
+
+ else   if (value.endsWith(" MiB")) {
+
+    result=Math.round(Double.valueOf(value.replace(" MiB","")) * ONE_MB);
+
+    return result;
+
+  }
+
+ else   if (value.endsWith(" bytes")) {
+
+    result=Math.round(Double.valueOf(value.replace(" bytes","")));
+
+    return result;
+
+  }
+
+ else {
+
+    throw new IllegalStateException(String.format("FileUtils.parseFileSize() reached an illegal state parsing %s",value));
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static List<String> readLines(File file){
+
+  try {
+
+    return Files.readAllLines(file.toPath(),CHARSET);
+
+  }
+
+ catch (  IOException ex) {
+
+    if (ex instanceof NoSuchFileException)     return Collections.emptyList();
+
+    throw new RuntimeException(ex);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void renameWithConfirm(File from,File to){
+
+  assert from.exists();
+
+  if (logger.isTraceEnabled())   logger.trace("Renaming {} to {}",from.getPath(),to.getPath());
+
+  try {
+
+    atomicMoveWithFallback(from.toPath(),to.toPath());
+
+  }
+
+ catch (  IOException e) {
+
+    throw new RuntimeException(String.format("Failed to rename %s to %s",from.getPath(),to.getPath()),e);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void renameWithConfirm(String from,String to){
+
+  renameWithConfirm(new File(from),new File(to));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void renameWithOutConfirm(String from,String to){
+
+  try {
+
+    atomicMoveWithFallback(new File(from).toPath(),new File(to).toPath());
+
+  }
+
+ catch (  IOException e) {
+
+    if (logger.isTraceEnabled())     logger.trace("Could not move file " + from + " to "+ to,e);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void replace(File file,String... lines){
+
+  write(file,Arrays.asList(lines),StandardOpenOption.TRUNCATE_EXISTING);
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void setFSErrorHandler(FSErrorHandler handler){
+
+  fsErrorHandler.getAndSet(Optional.ofNullable(handler));
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static String stringifyFileSize(double value){
+
+  double d;
+
+  if (value >= ONE_TB) {
+
+    d=value / ONE_TB;
+
+    String val=df.format(d);
+
+    return val + " TiB";
+
+  }
+
+ else   if (value >= ONE_GB) {
+
+    d=value / ONE_GB;
+
+    String val=df.format(d);
+
+    return val + " GiB";
+
+  }
+
+ else   if (value >= ONE_MB) {
+
+    d=value / ONE_MB;
+
+    String val=df.format(d);
+
+    return val + " MiB";
+
+  }
+
+ else   if (value >= ONE_KB) {
+
+    d=value / ONE_KB;
+
+    String val=df.format(d);
+
+    return val + " KiB";
+
+  }
+
+ else {
+
+    String val=df.format(value);
+
+    return val + " bytes";
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+public static void truncate(String path,long size){
+
+  try (FileChannel channel=FileChannel.open(Paths.get(path),StandardOpenOption.READ,StandardOpenOption.WRITE)){
+
+    channel.truncate(size);
+
+  }
+
+ catch (  NoSuchFileException|FileNotFoundException nfe) {
+
+    throw new RuntimeException(nfe);
+
+  }
+
+catch (  IOException e) {
+
+    throw new FSWriteError(e,path);
+
+  }
+
+}
+
+Location: FileUtils.java
+
+Content: 
+
+/** 
+
+ * Write lines to a file adding a newline to the end of each supplied line using the provided open options. If open option sync or dsync is provided this will not open the file with sync or dsync since it might end up syncing many times for a lot of lines. Instead it will write all the lines and sync once at the end. Since the file is never returned there is not much difference from the perspective of the caller.
+
+ * @param file
+
+ * @param lines
+
+ * @param options
+
+ */
+
+public static void write(File file,List<String> lines,StandardOpenOption... options){
+
+  Set<StandardOpenOption> optionsSet=new HashSet<>(Arrays.asList(options));
+
+  if (optionsSet.isEmpty()) {
+
+    optionsSet.add(StandardOpenOption.CREATE);
+
+    optionsSet.add(StandardOpenOption.TRUNCATE_EXISTING);
+
+  }
+
+  boolean sync=optionsSet.remove(StandardOpenOption.SYNC);
+
+  boolean dsync=optionsSet.remove(StandardOpenOption.DSYNC);
+
+  optionsSet.add(StandardOpenOption.WRITE);
+
+  Path filePath=file.toPath();
+
+  try (FileChannel fc=filePath.getFileSystem().provider().newFileChannel(filePath,optionsSet);BufferedWriter writer=new BufferedWriter(new OutputStreamWriter(Channels.newOutputStream(fc),CHARSET.newEncoder()))){
+
+    for (    CharSequence line : lines) {
+
+      writer.append(line);
+
+      writer.newLine();
+
+    }
+
+    if (sync) {
+
+      SyncUtil.force(fc,true);
+
+    }
+
+ else     if (dsync) {
+
+      SyncUtil.force(fc,false);
+
+    }
+
+  }
+
+ catch (  ClosedChannelException cce) {
+
+    throw new RuntimeException(cce);
+
+  }
+
+catch (  IOException ex) {
+
+    throw new FSWriteError(ex,file);
+
+  }
+
+}
+
