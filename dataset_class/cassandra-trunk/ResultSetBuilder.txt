@@ -1,0 +1,128 @@
+Location: ResultSetBuilder.java
+
+Content: 
+
+public void add(Cell<?> c,int nowInSec){
+
+  if (c == null) {
+
+    current.add(null);
+
+    return;
+
+  }
+
+  current.add(value(c));
+
+  if (timestamps != null)   timestamps[current.size() - 1]=c.timestamp();
+
+  if (ttls != null)   ttls[current.size() - 1]=remainingTTL(c,nowInSec);
+
+}
+
+Location: ResultSetBuilder.java
+
+Content: 
+
+private List<ByteBuffer> getOutputRow(){
+
+  return selectors.getOutputRow();
+
+}
+
+Location: ResultSetBuilder.java
+
+Content: 
+
+/** 
+
+ * Notifies this <code>Builder</code> that a new row is being processed.
+
+ * @param partitionKey the partition key of the new row
+
+ * @param clustering the clustering of the new row
+
+ */
+
+public void newRow(DecoratedKey partitionKey,Clustering<?> clustering){
+
+  boolean isNewAggregate=groupMaker == null || groupMaker.isNewGroup(partitionKey,clustering);
+
+  if (current != null) {
+
+    selectors.addInputRow(this);
+
+    if (isNewAggregate) {
+
+      resultSet.addRow(getOutputRow());
+
+      selectors.reset();
+
+    }
+
+  }
+
+  current=new ArrayList<>(selectors.numberOfFetchedColumns());
+
+  if (timestamps != null)   Arrays.fill(timestamps,Long.MIN_VALUE);
+
+  if (ttls != null)   Arrays.fill(ttls,-1);
+
+}
+
+Location: ResultSetBuilder.java
+
+Content: 
+
+private int remainingTTL(Cell<?> c,int nowInSec){
+
+  if (!c.isExpiring())   return -1;
+
+  int remaining=c.localDeletionTime() - nowInSec;
+
+  return remaining >= 0 ? remaining : -1;
+
+}
+
+Location: ResultSetBuilder.java
+
+Content: 
+
+public ResultSetBuilder(ResultMetadata metadata,Selectors selectors){
+
+  this(metadata,selectors,null);
+
+}
+
+Location: ResultSetBuilder.java
+
+Content: 
+
+public ResultSetBuilder(ResultMetadata metadata,Selectors selectors,GroupMaker groupMaker){
+
+  this.resultSet=new ResultSet(metadata.copy(),new ArrayList<List<ByteBuffer>>());
+
+  this.selectors=selectors;
+
+  this.groupMaker=groupMaker;
+
+  this.timestamps=selectors.collectTimestamps() ? new long[selectors.numberOfFetchedColumns()] : null;
+
+  this.ttls=selectors.collectTTLs() ? new int[selectors.numberOfFetchedColumns()] : null;
+
+  if (timestamps != null)   Arrays.fill(timestamps,Long.MIN_VALUE);
+
+  if (ttls != null)   Arrays.fill(ttls,-1);
+
+}
+
+Location: ResultSetBuilder.java
+
+Content: 
+
+private <V>ByteBuffer value(Cell<V> c){
+
+  return c.isCounterCell() ? ByteBufferUtil.bytes(CounterContext.instance().total(c.value(),c.accessor())) : c.buffer();
+
+}
+

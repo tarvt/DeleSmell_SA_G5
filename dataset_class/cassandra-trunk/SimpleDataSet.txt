@@ -1,0 +1,96 @@
+Location: SimpleDataSet.java
+
+Content: 
+
+public SimpleDataSet column(String columnName,Object value){
+
+  if (null == currentRow)   throw new IllegalStateException();
+
+  if (null == columnName)   throw new IllegalStateException(String.format("Invalid column: %s=%s for %s",columnName,value,currentRow));
+
+  currentRow.add(columnName,value);
+
+  return this;
+
+}
+
+Location: SimpleDataSet.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private static <T>ByteBuffer decompose(AbstractType<?> type,T value){
+
+  return ((AbstractType<T>)type).decompose(value);
+
+}
+
+Location: SimpleDataSet.java
+
+Content: 
+
+private Clustering<?> makeClustering(Object... clusteringValues){
+
+  if (clusteringValues.length == 0)   return Clustering.EMPTY;
+
+  ByteBuffer[] clusteringByteBuffers=new ByteBuffer[clusteringValues.length];
+
+  for (int i=0; i < clusteringValues.length; i++)   clusteringByteBuffers[i]=decompose(metadata.clusteringColumns().get(i).type,clusteringValues[i]);
+
+  return Clustering.make(clusteringByteBuffers);
+
+}
+
+Location: SimpleDataSet.java
+
+Content: 
+
+private DecoratedKey makeDecoratedKey(Object... partitionKeyValues){
+
+  ByteBuffer partitionKey=partitionKeyValues.length == 1 ? decompose(metadata.partitionKeyType,partitionKeyValues[0]) : ((CompositeType)metadata.partitionKeyType).decompose(partitionKeyValues);
+
+  return metadata.partitioner.decorateKey(partitionKey);
+
+}
+
+Location: SimpleDataSet.java
+
+Content: 
+
+public SimpleDataSet row(Object... primaryKeyValues){
+
+  if (Iterables.size(metadata.primaryKeyColumns()) != primaryKeyValues.length)   throw new IllegalArgumentException();
+
+  Object[] partitionKeyValues=new Object[metadata.partitionKeyColumns().size()];
+
+  Object[] clusteringValues=new Object[metadata.clusteringColumns().size()];
+
+  System.arraycopy(primaryKeyValues,0,partitionKeyValues,0,partitionKeyValues.length);
+
+  System.arraycopy(primaryKeyValues,partitionKeyValues.length,clusteringValues,0,clusteringValues.length);
+
+  DecoratedKey partitionKey=makeDecoratedKey(partitionKeyValues);
+
+  Clustering<?> clustering=makeClustering(clusteringValues);
+
+  currentRow=new Row(metadata,clustering);
+
+  SimplePartition partition=(SimplePartition)partitions.computeIfAbsent(partitionKey,pk -> new SimplePartition(metadata,pk));
+
+  partition.add(currentRow);
+
+  return this;
+
+}
+
+Location: SimpleDataSet.java
+
+Content: 
+
+public SimpleDataSet(TableMetadata metadata){
+
+  super(new TreeMap<>(DecoratedKey.comparator));
+
+  this.metadata=metadata;
+
+}
+

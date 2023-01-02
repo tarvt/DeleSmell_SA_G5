@@ -1,0 +1,136 @@
+Location: SchemaCQLHelper.java
+
+Content: 
+
+/** 
+
+ * Build a CQL String representation of Indexes on columns in the given Column Family
+
+ * @param metadata the table for which to extract the index CQL statements.
+
+ * @param ifNotExists set to true if IF NOT EXISTS should be appended after CREATE INDEX string.
+
+ * @return a list of {@code CREATE INDEX} statements corresponding to table {@code metadata}.
+
+ */
+
+@VisibleForTesting public static Stream<String> getIndexesAsCQL(TableMetadata metadata,boolean ifNotExists){
+
+  return metadata.indexes.stream().map(indexMetadata -> indexMetadata.toCqlString(metadata,ifNotExists));
+
+}
+
+Location: SchemaCQLHelper.java
+
+Content: 
+
+/** 
+
+ * Build a CQL String representation of Column Family Metadata. *Note*: this is _only_ visible for testing; you generally shouldn't re-create a single table in isolation as that will not contain everything needed for user types.
+
+ */
+
+@VisibleForTesting public static String getTableMetadataAsCQL(TableMetadata metadata,boolean includeDroppedColumns,boolean internals,boolean ifNotExists){
+
+  if (metadata.isView()) {
+
+    KeyspaceMetadata keyspaceMetadata=Schema.instance.getKeyspaceMetadata(metadata.keyspace);
+
+    ViewMetadata viewMetadata=keyspaceMetadata.views.get(metadata.name).orElse(null);
+
+    assert viewMetadata != null;
+
+    return viewMetadata.toCqlString(internals,ifNotExists);
+
+  }
+
+  return metadata.toCqlString(includeDroppedColumns,internals,ifNotExists);
+
+}
+
+Location: SchemaCQLHelper.java
+
+Content: 
+
+private static UserType getType(TableMetadata metadata,Types types,ByteBuffer name){
+
+  return types.get(name).orElseThrow(() -> new IllegalStateException(String.format("user type %s is part of table %s definition but its definition was missing",UTF8Type.instance.getString(name),metadata)));
+
+}
+
+Location: SchemaCQLHelper.java
+
+Content: 
+
+/** 
+
+ * Build a CQL String representation of User Types used in the given table. Type order is ensured as types are built incrementally: from the innermost (most nested) to the outermost.
+
+ * @param metadata the table for which to extract the user types CQL statements.
+
+ * @param types the user types defined in the keyspace of the dumped table (which will thus contain any user typeused by  {@code metadata}).
+
+ * @param ifNotExists set to true if IF NOT EXISTS should be appended after CREATE TYPE string.
+
+ * @return a list of {@code CREATE TYPE} statements corresponding to all the types used in {@code metadata}.
+
+ */
+
+@VisibleForTesting public static Stream<String> getUserTypesAsCQL(TableMetadata metadata,Types types,boolean ifNotExists){
+
+  return metadata.getReferencedUserTypes().stream().map(name -> getType(metadata,types,name).toCqlString(false,ifNotExists));
+
+}
+
+Location: SchemaCQLHelper.java
+
+Content: 
+
+/** 
+
+ * Generates the DDL statement for a  {@code schema.cql} snapshot file.
+
+ */
+
+public static Stream<String> reCreateStatementsForSchemaCql(TableMetadata metadata,Types types){
+
+  Stream<String> udts=SchemaCQLHelper.getUserTypesAsCQL(metadata,types,true);
+
+  return Stream.concat(udts,reCreateStatements(metadata,true,true,true,true));
+
+}
+
+Location: SchemaCQLHelper.java
+
+Content: 
+
+public static Stream<String> reCreateStatements(TableMetadata metadata,boolean includeDroppedColumns,boolean internals,boolean ifNotExists,boolean includeIndexes){
+
+  Stream<String> r=Stream.of(metadata).map((tm) -> SchemaCQLHelper.getTableMetadataAsCQL(tm,includeDroppedColumns,internals,ifNotExists));
+
+  if (includeIndexes) {
+
+    r=Stream.concat(r,SchemaCQLHelper.getIndexesAsCQL(metadata,ifNotExists));
+
+  }
+
+  return r;
+
+}
+
+Location: SchemaCQLHelper.java
+
+Content: 
+
+/** 
+
+ * Converts the type to a CQL type.  This method special cases empty and UDTs so the string can be used in a create statement. Special cases <ul> <li>empty - replaces with 'org.apache.cassandra.db.marshal.EmptyType'.  empty is the tostring of the type in CQL but not allowed to create as empty, but fully qualified name is allowed</li> <li>UserType - replaces with TupleType</li> </ul>
+
+ */
+
+public static String toCqlType(AbstractType<?> type){
+
+  return EMPTY_TYPE_REGEX.matcher(type.expandUserTypes().asCQL3Type().toString()).replaceAll(EMPTY_TYPE_QUOTED);
+
+}
+

@@ -1,0 +1,122 @@
+Location: ScriptBasedUDFunction.java
+
+Content: 
+
+private Object executeScriptInternal(Object[] params){
+
+  ScriptContext scriptContext=new SimpleScriptContext();
+
+  scriptContext.setAttribute("javax.script.filename",this.name.toString(),ScriptContext.ENGINE_SCOPE);
+
+  Bindings bindings=scriptContext.getBindings(ScriptContext.ENGINE_SCOPE);
+
+  for (int i=0; i < params.length; i++)   bindings.put(argNames.get(i).toString(),params[i]);
+
+  bindings.put("udfContext",udfContextBinding);
+
+  Object result;
+
+  try {
+
+    result=script.eval(scriptContext);
+
+  }
+
+ catch (  ScriptException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+  if (result == null)   return null;
+
+  Class<?> javaReturnType=UDHelper.asJavaClass(returnCodec);
+
+  Class<?> resultType=result.getClass();
+
+  if (!javaReturnType.isAssignableFrom(resultType)) {
+
+    if (result instanceof Number) {
+
+      Number rNumber=(Number)result;
+
+      if (javaReturnType == Integer.class)       result=rNumber.intValue();
+
+ else       if (javaReturnType == Long.class)       result=rNumber.longValue();
+
+ else       if (javaReturnType == Short.class)       result=rNumber.shortValue();
+
+ else       if (javaReturnType == Byte.class)       result=rNumber.byteValue();
+
+ else       if (javaReturnType == Float.class)       result=rNumber.floatValue();
+
+ else       if (javaReturnType == Double.class)       result=rNumber.doubleValue();
+
+ else       if (javaReturnType == BigInteger.class) {
+
+        if (javaReturnType == Integer.class)         result=rNumber.intValue();
+
+ else         if (javaReturnType == Short.class)         result=rNumber.shortValue();
+
+ else         if (javaReturnType == Byte.class)         result=rNumber.byteValue();
+
+ else         if (javaReturnType == Long.class)         result=rNumber.longValue();
+
+ else         if (javaReturnType == Float.class)         result=rNumber.floatValue();
+
+ else         if (javaReturnType == Double.class)         result=rNumber.doubleValue();
+
+ else         if (javaReturnType == BigInteger.class) {
+
+          if (rNumber instanceof BigDecimal)           result=((BigDecimal)rNumber).toBigInteger();
+
+ else           if (rNumber instanceof Double || rNumber instanceof Float)           result=new BigDecimal(rNumber.toString()).toBigInteger();
+
+ else           result=BigInteger.valueOf(rNumber.longValue());
+
+        }
+
+ else         if (javaReturnType == BigDecimal.class)         result=new BigDecimal(rNumber.toString());
+
+      }
+
+ else       if (javaReturnType == BigDecimal.class)       result=new BigDecimal(rNumber.toString());
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: ScriptBasedUDFunction.java
+
+Content: 
+
+ScriptBasedUDFunction(FunctionName name,List<ColumnIdentifier> argNames,List<AbstractType<?>> argTypes,AbstractType<?> returnType,boolean calledOnNullInput,String language,String body){
+
+  super(name,argNames,argTypes,returnType,calledOnNullInput,language,body);
+
+  if (!"JavaScript".equalsIgnoreCase(language) || scriptEngine == null)   throw new InvalidRequestException(String.format("Invalid language '%s' for function '%s'",language,name));
+
+  try {
+
+    this.script=AccessController.doPrivileged((PrivilegedExceptionAction<CompiledScript>)() -> scriptEngine.compile(body),accessControlContext);
+
+  }
+
+ catch (  PrivilegedActionException x) {
+
+    Throwable e=x.getCause();
+
+    logger.info("Failed to compile function '{}' for language {}: ",name,language,e);
+
+    throw new InvalidRequestException(String.format("Failed to compile function '%s' for language %s: %s",name,language,e));
+
+  }
+
+  udfContextBinding=new UDFContextWrapper();
+
+}
+

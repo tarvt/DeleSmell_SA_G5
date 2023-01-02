@@ -1,0 +1,80 @@
+Location: SharedExecutorPool.java
+
+Content: 
+
+void maybeStartSpinningWorker(){
+
+  int current=spinningCount.get();
+
+  if (current == 0 && spinningCount.compareAndSet(0,1))   schedule(Work.SPINNING);
+
+}
+
+Location: SharedExecutorPool.java
+
+Content: 
+
+public LocalAwareExecutorService newExecutor(int maxConcurrency,LocalAwareExecutorService.MaximumPoolSizeListener maximumPoolSizeListener,String jmxPath,String name){
+
+  SEPExecutor executor=new SEPExecutor(this,maxConcurrency,maximumPoolSizeListener,jmxPath,name);
+
+  executors.add(executor);
+
+  return executor;
+
+}
+
+Location: SharedExecutorPool.java
+
+Content: 
+
+public synchronized LocalAwareExecutorService newExecutor(int maxConcurrency,String jmxPath,String name){
+
+  return newExecutor(maxConcurrency,i -> {
+
+  }
+
+,jmxPath,name);
+
+}
+
+Location: SharedExecutorPool.java
+
+Content: 
+
+void schedule(Work work){
+
+  Map.Entry<Long,SEPWorker> e;
+
+  while (null != (e=spinning.pollFirstEntry()) || null != (e=descheduled.pollFirstEntry()))   if (e.getValue().assign(work,false))   return;
+
+  if (!work.isStop())   new SEPWorker(workerId.incrementAndGet(),work,this);
+
+}
+
+Location: SharedExecutorPool.java
+
+Content: 
+
+public SharedExecutorPool(String poolName){
+
+  this.poolName=poolName;
+
+}
+
+Location: SharedExecutorPool.java
+
+Content: 
+
+void terminateWorkers(){
+
+  assert shuttingDown;
+
+  Map.Entry<Long,SEPWorker> e;
+
+  while (null != (e=descheduled.pollFirstEntry()))   e.getValue().assign(Work.SPINNING,false);
+
+  while (null != (e=spinning.pollFirstEntry()))   LockSupport.unpark(e.getValue().thread);
+
+}
+

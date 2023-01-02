@@ -1,0 +1,228 @@
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private ClusteringBound<?> closeBound(RangeTombstone range){
+
+  return range.deletedSlice().close(isReverseOrder());
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private RangeTombstoneMarker closeOpenedRange(){
+
+  updateNextRange();
+
+  RangeTombstoneMarker marker;
+
+  if (nextRange != null && comparator.compare(closeBound(openRange),openBound(nextRange)) == 0) {
+
+    marker=RangeTombstoneBoundaryMarker.makeBoundary(isReverseOrder(),closeBound(openRange),openBound(nextRange),openRange.deletionTime(),nextRange.deletionTime());
+
+    openRange=consumeNextRange();
+
+  }
+
+ else {
+
+    RangeTombstone toClose=consumeOpenRange();
+
+    marker=new RangeTombstoneBoundMarker(closeBound(toClose),toClose.deletionTime());
+
+  }
+
+  return marker;
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private Unfiltered computeNextInternal(){
+
+  while (true) {
+
+    updateNextRow();
+
+    if (nextRow == null) {
+
+      if (openRange != null)       return closeOpenedRange();
+
+      updateNextRange();
+
+      return nextRange == null ? endOfData() : openRange();
+
+    }
+
+    if (openRange == null) {
+
+      updateNextRange();
+
+      if (nextRange != null && comparator.compare(openBound(nextRange),nextRow.clustering()) < 0)       return openRange();
+
+      Row row=consumeNextRow();
+
+      if (row != null)       return row;
+
+    }
+
+ else {
+
+      if (comparator.compare(closeBound(openRange),nextRow.clustering()) < 0)       return closeOpenedRange();
+
+      Row row=consumeNextRow();
+
+      if (row != null)       return row;
+
+    }
+
+  }
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private RangeTombstone consumeNextRange(){
+
+  RangeTombstone range=nextRange;
+
+  nextRange=null;
+
+  return range;
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private Row consumeNextRow(){
+
+  Row row=nextRow;
+
+  nextRow=null;
+
+  if (!removeShadowedData)   return row.filter(selection,metadata());
+
+  DeletionTime activeDeletion=openRange == null ? partitionLevelDeletion() : openRange.deletionTime();
+
+  return row.filter(selection,activeDeletion,false,metadata());
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private RangeTombstone consumeOpenRange(){
+
+  RangeTombstone range=openRange;
+
+  openRange=null;
+
+  return range;
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private ClusteringBound<?> openBound(RangeTombstone range){
+
+  return range.deletedSlice().open(isReverseOrder());
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private RangeTombstoneMarker openRange(){
+
+  assert openRange == null && nextRange != null;
+
+  openRange=consumeNextRange();
+
+  return new RangeTombstoneBoundMarker(openBound(openRange),openRange.deletionTime());
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+public RowAndDeletionMergeIterator(TableMetadata metadata,DecoratedKey partitionKey,DeletionTime partitionLevelDeletion,ColumnFilter selection,Row staticRow,boolean isReversed,EncodingStats stats,Iterator<Row> rows,Iterator<RangeTombstone> ranges,boolean removeShadowedData){
+
+  super(metadata,partitionKey,partitionLevelDeletion,selection.fetchedColumns(),staticRow,isReversed,stats);
+
+  this.comparator=isReversed ? metadata.comparator.reversed() : metadata.comparator;
+
+  this.selection=selection;
+
+  this.removeShadowedData=removeShadowedData;
+
+  this.rows=rows;
+
+  this.ranges=ranges;
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+/** 
+
+ * RangeTombstoneList doesn't correctly merge multiple superseded rts, or overlapping rts with the same ts. This causes it to emit noop boundary markers which can cause unneeded read repairs and repair over streaming. This should technically be fixed in RangeTombstoneList. However, fixing it isn't trivial and that class is already so complicated that the fix would have a good chance of adding a worse bug. So we just swallow the noop boundary markers here. See CASSANDRA-14894
+
+ */
+
+private static boolean shouldSkip(Unfiltered unfiltered){
+
+  if (unfiltered == null || !unfiltered.isRangeTombstoneMarker())   return false;
+
+  RangeTombstoneMarker marker=(RangeTombstoneMarker)unfiltered;
+
+  if (!marker.isBoundary())   return false;
+
+  DeletionTime open=marker.openDeletionTime(false);
+
+  DeletionTime close=marker.closeDeletionTime(false);
+
+  return open.equals(close);
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private void updateNextRange(){
+
+  while (nextRange == null && ranges.hasNext()) {
+
+    nextRange=ranges.next();
+
+    if ((removeShadowedData && !nextRange.deletionTime().supersedes(partitionLevelDeletion())) || nextRange.deletedSlice().isEmpty(metadata.comparator))     nextRange=null;
+
+  }
+
+}
+
+Location: RowAndDeletionMergeIterator.java
+
+Content: 
+
+private void updateNextRow(){
+
+  if (nextRow == null && rows.hasNext())   nextRow=rows.next();
+
+}
+

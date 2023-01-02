@@ -1,0 +1,172 @@
+Location: SEPWorker.java
+
+Content: 
+
+boolean assign(Work work,boolean self){
+
+  Work state=get();
+
+  while (state.canAssign(self)) {
+
+    if (!compareAndSet(state,work)) {
+
+      state=get();
+
+      continue;
+
+    }
+
+    if (state.isSpinning())     stopSpinning();
+
+    if (work.isStop()) {
+
+      pool.descheduled.put(workerId,this);
+
+      if (pool.shuttingDown)       return true;
+
+    }
+
+    if (state.isStopped() && (!work.isStop() || !stop()))     LockSupport.unpark(thread);
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: SEPWorker.java
+
+Content: 
+
+private boolean isSpinning(){
+
+  return get().isSpinning();
+
+}
+
+Location: SEPWorker.java
+
+Content: 
+
+private boolean isStopped(){
+
+  return get().isStopped();
+
+}
+
+Location: SEPWorker.java
+
+Content: 
+
+private void maybeStop(long stopCheck,long now){
+
+  long delta=now - stopCheck;
+
+  if (delta <= 0) {
+
+    if (pool.stopCheck.compareAndSet(stopCheck,now - stopCheckInterval)) {
+
+      if (!assign(Work.STOP_SIGNALLED,true))       pool.schedule(Work.STOP_SIGNALLED);
+
+    }
+
+  }
+
+ else   if (soleSpinnerSpinTime > stopCheckInterval && pool.spinningCount.get() == 1) {
+
+    assign(Work.STOP_SIGNALLED,true);
+
+  }
+
+ else {
+
+    while (delta > stopCheckInterval * 2 && !pool.stopCheck.compareAndSet(stopCheck,now - stopCheckInterval)) {
+
+      stopCheck=pool.stopCheck.get();
+
+      delta=now - stopCheck;
+
+    }
+
+  }
+
+}
+
+Location: SEPWorker.java
+
+Content: 
+
+private boolean selfAssign(){
+
+  if (!get().canAssign(true))   return false;
+
+  for (  SEPExecutor exec : pool.executors) {
+
+    if (exec.takeWorkPermit(true)) {
+
+      Work work=new Work(exec);
+
+      if (assign(work,true))       return true;
+
+      pool.schedule(work);
+
+      assert get().assigned != null;
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: SEPWorker.java
+
+Content: 
+
+SEPWorker(Long workerId,Work initialState,SharedExecutorPool pool){
+
+  this.pool=pool;
+
+  this.workerId=workerId;
+
+  thread=new FastThreadLocalThread(this,pool.poolName + "-Worker-" + workerId);
+
+  thread.setDaemon(true);
+
+  set(initialState);
+
+  thread.start();
+
+}
+
+Location: SEPWorker.java
+
+Content: 
+
+private void startSpinning(){
+
+  assert get() == Work.WORKING;
+
+  pool.spinningCount.incrementAndGet();
+
+  set(Work.SPINNING);
+
+}
+
+Location: SEPWorker.java
+
+Content: 
+
+private void stopSpinning(){
+
+  if (pool.spinningCount.decrementAndGet() == 0)   for (  SEPExecutor executor : pool.executors)   executor.maybeSchedule();
+
+  prevStopCheck=soleSpinnerSpinTime=0;
+
+}
+

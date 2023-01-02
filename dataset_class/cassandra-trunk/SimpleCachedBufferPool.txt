@@ -1,0 +1,108 @@
+Location: SimpleCachedBufferPool.java
+
+Content: 
+
+/** 
+
+ * Checks if the number of used buffers has exceeded the maximum number of cached buffers.
+
+ * @return {@code true} if the number of used buffers has exceeded the maximum number of cached buffers,{@code false} otherwise.
+
+ */
+
+public boolean atLimit(){
+
+  return usedBuffers.get() >= maxBufferPoolSize;
+
+}
+
+Location: SimpleCachedBufferPool.java
+
+Content: 
+
+public ByteBuffer createBuffer(){
+
+  usedBuffers.incrementAndGet();
+
+  ByteBuffer buf=bufferPool.poll();
+
+  if (buf != null) {
+
+    buf.clear();
+
+    return buf;
+
+  }
+
+  return preferredReusableBufferType.allocate(bufferSize);
+
+}
+
+Location: SimpleCachedBufferPool.java
+
+Content: 
+
+/** 
+
+ * Empties the buffer pool.
+
+ */
+
+public void emptyBufferPool(){
+
+  ByteBuffer buffer=bufferPool.poll();
+
+  while (buffer != null) {
+
+    FileUtils.clean(buffer);
+
+    buffer=bufferPool.poll();
+
+  }
+
+}
+
+Location: SimpleCachedBufferPool.java
+
+Content: 
+
+public ByteBuffer getThreadLocalReusableBuffer(int size){
+
+  return bufferHolder.getBuffer(size);
+
+}
+
+Location: SimpleCachedBufferPool.java
+
+Content: 
+
+public void releaseBuffer(ByteBuffer buffer){
+
+  assert buffer != null;
+
+  assert preferredReusableBufferType == BufferType.typeOf(buffer);
+
+  usedBuffers.decrementAndGet();
+
+  if (!bufferPool.offer(buffer))   FileUtils.clean(buffer);
+
+}
+
+Location: SimpleCachedBufferPool.java
+
+Content: 
+
+public SimpleCachedBufferPool(int maxBufferPoolSize,int bufferSize,BufferType preferredReusableBufferType){
+
+  this.bufferPool=new MpmcArrayQueue<>(maxBufferPoolSize);
+
+  this.maxBufferPoolSize=maxBufferPoolSize;
+
+  this.bufferSize=bufferSize;
+
+  this.preferredReusableBufferType=preferredReusableBufferType;
+
+  this.bufferHolder=new ThreadLocalByteBufferHolder(preferredReusableBufferType);
+
+}
+

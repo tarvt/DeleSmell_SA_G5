@@ -1,0 +1,794 @@
+Location: SelectStatement.java
+
+Content: 
+
+private static void addValue(ResultSetBuilder result,ColumnMetadata def,Row row,int nowInSec,ProtocolVersion protocolVersion){
+
+  if (def.isComplex()) {
+
+    assert def.type.isMultiCell();
+
+    ComplexColumnData complexData=row.getComplexColumnData(def);
+
+    if (complexData == null)     result.add(null);
+
+ else     if (def.type.isCollection())     result.add(((CollectionType)def.type).serializeForNativeProtocol(complexData.iterator(),protocolVersion));
+
+ else     result.add(((UserType)def.type).serializeForNativeProtocol(complexData.iterator(),protocolVersion));
+
+  }
+
+ else {
+
+    result.add(row.getCell(def),nowInSec);
+
+  }
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * Returns the slices fetched by this SELECT, assuming an internal call (no bound values in particular). <p> Note that if the SELECT intrinsically selects rows by names, we convert them into equivalent slices for the purpose of this method. This is used for MVs to restrict what needs to be read when we want to read everything that could be affected by a given view (and so, if the view SELECT statement has restrictions on the clustering columns, we can restrict what we read).
+
+ */
+
+public Slices clusteringIndexFilterAsSlices(){
+
+  QueryOptions options=QueryOptions.forInternalCalls(Collections.emptyList());
+
+  ColumnFilter columnFilter=selection.newSelectors(options).getColumnFilter();
+
+  ClusteringIndexFilter filter=makeClusteringIndexFilter(options,columnFilter);
+
+  if (filter instanceof ClusteringIndexSliceFilter)   return ((ClusteringIndexSliceFilter)filter).requestedSlices();
+
+  Slices.Builder builder=new Slices.Builder(table.comparator);
+
+  for (  Clustering<?> clustering : ((ClusteringIndexNamesFilter)filter).requestedRows())   builder.add(Slice.make(clustering));
+
+  return builder.build();
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+public ResultMessage.Rows executeInternal(QueryState state,QueryOptions options,int nowInSec,long queryStartNanoTime) throws RequestExecutionException, RequestValidationException {
+
+  int userLimit=getLimit(options);
+
+  int userPerPartitionLimit=getPerPartitionLimit(options);
+
+  int pageSize=options.getPageSize();
+
+  Selectors selectors=selection.newSelectors(options);
+
+  ReadQuery query=getQuery(options,selectors.getColumnFilter(),nowInSec,userLimit,userPerPartitionLimit,pageSize);
+
+  try (ReadExecutionController executionController=query.executionController()){
+
+    if (aggregationSpec == null && (pageSize <= 0 || (query.limits().count() <= pageSize))) {
+
+      try (PartitionIterator data=query.executeInternal(executionController)){
+
+        return processResults(data,options,selectors,nowInSec,userLimit);
+
+      }
+
+     }
+
+    QueryPager pager=getPager(query,options);
+
+    return execute(Pager.forInternalQuery(pager,executionController),options,selectors,pageSize,nowInSec,userLimit,queryStartNanoTime);
+
+  }
+
+ }
+
+Location: SelectStatement.java
+
+Content: 
+
+private ResultMessage.Rows execute(Pager pager,QueryOptions options,Selectors selectors,int pageSize,int nowInSec,int userLimit,long queryStartNanoTime) throws RequestValidationException, RequestExecutionException {
+
+  if (aggregationSpec != null) {
+
+    if (!restrictions.hasPartitionKeyRestrictions()) {
+
+      warn("Aggregation query used without partition key");
+
+    }
+
+ else     if (restrictions.keyIsInRelation()) {
+
+      warn("Aggregation query used on multiple partition keys (IN restriction)");
+
+    }
+
+  }
+
+  checkFalse(pageSize > 0 && needsPostQueryOrdering(),"Cannot page queries with both ORDER BY and a IN restriction on the partition key;" + " you must either remove the ORDER BY or the IN and sort client side, or disable paging for this query");
+
+  ResultMessage.Rows msg;
+
+  try (PartitionIterator page=pager.fetchPage(pageSize,queryStartNanoTime)){
+
+    msg=processResults(page,options,selectors,nowInSec,userLimit);
+
+  }
+
+   if (!pager.isExhausted())   msg.result.metadata.setHasMorePages(pager.state());
+
+  return msg;
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private ResultMessage.Rows execute(ReadQuery query,QueryOptions options,QueryState state,Selectors selectors,int nowInSec,int userLimit,long queryStartNanoTime) throws RequestValidationException, RequestExecutionException {
+
+  try (PartitionIterator data=query.execute(options.getConsistency(),state.getClientState(),queryStartNanoTime)){
+
+    return processResults(data,options,selectors,nowInSec,userLimit);
+
+  }
+
+ }
+
+Location: SelectStatement.java
+
+Content: 
+
+static SelectStatement forSelection(TableMetadata table,Selection selection){
+
+  return new SelectStatement(table,VariableSpecifications.empty(),defaultParameters,selection,StatementRestrictions.empty(StatementType.SELECT,table),false,null,null,null,null);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+public static ByteBuffer[] getComponents(TableMetadata metadata,DecoratedKey dk){
+
+  ByteBuffer key=dk.getKey();
+
+  if (metadata.partitionKeyType instanceof CompositeType) {
+
+    return ((CompositeType)metadata.partitionKeyType).split(key);
+
+  }
+
+ else {
+
+    return new ByteBuffer[]{key};
+
+  }
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private DataLimits getDataLimits(int userLimit,int perPartitionLimit,int pageSize){
+
+  int cqlRowLimit=DataLimits.NO_LIMIT;
+
+  int cqlPerPartitionLimit=DataLimits.NO_LIMIT;
+
+  if (aggregationSpec != AggregationSpecification.AGGREGATE_EVERYTHING) {
+
+    if (!needsPostQueryOrdering())     cqlRowLimit=userLimit;
+
+    cqlPerPartitionLimit=perPartitionLimit;
+
+  }
+
+  if (pageSize <= 0)   pageSize=DEFAULT_PAGE_SIZE;
+
+  if (aggregationSpec != null && aggregationSpec != AggregationSpecification.AGGREGATE_EVERYTHING) {
+
+    if (parameters.isDistinct)     return DataLimits.distinctLimits(cqlRowLimit);
+
+    return DataLimits.groupByLimits(cqlRowLimit,cqlPerPartitionLimit,pageSize,aggregationSpec);
+
+  }
+
+  if (parameters.isDistinct)   return cqlRowLimit == DataLimits.NO_LIMIT ? DataLimits.DISTINCT_NONE : DataLimits.distinctLimits(cqlRowLimit);
+
+  return DataLimits.cqlLimits(cqlRowLimit,cqlPerPartitionLimit);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * Returns the limit specified by the user. May be used by custom QueryHandler implementations
+
+ * @return the limit specified by the user or <code>DataLimits.NO_LIMIT</code> if no valueas been specified.
+
+ */
+
+public int getLimit(QueryOptions options){
+
+  return getLimit(limit,options);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private int getLimit(Term limit,QueryOptions options){
+
+  int userLimit=DataLimits.NO_LIMIT;
+
+  if (limit != null) {
+
+    ByteBuffer b=checkNotNull(limit.bindAndGet(options),"Invalid null value of limit");
+
+    if (b != UNSET_BYTE_BUFFER) {
+
+      try {
+
+        Int32Type.instance.validate(b);
+
+        userLimit=Int32Type.instance.compose(b);
+
+        checkTrue(userLimit > 0,"LIMIT must be strictly positive");
+
+      }
+
+ catch (      MarshalException e) {
+
+        throw new InvalidRequestException("Invalid limit value");
+
+      }
+
+    }
+
+  }
+
+  return userLimit;
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private QueryPager getPager(ReadQuery query,QueryOptions options){
+
+  QueryPager pager=query.getPager(options.getPagingState(),options.getProtocolVersion());
+
+  if (aggregationSpec == null || query.isEmpty())   return pager;
+
+  return new AggregationQueryPager(pager,query.limits());
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * Returns the per partition limit specified by the user. May be used by custom QueryHandler implementations
+
+ * @return the per partition limit specified by the user or <code>DataLimits.NO_LIMIT</code> if no valueas been specified.
+
+ */
+
+public int getPerPartitionLimit(QueryOptions options){
+
+  return getLimit(perPartitionLimit,options);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+public ReadQuery getQuery(QueryOptions options,ColumnFilter columnFilter,int nowInSec,int userLimit,int perPartitionLimit,int pageSize){
+
+  boolean isPartitionRangeQuery=restrictions.isKeyRange() || restrictions.usesSecondaryIndexing();
+
+  DataLimits limit=getDataLimits(userLimit,perPartitionLimit,pageSize);
+
+  if (isPartitionRangeQuery)   return getRangeCommand(options,columnFilter,limit,nowInSec);
+
+  return getSliceCommands(options,columnFilter,limit,nowInSec);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+public ReadQuery getQuery(QueryOptions options,int nowInSec) throws RequestValidationException {
+
+  Selectors selectors=selection.newSelectors(options);
+
+  return getQuery(options,selectors.getColumnFilter(),nowInSec,getLimit(options),getPerPartitionLimit(options),options.getPageSize());
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private ReadQuery getRangeCommand(QueryOptions options,ColumnFilter columnFilter,DataLimits limit,int nowInSec){
+
+  ClusteringIndexFilter clusteringIndexFilter=makeClusteringIndexFilter(options,columnFilter);
+
+  if (clusteringIndexFilter == null)   return ReadQuery.empty(table);
+
+  RowFilter rowFilter=getRowFilter(options);
+
+  AbstractBounds<PartitionPosition> keyBounds=restrictions.getPartitionKeyBounds(options);
+
+  if (keyBounds == null)   return ReadQuery.empty(table);
+
+  ReadQuery command=PartitionRangeReadQuery.create(table,nowInSec,columnFilter,rowFilter,limit,new DataRange(keyBounds,clusteringIndexFilter));
+
+  command.maybeValidateIndex();
+
+  return command;
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private NavigableSet<Clustering<?>> getRequestedRows(QueryOptions options) throws InvalidRequestException {
+
+  assert !restrictions.isColumnRange();
+
+  return restrictions.getClusteringColumns(options);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+public ResultSet.ResultMetadata getResultMetadata(){
+
+  return selection.getResultMetadata();
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * May be used by custom QueryHandler implementations
+
+ */
+
+public RowFilter getRowFilter(QueryOptions options) throws InvalidRequestException {
+
+  IndexRegistry indexRegistry=IndexRegistry.obtain(table);
+
+  return restrictions.getRowFilter(indexRegistry,options);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * May be used by custom QueryHandler implementations
+
+ */
+
+public Selection getSelection(){
+
+  return selection;
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private ReadQuery getSliceCommands(QueryOptions options,ColumnFilter columnFilter,DataLimits limit,int nowInSec){
+
+  Collection<ByteBuffer> keys=restrictions.getPartitionKeys(options);
+
+  if (keys.isEmpty())   return ReadQuery.empty(table);
+
+  ClusteringIndexFilter filter=makeClusteringIndexFilter(options,columnFilter);
+
+  if (filter == null)   return ReadQuery.empty(table);
+
+  RowFilter rowFilter=getRowFilter(options);
+
+  List<DecoratedKey> decoratedKeys=new ArrayList<>(keys.size());
+
+  for (  ByteBuffer key : keys) {
+
+    QueryProcessor.validateKey(key);
+
+    decoratedKeys.add(table.partitioner.decorateKey(ByteBufferUtil.clone(key)));
+
+  }
+
+  return SinglePartitionReadQuery.createGroup(table,nowInSec,columnFilter,rowFilter,limit,decoratedKeys,filter);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * Returns a read command that can be used internally to query all the rows queried by this SELECT for a give key (used for materialized views).
+
+ */
+
+public SinglePartitionReadCommand internalReadForView(DecoratedKey key,int nowInSec){
+
+  QueryOptions options=QueryOptions.forInternalCalls(Collections.emptyList());
+
+  ColumnFilter columnFilter=selection.newSelectors(options).getColumnFilter();
+
+  ClusteringIndexFilter filter=makeClusteringIndexFilter(options,columnFilter);
+
+  RowFilter rowFilter=getRowFilter(options);
+
+  return SinglePartitionReadCommand.create(table,nowInSec,columnFilter,rowFilter,DataLimits.NONE,key,filter);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private ClusteringIndexFilter makeClusteringIndexFilter(QueryOptions options,ColumnFilter columnFilter){
+
+  if (parameters.isDistinct) {
+
+    return new ClusteringIndexSliceFilter(Slices.ALL,false);
+
+  }
+
+  if (restrictions.isColumnRange()) {
+
+    Slices slices=makeSlices(options);
+
+    if (slices == Slices.NONE && !selection.containsStaticColumns())     return null;
+
+    return new ClusteringIndexSliceFilter(slices,isReversed);
+
+  }
+
+  NavigableSet<Clustering<?>> clusterings=getRequestedRows(options);
+
+  if (clusterings.isEmpty() && columnFilter.fetchedColumns().statics.isEmpty())   return null;
+
+  return new ClusteringIndexNamesFilter(clusterings,isReversed);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+@VisibleForTesting public Slices makeSlices(QueryOptions options) throws InvalidRequestException {
+
+  SortedSet<ClusteringBound<?>> startBounds=restrictions.getClusteringColumnsBounds(Bound.START,options);
+
+  SortedSet<ClusteringBound<?>> endBounds=restrictions.getClusteringColumnsBounds(Bound.END,options);
+
+  assert startBounds.size() == endBounds.size();
+
+  if (startBounds.size() == 1) {
+
+    ClusteringBound<?> start=startBounds.first();
+
+    ClusteringBound<?> end=endBounds.first();
+
+    return Slice.isEmpty(table.comparator,start,end) ? Slices.NONE : Slices.with(table.comparator,Slice.make(start,end));
+
+  }
+
+  Slices.Builder builder=new Slices.Builder(table.comparator,startBounds.size());
+
+  Iterator<ClusteringBound<?>> startIter=startBounds.iterator();
+
+  Iterator<ClusteringBound<?>> endIter=endBounds.iterator();
+
+  while (startIter.hasNext() && endIter.hasNext()) {
+
+    ClusteringBound<?> start=startIter.next();
+
+    ClusteringBound<?> end=endIter.next();
+
+    if (Slice.isEmpty(table.comparator,start,end))     continue;
+
+    builder.add(start,end);
+
+  }
+
+  return builder.build();
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private boolean needsPostQueryOrdering(){
+
+  return restrictions.keyIsInRelation() && !parameters.orderings.isEmpty();
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * Orders results when multiple keys are selected (using IN)
+
+ */
+
+private void orderResults(ResultSet cqlRows){
+
+  if (cqlRows.size() == 0 || !needsPostQueryOrdering())   return;
+
+  Collections.sort(cqlRows.rows,orderingComparator);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+void processPartition(RowIterator partition,QueryOptions options,ResultSetBuilder result,int nowInSec) throws InvalidRequestException {
+
+  ProtocolVersion protocolVersion=options.getProtocolVersion();
+
+  ByteBuffer[] keyComponents=getComponents(table,partition.partitionKey());
+
+  Row staticRow=partition.staticRow();
+
+  if (!partition.hasNext()) {
+
+    if (!staticRow.isEmpty() && returnStaticContentOnPartitionWithNoRows()) {
+
+      result.newRow(partition.partitionKey(),staticRow.clustering());
+
+      for (      ColumnMetadata def : selection.getColumns()) {
+
+switch (def.kind) {
+
+case PARTITION_KEY:
+
+          result.add(keyComponents[def.position()]);
+
+        break;
+
+case STATIC:
+
+      addValue(result,def,staticRow,nowInSec,protocolVersion);
+
+    break;
+
+default :
+
+  result.add((ByteBuffer)null);
+
+}
+
+}
+
+}
+
+return;
+
+}
+
+while (partition.hasNext()) {
+
+Row row=partition.next();
+
+result.newRow(partition.partitionKey(),row.clustering());
+
+for (ColumnMetadata def : selection.getColumns()) {
+
+switch (def.kind) {
+
+case PARTITION_KEY:
+
+result.add(keyComponents[def.position()]);
+
+break;
+
+case CLUSTERING:
+
+result.add(row.clustering().bufferAt(def.position()));
+
+break;
+
+case REGULAR:
+
+addValue(result,def,row,nowInSec,protocolVersion);
+
+break;
+
+case STATIC:
+
+addValue(result,def,staticRow,nowInSec,protocolVersion);
+
+break;
+
+}
+
+}
+
+}
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private ResultMessage.Rows processResults(PartitionIterator partitions,QueryOptions options,Selectors selectors,int nowInSec,int userLimit) throws RequestValidationException {
+
+  ResultSet rset=process(partitions,options,selectors,nowInSec,userLimit);
+
+  return new ResultMessage.Rows(rset);
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+public ResultSet process(PartitionIterator partitions,int nowInSec) throws InvalidRequestException {
+
+  QueryOptions options=QueryOptions.DEFAULT;
+
+  Selectors selectors=selection.newSelectors(options);
+
+  return process(partitions,options,selectors,nowInSec,getLimit(options));
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private ResultSet process(PartitionIterator partitions,QueryOptions options,Selectors selectors,int nowInSec,int userLimit) throws InvalidRequestException {
+
+  GroupMaker groupMaker=aggregationSpec == null ? null : aggregationSpec.newGroupMaker();
+
+  ResultSetBuilder result=new ResultSetBuilder(getResultMetadata(),selectors,groupMaker);
+
+  while (partitions.hasNext()) {
+
+    try (RowIterator partition=partitions.next()){
+
+      processPartition(partition,options,result,nowInSec);
+
+    }
+
+   }
+
+  ResultSet cqlRows=result.build();
+
+  orderResults(cqlRows);
+
+  cqlRows.trim(userLimit);
+
+  return cqlRows;
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * Checks if the query is a full partitions selection.
+
+ * @return {@code true} if the query is a full partitions selection, {@code false} otherwise.
+
+ */
+
+private boolean queriesFullPartitions(){
+
+  return !restrictions.hasClusteringColumnsRestrictions() && !restrictions.hasRegularColumnsRestrictions();
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private boolean returnStaticContentOnPartitionWithNoRows(){
+
+  if (table.isStaticCompactTable())   return true;
+
+  return queriesFullPartitions();
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+/** 
+
+ * The  {@code RowFilter} for this SELECT, assuming an internal call (no bound values in particular).
+
+ */
+
+public RowFilter rowFilterForInternalCalls(){
+
+  return getRowFilter(QueryOptions.forInternalCalls(Collections.emptyList()));
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+public SelectStatement(TableMetadata table,VariableSpecifications bindVariables,Parameters parameters,Selection selection,StatementRestrictions restrictions,boolean isReversed,AggregationSpecification aggregationSpec,Comparator<List<ByteBuffer>> orderingComparator,Term limit,Term perPartitionLimit){
+
+  this.table=table;
+
+  this.bindVariables=bindVariables;
+
+  this.selection=selection;
+
+  this.restrictions=restrictions;
+
+  this.isReversed=isReversed;
+
+  this.aggregationSpec=aggregationSpec;
+
+  this.orderingComparator=orderingComparator;
+
+  this.parameters=parameters;
+
+  this.limit=limit;
+
+  this.perPartitionLimit=perPartitionLimit;
+
+}
+
+Location: SelectStatement.java
+
+Content: 
+
+private void warn(String msg){
+
+  logger.warn(msg);
+
+  ClientWarn.instance.warn(msg);
+
+}
+

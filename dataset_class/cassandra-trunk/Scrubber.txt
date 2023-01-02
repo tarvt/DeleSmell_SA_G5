@@ -1,0 +1,660 @@
+Location: Scrubber.java
+
+Content: 
+
+/** 
+
+ * Only wrap with  {@link FixNegativeLocalDeletionTimeIterator} if {@link #reinsertOverflowedTTLRows} optionis specified
+
+ */
+
+@SuppressWarnings("resource") private UnfilteredRowIterator getIterator(DecoratedKey key){
+
+  RowMergingSSTableIterator rowMergingIterator=new RowMergingSSTableIterator(SSTableIdentityIterator.create(sstable,dataFile,key));
+
+  return reinsertOverflowedTTLRows ? new FixNegativeLocalDeletionTimeIterator(rowMergingIterator,outputHandler,negativeLocalDeletionInfoMetrics) : rowMergingIterator;
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+public CompactionInfo.Holder getScrubInfo(){
+
+  return scrubInfo;
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+private boolean indexAvailable(){
+
+  return indexFile != null && !indexFile.isEOF();
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+private void saveOutOfOrderRow(DecoratedKey prevKey,DecoratedKey key,UnfilteredRowIterator iterator){
+
+  outputHandler.warn(String.format("Out of order row detected (%s found after %s)",key,prevKey));
+
+  outOfOrder.add(ImmutableBTreePartition.create(iterator));
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+public void scrub(){
+
+  List<SSTableReader> finished=new ArrayList<>();
+
+  boolean completed=false;
+
+  outputHandler.output(String.format("Scrubbing %s (%s)",sstable,FBUtilities.prettyPrintMemory(dataFile.length())));
+
+  try (SSTableRewriter writer=SSTableRewriter.construct(cfs,transaction,false,sstable.maxDataAge);Refs<SSTableReader> refs=Refs.ref(Collections.singleton(sstable))){
+
+    nextIndexKey=indexAvailable() ? ByteBufferUtil.readWithShortLength(indexFile) : null;
+
+    if (indexAvailable()) {
+
+      long firstRowPositionFromIndex=rowIndexEntrySerializer.deserializePositionAndSkip(indexFile);
+
+      assert firstRowPositionFromIndex == 0 : firstRowPositionFromIndex;
+
+    }
+
+    StatsMetadata metadata=sstable.getSSTableMetadata();
+
+    writer.switchWriter(CompactionManager.createWriter(cfs,destination,expectedBloomFilterSize,metadata.repairedAt,metadata.pendingRepair,metadata.isTransient,sstable,transaction));
+
+    DecoratedKey prevKey=null;
+
+    while (!dataFile.isEOF()) {
+
+      if (scrubInfo.isStopRequested())       throw new CompactionInterruptedException(scrubInfo.getCompactionInfo());
+
+      long rowStart=dataFile.getFilePointer();
+
+      outputHandler.debug("Reading row at " + rowStart);
+
+      DecoratedKey key=null;
+
+      try {
+
+        key=sstable.decorateKey(ByteBufferUtil.readWithShortLength(dataFile));
+
+      }
+
+ catch (      Throwable th) {
+
+        throwIfFatal(th);
+
+      }
+
+      updateIndexKey();
+
+      long dataStart=dataFile.getFilePointer();
+
+      long dataStartFromIndex=-1;
+
+      long dataSizeFromIndex=-1;
+
+      if (currentIndexKey != null) {
+
+        dataStartFromIndex=currentRowPositionFromIndex + 2 + currentIndexKey.remaining();
+
+        dataSizeFromIndex=nextRowPositionFromIndex - dataStartFromIndex;
+
+      }
+
+      String keyName=key == null ? "(unreadable key)" : ByteBufferUtil.bytesToHex(key.getKey());
+
+      outputHandler.debug(String.format("row %s is %s",keyName,FBUtilities.prettyPrintMemory(dataSizeFromIndex)));
+
+      assert currentIndexKey != null || !indexAvailable();
+
+      try {
+
+        if (key == null)         throw new IOError(new IOException("Unable to read row key from data file"));
+
+        if (currentIndexKey != null && !key.getKey().equals(currentIndexKey)) {
+
+          throw new IOError(new IOException(String.format("Key from data file (%s) does not match key from index file (%s)","_too big_",ByteBufferUtil.bytesToHex(currentIndexKey))));
+
+        }
+
+        if (indexFile != null && dataSizeFromIndex > dataFile.length())         throw new IOError(new IOException("Impossible row size (greater than file length): " + dataSizeFromIndex));
+
+        if (indexFile != null && dataStart != dataStartFromIndex)         outputHandler.warn(String.format("Data file row position %d differs from index file row position %d",dataStart,dataStartFromIndex));
+
+        if (tryAppend(prevKey,key,writer))         prevKey=key;
+
+      }
+
+ catch (      Throwable th) {
+
+        throwIfFatal(th);
+
+        outputHandler.warn("Error reading row (stacktrace follows):",th);
+
+        if (currentIndexKey != null && (key == null || !key.getKey().equals(currentIndexKey) || dataStart != dataStartFromIndex)) {
+
+          outputHandler.output(String.format("Retrying from row index; data is %s bytes starting at %s",dataSizeFromIndex,dataStartFromIndex));
+
+          key=sstable.decorateKey(currentIndexKey);
+
+          try {
+
+            dataFile.seek(dataStartFromIndex);
+
+            if (tryAppend(prevKey,key,writer))             prevKey=key;
+
+          }
+
+ catch (          Throwable th2) {
+
+            throwIfFatal(th2);
+
+            throwIfCannotContinue(key,th2);
+
+            outputHandler.warn("Retry failed too. Skipping to next row (retry's stacktrace follows)",th2);
+
+            badRows++;
+
+            seekToNextRow();
+
+          }
+
+        }
+
+ else {
+
+          throwIfCannotContinue(key,th);
+
+          outputHandler.warn("Row starting at position " + dataStart + " is unreadable; skipping to next");
+
+          badRows++;
+
+          if (currentIndexKey != null)           seekToNextRow();
+
+        }
+
+      }
+
+    }
+
+    if (!outOfOrder.isEmpty()) {
+
+      long repairedAt=badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : metadata.repairedAt;
+
+      SSTableReader newInOrderSstable;
+
+      try (SSTableWriter inOrderWriter=CompactionManager.createWriter(cfs,destination,expectedBloomFilterSize,repairedAt,metadata.pendingRepair,metadata.isTransient,sstable,transaction)){
+
+        for (        Partition partition : outOfOrder)         inOrderWriter.append(partition.unfilteredIterator());
+
+        newInOrderSstable=inOrderWriter.finish(-1,sstable.maxDataAge,true);
+
+      }
+
+       transaction.update(newInOrderSstable,false);
+
+      finished.add(newInOrderSstable);
+
+      outputHandler.warn(String.format("%d out of order rows found while scrubbing %s; Those have been written (in order) to a new sstable (%s)",outOfOrder.size(),sstable,newInOrderSstable));
+
+    }
+
+    finished.addAll(writer.setRepairedAt(badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : sstable.getSSTableMetadata().repairedAt).finish());
+
+    completed=true;
+
+  }
+
+ catch (  IOException e) {
+
+    throw Throwables.propagate(e);
+
+  }
+
+ finally {
+
+    if (transaction.isOffline())     finished.forEach(sstable -> sstable.selfRef().release());
+
+  }
+
+  if (completed) {
+
+    outputHandler.output("Scrub of " + sstable + " complete: "+ goodRows+ " rows in new sstable and "+ emptyRows+ " empty (tombstoned) rows dropped");
+
+    if (negativeLocalDeletionInfoMetrics.fixedRows > 0)     outputHandler.output("Fixed " + negativeLocalDeletionInfoMetrics.fixedRows + " rows with overflowed local deletion time.");
+
+    if (badRows > 0)     outputHandler.warn("Unable to recover " + badRows + " rows that were skipped.  You can attempt manual recovery from the pre-scrub snapshot.  You can also run nodetool repair to transfer the data from a healthy replica, if any");
+
+  }
+
+ else {
+
+    if (badRows > 0)     outputHandler.warn("No valid rows found while scrubbing " + sstable + "; it is marked for deletion now. If you want to attempt manual recovery, you can find a copy in the pre-scrub snapshot");
+
+ else     outputHandler.output("Scrub of " + sstable + " complete; looks like all "+ emptyRows+ " rows were tombstoned");
+
+  }
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+public Scrubber(ColumnFamilyStore cfs,LifecycleTransaction transaction,boolean skipCorrupted,boolean checkData){
+
+  this(cfs,transaction,skipCorrupted,checkData,false);
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+public Scrubber(ColumnFamilyStore cfs,LifecycleTransaction transaction,boolean skipCorrupted,boolean checkData,boolean reinsertOverflowedTTLRows){
+
+  this(cfs,transaction,skipCorrupted,new OutputHandler.LogOutput(),checkData,reinsertOverflowedTTLRows);
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+@SuppressWarnings("resource") public Scrubber(ColumnFamilyStore cfs,LifecycleTransaction transaction,boolean skipCorrupted,OutputHandler outputHandler,boolean checkData,boolean reinsertOverflowedTTLRows){
+
+  this.cfs=cfs;
+
+  this.transaction=transaction;
+
+  this.sstable=transaction.onlyOne();
+
+  this.outputHandler=outputHandler;
+
+  this.skipCorrupted=skipCorrupted;
+
+  this.reinsertOverflowedTTLRows=reinsertOverflowedTTLRows;
+
+  this.rowIndexEntrySerializer=sstable.descriptor.version.getSSTableFormat().getIndexSerializer(cfs.metadata(),sstable.descriptor.version,sstable.header);
+
+  List<SSTableReader> toScrub=Collections.singletonList(sstable);
+
+  this.destination=cfs.getDirectories().getLocationForDisk(cfs.getDiskBoundaries().getCorrectDiskForSSTable(sstable));
+
+  this.isCommutative=cfs.metadata().isCounter();
+
+  boolean hasIndexFile=(new File(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX))).exists();
+
+  this.isIndex=cfs.isIndex();
+
+  if (!hasIndexFile) {
+
+    outputHandler.warn("Missing component: " + sstable.descriptor.filenameFor(Component.PRIMARY_INDEX));
+
+  }
+
+  this.checkData=checkData && !this.isIndex;
+
+  this.expectedBloomFilterSize=Math.max(cfs.metadata().params.minIndexInterval,hasIndexFile ? SSTableReader.getApproximateKeyCount(toScrub) : 0);
+
+  this.dataFile=transaction.isOffline() ? sstable.openDataReader() : sstable.openDataReader(CompactionManager.instance.getRateLimiter());
+
+  this.indexFile=hasIndexFile ? RandomAccessReader.open(new File(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX))) : null;
+
+  this.scrubInfo=new ScrubInfo(dataFile,sstable);
+
+  this.currentRowPositionFromIndex=0;
+
+  this.nextRowPositionFromIndex=0;
+
+  if (reinsertOverflowedTTLRows)   outputHandler.output("Starting scrub with reinsert overflowed TTL option");
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+@VisibleForTesting public ScrubResult scrubWithResult(){
+
+  hongshuai();
+
+  List<SSTableReader> finished=new ArrayList<>();
+
+  boolean completed=false;
+
+  outputHandler.output(String.format("Scrubbing %s (%s)",sstable,FBUtilities.prettyPrintMemory(dataFile.length())));
+
+  try (SSTableRewriter writer=SSTableRewriter.construct(cfs,transaction,false,sstable.maxDataAge);Refs<SSTableReader> refs=Refs.ref(Collections.singleton(sstable))){
+
+    nextIndexKey=indexAvailable() ? ByteBufferUtil.readWithShortLength(indexFile) : null;
+
+    if (indexAvailable()) {
+
+      long firstRowPositionFromIndex=rowIndexEntrySerializer.deserializePositionAndSkip(indexFile);
+
+      assert firstRowPositionFromIndex == 0 : firstRowPositionFromIndex;
+
+    }
+
+    StatsMetadata metadata=sstable.getSSTableMetadata();
+
+    writer.switchWriter(CompactionManager.createWriter(cfs,destination,expectedBloomFilterSize,metadata.repairedAt,metadata.pendingRepair,metadata.isTransient,sstable,transaction));
+
+    DecoratedKey prevKey=null;
+
+    while (!dataFile.isEOF()) {
+
+      if (scrubInfo.isStopRequested())       throw new CompactionInterruptedException(scrubInfo.getCompactionInfo());
+
+      long rowStart=dataFile.getFilePointer();
+
+      outputHandler.debug("Reading row at " + rowStart);
+
+      DecoratedKey key=null;
+
+      try {
+
+        key=sstable.decorateKey(ByteBufferUtil.readWithShortLength(dataFile));
+
+      }
+
+ catch (      Throwable th) {
+
+        throwIfFatal(th);
+
+      }
+
+      updateIndexKey();
+
+      long dataStart=dataFile.getFilePointer();
+
+      long dataStartFromIndex=-1;
+
+      long dataSizeFromIndex=-1;
+
+      if (currentIndexKey != null) {
+
+        dataStartFromIndex=currentRowPositionFromIndex + 2 + currentIndexKey.remaining();
+
+        dataSizeFromIndex=nextRowPositionFromIndex - dataStartFromIndex;
+
+      }
+
+      String keyName=key == null ? "(unreadable key)" : ByteBufferUtil.bytesToHex(key.getKey());
+
+      outputHandler.debug(String.format("row %s is %s",keyName,FBUtilities.prettyPrintMemory(dataSizeFromIndex)));
+
+      assert currentIndexKey != null || !indexAvailable();
+
+      try {
+
+        if (key == null)         throw new IOError(new IOException("Unable to read row key from data file"));
+
+        if (currentIndexKey != null && !key.getKey().equals(currentIndexKey)) {
+
+          throw new IOError(new IOException(String.format("Key from data file (%s) does not match key from index file (%s)","_too big_",ByteBufferUtil.bytesToHex(currentIndexKey))));
+
+        }
+
+        if (indexFile != null && dataSizeFromIndex > dataFile.length())         throw new IOError(new IOException("Impossible row size (greater than file length): " + dataSizeFromIndex));
+
+        if (indexFile != null && dataStart != dataStartFromIndex)         outputHandler.warn(String.format("Data file row position %d differs from index file row position %d",dataStart,dataStartFromIndex));
+
+        if (tryAppend(prevKey,key,writer))         prevKey=key;
+
+      }
+
+ catch (      Throwable th) {
+
+        throwIfFatal(th);
+
+        outputHandler.warn("Error reading row (stacktrace follows):",th);
+
+        if (currentIndexKey != null && (key == null || !key.getKey().equals(currentIndexKey) || dataStart != dataStartFromIndex)) {
+
+          outputHandler.output(String.format("Retrying from row index; data is %s bytes starting at %s",dataSizeFromIndex,dataStartFromIndex));
+
+          key=sstable.decorateKey(currentIndexKey);
+
+          try {
+
+            dataFile.seek(dataStartFromIndex);
+
+            if (tryAppend(prevKey,key,writer))             prevKey=key;
+
+          }
+
+ catch (          Throwable th2) {
+
+            throwIfFatal(th2);
+
+            throwIfCannotContinue(key,th2);
+
+            outputHandler.warn("Retry failed too. Skipping to next row (retry's stacktrace follows)",th2);
+
+            badRows++;
+
+            seekToNextRow();
+
+          }
+
+        }
+
+ else {
+
+          throwIfCannotContinue(key,th);
+
+          outputHandler.warn("Row starting at position " + dataStart + " is unreadable; skipping to next");
+
+          badRows++;
+
+          if (currentIndexKey != null)           seekToNextRow();
+
+        }
+
+      }
+
+    }
+
+    if (!outOfOrder.isEmpty()) {
+
+      long repairedAt=badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : metadata.repairedAt;
+
+      SSTableReader newInOrderSstable;
+
+      try (SSTableWriter inOrderWriter=CompactionManager.createWriter(cfs,destination,expectedBloomFilterSize,repairedAt,metadata.pendingRepair,metadata.isTransient,sstable,transaction)){
+
+        for (        Partition partition : outOfOrder)         inOrderWriter.append(partition.unfilteredIterator());
+
+        newInOrderSstable=inOrderWriter.finish(-1,sstable.maxDataAge,true);
+
+      }
+
+       transaction.update(newInOrderSstable,false);
+
+      finished.add(newInOrderSstable);
+
+      outputHandler.warn(String.format("%d out of order rows found while scrubbing %s; Those have been written (in order) to a new sstable (%s)",outOfOrder.size(),sstable,newInOrderSstable));
+
+    }
+
+    finished.addAll(writer.setRepairedAt(badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : sstable.getSSTableMetadata().repairedAt).finish());
+
+    completed=true;
+
+  }
+
+ catch (  IOException e) {
+
+    throw Throwables.propagate(e);
+
+  }
+
+ finally {
+
+    if (transaction.isOffline())     finished.forEach(sstable -> sstable.selfRef().release());
+
+  }
+
+  if (completed) {
+
+    outputHandler.output("Scrub of " + sstable + " complete: "+ goodRows+ " rows in new sstable and "+ emptyRows+ " empty (tombstoned) rows dropped");
+
+    if (negativeLocalDeletionInfoMetrics.fixedRows > 0)     outputHandler.output("Fixed " + negativeLocalDeletionInfoMetrics.fixedRows + " rows with overflowed local deletion time.");
+
+    if (badRows > 0)     outputHandler.warn("Unable to recover " + badRows + " rows that were skipped.  You can attempt manual recovery from the pre-scrub snapshot.  You can also run nodetool repair to transfer the data from a healthy replica, if any");
+
+  }
+
+ else {
+
+    if (badRows > 0)     outputHandler.warn("No valid rows found while scrubbing " + sstable + "; it is marked for deletion now. If you want to attempt manual recovery, you can find a copy in the pre-scrub snapshot");
+
+ else     outputHandler.output("Scrub of " + sstable + " complete; looks like all "+ emptyRows+ " rows were tombstoned");
+
+  }
+
+  return new ScrubResult(this);
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+private void seekToNextRow(){
+
+  while (nextRowPositionFromIndex < dataFile.length()) {
+
+    try {
+
+      dataFile.seek(nextRowPositionFromIndex);
+
+      return;
+
+    }
+
+ catch (    Throwable th) {
+
+      throwIfFatal(th);
+
+      outputHandler.warn(String.format("Failed to seek to next row position %d",nextRowPositionFromIndex),th);
+
+      badRows++;
+
+    }
+
+    updateIndexKey();
+
+  }
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+private void throwIfCannotContinue(DecoratedKey key,Throwable th){
+
+  if (isIndex) {
+
+    outputHandler.warn(String.format("An error occurred while scrubbing the row with key '%s' for an index table. " + "Scrubbing will abort for this table and the index will be rebuilt.",key));
+
+    throw new IOError(th);
+
+  }
+
+  if (isCommutative && !skipCorrupted) {
+
+    outputHandler.warn(String.format("An error occurred while scrubbing the row with key '%s'.  Skipping corrupt " + "rows in counter tables will result in undercounts for the affected " + "counters (see CASSANDRA-2759 for more details), so by default the scrub will "+ "stop at this point.  If you would like to skip the row anyway and continue "+ "scrubbing, re-run the scrub with the --skip-corrupted option.",key));
+
+    throw new IOError(th);
+
+  }
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+@SuppressWarnings("resource") private boolean tryAppend(DecoratedKey prevKey,DecoratedKey key,SSTableRewriter writer){
+
+  OrderCheckerIterator sstableIterator=new OrderCheckerIterator(getIterator(key),cfs.metadata().comparator);
+
+  try (UnfilteredRowIterator iterator=withValidation(sstableIterator,dataFile.getPath())){
+
+    if (prevKey != null && prevKey.compareTo(key) > 0) {
+
+      saveOutOfOrderRow(prevKey,key,iterator);
+
+      return false;
+
+    }
+
+    if (writer.tryAppend(iterator) == null)     emptyRows++;
+
+ else     goodRows++;
+
+  }
+
+   if (sstableIterator.hasRowsOutOfOrder()) {
+
+    outputHandler.warn(String.format("Out of order rows found in partition: %s",key));
+
+    outOfOrder.add(sstableIterator.getRowsOutOfOrder());
+
+  }
+
+  return true;
+
+}
+
+Location: Scrubber.java
+
+Content: 
+
+private void updateIndexKey(){
+
+  currentIndexKey=nextIndexKey;
+
+  currentRowPositionFromIndex=nextRowPositionFromIndex;
+
+  try {
+
+    nextIndexKey=!indexAvailable() ? null : ByteBufferUtil.readWithShortLength(indexFile);
+
+    nextRowPositionFromIndex=!indexAvailable() ? dataFile.length() : rowIndexEntrySerializer.deserializePositionAndSkip(indexFile);
+
+  }
+
+ catch (  Throwable th) {
+
+    JVMStabilityInspector.inspectThrowable(th);
+
+    outputHandler.warn("Error reading index file",th);
+
+    nextIndexKey=null;
+
+    nextRowPositionFromIndex=dataFile.length();
+
+  }
+
+}
+

@@ -1,0 +1,296 @@
+Location: SequentialWriter.java
+
+Content: 
+
+public final Throwable abort(Throwable accumulate){
+
+  return txnProxy.abort(accumulate);
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public final Throwable commit(Throwable accumulate){
+
+  return txnProxy.commit(accumulate);
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public final void finish(){
+
+  txnProxy.finish();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public long getEstimatedOnDiskBytesWritten(){
+
+  return getOnDiskFilePointer();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public long getLastFlushOffset(){
+
+  return lastFlushOffset;
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+/** 
+
+ * Returns the current file pointer of the underlying on-disk file. Note that since write works by buffering data, the value of this will increase by buffer size and not every write to the writer will modify this value. Furthermore, for compressed files, this value refers to compressed data, while the writer getFilePointer() refers to uncompressedFile
+
+ * @return the current file pointer
+
+ */
+
+public long getOnDiskFilePointer(){
+
+  return position();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public boolean isOpen(){
+
+  return channel.isOpen();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public final void prepareToCommit(){
+
+  txnProxy.prepareToCommit();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+/** 
+
+ * Drops all buffered data that's past the limits of our new file mark + buffer capacity, or syncs and truncates the underlying file to the marked position
+
+ */
+
+public void resetAndTruncate(DataPosition mark){
+
+  assert mark instanceof BufferedFileWriterMark;
+
+  long previous=current();
+
+  long truncateTarget=((BufferedFileWriterMark)mark).pointer;
+
+  if (previous - truncateTarget <= buffer.position()) {
+
+    buffer.position(buffer.position() - ((int)(previous - truncateTarget)));
+
+    return;
+
+  }
+
+  syncInternal();
+
+  truncate(truncateTarget);
+
+  try {
+
+    fchannel.position(truncateTarget);
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSReadError(e,getPath());
+
+  }
+
+  bufferOffset=truncateTarget;
+
+  resetBuffer();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+protected void resetBuffer(){
+
+  bufferOffset=current();
+
+  buffer.clear();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+/** 
+
+ * Create heap-based, non-compressed SequenialWriter with default buffer size(64k).
+
+ * @param file File to write
+
+ */
+
+public SequentialWriter(File file){
+
+  this(file,SequentialWriterOption.DEFAULT);
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+/** 
+
+ * Create SequentialWriter for given file with specific writer option.
+
+ * @param file File to write
+
+ * @param option Writer option
+
+ */
+
+public SequentialWriter(File file,SequentialWriterOption option){
+
+  this(file,option,true);
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+/** 
+
+ * Create SequentialWriter for given file with specific writer option.
+
+ * @param file
+
+ * @param option
+
+ * @param strictFlushing
+
+ */
+
+public SequentialWriter(File file,SequentialWriterOption option,boolean strictFlushing){
+
+  super(openChannel(file),option.allocateBuffer());
+
+  this.strictFlushing=strictFlushing;
+
+  this.fchannel=(FileChannel)channel;
+
+  this.filePath=file.getAbsolutePath();
+
+  this.option=option;
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public void setPostFlushListener(Runnable runPostFlush){
+
+  assert this.runPostFlush == null;
+
+  this.runPostFlush=runPostFlush;
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+protected void syncDataOnlyInternal(){
+
+  try {
+
+    SyncUtil.force(fchannel,false);
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,getPath());
+
+  }
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+protected void syncInternal(){
+
+  doFlush(0);
+
+  syncDataOnlyInternal();
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public void truncate(long toSize){
+
+  try {
+
+    fchannel.truncate(toSize);
+
+    lastFlushOffset=toSize;
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,getPath());
+
+  }
+
+}
+
+Location: SequentialWriter.java
+
+Content: 
+
+public int writeDirectlyToChannel(ByteBuffer buf) throws IOException {
+
+  if (strictFlushing)   throw new UnsupportedOperationException();
+
+  flush();
+
+  return channel.write(buf);
+
+}
+

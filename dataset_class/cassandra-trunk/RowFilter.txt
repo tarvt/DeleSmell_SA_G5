@@ -1,0 +1,250 @@
+Location: RowFilter.java
+
+Content: 
+
+public void addCustomIndexExpression(TableMetadata metadata,IndexMetadata targetIndex,ByteBuffer value){
+
+  add(new CustomExpression(metadata,targetIndex,value));
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+public void addMapEquality(ColumnMetadata def,ByteBuffer key,Operator op,ByteBuffer value){
+
+  add(new MapEqualityExpression(def,key,op,value));
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+public void addUserExpression(UserExpression e){
+
+  expressions.add(e);
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+public SimpleExpression add(ColumnMetadata def,Operator op,ByteBuffer value){
+
+  SimpleExpression expression=new SimpleExpression(def,op,value);
+
+  add(expression);
+
+  return expression;
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+private void add(Expression expression){
+
+  expression.validate();
+
+  expressions.add(expression);
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+/** 
+
+ * Returns true if all of the expressions within this filter that apply to the clustering key are satisfied by the given Clustering, false otherwise.
+
+ */
+
+public boolean clusteringKeyRestrictionsAreSatisfiedBy(Clustering<?> clustering){
+
+  for (  Expression e : expressions) {
+
+    if (!e.column.isClusteringColumn())     continue;
+
+    if (!e.operator().isSatisfiedBy(e.column.type,clustering.bufferAt(e.column.position()),e.value)) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+/** 
+
+ * Filters the provided iterator so that only the row satisfying the expression of this filter are included in the resulting iterator.
+
+ * @param iter the iterator to filter
+
+ * @param nowInSec the time of query in seconds.
+
+ * @return the filtered iterator.
+
+ */
+
+public PartitionIterator filter(PartitionIterator iter,TableMetadata metadata,int nowInSec){
+
+  return expressions.isEmpty() ? iter : Transformation.apply(iter,filter(metadata,nowInSec));
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+protected abstract Transformation<BaseRowIterator<?>> filter(TableMetadata metadata,int nowInSec);
+
+Location: RowFilter.java
+
+Content: 
+
+/** 
+
+ * Checks if some of the expressions apply to clustering or regular columns.
+
+ * @return {@code true} if some of the expressions apply to clustering or regular columns, {@code false} otherwise.
+
+ */
+
+public boolean hasExpressionOnClusteringOrRegularColumns(){
+
+  for (  Expression expression : expressions) {
+
+    ColumnMetadata column=expression.column();
+
+    if (column.isClusteringColumn() || column.isRegular())     return true;
+
+  }
+
+  return false;
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+/** 
+
+ * Whether the provided row in the provided partition satisfies this filter.
+
+ * @param metadata the table metadata.
+
+ * @param partitionKey the partition key for partition to test.
+
+ * @param row the row to test.
+
+ * @param nowInSec the current time in seconds (to know what is live and what isn't).
+
+ * @return {@code true} if {@code row} in partition {@code partitionKey} satisfies this row filter.
+
+ */
+
+public boolean isSatisfiedBy(TableMetadata metadata,DecoratedKey partitionKey,Row row,int nowInSec){
+
+  Row purged=row.purge(DeletionPurger.PURGE_ALL,nowInSec,metadata.enforceStrictLiveness());
+
+  if (purged == null)   return expressions.isEmpty();
+
+  for (  Expression e : expressions) {
+
+    if (!e.isSatisfiedBy(metadata,partitionKey,purged))     return false;
+
+  }
+
+  return true;
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+/** 
+
+ * Returns true if all of the expressions within this filter that apply to the partition key are satisfied by the given key, false otherwise.
+
+ */
+
+public boolean partitionKeyRestrictionsAreSatisfiedBy(DecoratedKey key,AbstractType<?> keyValidator){
+
+  for (  Expression e : expressions) {
+
+    if (!e.column.isPartitionKey())     continue;
+
+    ByteBuffer value=keyValidator instanceof CompositeType ? ((CompositeType)keyValidator).split(key.getKey())[e.column.position()] : key.getKey();
+
+    if (!e.operator().isSatisfiedBy(e.column.type,value,e.value))     return false;
+
+  }
+
+  return true;
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+protected RowFilter(List<Expression> expressions){
+
+  this.expressions=expressions;
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+protected abstract RowFilter withNewExpressions(List<Expression> expressions);
+
+Location: RowFilter.java
+
+Content: 
+
+public RowFilter withoutExpressions(){
+
+  return withNewExpressions(Collections.emptyList());
+
+}
+
+Location: RowFilter.java
+
+Content: 
+
+/** 
+
+ * Returns this filter but without the provided expression. This method *assumes* that the filter contains the provided expression.
+
+ */
+
+public RowFilter without(Expression expression){
+
+  assert expressions.contains(expression);
+
+  if (expressions.size() == 1)   return RowFilter.NONE;
+
+  List<Expression> newExpressions=new ArrayList<>(expressions.size() - 1);
+
+  for (  Expression e : expressions)   if (!e.equals(expression))   newExpressions.add(e);
+
+  return withNewExpressions(newExpressions);
+
+}
+

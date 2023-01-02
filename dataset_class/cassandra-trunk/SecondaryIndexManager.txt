@@ -1,0 +1,1382 @@
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Adds and builds a index
+
+ * @param indexDef the IndexMetadata describing the index
+
+ * @param isNewCF true if the index is added as part of a new table/columnfamily (i.e. loading a CF at startup), false for all other cases (i.e. newly added index)
+
+ */
+
+public synchronized Future<?> addIndex(IndexMetadata indexDef,boolean isNewCF){
+
+  if (indexes.containsKey(indexDef.name))   return reloadIndex(indexDef);
+
+ else   return createIndex(indexDef,isNewCF);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Performs a blocking (re)indexing/recovery of the specified SSTables for the specified indexes. If the index doesn't support ALL  {@link Index.LoadType} it performs a recovery {@link Index#getRecoveryTaskSupport()}instead of a build  {@link Index#getBuildTaskSupport()}
+
+ * @param sstables      the SSTables to be (re)indexed
+
+ * @param indexes       the indexes to be (re)built for the specifed SSTables
+
+ * @param isFullRebuild True if this method is invoked as a full index rebuild, false otherwise
+
+ */
+
+@SuppressWarnings({"unchecked"}) private void buildIndexesBlocking(Collection<SSTableReader> sstables,Set<Index> indexes,boolean isFullRebuild){
+
+  if (indexes.isEmpty())   return;
+
+  markIndexesBuilding(indexes,isFullRebuild,false);
+
+  final Set<Index> builtIndexes=Sets.newConcurrentHashSet();
+
+  final Set<Index> unbuiltIndexes=Sets.newConcurrentHashSet();
+
+  Exception accumulatedFail=null;
+
+  try {
+
+    logger.info("Submitting index {} of {} for data in {}",isFullRebuild ? "recovery" : "build",indexes.stream().map(i -> i.getIndexMetadata().name).collect(Collectors.joining(",")),sstables.stream().map(SSTableReader::toString).collect(Collectors.joining(",")));
+
+    Map<Index.IndexBuildingSupport,Set<Index>> byType=new HashMap<>();
+
+    for (    Index index : indexes) {
+
+      IndexBuildingSupport buildOrRecoveryTask=isFullRebuild ? index.getBuildTaskSupport() : index.getRecoveryTaskSupport();
+
+      Set<Index> stored=byType.computeIfAbsent(buildOrRecoveryTask,i -> new HashSet<>());
+
+      stored.add(index);
+
+    }
+
+    List<Future<?>> futures=new ArrayList<>(byType.size());
+
+    byType.forEach((buildingSupport,groupedIndexes) -> {
+
+      SecondaryIndexBuilder builder=buildingSupport.getIndexBuildTask(baseCfs,groupedIndexes,sstables);
+
+      final SettableFuture build=SettableFuture.create();
+
+      Futures.addCallback(CompactionManager.instance.submitIndexBuild(builder),new FutureCallback(){
+
+        @Override public void onFailure(        Throwable t){
+
+          logAndMarkIndexesFailed(groupedIndexes,t,false);
+
+          unbuiltIndexes.addAll(groupedIndexes);
+
+          build.setException(t);
+
+        }
+
+        @Override public void onSuccess(        Object o){
+
+          groupedIndexes.forEach(i -> markIndexBuilt(i,isFullRebuild));
+
+          logger.info("Index build of {} completed",getIndexNames(groupedIndexes));
+
+          builtIndexes.addAll(groupedIndexes);
+
+          build.set(o);
+
+        }
+
+      }
+
+,MoreExecutors.directExecutor());
+
+      futures.add(build);
+
+    }
+
+);
+
+    FBUtilities.waitOnFutures(futures);
+
+  }
+
+ catch (  Exception e) {
+
+    accumulatedFail=e;
+
+    throw e;
+
+  }
+
+ finally {
+
+    try {
+
+      Set<Index> failedIndexes=Sets.difference(indexes,Sets.union(builtIndexes,unbuiltIndexes));
+
+      if (!failedIndexes.isEmpty()) {
+
+        logAndMarkIndexesFailed(failedIndexes,accumulatedFail,false);
+
+      }
+
+      flushIndexesBlocking(builtIndexes,new FutureCallback(){
+
+        String indexNames=StringUtils.join(builtIndexes.stream().map(i -> i.getIndexMetadata().name).collect(Collectors.toList()),',');
+
+        @Override public void onFailure(        Throwable ignored){
+
+          logger.info("Index flush of {} failed",indexNames);
+
+        }
+
+        @Override public void onSuccess(        Object ignored){
+
+          logger.info("Index flush of {} completed",indexNames);
+
+        }
+
+      }
+
+);
+
+    }
+
+ catch (    Exception e) {
+
+      if (accumulatedFail != null) {
+
+        accumulatedFail.addSuppressed(e);
+
+      }
+
+ else {
+
+        throw e;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Return the page size used when indexing an entire partition
+
+ */
+
+public int calculateIndexingPageSize(){
+
+  if (Boolean.getBoolean("cassandra.force_default_indexing_page_size"))   return DEFAULT_PAGE_SIZE;
+
+  double targetPageSizeInBytes=32 * 1024 * 1024;
+
+  double meanPartitionSize=baseCfs.getMeanPartitionSize();
+
+  if (meanPartitionSize <= 0)   return DEFAULT_PAGE_SIZE;
+
+  int meanCellsPerPartition=baseCfs.getMeanEstimatedCellPerPartitionCount();
+
+  if (meanCellsPerPartition <= 0)   return DEFAULT_PAGE_SIZE;
+
+  int columnsPerRow=baseCfs.metadata().regularColumns().size();
+
+  if (columnsPerRow <= 0)   return DEFAULT_PAGE_SIZE;
+
+  int meanRowsPerPartition=meanCellsPerPartition / columnsPerRow;
+
+  double meanRowSize=meanPartitionSize / meanRowsPerPartition;
+
+  int pageSize=(int)Math.max(1,Math.min(DEFAULT_PAGE_SIZE,targetPageSizeInBytes / meanRowSize));
+
+  logger.trace("Calculated page size {} for indexing {}.{} ({}/{}/{}/{})",pageSize,baseCfs.metadata.keyspace,baseCfs.metadata.name,meanPartitionSize,meanCellsPerPartition,meanRowsPerPartition,meanRowSize);
+
+  return pageSize;
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private synchronized Future<?> createIndex(IndexMetadata indexDef,boolean isNewCF){
+
+  final Index index=createInstance(indexDef);
+
+  index.register(this);
+
+  if (writableIndexes.put(index.getIndexMetadata().name,index) == null)   logger.info("Index [{}] registered and writable.",index.getIndexMetadata().name);
+
+  markIndexesBuilding(ImmutableSet.of(index),true,isNewCF);
+
+  Callable<?> initialBuildTask=null;
+
+  if (indexes.containsKey(indexDef.name)) {
+
+    try {
+
+      initialBuildTask=index.getInitializationTask();
+
+    }
+
+ catch (    Throwable t) {
+
+      logAndMarkIndexesFailed(Collections.singleton(index),t,true);
+
+      throw t;
+
+    }
+
+  }
+
+  if (initialBuildTask == null) {
+
+    markIndexBuilt(index,true);
+
+    return Futures.immediateFuture(null);
+
+  }
+
+  final SettableFuture initialization=SettableFuture.create();
+
+  Futures.addCallback(asyncExecutor.submit(initialBuildTask),new FutureCallback(){
+
+    @Override public void onFailure(    Throwable t){
+
+      logAndMarkIndexesFailed(Collections.singleton(index),t,true);
+
+      initialization.setException(t);
+
+    }
+
+    @Override public void onSuccess(    Object o){
+
+      markIndexBuilt(index,true);
+
+      initialization.set(o);
+
+    }
+
+  }
+
+,MoreExecutors.directExecutor());
+
+  return initialization;
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private Index createInstance(IndexMetadata indexDef){
+
+  Index newIndex;
+
+  if (indexDef.isCustom()) {
+
+    assert indexDef.options != null;
+
+    String className=indexDef.options.get(IndexTarget.CUSTOM_INDEX_OPTION_NAME);
+
+    assert !Strings.isNullOrEmpty(className);
+
+    try {
+
+      Class<? extends Index> indexClass=FBUtilities.classForName(className,"Index");
+
+      Constructor<? extends Index> ctor=indexClass.getConstructor(ColumnFamilyStore.class,IndexMetadata.class);
+
+      newIndex=ctor.newInstance(baseCfs,indexDef);
+
+    }
+
+ catch (    Exception e) {
+
+      throw new RuntimeException(e);
+
+    }
+
+  }
+
+ else {
+
+    newIndex=CassandraIndex.newIndex(baseCfs,indexDef);
+
+  }
+
+  return newIndex;
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Delete all data from all indexes for this partition. For when cleanup rips a partition out entirely. <p> TODO : improve cleanup transaction to batch updates and perform them async
+
+ */
+
+public void deletePartition(UnfilteredRowIterator partition,int nowInSec){
+
+  CleanupTransaction indexTransaction=newCleanupTransaction(partition.partitionKey(),partition.columns(),nowInSec);
+
+  indexTransaction.start();
+
+  indexTransaction.onPartitionDeletion(new DeletionTime(FBUtilities.timestampMicros(),nowInSec));
+
+  indexTransaction.commit();
+
+  while (partition.hasNext()) {
+
+    Unfiltered unfiltered=partition.next();
+
+    if (unfiltered.kind() != Unfiltered.Kind.ROW)     continue;
+
+    indexTransaction=newCleanupTransaction(partition.partitionKey(),partition.columns(),nowInSec);
+
+    indexTransaction.start();
+
+    indexTransaction.onRowDelete((Row)unfiltered);
+
+    indexTransaction.commit();
+
+  }
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Remove all indexes
+
+ */
+
+public void dropAllIndexes(){
+
+  markAllIndexesRemoved();
+
+  invalidateAllIndexesBlocking();
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private void executeAllBlocking(Stream<Index> indexers,Function<Index,Callable<?>> function,FutureCallback<Object> callback){
+
+  if (function == null) {
+
+    logger.error("failed to flush indexes: {} because flush task is missing.",indexers);
+
+    return;
+
+  }
+
+  List<Future<?>> waitFor=new ArrayList<>();
+
+  indexers.forEach(indexer -> {
+
+    Callable<?> task=function.apply(indexer);
+
+    if (null != task) {
+
+      ListenableFuture<?> f=blockingExecutor.submit(task);
+
+      if (callback != null)       Futures.addCallback(f,callback,MoreExecutors.directExecutor());
+
+      waitFor.add(f);
+
+    }
+
+  }
+
+);
+
+  FBUtilities.waitOnFutures(waitFor);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private void executeBlocking(Callable<?> task,FutureCallback<Object> callback){
+
+  if (null != task) {
+
+    ListenableFuture<?> f=blockingExecutor.submit(task);
+
+    if (callback != null)     Futures.addCallback(f,callback,MoreExecutors.directExecutor());
+
+    FBUtilities.waitOnFuture(f);
+
+  }
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Performs a blocking execution of pre-join tasks of all indexes
+
+ */
+
+public void executePreJoinTasksBlocking(boolean hadBootstrap){
+
+  logger.info("Executing pre-join{} tasks for: {}",hadBootstrap ? " post-bootstrap" : "",this.baseCfs);
+
+  executeAllBlocking(indexes.values().stream(),(index) -> {
+
+    return index.getPreJoinTask(hadBootstrap);
+
+  }
+
+,null);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Perform a blocking flush all indexes
+
+ */
+
+public void flushAllIndexesBlocking(){
+
+  flushIndexesBlocking(ImmutableSet.copyOf(indexes.values()));
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Performs a blocking flush of all custom indexes
+
+ */
+
+public void flushAllNonCFSBackedIndexesBlocking(){
+
+  executeAllBlocking(indexes.values().stream().filter(index -> !index.getBackingTable().isPresent()),Index::getBlockingFlushTask,null);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Perform a blocking flush of selected indexes
+
+ */
+
+public void flushIndexesBlocking(Set<Index> indexes){
+
+  flushIndexesBlocking(indexes,null);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private void flushIndexesBlocking(Set<Index> indexes,FutureCallback<Object> callback){
+
+  if (indexes.isEmpty())   return;
+
+  List<Future<?>> wait=new ArrayList<>();
+
+  List<Index> nonCfsIndexes=new ArrayList<>();
+
+synchronized (baseCfs.getTracker()) {
+
+    indexes.forEach(index -> index.getBackingTable().map(cfs -> wait.add(cfs.forceFlush())).orElseGet(() -> nonCfsIndexes.add(index)));
+
+  }
+
+  executeAllBlocking(nonCfsIndexes.stream(),Index::getBlockingFlushTask,callback);
+
+  FBUtilities.waitOnFutures(wait);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * @return all backing Tables used by registered indexes
+
+ */
+
+public Set<ColumnFamilyStore> getAllIndexColumnFamilyStores(){
+
+  Set<ColumnFamilyStore> backingTables=new HashSet<>();
+
+  indexes.values().forEach(index -> index.getBackingTable().ifPresent(backingTables::add));
+
+  return backingTables;
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public Optional<Index> getBestIndexFor(RowFilter.Expression expression){
+
+  return indexes.values().stream().filter((i) -> i.supportsExpression(expression.column(),expression.operator())).findFirst();
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * @return all indexes which are marked as built and ready to use
+
+ */
+
+public List<String> getBuiltIndexNames(){
+
+  Set<String> allIndexNames=new HashSet<>();
+
+  indexes.values().stream().map(i -> i.getIndexMetadata().name).forEach(allIndexNames::add);
+
+  return SystemKeyspace.getBuiltIndexes(baseCfs.keyspace.getName(),allIndexNames);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public Set<IndexMetadata> getDependentIndexes(ColumnMetadata column){
+
+  if (indexes.isEmpty())   return Collections.emptySet();
+
+  Set<IndexMetadata> dependentIndexes=new HashSet<>();
+
+  for (  Index index : indexes.values())   if (index.dependsOn(column))   dependentIndexes.add(index.getIndexMetadata());
+
+  return dependentIndexes;
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public Index getIndexByName(String indexName){
+
+  return indexes.get(indexName);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private String getIndexNames(Set<Index> indexes){
+
+  List<String> indexNames=indexes.stream().map(i -> i.getIndexMetadata().name).collect(Collectors.toList());
+
+  return StringUtils.join(indexNames,',');
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Returns the index name
+
+ * @param cfs the <code>ColumnFamilyStore</code>
+
+ * @return the index name
+
+ */
+
+public static String getIndexName(ColumnFamilyStore cfs){
+
+  return getIndexName(cfs.name);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Returns the index name
+
+ * @param cfName the <code>ColumnFamilyStore</code> name
+
+ * @return the index name
+
+ */
+
+public static String getIndexName(String cfName){
+
+  assert isIndexColumnFamily(cfName);
+
+  return StringUtils.substringAfter(cfName,Directories.SECONDARY_INDEX_NAME_SEPARATOR);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public Index getIndex(IndexMetadata metadata){
+
+  return indexes.get(metadata.name);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Returns the parent name of the specified  {@link ColumnFamilyStore}.
+
+ * @param cfName the <code>ColumnFamilyStore</code> name
+
+ * @return the parent name of the specified <code>ColumnFamilyStore</code>
+
+ */
+
+public static String getParentCfsName(String cfName){
+
+  assert isIndexColumnFamily(cfName);
+
+  return StringUtils.substringBefore(cfName,Directories.SECONDARY_INDEX_NAME_SEPARATOR);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Returns the parent of the specified  {@link ColumnFamilyStore}.
+
+ * @param cfs the <code>ColumnFamilyStore</code>
+
+ * @return the parent of the specified <code>ColumnFamilyStore</code>
+
+ */
+
+public static ColumnFamilyStore getParentCfs(ColumnFamilyStore cfs){
+
+  String parentCfs=getParentCfsName(cfs.name);
+
+  return cfs.keyspace.getColumnFamilyStore(parentCfs);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * @return if there are ANY indexes registered for this table
+
+ */
+
+public boolean hasIndexes(){
+
+  return !indexes.isEmpty();
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * When building an index against existing data in sstables, add the given partition to the index
+
+ */
+
+public void indexPartition(DecoratedKey key,Set<Index> indexes,int pageSize){
+
+  if (logger.isTraceEnabled())   logger.trace("Indexing partition {}",baseCfs.metadata().partitionKeyType.getString(key.getKey()));
+
+  if (!indexes.isEmpty()) {
+
+    SinglePartitionReadCommand cmd=SinglePartitionReadCommand.fullPartitionRead(baseCfs.metadata(),FBUtilities.nowInSeconds(),key);
+
+    int nowInSec=cmd.nowInSec();
+
+    boolean readStatic=false;
+
+    SinglePartitionPager pager=new SinglePartitionPager(cmd,null,ProtocolVersion.CURRENT);
+
+    while (!pager.isExhausted()) {
+
+      try (ReadExecutionController controller=cmd.executionController();WriteContext ctx=keyspace.getWriteHandler().createContextForIndexing();UnfilteredPartitionIterator page=pager.fetchPageUnfiltered(baseCfs.metadata(),pageSize,controller)){
+
+        if (!page.hasNext())         break;
+
+        try (UnfilteredRowIterator partition=page.next()){
+
+          Set<Index.Indexer> indexers=indexes.stream().map(index -> index.indexerFor(key,partition.columns(),nowInSec,ctx,IndexTransaction.Type.UPDATE)).filter(Objects::nonNull).collect(Collectors.toSet());
+
+          if (!readStatic && partition.isEmpty() && partition.staticRow().isEmpty())           break;
+
+          indexers.forEach(Index.Indexer::begin);
+
+          if (!readStatic) {
+
+            if (!partition.staticRow().isEmpty())             indexers.forEach(indexer -> indexer.insertRow(partition.staticRow()));
+
+            indexers.forEach((            Index.Indexer i) -> i.partitionDelete(partition.partitionLevelDeletion()));
+
+            readStatic=true;
+
+          }
+
+          MutableDeletionInfo.Builder deletionBuilder=MutableDeletionInfo.builder(partition.partitionLevelDeletion(),baseCfs.getComparator(),false);
+
+          while (partition.hasNext()) {
+
+            Unfiltered unfilteredRow=partition.next();
+
+            if (unfilteredRow.isRow()) {
+
+              Row row=(Row)unfilteredRow;
+
+              indexers.forEach(indexer -> indexer.insertRow(row));
+
+            }
+
+ else {
+
+              assert unfilteredRow.isRangeTombstoneMarker();
+
+              RangeTombstoneMarker marker=(RangeTombstoneMarker)unfilteredRow;
+
+              deletionBuilder.add(marker);
+
+            }
+
+          }
+
+          MutableDeletionInfo deletionInfo=deletionBuilder.build();
+
+          if (deletionInfo.hasRanges()) {
+
+            Iterator<RangeTombstone> iter=deletionInfo.rangeIterator(false);
+
+            while (iter.hasNext()) {
+
+              RangeTombstone rt=iter.next();
+
+              indexers.forEach(indexer -> indexer.rangeTombstone(rt));
+
+            }
+
+          }
+
+          indexers.forEach(Index.Indexer::finish);
+
+        }
+
+       }
+
+     }
+
+  }
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+@VisibleForTesting public void invalidateAllIndexesBlocking(){
+
+  executeAllBlocking(indexes.values().stream(),Index::getInvalidateTask,null);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Checks if the specified index has any running build task.
+
+ * @param indexName the index name
+
+ * @return {@code true} if the index is building, {@code false} otherwise
+
+ */
+
+@VisibleForTesting public synchronized boolean isIndexBuilding(String indexName){
+
+  AtomicInteger counter=inProgressBuilds.get(indexName);
+
+  return counter != null && counter.get() > 0;
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Checks if the specified  {@link ColumnFamilyStore} is a secondary index.
+
+ * @param cfs the <code>ColumnFamilyStore</code> to check.
+
+ * @return <code>true</code> if the specified <code>ColumnFamilyStore</code> is a secondary index,<code>false</code> otherwise.
+
+ */
+
+public static boolean isIndexColumnFamilyStore(ColumnFamilyStore cfs){
+
+  return isIndexColumnFamily(cfs.name);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Checks if the specified  {@link ColumnFamilyStore} is the one secondary index.
+
+ * @param cfName the name of the <code>ColumnFamilyStore</code> to check.
+
+ * @return <code>true</code> if the specified <code>ColumnFamilyStore</code> is a secondary index,<code>false</code> otherwise.
+
+ */
+
+public static boolean isIndexColumnFamily(String cfName){
+
+  return cfName.contains(Directories.SECONDARY_INDEX_NAME_SEPARATOR);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Checks if the specified index is queryable.
+
+ * @param index the index
+
+ * @return <code>true</code> if the specified index is queryable, <code>false</code> otherwise
+
+ */
+
+public boolean isIndexQueryable(Index index){
+
+  return queryableIndexes.contains(index.getIndexMetadata().name);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Checks if the specified index is writable.
+
+ * @param index the index
+
+ * @return <code>true</code> if the specified index is writable, <code>false</code> otherwise
+
+ */
+
+public boolean isIndexWritable(Index index){
+
+  return writableIndexes.containsKey(index.getIndexMetadata().name);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public Collection<Index> listIndexes(){
+
+  return ImmutableSet.copyOf(indexes.values());
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private void logAndMarkIndexesFailed(Set<Index> indexes,Throwable indexBuildFailure,boolean isInitialBuild){
+
+  JVMStabilityInspector.inspectThrowable(indexBuildFailure);
+
+  if (indexBuildFailure != null)   logger.warn("Index build of {} failed. Please run full index rebuild to fix it.",getIndexNames(indexes),indexBuildFailure);
+
+ else   logger.warn("Index build of {} failed. Please run full index rebuild to fix it.",getIndexNames(indexes));
+
+  indexes.forEach(i -> this.markIndexFailed(i,isInitialBuild));
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Called when dropping a Table
+
+ */
+
+public void markAllIndexesRemoved(){
+
+  getBuiltIndexNames().forEach(this::markIndexRemoved);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Marks the specified index as built if there are no in progress index builds and the index is not failed. {@link #markIndexesBuilding(Set,boolean,boolean)} should always be invoked before this method.
+
+ * @param index the index to be marked as built
+
+ * @param isFullRebuild {@code true} if this method is invoked as a full index rebuild, {@code false} otherwise
+
+ */
+
+private synchronized void markIndexBuilt(Index index,boolean isFullRebuild){
+
+  String indexName=index.getIndexMetadata().name;
+
+  if (isFullRebuild) {
+
+    if (queryableIndexes.add(indexName))     logger.info("Index [{}] became queryable after successful build.",indexName);
+
+    if (writableIndexes.put(indexName,index) == null)     logger.info("Index [{}] became writable after successful build.",indexName);
+
+  }
+
+  AtomicInteger counter=inProgressBuilds.get(indexName);
+
+  if (counter != null) {
+
+    assert counter.get() > 0;
+
+    if (counter.decrementAndGet() == 0) {
+
+      inProgressBuilds.remove(indexName);
+
+      if (!needsFullRebuild.contains(indexName) && DatabaseDescriptor.isDaemonInitialized())       SystemKeyspace.setIndexBuilt(baseCfs.keyspace.getName(),indexName);
+
+    }
+
+  }
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Marks the specified indexes as (re)building if: 1) There's no in progress rebuild of any of the given indexes. 2) There's an in progress rebuild but the caller is not a full rebuild. <p> Otherwise, this method invocation fails, as it is not possible to run full rebuilds while other concurrent rebuilds are in progress. Please note this is checked atomically against all given indexes; that is, no index will be marked if even a single one fails. <p> Marking an index as "building" practically means: 1) The index is removed from the "failed" set if this is a full rebuild. 2) The index is removed from the system keyspace built indexes; this only happens if this method is not invoked for a new table initialization, as in such case there's no need to remove it (it is either already not present, or already present because already built). <p> Thread safety is guaranteed by having all methods managing index builds synchronized: being synchronized on the SecondaryIndexManager instance, it means all invocations for all different indexes will go through the same lock, but this is fine as the work done while holding such lock is trivial. <p> {@link #markIndexBuilt(Index,boolean)} or {@link #markIndexFailed(Index,boolean)} should be always called afterthe rebuilding has finished, so that the index build state can be correctly managed and the index rebuilt.
+
+ * @param indexes the index to be marked as building
+
+ * @param isFullRebuild {@code true} if this method is invoked as a full index rebuild, {@code false} otherwise
+
+ * @param isNewCF {@code true} if this method is invoked when initializing a new table/columnfamily (i.e. loading a CF at startup), {@code false} for all other cases (i.e. newly added index)
+
+ */
+
+private synchronized void markIndexesBuilding(Set<Index> indexes,boolean isFullRebuild,boolean isNewCF){
+
+  String keyspaceName=baseCfs.keyspace.getName();
+
+  indexes.forEach(index -> {
+
+    String indexName=index.getIndexMetadata().name;
+
+    AtomicInteger counter=inProgressBuilds.computeIfAbsent(indexName,ignored -> new AtomicInteger(0));
+
+    if (counter.get() > 0 && isFullRebuild)     throw new IllegalStateException(String.format("Cannot rebuild index %s as another index build for the same index is currently in progress.",indexName));
+
+  }
+
+);
+
+  indexes.forEach(index -> {
+
+    String indexName=index.getIndexMetadata().name;
+
+    AtomicInteger counter=inProgressBuilds.computeIfAbsent(indexName,ignored -> new AtomicInteger(0));
+
+    if (isFullRebuild)     needsFullRebuild.remove(indexName);
+
+    if (counter.getAndIncrement() == 0 && DatabaseDescriptor.isDaemonInitialized() && !isNewCF)     SystemKeyspace.setIndexRemoved(keyspaceName,indexName);
+
+  }
+
+);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Marks the specified index as failed. {@link #markIndexesBuilding(Set,boolean,boolean)} should always be invoked before this method.
+
+ * @param index the index to be marked as built
+
+ * @param isInitialBuild {@code true} if the index failed during its initial build, {@code false} otherwise
+
+ */
+
+private synchronized void markIndexFailed(Index index,boolean isInitialBuild){
+
+  String indexName=index.getIndexMetadata().name;
+
+  AtomicInteger counter=inProgressBuilds.get(indexName);
+
+  if (counter != null) {
+
+    assert counter.get() > 0;
+
+    counter.decrementAndGet();
+
+    if (DatabaseDescriptor.isDaemonInitialized())     SystemKeyspace.setIndexRemoved(baseCfs.keyspace.getName(),indexName);
+
+    needsFullRebuild.add(indexName);
+
+    if (!index.getSupportedLoadTypeOnFailure(isInitialBuild).supportsWrites() && writableIndexes.remove(indexName) != null)     logger.info("Index [{}] became not-writable because of failed build.",indexName);
+
+    if (!index.getSupportedLoadTypeOnFailure(isInitialBuild).supportsReads() && queryableIndexes.remove(indexName))     logger.info("Index [{}] became not-queryable because of failed build.",indexName);
+
+  }
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Marks the specified index as removed.
+
+ * @param indexName the index name
+
+ */
+
+private synchronized void markIndexRemoved(String indexName){
+
+  SystemKeyspace.setIndexRemoved(baseCfs.keyspace.getName(),indexName);
+
+  queryableIndexes.remove(indexName);
+
+  writableIndexes.remove(indexName);
+
+  needsFullRebuild.remove(indexName);
+
+  inProgressBuilds.remove(indexName);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Transaction for use when removing partitions during cleanup
+
+ */
+
+public CleanupTransaction newCleanupTransaction(DecoratedKey key,RegularAndStaticColumns regularAndStaticColumns,int nowInSec){
+
+  if (!hasIndexes())   return CleanupTransaction.NO_OP;
+
+  return new CleanupGCTransaction(key,regularAndStaticColumns,keyspace,nowInSec,writableIndexes.values());
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Transaction for use when merging rows during compaction
+
+ */
+
+public CompactionTransaction newCompactionTransaction(DecoratedKey key,RegularAndStaticColumns regularAndStaticColumns,int versions,int nowInSec){
+
+  return new IndexGCTransaction(key,regularAndStaticColumns,keyspace,versions,nowInSec,writableIndexes.values());
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Transaction for updates on the write path.
+
+ */
+
+public UpdateTransaction newUpdateTransaction(PartitionUpdate update,WriteContext ctx,int nowInSec){
+
+  if (!hasIndexes())   return UpdateTransaction.NO_OP;
+
+  ArrayList<Index.Indexer> idxrs=new ArrayList<>();
+
+  for (  Index i : writableIndexes.values()) {
+
+    Index.Indexer idxr=i.indexerFor(update.partitionKey(),update.columns(),nowInSec,ctx,IndexTransaction.Type.UPDATE);
+
+    if (idxr != null)     idxrs.add(idxr);
+
+  }
+
+  if (idxrs.size() == 0)   return UpdateTransaction.NO_OP;
+
+ else   return new WriteTimeTransaction(idxrs.toArray(new Index.Indexer[idxrs.size()]));
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Does a blocking full rebuild/recovery of the specifed indexes from all the sstables in the base table. Note also that this method of (re)building/recovering indexes: a) takes a set of index *names* rather than Indexers b) marks existing indexes removed prior to rebuilding c) fails if such marking operation conflicts with any ongoing index builds, as full rebuilds cannot be run concurrently
+
+ * @param indexNames the list of indexes to be rebuilt
+
+ */
+
+public void rebuildIndexesBlocking(Set<String> indexNames){
+
+  Set<Index> toRebuild=indexes.values().stream().filter(index -> indexNames.contains(index.getIndexMetadata().name)).filter(Index::shouldBuildBlocking).collect(Collectors.toSet());
+
+  if (toRebuild.isEmpty()) {
+
+    logger.info("No defined indexes with the supplied names: {}",Joiner.on(',').join(indexNames));
+
+    return;
+
+  }
+
+  boolean needsFlush=false;
+
+  for (  Index index : toRebuild) {
+
+    String name=index.getIndexMetadata().name;
+
+    if (writableIndexes.put(name,index) == null) {
+
+      logger.info("Index [{}] became writable starting recovery.",name);
+
+      needsFlush=true;
+
+    }
+
+  }
+
+  if (needsFlush)   baseCfs.forceBlockingFlush();
+
+  try (ColumnFamilyStore.RefViewFragment viewFragment=baseCfs.selectAndReference(View.selectFunction(SSTableSet.CANONICAL));Refs<SSTableReader> allSSTables=viewFragment.refs){
+
+    buildIndexesBlocking(allSSTables,toRebuild,true);
+
+  }
+
+ }
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public void registerIndex(Index index){
+
+  String name=index.getIndexMetadata().name;
+
+  indexes.put(name,index);
+
+  logger.trace("Registered index {}",name);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Drops and adds new indexes associated with the underlying CF
+
+ */
+
+public void reload(){
+
+  Indexes tableIndexes=baseCfs.metadata().indexes;
+
+  indexes.keySet().stream().filter(indexName -> !tableIndexes.has(indexName)).forEach(this::removeIndex);
+
+  for (  IndexMetadata tableIndex : tableIndexes)   addIndex(tableIndex,false);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private Future<?> reloadIndex(IndexMetadata indexDef){
+
+  Index index=indexes.get(indexDef.name);
+
+  Callable<?> reloadTask=index.getMetadataReloadTask(indexDef);
+
+  return reloadTask == null ? Futures.immediateFuture(null) : blockingExecutor.submit(reloadTask);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public synchronized void removeIndex(String indexName){
+
+  Index index=unregisterIndex(indexName);
+
+  if (null != index) {
+
+    markIndexRemoved(indexName);
+
+    executeBlocking(index.getInvalidateTask(),null);
+
+  }
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public SecondaryIndexManager(ColumnFamilyStore baseCfs){
+
+  this.baseCfs=baseCfs;
+
+  this.keyspace=baseCfs.keyspace;
+
+  baseCfs.getTracker().subscribe(this);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+/** 
+
+ * Truncate all indexes
+
+ */
+
+public void truncateAllIndexesBlocking(final long truncatedAt){
+
+  executeAllBlocking(indexes.values().stream(),(index) -> index.getTruncateTask(truncatedAt),null);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+public void unregisterIndex(Index index){
+
+  unregisterIndex(index.getIndexMetadata().name);
+
+}
+
+Location: SecondaryIndexManager.java
+
+Content: 
+
+private Index unregisterIndex(String name){
+
+  Index removed=indexes.remove(name);
+
+  logger.trace(removed == null ? "Index {} was not registered" : "Removed index {} from registry",name);
+
+  return removed;
+
+}
+

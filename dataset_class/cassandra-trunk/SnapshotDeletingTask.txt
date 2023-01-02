@@ -1,0 +1,74 @@
+Location: SnapshotDeletingTask.java
+
+Content: 
+
+public static void addFailedSnapshot(File path){
+
+  logger.warn("Failed to delete snapshot [{}]. Will retry after further sstable deletions. Folder will be deleted on JVM shutdown or next node restart on crash.",path);
+
+  WindowsFailedSnapshotTracker.handleFailedSnapshot(path);
+
+  failedTasks.add(new SnapshotDeletingTask(path));
+
+}
+
+Location: SnapshotDeletingTask.java
+
+Content: 
+
+@VisibleForTesting public static int pendingDeletionCount(){
+
+  return failedTasks.size();
+
+}
+
+Location: SnapshotDeletingTask.java
+
+Content: 
+
+/** 
+
+ * Retry all failed deletions.
+
+ */
+
+public static void rescheduleFailedTasks(){
+
+  Runnable task;
+
+  while (null != (task=failedTasks.poll()))   ScheduledExecutors.nonPeriodicTasks.submit(task);
+
+}
+
+Location: SnapshotDeletingTask.java
+
+Content: 
+
+public void run(){
+
+  try {
+
+    FileUtils.deleteRecursive(path);
+
+    logger.info("Successfully deleted snapshot {}.",path);
+
+  }
+
+ catch (  FSWriteError e) {
+
+    failedTasks.add(this);
+
+  }
+
+}
+
+Location: SnapshotDeletingTask.java
+
+Content: 
+
+private SnapshotDeletingTask(File path){
+
+  this.path=path;
+
+}
+

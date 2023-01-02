@@ -1,0 +1,238 @@
+Location: SocketFactory.java
+
+Content: 
+
+static String addressId(InetAddressAndPort address,InetSocketAddress realAddress){
+
+  String str=address.toString();
+
+  if (!address.address.equals(realAddress.getAddress()) || address.port != realAddress.getPort())   str+='(' + InetAddressAndPort.toString(realAddress.getAddress(),realAddress.getPort()) + ')';
+
+  return str;
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+static String channelId(InetAddressAndPort from,InetAddressAndPort to,ConnectionType type,String id){
+
+  return from + "->" + to+ '-'+ type+ '-'+ id;
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+static String channelId(InetAddressAndPort from,InetSocketAddress realFrom,InetAddressAndPort to,InetSocketAddress realTo,ConnectionType type,String id){
+
+  return addressId(from,realFrom) + "->" + addressId(to,realTo)+ '-'+ type+ '-'+ id;
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+EventLoopGroup defaultGroup(){
+
+  return defaultGroup;
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+/** 
+
+ * Summarizes the encryption status of a channel, suitable for logging.
+
+ * @return description of channel encryption
+
+ */
+
+static String encryptionConnectionSummary(Channel channel){
+
+  final SslHandler sslHandler=channel.pipeline().get(SslHandler.class);
+
+  if (sslHandler == null) {
+
+    return EncryptionOptions.TlsEncryptionPolicy.UNENCRYPTED.description();
+
+  }
+
+  SSLSession session=sslHandler.engine().getSession();
+
+  return "encrypted(factory=" + (SSLFactory.openSslIsAvailable() ? "openssl" : "jdk") + ";protocol="+ (session != null ? session.getProtocol() : "MISSING SESSION")+ ";cipher="+ (session != null ? session.getCipherSuite() : "MISSING SESSION")+ ')';
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+/** 
+
+ * Summarizes the intended encryption options, suitable for logging. Once a connection is established, use {@link SocketFactory#encryptionConnectionSummary} below.
+
+ * @param options options to summarize
+
+ * @return description of encryption options
+
+ */
+
+static String encryptionOptionsSummary(EncryptionOptions options){
+
+  if (options == null || options.tlsEncryptionPolicy() == EncryptionOptions.TlsEncryptionPolicy.UNENCRYPTED)   return EncryptionOptions.TlsEncryptionPolicy.UNENCRYPTED.description();
+
+  String encryptionType=SSLFactory.openSslIsAvailable() ? "openssl" : "jdk";
+
+  return options.tlsEncryptionPolicy().description() + '(' + encryptionType+ ')';
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+static boolean isCausedByConnectionReset(Throwable t){
+
+  return isCausedBy(t,SocketFactory::isConnectionReset);
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+static boolean isConnectionReset(Throwable t){
+
+  if (t instanceof ClosedChannelException)   return true;
+
+  if (t instanceof ConnectException)   return true;
+
+  if (t instanceof Errors.NativeIoException) {
+
+    int errorCode=((Errors.NativeIoException)t).expectedErr();
+
+    return errorCode == ERRNO_ECONNRESET_NEGATIVE || errorCode != ERROR_ECONNREFUSED_NEGATIVE;
+
+  }
+
+  return IOException.class == t.getClass() && ("Broken pipe".equals(t.getMessage()) || "Connection reset by peer".equals(t.getMessage()));
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+Bootstrap newClientBootstrap(EventLoop eventLoop,int tcpUserTimeoutInMS){
+
+  if (eventLoop == null)   throw new IllegalArgumentException("must provide eventLoop");
+
+  Bootstrap bootstrap=new Bootstrap().group(eventLoop).channelFactory(provider.clientChannelFactory());
+
+  if (provider == Provider.EPOLL)   bootstrap.option(EpollChannelOption.TCP_USER_TIMEOUT,tcpUserTimeoutInMS);
+
+  return bootstrap;
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+ServerBootstrap newServerBootstrap(){
+
+  return new ServerBootstrap().group(acceptGroup,defaultGroup).channelFactory(provider.serverChannelFactory());
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+/** 
+
+ * Creates a new  {@link SslHandler} from provided SslContext.
+
+ * @param peer enables endpoint verification for remote address when not null
+
+ */
+
+static SslHandler newSslHandler(Channel channel,SslContext sslContext,@Nullable InetSocketAddress peer){
+
+  if (peer == null)   return sslContext.newHandler(channel.alloc());
+
+  logger.debug("Creating SSL handler for {}:{}",peer.getHostString(),peer.getPort());
+
+  SslHandler sslHandler=sslContext.newHandler(channel.alloc(),peer.getHostString(),peer.getPort());
+
+  SSLEngine engine=sslHandler.engine();
+
+  SSLParameters sslParameters=engine.getSSLParameters();
+
+  sslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+
+  engine.setSSLParameters(sslParameters);
+
+  return sslHandler;
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+public EventLoopGroup outboundStreamingGroup(){
+
+  return outboundStreamingGroup;
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+public void shutdownNow(){
+
+  acceptGroup.shutdownGracefully(0,2,SECONDS);
+
+  defaultGroup.shutdownGracefully(0,2,SECONDS);
+
+  outboundStreamingGroup.shutdownGracefully(0,2,SECONDS);
+
+  synchronousWorkExecutor.shutdownNow();
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+SocketFactory(){
+
+  this(Provider.optimalProvider());
+
+}
+
+Location: SocketFactory.java
+
+Content: 
+
+SocketFactory(Provider provider){
+
+  this.provider=provider;
+
+  this.acceptGroup=provider.makeEventLoopGroup(1,"Messaging-AcceptLoop");
+
+  this.defaultGroup=provider.makeEventLoopGroup(EVENT_THREADS,NamedThreadFactory.globalPrefix() + "Messaging-EventLoop");
+
+  this.outboundStreamingGroup=provider.makeEventLoopGroup(EVENT_THREADS,"Streaming-EventLoop");
+
+}
+

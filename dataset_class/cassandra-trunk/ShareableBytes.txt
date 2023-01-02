@@ -1,0 +1,210 @@
+Location: ShareableBytes.java
+
+Content: 
+
+void consume(){
+
+  bytes.position(bytes.limit());
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+private void doRelease(){
+
+  int count=this.count;
+
+  if (count < 0)   countUpdater.lazySet(this,count+=1);
+
+ else   if (count > 0)   count=countUpdater.decrementAndGet(this);
+
+ else   throw new IllegalStateException("Already released");
+
+  if (count == RELEASED)   BufferPools.forNetworking().put(bytes);
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+private void doRetain(){
+
+  int count=this.count;
+
+  if (count < 0) {
+
+    countUpdater.lazySet(this,count - 1);
+
+    return;
+
+  }
+
+  while (true) {
+
+    if (count == RELEASED)     throw new IllegalStateException("Attempted to reference an already released SharedByteBuffer");
+
+    if (countUpdater.compareAndSet(this,count,count + 1))     return;
+
+    count=this.count;
+
+  }
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+public ByteBuffer get(){
+
+  assert owner.count != 0;
+
+  return bytes;
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+public boolean hasRemaining(){
+
+  return bytes.hasRemaining();
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+boolean isReleased(){
+
+  return owner.count == RELEASED;
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+public int remaining(){
+
+  return bytes.remaining();
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+private ShareableBytes retain(){
+
+  owner.doRetain();
+
+  return this;
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+/** 
+
+ * Ensure this ShareableBytes will use atomic operations for updating its count from now on. The first invocation must occur while the calling thread has exclusive access (though there may be more than one 'owner', these must all either be owned by the calling thread or otherwise not being used)
+
+ */
+
+public ShareableBytes share(){
+
+  int count=owner.count;
+
+  if (count < 0)   owner.count=-count;
+
+  return this;
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+private ShareableBytes(ByteBuffer bytes){
+
+  this.count=UNSHARED;
+
+  this.owner=this;
+
+  this.bytes=bytes;
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+private ShareableBytes(ShareableBytes owner,ByteBuffer bytes){
+
+  this.owner=owner;
+
+  this.bytes=bytes;
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+void skipBytes(int skipBytes){
+
+  bytes.position(bytes.position() + skipBytes);
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+/** 
+
+ * Create a slice over the next  {@code length} bytes, consuming them from our buffer, and incrementing the owner count
+
+ */
+
+public ShareableBytes sliceAndConsume(int length){
+
+  int begin=bytes.position();
+
+  int end=begin + length;
+
+  ShareableBytes result=slice(begin,end);
+
+  bytes.position(end);
+
+  return result;
+
+}
+
+Location: ShareableBytes.java
+
+Content: 
+
+/** 
+
+ * Create a new slice, incrementing the number of owners (making it shared if it was previously unshared)
+
+ */
+
+ShareableBytes slice(int begin,int end){
+
+  ByteBuffer slice=bytes.duplicate();
+
+  slice.position(begin).limit(end);
+
+  return new ShareableBytes(owner.retain(),slice);
+
+}
+

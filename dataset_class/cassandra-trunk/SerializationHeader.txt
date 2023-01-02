@@ -1,0 +1,328 @@
+Location: SerializationHeader.java
+
+Content: 
+
+public List<AbstractType<?>> clusteringTypes(){
+
+  return clusteringTypes;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public Columns columns(boolean isStatic){
+
+  return isStatic ? columns.statics : columns.regulars;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public long deletionTimeSerializedSize(DeletionTime dt){
+
+  return timestampSerializedSize(dt.markedForDeleteAt()) + localDeletionTimeSerializedSize(dt.localDeletionTime());
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public AbstractType<?> getType(ColumnMetadata column){
+
+  return typeMap == null ? column.type : typeMap.get(column.name.bytes);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public boolean hasStatic(){
+
+  return !columns.statics.isEmpty();
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public boolean isForSSTable(){
+
+  return isForSSTable;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public AbstractType<?> keyType(){
+
+  return keyType;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public long localDeletionTimeSerializedSize(int localDeletionTime){
+
+  return TypeSizes.sizeofUnsignedVInt(localDeletionTime - stats.minLocalDeletionTime);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public static SerializationHeader makeWithoutStats(TableMetadata metadata){
+
+  return new SerializationHeader(true,metadata,metadata.regularAndStaticColumns(),EncodingStats.NO_STATS);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public static SerializationHeader make(TableMetadata metadata,Collection<SSTableReader> sstables){
+
+  EncodingStats.Collector stats=new EncodingStats.Collector();
+
+  RegularAndStaticColumns.Builder columns=RegularAndStaticColumns.builder();
+
+  for (  SSTableReader sstable : orderByDescendingGeneration(sstables)) {
+
+    stats.updateTimestamp(sstable.getMinTimestamp());
+
+    stats.updateLocalDeletionTime(sstable.getMinLocalDeletionTime());
+
+    stats.updateTTL(sstable.getMinTTL());
+
+    columns.addAll(sstable.header.columns());
+
+  }
+
+  return new SerializationHeader(true,metadata,columns.build(),stats.get());
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+private static Collection<SSTableReader> orderByDescendingGeneration(Collection<SSTableReader> sstables){
+
+  if (sstables.size() < 2)   return sstables;
+
+  List<SSTableReader> readers=new ArrayList<>(sstables);
+
+  readers.sort(SSTableReader.generationReverseComparator);
+
+  return readers;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public DeletionTime readDeletionTime(DataInputPlus in) throws IOException {
+
+  long markedAt=readTimestamp(in);
+
+  int localDeletionTime=readLocalDeletionTime(in);
+
+  return new DeletionTime(markedAt,localDeletionTime);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public int readLocalDeletionTime(DataInputPlus in) throws IOException {
+
+  return (int)in.readUnsignedVInt() + stats.minLocalDeletionTime;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public long readTimestamp(DataInputPlus in) throws IOException {
+
+  return in.readUnsignedVInt() + stats.minTimestamp;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public int readTTL(DataInputPlus in) throws IOException {
+
+  return (int)in.readUnsignedVInt() + stats.minTTL;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+private SerializationHeader(boolean isForSSTable,AbstractType<?> keyType,List<AbstractType<?>> clusteringTypes,RegularAndStaticColumns columns,EncodingStats stats,Map<ByteBuffer,AbstractType<?>> typeMap){
+
+  this.isForSSTable=isForSSTable;
+
+  this.keyType=keyType;
+
+  this.clusteringTypes=clusteringTypes;
+
+  this.columns=columns;
+
+  this.stats=stats;
+
+  this.typeMap=typeMap;
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public SerializationHeader(boolean isForSSTable,TableMetadata metadata,RegularAndStaticColumns columns,EncodingStats stats){
+
+  this(isForSSTable,metadata.partitionKeyType,metadata.comparator.subtypes(),columns,stats,null);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void skipDeletionTime(DataInputPlus in) throws IOException {
+
+  skipTimestamp(in);
+
+  skipLocalDeletionTime(in);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void skipLocalDeletionTime(DataInputPlus in) throws IOException {
+
+  in.readUnsignedVInt();
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void skipTimestamp(DataInputPlus in) throws IOException {
+
+  in.readUnsignedVInt();
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void skipTTL(DataInputPlus in) throws IOException {
+
+  in.readUnsignedVInt();
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public long timestampSerializedSize(long timestamp){
+
+  return TypeSizes.sizeofUnsignedVInt(timestamp - stats.minTimestamp);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public Component toComponent(){
+
+  Map<ByteBuffer,AbstractType<?>> staticColumns=new LinkedHashMap<>();
+
+  Map<ByteBuffer,AbstractType<?>> regularColumns=new LinkedHashMap<>();
+
+  for (  ColumnMetadata column : columns.statics)   staticColumns.put(column.name.bytes,column.type);
+
+  for (  ColumnMetadata column : columns.regulars)   regularColumns.put(column.name.bytes,column.type);
+
+  return new Component(keyType,clusteringTypes,staticColumns,regularColumns,stats);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public long ttlSerializedSize(int ttl){
+
+  return TypeSizes.sizeofUnsignedVInt(ttl - stats.minTTL);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void writeDeletionTime(DeletionTime dt,DataOutputPlus out) throws IOException {
+
+  writeTimestamp(dt.markedForDeleteAt(),out);
+
+  writeLocalDeletionTime(dt.localDeletionTime(),out);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void writeLocalDeletionTime(int localDeletionTime,DataOutputPlus out) throws IOException {
+
+  out.writeUnsignedVInt(localDeletionTime - stats.minLocalDeletionTime);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void writeTimestamp(long timestamp,DataOutputPlus out) throws IOException {
+
+  out.writeUnsignedVInt(timestamp - stats.minTimestamp);
+
+}
+
+Location: SerializationHeader.java
+
+Content: 
+
+public void writeTTL(int ttl,DataOutputPlus out) throws IOException {
+
+  out.writeUnsignedVInt(ttl - stats.minTTL);
+
+}
+

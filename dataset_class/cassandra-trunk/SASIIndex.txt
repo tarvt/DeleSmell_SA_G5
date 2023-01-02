@@ -1,0 +1,416 @@
+Location: SASIIndex.java
+
+Content: 
+
+public AbstractType<?> customExpressionValueType(){
+
+  return null;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public boolean dependsOn(ColumnMetadata column){
+
+  return index.getDefinition().compareTo(column) == 0;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Optional<ColumnFamilyStore> getBackingTable(){
+
+  return Optional.empty();
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Callable<?> getBlockingFlushTask(){
+
+  return null;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public IndexBuildingSupport getBuildTaskSupport(){
+
+  return INDEX_BUILDER_SUPPORT;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public long getEstimatedResultRows(){
+
+  return Long.MIN_VALUE;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public SSTableFlushObserver getFlushObserver(Descriptor descriptor,OperationType opType){
+
+  return newWriter(baseCfs.metadata().partitionKeyType,descriptor,Collections.singletonMap(index.getDefinition(),index),opType);
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public ColumnIndex getIndex(){
+
+  return index;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public IndexMetadata getIndexMetadata(){
+
+  return config;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Callable<?> getInitializationTask(){
+
+  return null;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Callable<?> getInvalidateTask(){
+
+  return getTruncateTask(FBUtilities.timestampMicros());
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Callable<?> getMetadataReloadTask(IndexMetadata indexMetadata){
+
+  return null;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public RowFilter getPostIndexQueryFilter(RowFilter filter){
+
+  return filter.withoutExpressions();
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Callable<?> getTruncateTask(long truncatedAt){
+
+  return () -> {
+
+    index.dropData(truncatedAt);
+
+    return null;
+
+  }
+
+;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public void handleNotification(INotification notification,Object sender){
+
+  if (notification instanceof SSTableAddedNotification) {
+
+    SSTableAddedNotification notice=(SSTableAddedNotification)notification;
+
+    index.update(Collections.<SSTableReader>emptyList(),Iterables.toList(notice.added));
+
+  }
+
+ else   if (notification instanceof SSTableListChangedNotification) {
+
+    SSTableListChangedNotification notice=(SSTableListChangedNotification)notification;
+
+    index.update(notice.removed,notice.added);
+
+  }
+
+ else   if (notification instanceof MemtableRenewedNotification) {
+
+    index.switchMemtable();
+
+  }
+
+ else   if (notification instanceof MemtableSwitchedNotification) {
+
+    index.switchMemtable(((MemtableSwitchedNotification)notification).memtable);
+
+  }
+
+ else   if (notification instanceof MemtableDiscardedNotification) {
+
+    index.discardMemtable(((MemtableDiscardedNotification)notification).memtable);
+
+  }
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Indexer indexerFor(DecoratedKey key,RegularAndStaticColumns columns,int nowInSec,WriteContext context,IndexTransaction.Type transactionType){
+
+  return new Indexer(){
+
+    public void begin(){
+
+    }
+
+    public void partitionDelete(    DeletionTime deletionTime){
+
+    }
+
+    public void rangeTombstone(    RangeTombstone tombstone){
+
+    }
+
+    public void insertRow(    Row row){
+
+      if (isNewData())       adjustMemtableSize(index.index(key,row),CassandraWriteContext.fromContext(context).getGroup());
+
+    }
+
+    public void updateRow(    Row oldRow,    Row newRow){
+
+      insertRow(newRow);
+
+    }
+
+    public void removeRow(    Row row){
+
+    }
+
+    public void finish(){
+
+    }
+
+    private boolean isNewData(){
+
+      return transactionType == IndexTransaction.Type.UPDATE;
+
+    }
+
+    public void adjustMemtableSize(    long additionalSpace,    OpOrder.Group opGroup){
+
+      baseCfs.getTracker().getView().getCurrentMemtable().getAllocator().onHeap().allocate(additionalSpace,opGroup);
+
+    }
+
+  }
+
+;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public boolean indexes(RegularAndStaticColumns columns){
+
+  return columns.contains(index.getDefinition());
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+protected static PerSSTableIndexWriter newWriter(AbstractType<?> keyValidator,Descriptor descriptor,Map<ColumnMetadata,ColumnIndex> indexes,OperationType opType){
+
+  return new PerSSTableIndexWriter(keyValidator,descriptor,opType,indexes);
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public BiFunction<PartitionIterator,ReadCommand,PartitionIterator> postProcessorFor(ReadCommand command){
+
+  return (partitionIterator,readCommand) -> partitionIterator;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public void register(IndexRegistry registry){
+
+  registry.registerIndex(this);
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public SASIIndex(ColumnFamilyStore baseCfs,IndexMetadata config){
+
+  this.baseCfs=baseCfs;
+
+  this.config=config;
+
+  ColumnMetadata column=TargetParser.parse(baseCfs.metadata(),config).left;
+
+  this.index=new ColumnIndex(baseCfs.metadata().partitionKeyType,column,config);
+
+  Tracker tracker=baseCfs.getTracker();
+
+  tracker.subscribe(this);
+
+  SortedMap<SSTableReader,Map<ColumnMetadata,ColumnIndex>> toRebuild=new TreeMap<>((a,b) -> Integer.compare(a.descriptor.generation,b.descriptor.generation));
+
+  for (  SSTableReader sstable : index.init(tracker.getView().liveSSTables())) {
+
+    Map<ColumnMetadata,ColumnIndex> perSSTable=toRebuild.get(sstable);
+
+    if (perSSTable == null)     toRebuild.put(sstable,(perSSTable=new HashMap<>()));
+
+    perSSTable.put(index.getDefinition(),index);
+
+  }
+
+  CompactionManager.instance.submitIndexBuild(new SASIIndexBuilder(baseCfs,toRebuild));
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public Searcher searcherFor(ReadCommand command) throws InvalidRequestException {
+
+  TableMetadata config=command.metadata();
+
+  ColumnFamilyStore cfs=Schema.instance.getColumnFamilyStoreInstance(config.id);
+
+  return controller -> new QueryPlan(cfs,command,DatabaseDescriptor.getRangeRpcTimeout(MILLISECONDS)).execute(controller);
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public boolean shouldBuildBlocking(){
+
+  return true;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public boolean supportsExpression(ColumnMetadata column,Operator operator){
+
+  return dependsOn(column) && index.supports(operator);
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+@Override public boolean supportsReplicaFilteringProtection(RowFilter rowFilter){
+
+  return false;
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+/** 
+
+ * Called via reflection at  {@link IndexMetadata#validateCustomIndexOptions}
+
+ */
+
+public static Map<String,String> validateOptions(Map<String,String> options,TableMetadata metadata){
+
+  if (!(metadata.partitioner instanceof Murmur3Partitioner))   throw new ConfigurationException("SASI only supports Murmur3Partitioner.");
+
+  String targetColumn=options.get("target");
+
+  if (targetColumn == null)   throw new ConfigurationException("unknown target column");
+
+  Pair<ColumnMetadata,IndexTarget.Type> target=TargetParser.parse(metadata,targetColumn);
+
+  if (target == null)   throw new ConfigurationException("failed to retrieve target column for: " + targetColumn);
+
+  if (target.left.isComplex())   throw new ConfigurationException("complex columns are not yet supported by SASI");
+
+  if (target.left.isPartitionKey())   throw new ConfigurationException("partition key columns are not yet supported by SASI");
+
+  IndexMode.validateAnalyzer(options,target.left);
+
+  IndexMode mode=IndexMode.getMode(target.left,options);
+
+  if (mode.mode == Mode.SPARSE) {
+
+    if (mode.isLiteral)     throw new ConfigurationException("SPARSE mode is only supported on non-literal columns.");
+
+    if (mode.isAnalyzed)     throw new ConfigurationException("SPARSE mode doesn't support analyzers.");
+
+  }
+
+  return Collections.emptyMap();
+
+}
+
+Location: SASIIndex.java
+
+Content: 
+
+public void validate(PartitionUpdate update) throws InvalidRequestException {
+
+}
+

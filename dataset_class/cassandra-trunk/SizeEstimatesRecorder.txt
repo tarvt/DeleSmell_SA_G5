@@ -1,0 +1,110 @@
+Location: SizeEstimatesRecorder.java
+
+Content: 
+
+@SuppressWarnings("resource") private static Map<Range<Token>,Pair<Long,Long>> computeSizeEstimates(ColumnFamilyStore table,Collection<Range<Token>> ranges){
+
+  Map<Range<Token>,Pair<Long,Long>> estimates=new HashMap<>(ranges.size());
+
+  for (  Range<Token> localRange : ranges) {
+
+    for (    Range<Token> unwrappedRange : localRange.unwrap()) {
+
+      Refs<SSTableReader> refs=null;
+
+      long partitionsCount, meanPartitionSize;
+
+      try {
+
+        while (refs == null) {
+
+          Iterable<SSTableReader> sstables=table.getTracker().getView().select(SSTableSet.CANONICAL);
+
+          SSTableIntervalTree tree=SSTableIntervalTree.build(sstables);
+
+          Range<PartitionPosition> r=Range.makeRowRange(unwrappedRange);
+
+          Iterable<SSTableReader> canonicalSSTables=View.sstablesInBounds(r.left,r.right,tree);
+
+          refs=Refs.tryRef(canonicalSSTables);
+
+        }
+
+        partitionsCount=estimatePartitionsCount(refs,unwrappedRange);
+
+        meanPartitionSize=estimateMeanPartitionSize(refs);
+
+      }
+
+  finally {
+
+        if (refs != null)         refs.release();
+
+      }
+
+      estimates.put(unwrappedRange,Pair.create(partitionsCount,meanPartitionSize));
+
+    }
+
+  }
+
+  return estimates;
+
+}
+
+Location: SizeEstimatesRecorder.java
+
+Content: 
+
+private static long estimateMeanPartitionSize(Collection<SSTableReader> sstables){
+
+  long sum=0, count=0;
+
+  for (  SSTableReader sstable : sstables) {
+
+    long n=sstable.getEstimatedPartitionSize().count();
+
+    sum+=sstable.getEstimatedPartitionSize().mean() * n;
+
+    count+=n;
+
+  }
+
+  return count > 0 ? sum / count : 0;
+
+}
+
+Location: SizeEstimatesRecorder.java
+
+Content: 
+
+private static long estimatePartitionsCount(Collection<SSTableReader> sstables,Range<Token> range){
+
+  long count=0;
+
+  for (  SSTableReader sstable : sstables)   count+=sstable.estimatedKeysForRanges(Collections.singleton(range));
+
+  return count;
+
+}
+
+Location: SizeEstimatesRecorder.java
+
+Content: 
+
+@Override public void onDropTable(String keyspace,String table){
+
+  SystemKeyspace.clearEstimates(keyspace,table);
+
+}
+
+Location: SizeEstimatesRecorder.java
+
+Content: 
+
+private SizeEstimatesRecorder(){
+
+  Schema.instance.registerListener(this);
+
+}
+

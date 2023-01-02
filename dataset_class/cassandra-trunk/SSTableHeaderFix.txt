@@ -1,0 +1,806 @@
+Location: SSTableHeaderFix.java
+
+Content: 
+
+public static Builder builder(){
+
+  return new Builder();
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private void error(String format,Object... args){
+
+  hasErrors=true;
+
+  error.accept(String.format(format,args));
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+public final void execute(){
+
+  prepare();
+
+  logger.debug("Processing {} sstables:{}",descriptors.size(),descriptors.stream().map(Descriptor::toString).collect(Collectors.joining("\n    ","\n    ","")));
+
+  descriptors.forEach(this::processSSTable);
+
+  if (updates.isEmpty())   return;
+
+  if (hasErrors) {
+
+    info.accept("Stopping due to previous errors. Either fix the errors or specify the ignore-errors option.");
+
+    return;
+
+  }
+
+  if (dryRun) {
+
+    info.accept("Not fixing identified and fixable serialization-header issues.");
+
+    return;
+
+  }
+
+  info.accept("Writing new metadata files");
+
+  updates.forEach(descAndMeta -> writeNewMetadata(descAndMeta.left,descAndMeta.right));
+
+  info.accept("Finished writing new metadata files");
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+public static void fixNonFrozenUDTIfUpgradeFrom30(){
+
+  String previousVersionString=FBUtilities.getPreviousReleaseVersionString();
+
+  if (previousVersionString == null)   return;
+
+  CassandraVersion previousVersion=new CassandraVersion(previousVersionString);
+
+  if (previousVersion.major != 3 || previousVersion.minor > 0) {
+
+    return;
+
+  }
+
+  if (SKIP_AUTOMATIC_FIX_ON_UPGRADE) {
+
+    logger.warn("Detected upgrade from {} to {}, but -D{}=true, NOT fixing UDT type references in " + "sstable metadata serialization-headers",previousVersionString,FBUtilities.getReleaseVersionString(),SKIPAUTOMATICUDTFIX);
+
+    return;
+
+  }
+
+  logger.info("Detected upgrade from {} to {}, fixing UDT type references in sstable metadata serialization-headers",previousVersionString,FBUtilities.getReleaseVersionString());
+
+  SSTableHeaderFix instance=SSTableHeaderFix.builder().schemaCallback(() -> Schema.instance::getTableMetadata).build();
+
+  instance.execute();
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerAbstractComposite(AbstractType<?> typeInHeader,AbstractType<?> typeInSchema,boolean droppedColumnMode){
+
+  if (typeInHeader.getClass() != typeInSchema.getClass())   return null;
+
+  if (typeInHeader.getClass() == CompositeType.class)   return fixTypeInnerComposite((CompositeType)typeInHeader,(CompositeType)typeInSchema,droppedColumnMode);
+
+  if (typeInHeader.getClass() == DynamicCompositeType.class) {
+
+    if (!typeInHeader.isCompatibleWith(typeInSchema))     return null;
+
+    return typeInHeader;
+
+  }
+
+  throw new IllegalArgumentException("Unknown composite type class " + typeInHeader.getClass().getName());
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerAbstractTuple(AbstractType<?> typeInHeader,AbstractType<?> typeInSchema,boolean droppedColumnMode){
+
+  if (droppedColumnMode && typeInHeader.getClass() == UserType.class && typeInSchema instanceof TupleType)   return fixTypeInnerUserTypeDropped((UserType)typeInHeader,(TupleType)typeInSchema);
+
+  if (typeInHeader.getClass() != typeInSchema.getClass())   return null;
+
+  if (typeInHeader.getClass() == UserType.class)   return fixTypeInnerUserType((UserType)typeInHeader,(UserType)typeInSchema);
+
+  if (typeInHeader.getClass() == TupleType.class)   return fixTypeInnerTuple((TupleType)typeInHeader,(TupleType)typeInSchema,droppedColumnMode);
+
+  throw new IllegalArgumentException("Unknown tuple type class " + typeInHeader.getClass().getName());
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerCollection(AbstractType<?> typeInHeader,AbstractType<?> typeInSchema,boolean droppedColumnMode){
+
+  if (typeInHeader.getClass() != typeInSchema.getClass())   return null;
+
+  if (typeInHeader.getClass() == ListType.class)   return fixTypeInnerList((ListType<?>)typeInHeader,(ListType<?>)typeInSchema,droppedColumnMode);
+
+  if (typeInHeader.getClass() == SetType.class)   return fixTypeInnerSet((SetType<?>)typeInHeader,(SetType<?>)typeInSchema,droppedColumnMode);
+
+  if (typeInHeader.getClass() == MapType.class)   return fixTypeInnerMap((MapType<?,?>)typeInHeader,(MapType<?,?>)typeInSchema,droppedColumnMode);
+
+  throw new IllegalArgumentException("Unknown collection type class " + typeInHeader.getClass().getName());
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerComposite(CompositeType cHeader,CompositeType cSchema,boolean droppedColumnMode){
+
+  if (cHeader.types.size() != cSchema.types.size())   return null;
+
+  List<AbstractType<?>> cHeaderFixed=new ArrayList<>(cHeader.types.size());
+
+  boolean anyChanged=false;
+
+  for (int i=0; i < cHeader.types.size(); i++) {
+
+    AbstractType<?> cHeaderComp=cHeader.types.get(i);
+
+    AbstractType<?> cHeaderCompFixed=fixTypeInner(cHeaderComp,cSchema.types.get(i),droppedColumnMode);
+
+    if (cHeaderCompFixed == null)     return null;
+
+    cHeaderFixed.add(cHeaderCompFixed);
+
+    anyChanged|=cHeaderComp != cHeaderCompFixed;
+
+  }
+
+  if (anyChanged)   return CompositeType.getInstance(cHeaderFixed);
+
+  return cHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerList(ListType<?> cHeader,ListType<?> cSchema,boolean droppedColumnMode){
+
+  AbstractType<?> cHeaderElem=cHeader.getElementsType();
+
+  AbstractType<?> cHeaderElemFixed=fixTypeInner(cHeaderElem,cSchema.getElementsType(),droppedColumnMode);
+
+  if (cHeaderElemFixed == null)   return null;
+
+  if (cHeaderElem != cHeaderElemFixed)   return ListType.getInstance(cHeaderElemFixed,cHeader.isMultiCell());
+
+  return cHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerMap(MapType<?,?> cHeader,MapType<?,?> cSchema,boolean droppedColumnMode){
+
+  AbstractType<?> cHeaderKey=cHeader.getKeysType();
+
+  AbstractType<?> cHeaderVal=cHeader.getValuesType();
+
+  AbstractType<?> cHeaderKeyFixed=fixTypeInner(cHeaderKey,cSchema.getKeysType(),droppedColumnMode);
+
+  AbstractType<?> cHeaderValFixed=fixTypeInner(cHeaderVal,cSchema.getValuesType(),droppedColumnMode);
+
+  if (cHeaderKeyFixed == null || cHeaderValFixed == null)   return null;
+
+  if (cHeaderKey != cHeaderKeyFixed || cHeaderVal != cHeaderValFixed)   return MapType.getInstance(cHeaderKeyFixed,cHeaderValFixed,cHeader.isMultiCell());
+
+  return cHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerSet(SetType<?> cHeader,SetType<?> cSchema,boolean droppedColumnMode){
+
+  AbstractType<?> cHeaderElem=cHeader.getElementsType();
+
+  AbstractType<?> cHeaderElemFixed=fixTypeInner(cHeaderElem,cSchema.getElementsType(),droppedColumnMode);
+
+  if (cHeaderElemFixed == null)   return null;
+
+  if (cHeaderElem != cHeaderElemFixed)   return SetType.getInstance(cHeaderElemFixed,cHeader.isMultiCell());
+
+  return cHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerTuple(TupleType cHeader,TupleType cSchema,boolean droppedColumnMode){
+
+  if (cHeader.size() != cSchema.size())   return null;
+
+  List<AbstractType<?>> cHeaderFixed=new ArrayList<>(cHeader.size());
+
+  boolean anyChanged=false;
+
+  for (int i=0; i < cHeader.size(); i++) {
+
+    AbstractType<?> cHeaderComp=cHeader.type(i);
+
+    AbstractType<?> cHeaderCompFixed=fixTypeInner(cHeaderComp,cSchema.type(i),droppedColumnMode);
+
+    if (cHeaderCompFixed == null)     return null;
+
+    cHeaderFixed.add(cHeaderCompFixed);
+
+    anyChanged|=cHeaderComp != cHeaderCompFixed;
+
+  }
+
+  if (anyChanged || cSchema.isMultiCell() != cHeader.isMultiCell())   return new TupleType(cHeaderFixed);
+
+  return cHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerUserTypeDropped(UserType cHeader,TupleType cSchema){
+
+  if (cHeader.isMultiCell() && !cSchema.isMultiCell()) {
+
+    return new UserType(cHeader.keyspace,cHeader.name,cHeader.fieldNames(),cHeader.fieldTypes(),cSchema.isMultiCell());
+
+  }
+
+  return cHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInnerUserType(UserType cHeader,UserType cSchema){
+
+  if (!cHeader.keyspace.equals(cSchema.keyspace) || !cHeader.name.equals(cSchema.name))   return null;
+
+  if (cHeader.isMultiCell() != cSchema.isMultiCell()) {
+
+    if (cHeader.isMultiCell() && !cSchema.isMultiCell()) {
+
+      return cSchema;
+
+    }
+
+    return null;
+
+  }
+
+  return cHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixTypeInner(AbstractType<?> typeInHeader,AbstractType<?> typeInSchema,boolean droppedColumnMode){
+
+  if (typeEquals(typeInHeader,typeInSchema))   return typeInHeader;
+
+  if (typeInHeader instanceof CollectionType)   return fixTypeInnerCollection(typeInHeader,typeInSchema,droppedColumnMode);
+
+  if (typeInHeader instanceof AbstractCompositeType)   return fixTypeInnerAbstractComposite(typeInHeader,typeInSchema,droppedColumnMode);
+
+  if (typeInHeader instanceof TupleType)   return fixTypeInnerAbstractTuple(typeInHeader,typeInSchema,droppedColumnMode);
+
+  if (typeInHeader.isCompatibleWith(typeInSchema))   return typeInHeader;
+
+  return null;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> fixType(Descriptor desc,ByteBuffer name,AbstractType<?> typeInHeader,AbstractType<?> typeInSchema,boolean droppedColumnMode){
+
+  AbstractType<?> fixedType=fixTypeInner(typeInHeader,typeInSchema,droppedColumnMode);
+
+  if (fixedType != null) {
+
+    if (fixedType != typeInHeader)     info.accept(String.format("sstable %s: Column '%s' needs to be updated from type '%s' to '%s'",desc,logColumnName(name),typeInHeader.asCQL3Type(),fixedType.asCQL3Type()));
+
+    return fixedType;
+
+  }
+
+  error("sstable %s: contains column '%s' as type '%s', but schema mentions '%s'",desc,logColumnName(name),typeInHeader.asCQL3Type(),typeInSchema.asCQL3Type());
+
+  return typeInHeader;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+/** 
+
+ * Whether  {@link #execute()} found mismatches.
+
+ */
+
+public boolean hasChanges(){
+
+  return !updates.isEmpty();
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+/** 
+
+ * Whether  {@link #execute()} encountered an error.
+
+ */
+
+public boolean hasError(){
+
+  return hasErrors;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private static String logColumnName(ByteBuffer columnName){
+
+  try {
+
+    return ByteBufferUtil.string(columnName);
+
+  }
+
+ catch (  CharacterCodingException e) {
+
+    return "?? " + e;
+
+  }
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private static Stream<Path> maybeExpandDirectory(Path path){
+
+  if (Files.isRegularFile(path))   return Stream.of(path);
+
+  return LifecycleTransaction.getFiles(path,(file,fileType) -> fileType == Directories.FileType.FINAL,Directories.OnTxnErr.IGNORE).stream().map(File::toPath);
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+abstract void prepare();
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+void processFileOrDirectory(Path path){
+
+  Stream.of(path).flatMap(SSTableHeaderFix::maybeExpandDirectory).filter(p -> Descriptor.fromFilenameWithComponent(p.toFile()).right.type == Component.Type.DATA).map(Path::toString).map(Descriptor::fromFilename).forEach(descriptors::add);
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private void processSSTable(Descriptor desc){
+
+  if (desc.cfname.indexOf('.') != -1) {
+
+    return;
+
+  }
+
+  TableMetadata tableMetadata=schemaCallback.apply(desc);
+
+  if (tableMetadata == null) {
+
+    error("Table %s.%s not found in the schema - NOT checking sstable %s",desc.ksname,desc.cfname,desc);
+
+    return;
+
+  }
+
+  Set<Component> components=SSTable.discoverComponentsFor(desc);
+
+  if (components.stream().noneMatch(c -> c.type == Component.Type.STATS)) {
+
+    error("sstable %s has no -Statistics.db component.",desc);
+
+    return;
+
+  }
+
+  Map<MetadataType,MetadataComponent> metadata=readSSTableMetadata(desc);
+
+  if (metadata == null)   return;
+
+  MetadataComponent component=metadata.get(MetadataType.HEADER);
+
+  if (!(component instanceof SerializationHeader.Component)) {
+
+    error("sstable %s: Expected %s, but got %s from metadata.get(MetadataType.HEADER)",desc,SerializationHeader.Component.class.getName(),component != null ? component.getClass().getName() : "'null'");
+
+    return;
+
+  }
+
+  SerializationHeader.Component header=(SerializationHeader.Component)component;
+
+  AbstractType<?> keyType=validatePartitionKey(desc,tableMetadata,header);
+
+  List<AbstractType<?>> clusteringTypes=validateClusteringColumns(desc,tableMetadata,header);
+
+  Map<ByteBuffer,AbstractType<?>> staticColumns=validateColumns(desc,tableMetadata,header.getStaticColumns(),ColumnMetadata.Kind.STATIC);
+
+  Map<ByteBuffer,AbstractType<?>> regularColumns=validateColumns(desc,tableMetadata,header.getRegularColumns(),ColumnMetadata.Kind.REGULAR);
+
+  SerializationHeader.Component newHeader=SerializationHeader.Component.buildComponentForTools(keyType,clusteringTypes,staticColumns,regularColumns,header.getEncodingStats());
+
+  if (header.toString().equals(newHeader.toString()))   return;
+
+  Map<MetadataType,MetadataComponent> newMetadata=new LinkedHashMap<>(metadata);
+
+  newMetadata.put(MetadataType.HEADER,newHeader);
+
+  updates.add(Pair.create(desc,newMetadata));
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private Map<MetadataType,MetadataComponent> readSSTableMetadata(Descriptor desc){
+
+  Map<MetadataType,MetadataComponent> metadata;
+
+  try {
+
+    metadata=desc.getMetadataSerializer().deserialize(desc,EnumSet.allOf(MetadataType.class));
+
+  }
+
+ catch (  IOException e) {
+
+    error("Failed to deserialize metadata for sstable %s: %s",desc,e.toString());
+
+    return null;
+
+  }
+
+  return metadata;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+SSTableHeaderFix(Builder builder){
+
+  this.info=builder.info;
+
+  this.warn=builder.warn;
+
+  this.error=builder.error;
+
+  this.dryRun=builder.dryRun;
+
+  this.schemaCallback=builder.schemaCallback.get();
+
+  this.descriptors=new ArrayList<>(builder.descriptors);
+
+  Objects.requireNonNull(this.info,"info is null");
+
+  Objects.requireNonNull(this.warn,"warn is null");
+
+  Objects.requireNonNull(this.error,"error is null");
+
+  Objects.requireNonNull(this.schemaCallback,"schemaCallback is null");
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private boolean typeEquals(AbstractType<?> typeInHeader,AbstractType<?> typeInSchema){
+
+  return typeInHeader.equals(typeInSchema) || typeInHeader.toString().equals(typeInSchema.toString());
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private List<AbstractType<?>> validateClusteringColumns(Descriptor desc,TableMetadata tableMetadata,SerializationHeader.Component header){
+
+  List<AbstractType<?>> headerClusteringTypes=header.getClusteringTypes();
+
+  List<AbstractType<?>> clusteringTypes=new ArrayList<>();
+
+  boolean clusteringMismatch=false;
+
+  List<ColumnMetadata> schemaClustering=tableMetadata.clusteringColumns();
+
+  if (schemaClustering.size() != headerClusteringTypes.size()) {
+
+    clusteringMismatch=true;
+
+    clusteringTypes.addAll(headerClusteringTypes);
+
+  }
+
+ else {
+
+    for (int i=0; i < headerClusteringTypes.size(); i++) {
+
+      AbstractType<?> headerType=headerClusteringTypes.get(i);
+
+      ColumnMetadata column=schemaClustering.get(i);
+
+      AbstractType<?> schemaType=column.type;
+
+      AbstractType<?> fixedType=fixType(desc,column.name.bytes,headerType,schemaType,false);
+
+      if (fixedType == null)       clusteringMismatch=true;
+
+ else       headerType=fixedType;
+
+      clusteringTypes.add(headerType);
+
+    }
+
+  }
+
+  if (clusteringMismatch)   error("sstable %s: mismatch in clustering columns between sstable serialization-header and schema (%s vs %s)",desc,headerClusteringTypes.stream().map(AbstractType::asCQL3Type).map(CQL3Type::toString).collect(Collectors.joining(",")),schemaClustering.stream().map(cd -> cd.type.asCQL3Type().toString()).collect(Collectors.joining(",")));
+
+  return clusteringTypes;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private Map<ByteBuffer,AbstractType<?>> validateColumns(Descriptor desc,TableMetadata tableMetadata,Map<ByteBuffer,AbstractType<?>> columns,ColumnMetadata.Kind kind){
+
+  Map<ByteBuffer,AbstractType<?>> target=new LinkedHashMap<>();
+
+  for (  Map.Entry<ByteBuffer,AbstractType<?>> nameAndType : columns.entrySet()) {
+
+    ByteBuffer name=nameAndType.getKey();
+
+    AbstractType<?> type=nameAndType.getValue();
+
+    AbstractType<?> fixedType=validateColumn(desc,tableMetadata,kind,name,type);
+
+    if (fixedType == null) {
+
+      error("sstable %s: contains column '%s' of type '%s', which could not be validated",desc,type,logColumnName(name));
+
+      fixedType=type;
+
+    }
+
+    target.put(name,fixedType);
+
+  }
+
+  return target;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> validateColumn(Descriptor desc,TableMetadata tableMetadata,ColumnMetadata.Kind kind,ByteBuffer name,AbstractType<?> type){
+
+  ColumnMetadata cd=tableMetadata.getColumn(name);
+
+  if (cd == null) {
+
+    cd=tableMetadata.getDroppedColumn(name,kind == ColumnMetadata.Kind.STATIC);
+
+    if (cd == null) {
+
+      for (      IndexMetadata indexMetadata : tableMetadata.indexes) {
+
+        String target=indexMetadata.options.get(IndexTarget.TARGET_OPTION_NAME);
+
+        if (target != null && ByteBufferUtil.bytes(target).equals(name)) {
+
+          warn.accept(String.format("sstable %s: contains column '%s', which is not a column in the table '%s.%s', but a target for that table's index '%s'",desc,logColumnName(name),tableMetadata.keyspace,tableMetadata.name,indexMetadata.name));
+
+          return type;
+
+        }
+
+      }
+
+      warn.accept(String.format("sstable %s: contains column '%s', which is not present in the schema",desc,logColumnName(name)));
+
+    }
+
+ else {
+
+      if (type instanceof UserType && cd.type instanceof TupleType) {
+
+        return fixType(desc,name,type,cd.type,true);
+
+      }
+
+    }
+
+    return type;
+
+  }
+
+  if (cd.kind != kind)   error("sstable %s: contains column '%s' as a %s column, but is of kind %s in the schema",desc,logColumnName(name),kind.name().toLowerCase(),cd.kind.name().toLowerCase());
+
+ else   type=fixType(desc,name,type,cd.type,false);
+
+  return type;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private AbstractType<?> validatePartitionKey(Descriptor desc,TableMetadata tableMetadata,SerializationHeader.Component header){
+
+  boolean keyMismatch=false;
+
+  AbstractType<?> headerKeyType=header.getKeyType();
+
+  AbstractType<?> schemaKeyType=tableMetadata.partitionKeyType;
+
+  boolean headerKeyComposite=headerKeyType instanceof CompositeType;
+
+  boolean schemaKeyComposite=schemaKeyType instanceof CompositeType;
+
+  if (headerKeyComposite != schemaKeyComposite) {
+
+    keyMismatch=true;
+
+  }
+
+ else   if (headerKeyComposite) {
+
+    List<AbstractType<?>> headerKeyComponents=((CompositeType)headerKeyType).types;
+
+    List<AbstractType<?>> schemaKeyComponents=((CompositeType)schemaKeyType).types;
+
+    if (headerKeyComponents.size() != schemaKeyComponents.size()) {
+
+      keyMismatch=true;
+
+    }
+
+ else {
+
+      List<AbstractType<?>> newComponents=new ArrayList<>(schemaKeyComponents.size());
+
+      for (int i=0; i < schemaKeyComponents.size(); i++) {
+
+        AbstractType<?> headerKeyComponent=headerKeyComponents.get(i);
+
+        AbstractType<?> schemaKeyComponent=schemaKeyComponents.get(i);
+
+        AbstractType<?> fixedType=fixType(desc,tableMetadata.partitionKeyColumns().get(i).name.bytes,headerKeyComponent,schemaKeyComponent,false);
+
+        if (fixedType == null)         keyMismatch=true;
+
+ else         headerKeyComponent=fixedType;
+
+        newComponents.add(fixType(desc,tableMetadata.partitionKeyColumns().get(i).name.bytes,headerKeyComponent,schemaKeyComponent,false));
+
+      }
+
+      headerKeyType=CompositeType.getInstance(newComponents);
+
+    }
+
+  }
+
+ else {
+
+    AbstractType<?> fixedType=fixType(desc,tableMetadata.partitionKeyColumns().get(0).name.bytes,headerKeyType,schemaKeyType,false);
+
+    if (fixedType == null)     keyMismatch=true;
+
+ else     headerKeyType=fixedType;
+
+  }
+
+  if (keyMismatch)   error("sstable %s: Mismatch in partition key type between sstable serialization-header and schema (%s vs %s)",desc,headerKeyType.asCQL3Type(),schemaKeyType.asCQL3Type());
+
+  return headerKeyType;
+
+}
+
+Location: SSTableHeaderFix.java
+
+Content: 
+
+private void writeNewMetadata(Descriptor desc,Map<MetadataType,MetadataComponent> newMetadata){
+
+  String file=desc.filenameFor(Component.STATS);
+
+  info.accept(String.format("  Writing new metadata file %s",file));
+
+  try {
+
+    desc.getMetadataSerializer().rewriteSSTableMetadata(desc,newMetadata);
+
+  }
+
+ catch (  IOException e) {
+
+    error("Failed to write metadata component for %s: %s",file,e.toString());
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+

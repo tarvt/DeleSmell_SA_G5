@@ -1,0 +1,202 @@
+Location: SEPExecutor.java
+
+Content: 
+
+public boolean awaitTermination(long timeout,TimeUnit unit) throws InterruptedException {
+
+  shutdown.await(timeout,unit);
+
+  return isTerminated();
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+private static long combine(int taskPermits,int workPermits){
+
+  return (((long)workPermits) << 32) | taskPermits;
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+public boolean isTerminated(){
+
+  return shuttingDown && shutdown.isSignaled();
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+boolean maybeSchedule(){
+
+  if (pool.spinningCount.get() > 0 || !takeWorkPermit(true))   return false;
+
+  pool.schedule(new Work(this));
+
+  return true;
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+void returnWorkPermit(){
+
+  while (true) {
+
+    long current=permits.get();
+
+    int workPermits=workPermits(current);
+
+    if (permits.compareAndSet(current,updateWorkPermits(current,workPermits + 1)))     return;
+
+  }
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+SEPExecutor(SharedExecutorPool pool,int maximumPoolSize,MaximumPoolSizeListener maximumPoolSizeListener,String jmxPath,String name){
+
+  this.pool=pool;
+
+  this.name=name;
+
+  this.mbeanName="org.apache.cassandra." + jmxPath + ":type="+ name;
+
+  this.maximumPoolSize=new AtomicInteger(maximumPoolSize);
+
+  this.maximumPoolSizeListener=maximumPoolSizeListener;
+
+  this.permits.set(combine(0,maximumPoolSize));
+
+  this.metrics=new ThreadPoolMetrics(this,jmxPath,name).register();
+
+  MBeanWrapper.instance.registerMBean(this,mbeanName);
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+TakeTaskPermitResult takeTaskPermit(boolean checkForWorkPermitOvercommit){
+
+  TakeTaskPermitResult result;
+
+  while (true) {
+
+    long current=permits.get();
+
+    long updated;
+
+    int workPermits=workPermits(current);
+
+    int taskPermits=taskPermits(current);
+
+    if (workPermits < 0 && checkForWorkPermitOvercommit) {
+
+      result=TakeTaskPermitResult.RETURNED_WORK_PERMIT;
+
+      updated=updateWorkPermits(current,workPermits + 1);
+
+    }
+
+ else {
+
+      if (taskPermits == 0)       return TakeTaskPermitResult.NONE_AVAILABLE;
+
+      result=TakeTaskPermitResult.TOOK_PERMIT;
+
+      updated=updateTaskPermits(current,taskPermits - 1);
+
+    }
+
+    if (permits.compareAndSet(current,updated)) {
+
+      return result;
+
+    }
+
+  }
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+boolean takeWorkPermit(boolean takeTaskPermit){
+
+  int taskDelta=takeTaskPermit ? 1 : 0;
+
+  while (true) {
+
+    long current=permits.get();
+
+    int workPermits=workPermits(current);
+
+    int taskPermits=taskPermits(current);
+
+    if (workPermits <= 0 || taskPermits == 0)     return false;
+
+    if (permits.compareAndSet(current,combine(taskPermits - taskDelta,workPermits - 1))) {
+
+      return true;
+
+    }
+
+  }
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+private static int taskPermits(long both){
+
+  return (int)both;
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+private static long updateTaskPermits(long prev,int taskPermits){
+
+  return (prev & (-1L << 32)) | taskPermits;
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+private static long updateWorkPermits(long prev,int workPermits){
+
+  return (((long)workPermits) << 32) | (prev & (-1L >>> 32));
+
+}
+
+Location: SEPExecutor.java
+
+Content: 
+
+private static int workPermits(long both){
+
+  return (int)(both >> 32);
+
+}
+

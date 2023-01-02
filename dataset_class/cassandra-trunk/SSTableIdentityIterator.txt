@@ -1,0 +1,158 @@
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+public RegularAndStaticColumns columns(){
+
+  return metadata().regularAndStaticColumns();
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+public int compareTo(SSTableIdentityIterator o){
+
+  return key.compareTo(o.key);
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+@SuppressWarnings("resource") public static SSTableIdentityIterator create(SSTableReader sstable,FileDataInput dfile,RowIndexEntry<?> indexEntry,DecoratedKey key,boolean tombstoneOnly){
+
+  try {
+
+    dfile.seek(indexEntry.position);
+
+    ByteBufferUtil.skipShortLength(dfile);
+
+    DeletionTime partitionLevelDeletion=DeletionTime.serializer.deserialize(dfile);
+
+    DeserializationHelper helper=new DeserializationHelper(sstable.metadata(),sstable.descriptor.version.correspondingMessagingVersion(),DeserializationHelper.Flag.LOCAL);
+
+    SSTableSimpleIterator iterator=tombstoneOnly ? SSTableSimpleIterator.createTombstoneOnly(sstable.metadata(),dfile,sstable.header,helper,partitionLevelDeletion) : SSTableSimpleIterator.create(sstable.metadata(),dfile,sstable.header,helper,partitionLevelDeletion);
+
+    return new SSTableIdentityIterator(sstable,key,partitionLevelDeletion,dfile.getPath(),iterator);
+
+  }
+
+ catch (  IOException e) {
+
+    sstable.markSuspect();
+
+    throw new CorruptSSTableException(e,dfile.getPath());
+
+  }
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+@SuppressWarnings("resource") public static SSTableIdentityIterator create(SSTableReader sstable,RandomAccessReader file,DecoratedKey key){
+
+  try {
+
+    DeletionTime partitionLevelDeletion=DeletionTime.serializer.deserialize(file);
+
+    if (!partitionLevelDeletion.validate())     UnfilteredValidation.handleInvalid(sstable.metadata(),key,sstable,"partitionLevelDeletion=" + partitionLevelDeletion.toString());
+
+    DeserializationHelper helper=new DeserializationHelper(sstable.metadata(),sstable.descriptor.version.correspondingMessagingVersion(),DeserializationHelper.Flag.LOCAL);
+
+    SSTableSimpleIterator iterator=SSTableSimpleIterator.create(sstable.metadata(),file,sstable.header,helper,partitionLevelDeletion);
+
+    return new SSTableIdentityIterator(sstable,key,partitionLevelDeletion,file.getPath(),iterator);
+
+  }
+
+ catch (  IOException e) {
+
+    sstable.markSuspect();
+
+    throw new CorruptSSTableException(e,file.getPath());
+
+  }
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+protected Unfiltered doCompute(){
+
+  Unfiltered unfiltered=iterator.next();
+
+  UnfilteredValidation.maybeValidateUnfiltered(unfiltered,metadata(),key,sstable);
+
+  return unfiltered;
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+public boolean isReverseOrder(){
+
+  return false;
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+public DecoratedKey partitionKey(){
+
+  return key;
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+public DeletionTime partitionLevelDeletion(){
+
+  return partitionLevelDeletion;
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+public SSTableIdentityIterator(SSTableReader sstable,DecoratedKey key,DeletionTime partitionLevelDeletion,String filename,SSTableSimpleIterator iterator) throws IOException {
+
+  super();
+
+  this.sstable=sstable;
+
+  this.key=key;
+
+  this.partitionLevelDeletion=partitionLevelDeletion;
+
+  this.filename=filename;
+
+  this.iterator=iterator;
+
+  this.staticRow=iterator.readStaticRow();
+
+}
+
+Location: SSTableIdentityIterator.java
+
+Content: 
+
+public Row staticRow(){
+
+  return staticRow;
+
+}
+

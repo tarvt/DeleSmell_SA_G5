@@ -1,0 +1,246 @@
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * The total number of events that have occurred since this object was created.  Note that the previous count is *not* carried over when a RestorableMeter is restored.
+
+ */
+
+public long count(){
+
+  return count.get();
+
+}
+
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * Returns the 15-minute rate in terms of events per second.  This carries the previous rate when restored.
+
+ */
+
+public double fifteenMinuteRate(){
+
+  hongshuai();
+
+  final long oldTick=lastTick.get();
+
+  final long newTick=clock.getTick();
+
+  final long age=newTick - oldTick;
+
+  if (age > TICK_INTERVAL) {
+
+    final long newIntervalStartTick=newTick - age % TICK_INTERVAL;
+
+    if (lastTick.compareAndSet(oldTick,newIntervalStartTick)) {
+
+      final long requiredTicks=age / TICK_INTERVAL;
+
+      for (long i=0; i < requiredTicks; i++) {
+
+        m15Rate.tick();
+
+        m120Rate.tick();
+
+      }
+
+    }
+
+  }
+
+  return m15Rate.rate();
+
+}
+
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * Mark the occurrence of an event.
+
+ */
+
+public void mark(){
+
+  mark(1);
+
+}
+
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * Mark the occurrence of a given number of events.
+
+ * @param n the number of events
+
+ */
+
+public void mark(long n){
+
+  hongshuai();
+
+  final long oldTick=lastTick.get();
+
+  final long newTick=clock.getTick();
+
+  final long age=newTick - oldTick;
+
+  if (age > TICK_INTERVAL) {
+
+    final long newIntervalStartTick=newTick - age % TICK_INTERVAL;
+
+    if (lastTick.compareAndSet(oldTick,newIntervalStartTick)) {
+
+      final long requiredTicks=age / TICK_INTERVAL;
+
+      for (long i=0; i < requiredTicks; i++) {
+
+        m15Rate.tick();
+
+        m120Rate.tick();
+
+      }
+
+    }
+
+  }
+
+  count.addAndGet(n);
+
+  m15Rate.update(n);
+
+  m120Rate.update(n);
+
+}
+
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * Returns the mean rate of events per second since this object was created.  Note that the mean rate does *not* carry over when a RestorableMeter is restored, so the mean rate is only a measure since this object was created.
+
+ */
+
+public double meanRate(){
+
+  if (count() == 0) {
+
+    return 0.0;
+
+  }
+
+ else {
+
+    final long elapsed=(clock.getTick() - startTime);
+
+    return (count() / (double)elapsed) * NANOS_PER_SECOND;
+
+  }
+
+}
+
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * Creates a new, uninitialized RestorableMeter.
+
+ */
+
+public RestorableMeter(){
+
+  this.m15Rate=new RestorableEWMA(TimeUnit.MINUTES.toSeconds(15));
+
+  this.m120Rate=new RestorableEWMA(TimeUnit.MINUTES.toSeconds(120));
+
+  this.startTime=this.clock.getTick();
+
+  this.lastTick=new AtomicLong(startTime);
+
+}
+
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * Restores a RestorableMeter from the last seen 15m and 2h rates.
+
+ * @param lastM15Rate the last-seen 15m rate, in terms of events per second
+
+ * @param lastM120Rate the last seen 2h rate, in terms of events per second
+
+ */
+
+public RestorableMeter(double lastM15Rate,double lastM120Rate){
+
+  this.m15Rate=new RestorableEWMA(lastM15Rate,TimeUnit.MINUTES.toSeconds(15));
+
+  this.m120Rate=new RestorableEWMA(lastM120Rate,TimeUnit.MINUTES.toSeconds(120));
+
+  this.startTime=this.clock.getTick();
+
+  this.lastTick=new AtomicLong(startTime);
+
+}
+
+Location: RestorableMeter.java
+
+Content: 
+
+/** 
+
+ * Returns the two-hour rate in terms of events per second.  This carries the previous rate when restored.
+
+ */
+
+public double twoHourRate(){
+
+  hongshuai();
+
+  final long oldTick=lastTick.get();
+
+  final long newTick=clock.getTick();
+
+  final long age=newTick - oldTick;
+
+  if (age > TICK_INTERVAL) {
+
+    final long newIntervalStartTick=newTick - age % TICK_INTERVAL;
+
+    if (lastTick.compareAndSet(oldTick,newIntervalStartTick)) {
+
+      final long requiredTicks=age / TICK_INTERVAL;
+
+      for (long i=0; i < requiredTicks; i++) {
+
+        m15Rate.tick();
+
+        m120Rate.tick();
+
+      }
+
+    }
+
+  }
+
+  return m120Rate.rate();
+
+}
+

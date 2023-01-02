@@ -1,0 +1,262 @@
+Location: SerializingCache.java
+
+Content: 
+
+public boolean containsKey(K key){
+
+  return cache.asMap().containsKey(key);
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+public static <K,V>SerializingCache<K,V> create(long weightedCapacity,ISerializer<V> serializer){
+
+  return create(weightedCapacity,(key,value) -> {
+
+    long size=value.size();
+
+    if (size > Integer.MAX_VALUE) {
+
+      throw new IllegalArgumentException("Serialized size must not be more than 2GB");
+
+    }
+
+    return (int)size;
+
+  }
+
+,serializer);
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+public static <K,V>SerializingCache<K,V> create(long weightedCapacity,Weigher<K,RefCountedMemory> weigher,ISerializer<V> serializer){
+
+  return new SerializingCache<>(weightedCapacity,weigher,serializer);
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+@SuppressWarnings("resource") private V deserialize(RefCountedMemory mem){
+
+  try {
+
+    return serializer.deserialize(new MemoryInputStream(mem));
+
+  }
+
+ catch (  IOException e) {
+
+    logger.trace("Cannot fetch in memory data, we will fallback to read from disk ",e);
+
+    return null;
+
+  }
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+public Iterator<K> hotKeyIterator(int n){
+
+  return cache.policy().eviction().get().hottest(n).keySet().iterator();
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+public Iterator<K> keyIterator(){
+
+  return cache.asMap().keySet().iterator();
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+@SuppressWarnings("resource") public boolean putIfAbsent(K key,V value){
+
+  RefCountedMemory mem=serialize(value);
+
+  if (mem == null)   return false;
+
+  RefCountedMemory old;
+
+  try {
+
+    old=cache.asMap().putIfAbsent(key,mem);
+
+  }
+
+ catch (  Throwable t) {
+
+    mem.unreference();
+
+    throw t;
+
+  }
+
+  if (old != null)   mem.unreference();
+
+  return old == null;
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+public void remove(K key){
+
+  @SuppressWarnings("resource") RefCountedMemory mem=cache.asMap().remove(key);
+
+  if (mem != null)   mem.unreference();
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+@SuppressWarnings("resource") public boolean replace(K key,V oldToReplace,V value){
+
+  RefCountedMemory old=cache.getIfPresent(key);
+
+  if (old == null)   return false;
+
+  V oldValue;
+
+  if (!old.reference())   return false;
+
+  oldValue=deserialize(old);
+
+  old.unreference();
+
+  if (!oldValue.equals(oldToReplace))   return false;
+
+  RefCountedMemory mem=serialize(value);
+
+  if (mem == null)   return false;
+
+  boolean success;
+
+  try {
+
+    success=cache.asMap().replace(key,old,mem);
+
+  }
+
+ catch (  Throwable t) {
+
+    mem.unreference();
+
+    throw t;
+
+  }
+
+  if (success)   old.unreference();
+
+ else   mem.unreference();
+
+  return success;
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+@SuppressWarnings("resource") private RefCountedMemory serialize(V value){
+
+  long serializedSize=serializer.serializedSize(value);
+
+  if (serializedSize > Integer.MAX_VALUE)   throw new IllegalArgumentException(String.format("Unable to allocate %s",FBUtilities.prettyPrintMemory(serializedSize)));
+
+  RefCountedMemory freeableMemory;
+
+  try {
+
+    freeableMemory=new RefCountedMemory(serializedSize);
+
+  }
+
+ catch (  OutOfMemoryError e) {
+
+    return null;
+
+  }
+
+  try {
+
+    serializer.serialize(value,new WrappedDataOutputStreamPlus(new MemoryOutputStream(freeableMemory)));
+
+  }
+
+ catch (  IOException e) {
+
+    freeableMemory.unreference();
+
+    throw new RuntimeException(e);
+
+  }
+
+  return freeableMemory;
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+private SerializingCache(long capacity,Weigher<K,RefCountedMemory> weigher,ISerializer<V> serializer){
+
+  this.serializer=serializer;
+
+  this.cache=Caffeine.newBuilder().weigher(weigher).maximumWeight(capacity).executor(MoreExecutors.directExecutor()).removalListener((key,mem,cause) -> {
+
+    if (cause.wasEvicted()) {
+
+      mem.unreference();
+
+    }
+
+  }
+
+).build();
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+public void setCapacity(long capacity){
+
+  cache.policy().eviction().get().setMaximum(capacity);
+
+}
+
+Location: SerializingCache.java
+
+Content: 
+
+public long weightedSize(){
+
+  return cache.policy().eviction().get().weightedSize().getAsLong();
+
+}
+
