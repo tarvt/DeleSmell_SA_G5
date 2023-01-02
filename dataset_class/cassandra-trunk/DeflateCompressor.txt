@@ -1,0 +1,200 @@
+Location: DeflateCompressor.java
+
+Content: 
+
+public int compressArray(byte[] input,int inputOffset,int inputLength,byte[] output,int outputOffset,int maxOutputLength){
+
+  Deflater def=deflater.get();
+
+  def.reset();
+
+  def.setInput(input,inputOffset,inputLength);
+
+  def.finish();
+
+  if (def.needsInput())   return 0;
+
+  int len=def.deflate(output,outputOffset,maxOutputLength);
+
+  assert def.finished();
+
+  return len;
+
+}
+
+Location: DeflateCompressor.java
+
+Content: 
+
+public void compressBuffer(ByteBuffer input,ByteBuffer output){
+
+  Deflater def=deflater.get();
+
+  def.reset();
+
+  byte[] buffer=getThreadLocalScratchBuffer();
+
+  int chunkLen=buffer.length / 2;
+
+  while (input.remaining() > chunkLen) {
+
+    input.get(buffer,0,chunkLen);
+
+    def.setInput(buffer,0,chunkLen);
+
+    while (!def.needsInput()) {
+
+      int len=def.deflate(buffer,chunkLen,chunkLen);
+
+      output.put(buffer,chunkLen,len);
+
+    }
+
+  }
+
+  int inputLength=input.remaining();
+
+  input.get(buffer,0,inputLength);
+
+  def.setInput(buffer,0,inputLength);
+
+  def.finish();
+
+  while (!def.finished()) {
+
+    int len=def.deflate(buffer,chunkLen,chunkLen);
+
+    output.put(buffer,chunkLen,len);
+
+  }
+
+}
+
+Location: DeflateCompressor.java
+
+Content: 
+
+private DeflateCompressor(){
+
+  deflater=new FastThreadLocal<Deflater>(){
+
+    @Override protected Deflater initialValue(){
+
+      return new Deflater();
+
+    }
+
+  }
+
+;
+
+  inflater=new FastThreadLocal<Inflater>(){
+
+    @Override protected Inflater initialValue(){
+
+      return new Inflater();
+
+    }
+
+  }
+
+;
+
+  recommendedUses=ImmutableSet.of(Uses.GENERAL);
+
+}
+
+Location: DeflateCompressor.java
+
+Content: 
+
+public static byte[] getThreadLocalScratchBuffer(){
+
+  return threadLocalScratchBuffer.get();
+
+}
+
+Location: DeflateCompressor.java
+
+Content: 
+
+public void uncompressBuffer(ByteBuffer input,ByteBuffer output) throws IOException {
+
+  try {
+
+    Inflater inf=inflater.get();
+
+    inf.reset();
+
+    byte[] buffer=getThreadLocalScratchBuffer();
+
+    int chunkLen=buffer.length / 2;
+
+    while (input.remaining() > chunkLen) {
+
+      input.get(buffer,0,chunkLen);
+
+      inf.setInput(buffer,0,chunkLen);
+
+      while (!inf.needsInput()) {
+
+        int len=inf.inflate(buffer,chunkLen,chunkLen);
+
+        output.put(buffer,chunkLen,len);
+
+      }
+
+    }
+
+    int inputLength=input.remaining();
+
+    input.get(buffer,0,inputLength);
+
+    inf.setInput(buffer,0,inputLength);
+
+    while (!inf.needsInput()) {
+
+      int len=inf.inflate(buffer,chunkLen,chunkLen);
+
+      output.put(buffer,chunkLen,len);
+
+    }
+
+  }
+
+ catch (  DataFormatException e) {
+
+    throw new IOException(e);
+
+  }
+
+}
+
+Location: DeflateCompressor.java
+
+Content: 
+
+public int uncompress(byte[] input,int inputOffset,int inputLength,byte[] output,int outputOffset,int maxOutputLength) throws IOException {
+
+  Inflater inf=inflater.get();
+
+  inf.reset();
+
+  inf.setInput(input,inputOffset,inputLength);
+
+  if (inf.needsInput())   return 0;
+
+  try {
+
+    return inf.inflate(output,outputOffset,maxOutputLength);
+
+  }
+
+ catch (  DataFormatException e) {
+
+    throw new IOException(e);
+
+  }
+
+}
+

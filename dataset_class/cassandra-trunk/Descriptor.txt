@@ -1,0 +1,406 @@
+Location: Descriptor.java
+
+Content: 
+
+private void appendFileName(StringBuilder buff){
+
+  buff.append(version).append(separator);
+
+  buff.append(generation);
+
+  buff.append(separator).append(formatType.name);
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public String baseFilename(){
+
+  StringBuilder buff=new StringBuilder();
+
+  buff.append(directory).append(File.separatorChar);
+
+  appendFileName(buff);
+
+  return buff.toString();
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+/** 
+
+ * A descriptor that assumes CURRENT_VERSION.
+
+ */
+
+@VisibleForTesting public Descriptor(File directory,String ksname,String cfname,int generation){
+
+  this(SSTableFormat.Type.current().info.getLatestVersion(),directory,ksname,cfname,generation,SSTableFormat.Type.current());
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+/** 
+
+ * Constructor for sstable writers only.
+
+ */
+
+public Descriptor(File directory,String ksname,String cfname,int generation,SSTableFormat.Type formatType){
+
+  this(formatType.info.getLatestVersion(),directory,ksname,cfname,generation,formatType);
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public Descriptor(String v){
+
+  this.version=new Version(v);
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public Descriptor(Version version,File directory,String ksname,String cfname,int generation,SSTableFormat.Type formatType){
+
+  assert version != null && directory != null && ksname != null && cfname != null && formatType.info.getLatestVersion().getClass().equals(version.getClass());
+
+  this.version=version;
+
+  try {
+
+    this.directory=directory.getCanonicalFile();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new IOError(e);
+
+  }
+
+  this.ksname=ksname;
+
+  this.cfname=cfname;
+
+  this.generation=generation;
+
+  this.formatType=formatType;
+
+  hashCode=Objects.hashCode(version,this.directory,generation,ksname,cfname,formatType);
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public String filenameFor(Component component){
+
+  return baseFilename() + separator + component.name();
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+/** 
+
+ * Parse a sstable filename, extracting both the  {@code Descriptor} and {@code Component} part.
+
+ * @param file the {@code File} object for the filename to parse.
+
+ * @return a pair of the descriptor and component corresponding to the provided {@code file}.
+
+ * @throws IllegalArgumentException if the provided {@code file} does point to a valid sstable filename. This couldmean either that the filename doesn't look like a sstable file, or that it is for an old and unsupported versions.
+
+ */
+
+public static Pair<Descriptor,Component> fromFilenameWithComponent(File file){
+
+  if (!file.isAbsolute())   file=file.getAbsoluteFile();
+
+  String name=file.getName();
+
+  List<String> tokens=filenameSplitter.splitToList(name);
+
+  int size=tokens.size();
+
+  if (size != 4) {
+
+    if (size == 5 || size == 6)     throw new IllegalArgumentException(String.format("%s is of version %s which is now unsupported and cannot be read.",name,tokens.get(size - 3)));
+
+    throw new IllegalArgumentException(String.format("Invalid sstable file %s: the name doesn't look like a supported sstable file name",name));
+
+  }
+
+  String versionString=tokens.get(0);
+
+  if (!Version.validate(versionString))   throw invalidSSTable(name,"invalid version %s",versionString);
+
+  int generation;
+
+  try {
+
+    generation=Integer.parseInt(tokens.get(1));
+
+  }
+
+ catch (  NumberFormatException e) {
+
+    throw invalidSSTable(name,"the 'generation' part of the name doesn't parse as a number");
+
+  }
+
+  String formatString=tokens.get(2);
+
+  SSTableFormat.Type format;
+
+  try {
+
+    format=SSTableFormat.Type.validate(formatString);
+
+  }
+
+ catch (  IllegalArgumentException e) {
+
+    throw invalidSSTable(name,"unknown 'format' part (%s)",formatString);
+
+  }
+
+  Component component=Component.parse(tokens.get(3));
+
+  Version version=format.info.getVersion(versionString);
+
+  if (!version.isCompatible())   throw invalidSSTable(name,"incompatible sstable version (%s); you should have run upgradesstables before upgrading",versionString);
+
+  File directory=parentOf(name,file);
+
+  File tableDir=directory;
+
+  String indexName="";
+
+  if (Directories.isSecondaryIndexFolder(tableDir)) {
+
+    indexName=tableDir.getName();
+
+    tableDir=parentOf(name,tableDir);
+
+  }
+
+  if (tableDir.getName().equals(Directories.BACKUPS_SUBDIR))   tableDir=tableDir.getParentFile();
+
+ else   if (parentOf(name,tableDir).getName().equals(Directories.SNAPSHOT_SUBDIR))   tableDir=parentOf(name,parentOf(name,tableDir));
+
+  String table=tableDir.getName().split("-")[0] + indexName;
+
+  String keyspace=parentOf(name,tableDir).getName();
+
+  return Pair.create(new Descriptor(version,directory,keyspace,table,generation,format),component);
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+/** 
+
+ * Parse a sstable filename into a Descriptor. <p> SSTables files are all located within subdirectories of the form  {@code <keyspace>/<table>/}. Normal sstables are are directly within that subdirectory structure while 2ndary index, backups and snapshot are each inside an additional subdirectory. The file themselves have the form: {@code <version>-<gen>-<format>-<component>}. <p> Note that this method will only sucessfully parse sstable files of supported versions.
+
+ * @param file the {@code File} object for the filename to parse.
+
+ * @return the descriptor for the parsed file.
+
+ * @throws IllegalArgumentException if the provided {@code file} does point to a valid sstable filename. This couldmean either that the filename doesn't look like a sstable file, or that it is for an old and unsupported versions.
+
+ */
+
+public static Descriptor fromFilename(File file){
+
+  return fromFilenameWithComponent(file).left;
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+/** 
+
+ * Parse a sstable filename into a Descriptor. <p> This is a shortcut for  {@code fromFilename(new File(filename))}.
+
+ * @param filename the filename to a sstable component.
+
+ * @return the descriptor for the parsed file.
+
+ * @throws IllegalArgumentException if the provided {@code file} does point to a valid sstable filename. This couldmean either that the filename doesn't look like a sstable file, or that it is for an old and unsupported versions.
+
+ */
+
+public static Descriptor fromFilename(String filename){
+
+  return fromFilename(new File(filename));
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public SSTableFormat getFormat(){
+
+  return formatType.info;
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public IMetadataSerializer getMetadataSerializer(){
+
+  return new MetadataSerializer();
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+/** 
+
+ * Return any temporary files found in the directory 
+
+ */
+
+public List<File> getTemporaryFiles(){
+
+  File[] tmpFiles=directory.listFiles((dir,name) -> name.endsWith(Descriptor.TMP_EXT));
+
+  List<File> ret=new ArrayList<>(tmpFiles.length);
+
+  for (  File tmpFile : tmpFiles)   ret.add(tmpFile);
+
+  return ret;
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+private static IllegalArgumentException invalidSSTable(String name,String msgFormat,Object... parameters){
+
+  throw new IllegalArgumentException(String.format("Invalid sstable file " + name + ": "+ msgFormat,parameters));
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public static boolean isValidFile(File file){
+
+  String filename=file.getName();
+
+  return filename.endsWith(".db") && !LEGACY_TMP_REGEX.matcher(filename).matches();
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+private static File parentOf(String name,File file){
+
+  File parent=file.getParentFile();
+
+  if (parent == null)   throw invalidSSTable(name,"cannot extract keyspace and table name; make sure the sstable is in the proper sub-directories");
+
+  return parent;
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public String relativeFilenameFor(Component component){
+
+  final StringBuilder buff=new StringBuilder();
+
+  if (Directories.isSecondaryIndexFolder(directory)) {
+
+    buff.append(directory.getName()).append(File.separator);
+
+  }
+
+  appendFileName(buff);
+
+  buff.append(separator).append(component.name());
+
+  return buff.toString();
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+/** 
+
+ * @return a unique temporary file name for given component during entire-sstable-streaming.
+
+ */
+
+public String tmpFilenameForStreaming(Component component){
+
+  return String.format("%s.%s%s",filenameFor(component),UUIDGen.getTimeUUID(),TMP_EXT);
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public String tmpFilenameFor(Component component){
+
+  return filenameFor(component) + TMP_EXT;
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public Descriptor withFormatType(SSTableFormat.Type newType){
+
+  return new Descriptor(newType.info.getLatestVersion(),directory,ksname,cfname,generation,newType);
+
+}
+
+Location: Descriptor.java
+
+Content: 
+
+public Descriptor withGeneration(int newGeneration){
+
+  return new Descriptor(version,directory,ksname,cfname,newGeneration,formatType);
+
+}
+

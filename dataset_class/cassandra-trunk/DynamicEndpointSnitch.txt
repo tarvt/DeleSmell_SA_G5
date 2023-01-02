@@ -1,0 +1,316 @@
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+/** 
+
+ * Update configuration from  {@link DatabaseDescriptor} and estart the update-scheduler and reset-scheduler tasksif the configured rates for these tasks have changed.
+
+ */
+
+public void applyConfigChanges(){
+
+  if (dynamicUpdateInterval != DatabaseDescriptor.getDynamicUpdateInterval()) {
+
+    dynamicUpdateInterval=DatabaseDescriptor.getDynamicUpdateInterval();
+
+    if (DatabaseDescriptor.isDaemonInitialized()) {
+
+      updateSchedular.cancel(false);
+
+      updateSchedular=ScheduledExecutors.scheduledTasks.scheduleWithFixedDelay(update,dynamicUpdateInterval,dynamicUpdateInterval,TimeUnit.MILLISECONDS);
+
+    }
+
+  }
+
+  if (dynamicResetInterval != DatabaseDescriptor.getDynamicResetInterval()) {
+
+    dynamicResetInterval=DatabaseDescriptor.getDynamicResetInterval();
+
+    if (DatabaseDescriptor.isDaemonInitialized()) {
+
+      resetSchedular.cancel(false);
+
+      resetSchedular=ScheduledExecutors.scheduledTasks.scheduleWithFixedDelay(reset,dynamicResetInterval,dynamicResetInterval,TimeUnit.MILLISECONDS);
+
+    }
+
+  }
+
+  dynamicBadnessThreshold=DatabaseDescriptor.getDynamicBadnessThreshold();
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+private int compareEndpoints(InetAddressAndPort target,Replica a1,Replica a2,Map<InetAddressAndPort,Double> scores){
+
+  Double scored1=scores.get(a1.endpoint());
+
+  Double scored2=scores.get(a2.endpoint());
+
+  if (scored1 == null) {
+
+    scored1=0.0;
+
+  }
+
+  if (scored2 == null) {
+
+    scored2=0.0;
+
+  }
+
+  if (scored1.equals(scored2))   return subsnitch.compareEndpoints(target,a1,a2);
+
+  if (scored1 < scored2)   return -1;
+
+ else   return 1;
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+public DynamicEndpointSnitch(IEndpointSnitch snitch){
+
+  this(snitch,null);
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+public DynamicEndpointSnitch(IEndpointSnitch snitch,String instance){
+
+  mbeanName="org.apache.cassandra.db:type=DynamicEndpointSnitch";
+
+  if (instance != null)   mbeanName+=",instance=" + instance;
+
+  subsnitch=snitch;
+
+  update=new Runnable(){
+
+    public void run(){
+
+      updateScores();
+
+    }
+
+  }
+
+;
+
+  reset=new Runnable(){
+
+    public void run(){
+
+      reset();
+
+    }
+
+  }
+
+;
+
+  if (DatabaseDescriptor.isDaemonInitialized()) {
+
+    updateSchedular=ScheduledExecutors.scheduledTasks.scheduleWithFixedDelay(update,dynamicUpdateInterval,dynamicUpdateInterval,TimeUnit.MILLISECONDS);
+
+    resetSchedular=ScheduledExecutors.scheduledTasks.scheduleWithFixedDelay(reset,dynamicResetInterval,dynamicResetInterval,TimeUnit.MILLISECONDS);
+
+    registerMBean();
+
+  }
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+private double getSeverity(InetAddressAndPort endpoint){
+
+  EndpointState state=Gossiper.instance.getEndpointStateForEndpoint(endpoint);
+
+  if (state == null)   return 0.0;
+
+  VersionedValue event=state.getApplicationState(ApplicationState.SEVERITY);
+
+  if (event == null)   return 0.0;
+
+  return Double.parseDouble(event.value);
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+private double maxScore(ReplicaCollection<?> endpoints){
+
+  double maxScore=-1.0;
+
+  for (  Replica replica : endpoints) {
+
+    Double score=scores.get(replica.endpoint());
+
+    if (score == null)     continue;
+
+    if (score > maxScore)     maxScore=score;
+
+  }
+
+  return maxScore;
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+public void receiveTiming(InetAddressAndPort host,long latency,TimeUnit unit){
+
+  ExponentiallyDecayingReservoir sample=samples.get(host);
+
+  if (sample == null) {
+
+    ExponentiallyDecayingReservoir maybeNewSample=new ExponentiallyDecayingReservoir(WINDOW_SIZE,ALPHA);
+
+    sample=samples.putIfAbsent(host,maybeNewSample);
+
+    if (sample == null)     sample=maybeNewSample;
+
+  }
+
+  sample.update(unit.toMillis(latency));
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+private void registerMBean(){
+
+  MBeanWrapper.instance.registerMBean(this,mbeanName);
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+private <C extends ReplicaCollection<? extends C>>C sortedByProximityWithBadness(final InetAddressAndPort address,C replicas){
+
+  if (replicas.size() < 2)   return replicas;
+
+  replicas=subsnitch.sortedByProximity(address,replicas);
+
+  HashMap<InetAddressAndPort,Double> scores=this.scores;
+
+  ArrayList<Double> subsnitchOrderedScores=new ArrayList<>(replicas.size());
+
+  for (  Replica replica : replicas) {
+
+    Double score=scores.get(replica.endpoint());
+
+    if (score == null)     score=0.0;
+
+    subsnitchOrderedScores.add(score);
+
+  }
+
+  ArrayList<Double> sortedScores=new ArrayList<>(subsnitchOrderedScores);
+
+  Collections.sort(sortedScores);
+
+  double badnessThreshold=1.0 + dynamicBadnessThreshold;
+
+  Iterator<Double> sortedScoreIterator=sortedScores.iterator();
+
+  for (  Double subsnitchScore : subsnitchOrderedScores) {
+
+    if (subsnitchScore > (sortedScoreIterator.next() * badnessThreshold)) {
+
+      return sortedByProximityWithScore(address,replicas);
+
+    }
+
+  }
+
+  return replicas;
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+private <C extends ReplicaCollection<? extends C>>C sortedByProximityWithScore(final InetAddressAndPort address,C unsortedAddresses){
+
+  final HashMap<InetAddressAndPort,Double> scores=this.scores;
+
+  return unsortedAddresses.sorted((r1,r2) -> compareEndpoints(address,r1,r2,scores));
+
+}
+
+Location: DynamicEndpointSnitch.java
+
+Content: 
+
+private void updateScores(){
+
+  if (!StorageService.instance.isGossipActive())   return;
+
+  if (!registered) {
+
+    if (MessagingService.instance() != null) {
+
+      MessagingService.instance().latencySubscribers.subscribe(this);
+
+      registered=true;
+
+    }
+
+  }
+
+  double maxLatency=1;
+
+  Map<InetAddressAndPort,Snapshot> snapshots=new HashMap<>(samples.size());
+
+  for (  Map.Entry<InetAddressAndPort,ExponentiallyDecayingReservoir> entry : samples.entrySet()) {
+
+    snapshots.put(entry.getKey(),entry.getValue().getSnapshot());
+
+  }
+
+  HashMap<InetAddressAndPort,Double> newScores=new HashMap<>();
+
+  for (  Map.Entry<InetAddressAndPort,Snapshot> entry : snapshots.entrySet()) {
+
+    double mean=entry.getValue().getMedian();
+
+    if (mean > maxLatency)     maxLatency=mean;
+
+  }
+
+  for (  Map.Entry<InetAddressAndPort,Snapshot> entry : snapshots.entrySet()) {
+
+    double score=entry.getValue().getMedian() / maxLatency;
+
+    if (USE_SEVERITY)     score+=getSeverity(entry.getKey());
+
+    newScores.put(entry.getKey(),score);
+
+  }
+
+  scores=newScores;
+
+}
+

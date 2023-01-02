@@ -1,0 +1,328 @@
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@code DataRange} to query all data (over the whole ring).
+
+ * @param partitioner the partitioner in use for the table.
+
+ * @return the newly create {@code DataRange}.
+
+ */
+
+public static DataRange allData(IPartitioner partitioner){
+
+  return forTokenRange(new Range<>(partitioner.getMinimumToken(),partitioner.getMinimumToken()));
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@code DataRange} to query all partitions of the ring using the providedclustering index filter.
+
+ * @param partitioner the partitioner in use for the table queried.
+
+ * @param filter the clustering index filter to use.
+
+ * @return the newly create {@code DataRange}.
+
+ */
+
+public static DataRange allData(IPartitioner partitioner,ClusteringIndexFilter filter){
+
+  return new DataRange(Range.makeRowRange(new Range<>(partitioner.getMinimumToken(),partitioner.getMinimumToken())),filter);
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+private void appendClause(PartitionPosition pos,StringBuilder sb,TableMetadata metadata,boolean isStart,boolean isInclusive){
+
+  sb.append("token(");
+
+  sb.append(ColumnMetadata.toCQLString(metadata.partitionKeyColumns()));
+
+  sb.append(") ");
+
+  if (pos instanceof DecoratedKey) {
+
+    sb.append(getOperator(isStart,isInclusive)).append(" ");
+
+    sb.append("token(");
+
+    appendKeyString(sb,metadata.partitionKeyType,((DecoratedKey)pos).getKey());
+
+    sb.append(")");
+
+  }
+
+ else {
+
+    Token.KeyBound keyBound=(Token.KeyBound)pos;
+
+    sb.append(getOperator(isStart,isStart == keyBound.isMinimumBound)).append(" ");
+
+    sb.append(keyBound.getToken());
+
+  }
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+public static void appendKeyString(StringBuilder sb,AbstractType<?> type,ByteBuffer key){
+
+  if (type instanceof CompositeType) {
+
+    CompositeType ct=(CompositeType)type;
+
+    ByteBuffer[] values=ct.split(key);
+
+    for (int i=0; i < ct.types.size(); i++)     sb.append(i == 0 ? "" : ", ").append(ct.types.get(i).getString(values[i]));
+
+  }
+
+ else {
+
+    sb.append(type.getString(key));
+
+  }
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Whether the provided ring position is covered by this  {@code DataRange}.
+
+ * @return whether the provided ring position is covered by this {@code DataRange}.
+
+ */
+
+public boolean contains(PartitionPosition pos){
+
+  return keyRange.contains(pos);
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@code DataRange} given a range of partition keys and a clustering index filter. Thereturn  {@code DataRange} will return the same filter for all keys.
+
+ * @param range the range over partition keys to use.
+
+ * @param clusteringIndexFilter the clustering index filter to use.
+
+ */
+
+public DataRange(AbstractBounds<PartitionPosition> range,ClusteringIndexFilter clusteringIndexFilter){
+
+  this.keyRange=range;
+
+  this.clusteringIndexFilter=clusteringIndexFilter;
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@code DataRange} to query all rows over the provided key range.
+
+ * @param keyRange the (partition key) range to query.
+
+ * @return the newly create {@code DataRange}.
+
+ */
+
+public static DataRange forKeyRange(Range<PartitionPosition> keyRange){
+
+  return new DataRange(keyRange,new ClusteringIndexSliceFilter(Slices.ALL,false));
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Returns a new  {@code DataRange} for use when paging {@code this} range.
+
+ * @param range the range of partition keys to query.
+
+ * @param comparator the comparator for the table queried.
+
+ * @param lastReturned the clustering for the last result returned by the previous page, i.e. the result we want to start our new pagefrom. This last returned <b>must</b> correspond to left bound of  {@code range} (in other words, {@code range.left} must be thepartition key for that  {@code lastReturned} result).
+
+ * @param inclusive whether or not we want to include the {@code lastReturned} in the newly returned page of results.
+
+ * @return a new {@code DataRange} suitable for paging {@code this} range given the {@code lastRetuned} result of the previous page.
+
+ */
+
+public DataRange forPaging(AbstractBounds<PartitionPosition> range,ClusteringComparator comparator,Clustering<?> lastReturned,boolean inclusive){
+
+  return new Paging(range,clusteringIndexFilter,comparator,lastReturned,inclusive);
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Returns a new  {@code DataRange} equivalent to {@code this} one but restricted to the provided sub-range.
+
+ * @param range the sub-range to use for the newly returned data range. Note that assumes that {@code range} is a propersub-range of the initial range but doesn't validate it. You should make sure to only provided sub-ranges however or this might throw off the paging case (see Paging.forSubRange()).
+
+ * @return a new {@code DataRange} using {@code range} as partition key range and the clustering index filter filter from {@code this}.
+
+ */
+
+public DataRange forSubRange(AbstractBounds<PartitionPosition> range){
+
+  return new DataRange(range,clusteringIndexFilter);
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@code DataRange} to query all rows over the provided token range.
+
+ * @param tokenRange the (partition key) token range to query.
+
+ * @return the newly create {@code DataRange}.
+
+ */
+
+public static DataRange forTokenRange(Range<Token> tokenRange){
+
+  return forKeyRange(Range.makeRowRange(tokenRange));
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+private static String getOperator(boolean isStart,boolean isInclusive){
+
+  return isStart ? (isInclusive ? ">=" : ">") : (isInclusive ? "<=" : "<");
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Whether the data range is for a paged request or not.
+
+ * @return true if for paging, false otherwise
+
+ */
+
+public boolean isPaging(){
+
+  return false;
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * Whether this  {@code DataRange} queries everything (has no restriction neither on thepartition queried, nor within the queried partition).
+
+ * @return Whether this {@code DataRange} queries everything.
+
+ */
+
+public boolean isUnrestricted(){
+
+  return startKey().isMinimum() && stopKey().isMinimum() && clusteringIndexFilter.selectsAllPartition();
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * The range of partition key queried by this  {@code DataRange}.
+
+ * @return the range of partition key queried by this {@code DataRange}.
+
+ */
+
+public AbstractBounds<PartitionPosition> keyRange(){
+
+  return keyRange;
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * The start of the partition key range queried by this  {@code DataRange}.
+
+ * @return the start of the partition key range queried by this {@code DataRange}.
+
+ */
+
+public PartitionPosition startKey(){
+
+  return keyRange.left;
+
+}
+
+Location: DataRange.java
+
+Content: 
+
+/** 
+
+ * The end of the partition key range queried by this  {@code DataRange}.
+
+ * @return the end of the partition key range queried by this {@code DataRange}.
+
+ */
+
+public PartitionPosition stopKey(){
+
+  return keyRange.right;
+
+}
+

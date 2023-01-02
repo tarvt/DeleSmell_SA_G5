@@ -1,0 +1,150 @@
+Location: DeserializationHelper.java
+
+Content: 
+
+public boolean canSkipValue(CellPath path){
+
+  return path != null && tester != null && !tester.fetchedCellIsQueried(path);
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public boolean canSkipValue(ColumnMetadata column){
+
+  return columnsToFetch != null && !columnsToFetch.fetchedColumnIsQueried(column);
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public DeserializationHelper(TableMetadata metadata,int version,Flag flag){
+
+  this(metadata,version,flag,null);
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public DeserializationHelper(TableMetadata metadata,int version,Flag flag,ColumnFilter columnsToFetch){
+
+  this.flag=flag;
+
+  this.version=version;
+
+  this.columnsToFetch=columnsToFetch;
+
+  this.droppedColumns=metadata.droppedColumns;
+
+  this.hasDroppedColumns=droppedColumns.size() > 0;
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public void endOfComplexColumn(){
+
+  this.tester=null;
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public boolean includes(Cell<?> cell,LivenessInfo rowLiveness){
+
+  if (columnsToFetch == null)   return true;
+
+  ColumnMetadata column=cell.column();
+
+  if (column.isComplex()) {
+
+    if (!includes(cell.path()))     return false;
+
+    return !canSkipValue(cell.path()) || cell.timestamp() >= rowLiveness.timestamp();
+
+  }
+
+ else {
+
+    return columnsToFetch.fetchedColumnIsQueried(column) || cell.timestamp() >= rowLiveness.timestamp();
+
+  }
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public boolean includes(CellPath path){
+
+  return path == null || tester == null || tester.fetches(path);
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public boolean includes(ColumnMetadata column){
+
+  return columnsToFetch == null || columnsToFetch.fetches(column);
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public boolean isDroppedComplexDeletion(DeletionTime complexDeletion){
+
+  return currentDroppedComplex != null && complexDeletion.markedForDeleteAt() <= currentDroppedComplex.droppedTime;
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public boolean isDropped(Cell<?> cell,boolean isComplex){
+
+  if (!hasDroppedColumns)   return false;
+
+  DroppedColumn dropped=isComplex ? currentDroppedComplex : droppedColumns.get(cell.column().name.bytes);
+
+  return dropped != null && cell.timestamp() <= dropped.droppedTime;
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public <V>V maybeClearCounterValue(V value,ValueAccessor<V> accessor){
+
+  return flag == Flag.FROM_REMOTE || (flag == Flag.LOCAL && CounterContext.instance().shouldClearLocal(value,accessor)) ? CounterContext.instance().clearAllLocal(value,accessor) : value;
+
+}
+
+Location: DeserializationHelper.java
+
+Content: 
+
+public void startOfComplexColumn(ColumnMetadata column){
+
+  this.tester=columnsToFetch == null ? null : columnsToFetch.newTester(column);
+
+  this.currentDroppedComplex=droppedColumns.get(column.name.bytes);
+
+}
+

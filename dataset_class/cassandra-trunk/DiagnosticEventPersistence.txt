@@ -1,0 +1,146 @@
+Location: DiagnosticEventPersistence.java
+
+Content: 
+
+public void disableEventPersistence(String eventClazz){
+
+  try {
+
+    logger.debug("Disabling events: {}",eventClazz);
+
+    DiagnosticEventService.instance().unsubscribe(getEventClass(eventClazz),eventConsumer);
+
+  }
+
+ catch (  ClassNotFoundException|InvalidClassException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: DiagnosticEventPersistence.java
+
+Content: 
+
+public void enableEventPersistence(String eventClazz){
+
+  try {
+
+    logger.debug("Enabling events: {}",eventClazz);
+
+    DiagnosticEventService.instance().subscribe(getEventClass(eventClazz),eventConsumer);
+
+  }
+
+ catch (  ClassNotFoundException|InvalidClassException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: DiagnosticEventPersistence.java
+
+Content: 
+
+private Class<DiagnosticEvent> getEventClass(String eventClazz) throws ClassNotFoundException, InvalidClassException {
+
+  if (!eventClazz.startsWith("org.apache.cassandra."))   throw new RuntimeException("Not a Cassandra event class: " + eventClazz);
+
+  Class<DiagnosticEvent> clazz=(Class<DiagnosticEvent>)Class.forName(eventClazz);
+
+  if (!(DiagnosticEvent.class.isAssignableFrom(clazz)))   throw new InvalidClassException("Event class must be of type DiagnosticEvent");
+
+  return clazz;
+
+}
+
+Location: DiagnosticEventPersistence.java
+
+Content: 
+
+public SortedMap<Long,Map<String,Serializable>> getEvents(String eventClazz,Long key,int limit,boolean includeKey){
+
+  assert eventClazz != null;
+
+  assert key != null;
+
+  assert limit >= 0;
+
+  Class cls;
+
+  try {
+
+    cls=getEventClass(eventClazz);
+
+  }
+
+ catch (  ClassNotFoundException|InvalidClassException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+  DiagnosticEventStore<Long> store=getStore(cls);
+
+  NavigableMap<Long,DiagnosticEvent> events=store.scan(key,includeKey ? limit : limit + 1);
+
+  if (!includeKey && !events.isEmpty())   events=events.tailMap(key,false);
+
+  TreeMap<Long,Map<String,Serializable>> ret=new TreeMap<>();
+
+  for (  Map.Entry<Long,DiagnosticEvent> entry : events.entrySet()) {
+
+    DiagnosticEvent event=entry.getValue();
+
+    HashMap<String,Serializable> val=new HashMap<>(event.toMap());
+
+    val.put("class",event.getClass().getName());
+
+    val.put("type",event.getType().name());
+
+    val.put("ts",event.timestamp);
+
+    val.put("thread",event.threadName);
+
+    ret.put(entry.getKey(),val);
+
+  }
+
+  logger.debug("Returning {} {} events for key {} (limit {}) (includeKey {})",ret.size(),eventClazz,key,limit,includeKey);
+
+  return ret;
+
+}
+
+Location: DiagnosticEventPersistence.java
+
+Content: 
+
+private DiagnosticEventStore<Long> getStore(Class cls){
+
+  return stores.computeIfAbsent(cls,(storeKey) -> new DiagnosticEventMemoryStore());
+
+}
+
+Location: DiagnosticEventPersistence.java
+
+Content: 
+
+private void onEvent(DiagnosticEvent event){
+
+  Class<? extends DiagnosticEvent> cls=event.getClass();
+
+  if (logger.isTraceEnabled())   logger.trace("Persisting received {} event",cls.getName());
+
+  DiagnosticEventStore<Long> store=getStore(cls);
+
+  store.store(event);
+
+  LastEventIdBroadcaster.instance().setLastEventId(event.getClass().getName(),store.getLastEventId());
+
+}
+

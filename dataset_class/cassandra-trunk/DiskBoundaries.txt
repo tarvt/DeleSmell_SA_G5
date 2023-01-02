@@ -1,0 +1,132 @@
+Location: DiskBoundaries.java
+
+Content: 
+
+public DiskBoundaries(ColumnFamilyStore cfs,Directories.DataDirectory[] directories,int diskVersion){
+
+  this(cfs,directories,null,-1,diskVersion);
+
+}
+
+Location: DiskBoundaries.java
+
+Content: 
+
+@VisibleForTesting public DiskBoundaries(ColumnFamilyStore cfs,Directories.DataDirectory[] directories,List<PartitionPosition> positions,long ringVersion,int diskVersion){
+
+  this.directories=directories == null ? null : ImmutableList.copyOf(directories);
+
+  this.positions=positions == null ? null : ImmutableList.copyOf(positions);
+
+  this.ringVersion=ringVersion;
+
+  this.directoriesVersion=diskVersion;
+
+  this.cfs=cfs;
+
+}
+
+Location: DiskBoundaries.java
+
+Content: 
+
+/** 
+
+ * Try to figure out location based on sstable directory
+
+ */
+
+public int getBoundariesFromSSTableDirectory(Descriptor descriptor){
+
+  Directories.DataDirectory actualDirectory=cfs.getDirectories().getDataDirectoryForFile(descriptor);
+
+  for (int i=0; i < directories.size(); i++) {
+
+    Directories.DataDirectory directory=directories.get(i);
+
+    if (actualDirectory != null && actualDirectory.equals(directory))     return i;
+
+  }
+
+  return 0;
+
+}
+
+Location: DiskBoundaries.java
+
+Content: 
+
+public Directories.DataDirectory getCorrectDiskForKey(DecoratedKey key){
+
+  if (positions == null)   return null;
+
+  return directories.get(getDiskIndex(key));
+
+}
+
+Location: DiskBoundaries.java
+
+Content: 
+
+public Directories.DataDirectory getCorrectDiskForSSTable(SSTableReader sstable){
+
+  return directories.get(getDiskIndex(sstable));
+
+}
+
+Location: DiskBoundaries.java
+
+Content: 
+
+private int getDiskIndex(DecoratedKey key){
+
+  int pos=Collections.binarySearch(positions,key);
+
+  assert pos < 0;
+
+  return -pos - 1;
+
+}
+
+Location: DiskBoundaries.java
+
+Content: 
+
+public int getDiskIndex(SSTableReader sstable){
+
+  if (positions == null) {
+
+    return getBoundariesFromSSTableDirectory(sstable.descriptor);
+
+  }
+
+  int pos=Collections.binarySearch(positions,sstable.first);
+
+  assert pos < 0;
+
+  return -pos - 1;
+
+}
+
+Location: DiskBoundaries.java
+
+Content: 
+
+/** 
+
+ * check if the given disk boundaries are out of date due not being set or to having too old diskVersion/ringVersion
+
+ */
+
+public boolean isOutOfDate(){
+
+  if (isInvalid)   return true;
+
+  int currentDiskVersion=DisallowedDirectories.getDirectoriesVersion();
+
+  long currentRingVersion=StorageService.instance.getTokenMetadata().getRingVersion();
+
+  return currentDiskVersion != directoriesVersion || (ringVersion != -1 && currentRingVersion != ringVersion);
+
+}
+
