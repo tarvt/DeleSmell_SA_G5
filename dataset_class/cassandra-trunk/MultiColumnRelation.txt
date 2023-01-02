@@ -1,0 +1,128 @@
+Location: MultiColumnRelation.java
+
+Content: 
+
+/** 
+
+ * Creates a multi-column IN relation with a list of IN values or markers. For example: "SELECT ... WHERE (a, b) IN ((0, 1), (2, 3))"
+
+ * @param entities the columns on the LHS of the relation
+
+ * @param inValues a list of Tuples.Literal instances or a Tuples.Raw markers
+
+ * @return a new <code>MultiColumnRelation</code> instance
+
+ */
+
+public static MultiColumnRelation createInRelation(List<ColumnIdentifier> entities,List<? extends Term.MultiColumnRaw> inValues){
+
+  return new MultiColumnRelation(entities,Operator.IN,null,inValues,null);
+
+}
+
+Location: MultiColumnRelation.java
+
+Content: 
+
+/** 
+
+ * Creates a multi-column EQ, LT, LTE, GT, or GTE relation. {@code For example: "SELECT ... WHERE (a, b) > (0, 1)"}
+
+ * @param entities the columns on the LHS of the relation
+
+ * @param relationType the relation operator
+
+ * @param valuesOrMarker a Tuples.Literal instance or a Tuples.Raw marker
+
+ * @return a new <code>MultiColumnRelation</code> instance
+
+ */
+
+public static MultiColumnRelation createNonInRelation(List<ColumnIdentifier> entities,Operator relationType,Term.MultiColumnRaw valuesOrMarker){
+
+  assert relationType != Operator.IN;
+
+  return new MultiColumnRelation(entities,relationType,valuesOrMarker,null,null);
+
+}
+
+Location: MultiColumnRelation.java
+
+Content: 
+
+/** 
+
+ * Creates a multi-column IN relation with a marker for the IN values. For example: "SELECT ... WHERE (a, b) IN ?"
+
+ * @param entities the columns on the LHS of the relation
+
+ * @param inMarker a single IN marker
+
+ * @return a new <code>MultiColumnRelation</code> instance
+
+ */
+
+public static MultiColumnRelation createSingleMarkerInRelation(List<ColumnIdentifier> entities,Tuples.INRaw inMarker){
+
+  return new MultiColumnRelation(entities,Operator.IN,null,null,inMarker);
+
+}
+
+Location: MultiColumnRelation.java
+
+Content: 
+
+public List<ColumnIdentifier> getEntities(){
+
+  return entities;
+
+}
+
+Location: MultiColumnRelation.java
+
+Content: 
+
+private MultiColumnRelation(List<ColumnIdentifier> entities,Operator relationType,Term.MultiColumnRaw valuesOrMarker,List<? extends Term.MultiColumnRaw> inValues,Tuples.INRaw inMarker){
+
+  this.entities=entities;
+
+  this.relationType=relationType;
+
+  this.valuesOrMarker=valuesOrMarker;
+
+  this.inValues=inValues;
+
+  this.inMarker=inMarker;
+
+}
+
+Location: MultiColumnRelation.java
+
+Content: 
+
+protected List<ColumnMetadata> receivers(TableMetadata table) throws InvalidRequestException {
+
+  List<ColumnMetadata> names=new ArrayList<>(getEntities().size());
+
+  int previousPosition=-1;
+
+  for (  ColumnIdentifier id : getEntities()) {
+
+    ColumnMetadata def=table.getExistingColumn(id);
+
+    checkTrue(def.isClusteringColumn(),"Multi-column relations can only be applied to clustering columns but was applied to: %s",def.name);
+
+    checkFalse(names.contains(def),"Column \"%s\" appeared twice in a relation: %s",def.name,this);
+
+    checkFalse(previousPosition != -1 && def.position() != previousPosition + 1,"Clustering columns must appear in the PRIMARY KEY order in multi-column relations: %s",this);
+
+    names.add(def);
+
+    previousPosition=def.position();
+
+  }
+
+  return names;
+
+}
+

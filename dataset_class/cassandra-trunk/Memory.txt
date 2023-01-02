@@ -1,0 +1,502 @@
+Location: Memory.java
+
+Content: 
+
+public static Memory allocate(long bytes){
+
+  if (bytes < 0)   throw new IllegalArgumentException();
+
+  if (Ref.DEBUG_ENABLED)   return new SafeMemory(bytes);
+
+  return new Memory(bytes);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public ByteBuffer[] asByteBuffers(long offset,long length){
+
+  checkBounds(offset,offset + length);
+
+  if (size() == 0)   return NO_BYTE_BUFFERS;
+
+  ByteBuffer[] result=new ByteBuffer[(int)(length / Integer.MAX_VALUE) + 1];
+
+  int size=(int)(size() / result.length);
+
+  for (int i=0; i < result.length - 1; i++) {
+
+    result[i]=MemoryUtil.getByteBuffer(peer + offset,size);
+
+    offset+=size;
+
+    length-=size;
+
+  }
+
+  result[result.length - 1]=MemoryUtil.getByteBuffer(peer + offset,(int)length);
+
+  return result;
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public ByteBuffer asByteBuffer(long offset,int length){
+
+  checkBounds(offset,offset + length);
+
+  return MemoryUtil.getByteBuffer(peer + offset,length);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+/** 
+
+ * Transfers count bytes from Memory starting at memoryOffset to buffer starting at bufferOffset
+
+ * @param memoryOffset start offset in the memory
+
+ * @param buffer the data buffer
+
+ * @param bufferOffset start offset of the buffer
+
+ * @param count number of bytes to transfer
+
+ */
+
+public void getBytes(long memoryOffset,byte[] buffer,int bufferOffset,int count){
+
+  if (buffer == null)   throw new NullPointerException();
+
+ else   if (bufferOffset < 0 || count < 0 || count > buffer.length - bufferOffset)   throw new IndexOutOfBoundsException();
+
+ else   if (count == 0)   return;
+
+  checkBounds(memoryOffset,memoryOffset + count);
+
+  FastByteOperations.UnsafeOperations.copy(null,peer + memoryOffset,buffer,bufferOffset,count);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public byte getByte(long offset){
+
+  checkBounds(offset,offset + 1);
+
+  return unsafe.getByte(peer + offset);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+private int getIntByByte(long address){
+
+  if (bigEndian) {
+
+    return ((unsafe.getByte(address)) << 24) | ((unsafe.getByte(address + 1) & 0xff) << 16) | ((unsafe.getByte(address + 2) & 0xff) << 8)| ((unsafe.getByte(address + 3) & 0xff));
+
+  }
+
+ else {
+
+    return ((unsafe.getByte(address + 3)) << 24) | ((unsafe.getByte(address + 2) & 0xff) << 16) | ((unsafe.getByte(address + 1) & 0xff) << 8)| ((unsafe.getByte(address) & 0xff));
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public int getInt(long offset){
+
+  checkBounds(offset,offset + 4);
+
+  if (Architecture.IS_UNALIGNED) {
+
+    return unsafe.getInt(peer + offset);
+
+  }
+
+ else {
+
+    return getIntByByte(peer + offset);
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+private long getLongByByte(long address){
+
+  if (bigEndian) {
+
+    return (((long)unsafe.getByte(address)) << 56) | (((long)unsafe.getByte(address + 1) & 0xff) << 48) | (((long)unsafe.getByte(address + 2) & 0xff) << 40)| (((long)unsafe.getByte(address + 3) & 0xff) << 32)| (((long)unsafe.getByte(address + 4) & 0xff) << 24)| (((long)unsafe.getByte(address + 5) & 0xff) << 16)| (((long)unsafe.getByte(address + 6) & 0xff) << 8)| (((long)unsafe.getByte(address + 7) & 0xff));
+
+  }
+
+ else {
+
+    return (((long)unsafe.getByte(address + 7)) << 56) | (((long)unsafe.getByte(address + 6) & 0xff) << 48) | (((long)unsafe.getByte(address + 5) & 0xff) << 40)| (((long)unsafe.getByte(address + 4) & 0xff) << 32)| (((long)unsafe.getByte(address + 3) & 0xff) << 24)| (((long)unsafe.getByte(address + 2) & 0xff) << 16)| (((long)unsafe.getByte(address + 1) & 0xff) << 8)| (((long)unsafe.getByte(address) & 0xff));
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public long getLong(long offset){
+
+  checkBounds(offset,offset + 8);
+
+  if (Architecture.IS_UNALIGNED) {
+
+    return unsafe.getLong(peer + offset);
+
+  }
+
+ else {
+
+    return getLongByByte(peer + offset);
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+protected Memory(long bytes){
+
+  if (bytes <= 0)   throw new AssertionError();
+
+  size=bytes;
+
+  peer=MemoryUtil.allocate(size);
+
+  if (peer == 0)   throw new OutOfMemoryError();
+
+}
+
+Location: Memory.java
+
+Content: 
+
+protected Memory(Memory copyOf){
+
+  size=copyOf.size;
+
+  peer=copyOf.peer;
+
+}
+
+Location: Memory.java
+
+Content: 
+
+private void putIntByByte(long address,int value){
+
+  if (bigEndian) {
+
+    unsafe.putByte(address,(byte)(value >> 24));
+
+    unsafe.putByte(address + 1,(byte)(value >> 16));
+
+    unsafe.putByte(address + 2,(byte)(value >> 8));
+
+    unsafe.putByte(address + 3,(byte)(value));
+
+  }
+
+ else {
+
+    unsafe.putByte(address + 3,(byte)(value >> 24));
+
+    unsafe.putByte(address + 2,(byte)(value >> 16));
+
+    unsafe.putByte(address + 1,(byte)(value >> 8));
+
+    unsafe.putByte(address,(byte)(value));
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+private void putLongByByte(long address,long value){
+
+  if (bigEndian) {
+
+    unsafe.putByte(address,(byte)(value >> 56));
+
+    unsafe.putByte(address + 1,(byte)(value >> 48));
+
+    unsafe.putByte(address + 2,(byte)(value >> 40));
+
+    unsafe.putByte(address + 3,(byte)(value >> 32));
+
+    unsafe.putByte(address + 4,(byte)(value >> 24));
+
+    unsafe.putByte(address + 5,(byte)(value >> 16));
+
+    unsafe.putByte(address + 6,(byte)(value >> 8));
+
+    unsafe.putByte(address + 7,(byte)(value));
+
+  }
+
+ else {
+
+    unsafe.putByte(address + 7,(byte)(value >> 56));
+
+    unsafe.putByte(address + 6,(byte)(value >> 48));
+
+    unsafe.putByte(address + 5,(byte)(value >> 40));
+
+    unsafe.putByte(address + 4,(byte)(value >> 32));
+
+    unsafe.putByte(address + 3,(byte)(value >> 24));
+
+    unsafe.putByte(address + 2,(byte)(value >> 16));
+
+    unsafe.putByte(address + 1,(byte)(value >> 8));
+
+    unsafe.putByte(address,(byte)(value));
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+private void putShortByByte(long address,short value){
+
+  if (bigEndian) {
+
+    unsafe.putByte(address,(byte)(value >> 8));
+
+    unsafe.putByte(address + 1,(byte)(value));
+
+  }
+
+ else {
+
+    unsafe.putByte(address + 1,(byte)(value >> 8));
+
+    unsafe.putByte(address,(byte)(value));
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void put(long trgOffset,Memory memory,long srcOffset,long size){
+
+  checkBounds(trgOffset,trgOffset + size);
+
+  memory.checkBounds(srcOffset,srcOffset + size);
+
+  unsafe.copyMemory(memory.peer + srcOffset,peer + trgOffset,size);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void setByteBuffer(ByteBuffer buffer,long offset,int length){
+
+  checkBounds(offset,offset + length);
+
+  MemoryUtil.setDirectByteBuffer(buffer,peer + offset,length);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void setBytes(long memoryOffset,ByteBuffer buffer){
+
+  if (buffer == null)   throw new NullPointerException();
+
+ else   if (buffer.remaining() == 0)   return;
+
+  checkBounds(memoryOffset,memoryOffset + buffer.remaining());
+
+  if (buffer.hasArray()) {
+
+    setBytes(memoryOffset,buffer.array(),buffer.arrayOffset() + buffer.position(),buffer.remaining());
+
+  }
+
+ else   if (buffer.isDirect()) {
+
+    unsafe.copyMemory(MemoryUtil.getAddress(buffer) + buffer.position(),peer + memoryOffset,buffer.remaining());
+
+  }
+
+ else   throw new IllegalStateException();
+
+}
+
+Location: Memory.java
+
+Content: 
+
+/** 
+
+ * Transfers count bytes from buffer to Memory
+
+ * @param memoryOffset start offset in the memory
+
+ * @param buffer the data buffer
+
+ * @param bufferOffset start offset of the buffer
+
+ * @param count number of bytes to transfer
+
+ */
+
+public void setBytes(long memoryOffset,byte[] buffer,int bufferOffset,int count){
+
+  if (buffer == null)   throw new NullPointerException();
+
+ else   if (bufferOffset < 0 || count < 0 || bufferOffset + count > buffer.length)   throw new IndexOutOfBoundsException();
+
+ else   if (count == 0)   return;
+
+  checkBounds(memoryOffset,memoryOffset + count);
+
+  unsafe.copyMemory(buffer,BYTE_ARRAY_BASE_OFFSET + bufferOffset,null,peer + memoryOffset,count);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void setByte(long offset,byte b){
+
+  checkBounds(offset,offset + 1);
+
+  unsafe.putByte(peer + offset,b);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void setInt(long offset,int l){
+
+  checkBounds(offset,offset + 4);
+
+  if (Architecture.IS_UNALIGNED) {
+
+    unsafe.putInt(peer + offset,l);
+
+  }
+
+ else {
+
+    putIntByByte(peer + offset,l);
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void setLong(long offset,long l){
+
+  checkBounds(offset,offset + 8);
+
+  if (Architecture.IS_UNALIGNED) {
+
+    unsafe.putLong(peer + offset,l);
+
+  }
+
+ else {
+
+    putLongByByte(peer + offset,l);
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void setMemory(long offset,long bytes,byte b){
+
+  checkBounds(offset,offset + bytes);
+
+  unsafe.setMemory(peer + offset,bytes,b);
+
+}
+
+Location: Memory.java
+
+Content: 
+
+public void setShort(long offset,short l){
+
+  checkBounds(offset,offset + 2);
+
+  if (Architecture.IS_UNALIGNED) {
+
+    unsafe.putShort(peer + offset,l);
+
+  }
+
+ else {
+
+    putShortByByte(peer + offset,l);
+
+  }
+
+}
+
+Location: Memory.java
+
+Content: 
+
+protected static String toString(long peer,long size){
+
+  return String.format("Memory@[%x..%x)",peer,peer + size);
+
+}
+

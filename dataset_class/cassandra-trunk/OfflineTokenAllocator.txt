@@ -1,0 +1,72 @@
+Location: OfflineTokenAllocator.java
+
+Content: 
+
+public static List<FakeNode> allocate(int rf,int numTokens,int[] nodesPerRack,OutputHandler logger,IPartitioner partitioner){
+
+  Preconditions.checkArgument(rf > 0,"rf must be greater than zero");
+
+  Preconditions.checkArgument(numTokens > 0,"num_tokens must be greater than zero");
+
+  Preconditions.checkNotNull(nodesPerRack);
+
+  Preconditions.checkArgument(nodesPerRack.length > 0,"nodesPerRack must contain a node count for at least one rack");
+
+  Preconditions.checkNotNull(logger);
+
+  Preconditions.checkNotNull(partitioner);
+
+  int nodes=Arrays.stream(nodesPerRack).sum();
+
+  Preconditions.checkArgument(nodes >= rf,"not enough nodes %s for rf %s in %s",Arrays.stream(nodesPerRack).sum(),rf,Arrays.toString(nodesPerRack));
+
+  List<FakeNode> fakeNodes=new ArrayList<>(nodes);
+
+  MultinodeAllocator allocator=new MultinodeAllocator(rf,numTokens,logger,partitioner);
+
+  nodesPerRack=Arrays.copyOf(nodesPerRack,nodesPerRack.length);
+
+  int racks=nodesPerRack.length;
+
+  int nodeId=0;
+
+  int rackId=0;
+
+  while (nodesPerRack[rackId] > 0) {
+
+    fakeNodes.add(allocator.allocateTokensForNode(nodeId++,rackId));
+
+    int nextRack=(rackId + 1) % racks;
+
+    while (nodesPerRack[nextRack] == 0 && nextRack != rackId)     nextRack=(nextRack + 1) % racks;
+
+    nodesPerRack[rackId]--;
+
+    rackId=nextRack;
+
+  }
+
+  return fakeNodes;
+
+}
+
+Location: OfflineTokenAllocator.java
+
+Content: 
+
+private static InetAddressAndPort getLoopbackAddressWithPort(int port){
+
+  try {
+
+    return InetAddressAndPort.getByAddressOverrideDefaults(InetAddress.getByName("127.0.0.1"),port);
+
+  }
+
+ catch (  UnknownHostException e) {
+
+    throw new IllegalStateException("Unexpected UnknownHostException",e);
+
+  }
+
+}
+

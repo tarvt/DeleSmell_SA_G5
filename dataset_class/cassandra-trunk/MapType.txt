@@ -1,0 +1,302 @@
+Location: MapType.java
+
+Content: 
+
+@Override protected int collectionSize(List<ByteBuffer> values){
+
+  return values.size() / 2;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public <RL,TR>int compareCustom(RL left,ValueAccessor<RL> accessorL,TR right,ValueAccessor<TR> accessorR){
+
+  return compareMaps(keys,values,left,accessorL,right,accessorR);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public static <TL,TR>int compareMaps(AbstractType<?> keysComparator,AbstractType<?> valuesComparator,TL left,ValueAccessor<TL> accessorL,TR right,ValueAccessor<TR> accessorR){
+
+  if (accessorL.isEmpty(left) || accessorR.isEmpty(right))   return Boolean.compare(accessorR.isEmpty(right),accessorL.isEmpty(left));
+
+  ProtocolVersion protocolVersion=ProtocolVersion.V3;
+
+  int sizeL=CollectionSerializer.readCollectionSize(left,accessorL,protocolVersion);
+
+  int sizeR=CollectionSerializer.readCollectionSize(right,accessorR,protocolVersion);
+
+  int offsetL=CollectionSerializer.sizeOfCollectionSize(sizeL,protocolVersion);
+
+  int offsetR=CollectionSerializer.sizeOfCollectionSize(sizeR,protocolVersion);
+
+  for (int i=0; i < Math.min(sizeL,sizeR); i++) {
+
+    TL k1=CollectionSerializer.readValue(left,accessorL,offsetL,protocolVersion);
+
+    offsetL+=CollectionSerializer.sizeOfValue(k1,accessorL,protocolVersion);
+
+    TR k2=CollectionSerializer.readValue(right,accessorR,offsetR,protocolVersion);
+
+    offsetR+=CollectionSerializer.sizeOfValue(k2,accessorR,protocolVersion);
+
+    int cmp=keysComparator.compare(k1,accessorL,k2,accessorR);
+
+    if (cmp != 0)     return cmp;
+
+    TL v1=CollectionSerializer.readValue(left,accessorL,offsetL,protocolVersion);
+
+    offsetL+=CollectionSerializer.sizeOfValue(v1,accessorL,protocolVersion);
+
+    TR v2=CollectionSerializer.readValue(right,accessorR,offsetR,protocolVersion);
+
+    offsetR+=CollectionSerializer.sizeOfValue(v2,accessorR,protocolVersion);
+
+    cmp=valuesComparator.compare(v1,accessorL,v2,accessorR);
+
+    if (cmp != 0)     return cmp;
+
+  }
+
+  return sizeL == sizeR ? 0 : (sizeL < sizeR ? -1 : 1);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public AbstractType<?> expandUserTypes(){
+
+  return getInstance(keys.expandUserTypes(),values.expandUserTypes(),isMultiCell);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public AbstractType<?> freeze(){
+
+  if (isMultiCell)   return getInstance(this.keys,this.values,false);
+
+ else   return this;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public AbstractType<?> freezeNestedMulticellTypes(){
+
+  if (!isMultiCell())   return this;
+
+  AbstractType<?> keyType=(keys.isFreezable() && keys.isMultiCell()) ? keys.freeze() : keys.freezeNestedMulticellTypes();
+
+  AbstractType<?> valueType=(values.isFreezable() && values.isMultiCell()) ? values.freeze() : values.freezeNestedMulticellTypes();
+
+  return getInstance(keyType,valueType,isMultiCell);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public static <K,V>MapType<K,V> getInstance(AbstractType<K> keys,AbstractType<V> values,boolean isMultiCell){
+
+  ConcurrentHashMap<Pair<AbstractType<?>,AbstractType<?>>,MapType> internMap=isMultiCell ? instances : frozenInstances;
+
+  Pair<AbstractType<?>,AbstractType<?>> p=Pair.create(keys,values);
+
+  MapType<K,V> t=internMap.get(p);
+
+  return null == t ? internMap.computeIfAbsent(p,k -> new MapType<>(k.left,k.right,isMultiCell)) : t;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public static MapType<?,?> getInstance(TypeParser parser) throws ConfigurationException, SyntaxException {
+
+  List<AbstractType<?>> l=parser.getTypeParameters();
+
+  if (l.size() != 2)   throw new ConfigurationException("MapType takes exactly 2 type parameters");
+
+  return getInstance(l.get(0),l.get(1),true);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public AbstractType<K> getKeysType(){
+
+  return keys;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public AbstractType<V> getValuesType(){
+
+  return values;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public boolean isCompatibleWithFrozen(CollectionType<?> previous){
+
+  assert !isMultiCell;
+
+  MapType tprev=(MapType)previous;
+
+  return keys.isCompatibleWith(tprev.keys) && values.isCompatibleWith(tprev.values);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public boolean isMultiCell(){
+
+  return isMultiCell;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public boolean isValueCompatibleWithFrozen(CollectionType<?> previous){
+
+  assert !isMultiCell;
+
+  MapType tprev=(MapType)previous;
+
+  return keys.isCompatibleWith(tprev.keys) && values.isValueCompatibleWith(tprev.values);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+private MapType(AbstractType<K> keys,AbstractType<V> values,boolean isMultiCell){
+
+  super(ComparisonType.CUSTOM,Kind.MAP);
+
+  this.keys=keys;
+
+  this.values=values;
+
+  this.serializer=MapSerializer.getInstance(keys.getSerializer(),values.getSerializer(),keys.comparatorSet);
+
+  this.isMultiCell=isMultiCell;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public AbstractType<K> nameComparator(){
+
+  return keys;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public boolean referencesDuration(){
+
+  return getValuesType().referencesDuration();
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public <T>boolean referencesUserType(T name,ValueAccessor<T> accessor){
+
+  return keys.referencesUserType(name,accessor) || values.referencesUserType(name,accessor);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public List<ByteBuffer> serializedValues(Iterator<Cell<?>> cells){
+
+  assert isMultiCell;
+
+  List<ByteBuffer> bbs=new ArrayList<ByteBuffer>();
+
+  while (cells.hasNext()) {
+
+    Cell<?> c=cells.next();
+
+    bbs.add(c.path().get(0));
+
+    bbs.add(c.buffer());
+
+  }
+
+  return bbs;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public List<AbstractType<?>> subTypes(){
+
+  return Arrays.asList(keys,values);
+
+}
+
+Location: MapType.java
+
+Content: 
+
+public AbstractType<V> valueComparator(){
+
+  return values;
+
+}
+
+Location: MapType.java
+
+Content: 
+
+@Override public MapType<?,?> withUpdatedUserType(UserType udt){
+
+  if (!referencesUserType(udt.name))   return this;
+
+  (isMultiCell ? instances : frozenInstances).remove(Pair.create(keys,values));
+
+  return getInstance(keys.withUpdatedUserType(udt),values.withUpdatedUserType(udt),isMultiCell);
+
+}
+

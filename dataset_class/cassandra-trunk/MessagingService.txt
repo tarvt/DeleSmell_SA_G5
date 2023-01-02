@@ -1,0 +1,426 @@
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Only to be invoked once we believe the connections will never be used again.
+
+ */
+
+void closeOutboundNow(OutboundConnections connections){
+
+  connections.close(true).addListener(future -> channelManagers.remove(connections.template().to,connections));
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Only to be invoked once we believe the endpoint will never be contacted again. We close the connection after a five minute delay, to give asynchronous operations a chance to terminate
+
+ */
+
+public void closeOutbound(InetAddressAndPort to){
+
+  OutboundConnections pool=channelManagers.get(to);
+
+  if (pool != null)   pool.scheduleClose(5L,MINUTES,true).addListener(future -> channelManagers.remove(to,pool));
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+private void doSend(Message message,InetAddressAndPort to,ConnectionType specifyConnection){
+
+  while (true) {
+
+    OutboundConnections connections=getOutbound(to);
+
+    try {
+
+      connections.enqueue(message,specifyConnection);
+
+      return;
+
+    }
+
+ catch (    ClosedChannelException e) {
+
+      if (isShuttingDown)       return;
+
+      channelManagers.remove(to,connections);
+
+    }
+
+  }
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+InboundMessageHandlers getInbound(InetAddressAndPort from){
+
+  InboundMessageHandlers handlers=messageHandlers.get(from);
+
+  if (null != handlers)   return handlers;
+
+  return messageHandlers.computeIfAbsent(from,addr -> new InboundMessageHandlers(FBUtilities.getLocalAddressAndPort(),addr,DatabaseDescriptor.getInternodeApplicationReceiveQueueCapacityInBytes(),DatabaseDescriptor.getInternodeApplicationReceiveQueueReserveEndpointCapacityInBytes(),inboundGlobalReserveLimits,metrics,inboundSink));
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+private OutboundConnections getOutbound(InetAddressAndPort to){
+
+  OutboundConnections connections=channelManagers.get(to);
+
+  if (connections == null)   connections=OutboundConnections.tryRegister(channelManagers,to,new OutboundConnectionSettings(to).withDefaults(ConnectionCategory.MESSAGING));
+
+  return connections;
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+public static MessagingService instance(){
+
+  return MSHandle.instance;
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Closes any current open channel/connection to the endpoint, but does not cause any message loss, and we will try to re-establish connections immediately
+
+ */
+
+public void interruptOutbound(InetAddressAndPort to){
+
+  OutboundConnections pool=channelManagers.get(to);
+
+  if (pool != null)   pool.interrupt();
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+@VisibleForTesting boolean isConnected(InetAddressAndPort address,Message<?> messageOut){
+
+  OutboundConnections pool=channelManagers.get(address);
+
+  if (pool == null)   return false;
+
+  return pool.connectionFor(messageOut).isConnected();
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+public void listen(){
+
+  inboundSockets.open();
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+void markExpiredCallback(InetAddressAndPort addr){
+
+  OutboundConnections conn=channelManagers.get(addr);
+
+  if (conn != null)   conn.incrementExpiredCallbackCount();
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Reconnect to the peer using the given  {@code addr}. Outstanding messages in each channel will be sent on the current channel. Typically this function is used for something like EC2 public IP addresses which need to be used for communication between EC2 regions.
+
+ * @param address IP Address to identify the peer
+
+ * @param preferredAddress IP Address to use (and prefer) going forward for connecting to the peer
+
+ */
+
+@SuppressWarnings("UnusedReturnValue") public Future<Void> maybeReconnectWithNewIp(InetAddressAndPort address,InetAddressAndPort preferredAddress){
+
+  if (!SystemKeyspace.updatePreferredIP(address,preferredAddress))   return null;
+
+  OutboundConnections messagingPool=channelManagers.get(address);
+
+  if (messagingPool != null)   return messagingPool.reconnectWithNewIp(preferredAddress);
+
+  return null;
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+@VisibleForTesting MessagingService(boolean testOnly){
+
+  super(testOnly);
+
+  OutboundConnections.scheduleUnusedConnectionMonitoring(this,ScheduledExecutors.scheduledTasks,1L,TimeUnit.HOURS);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Only to be invoked once we believe the connections will never be used again.
+
+ */
+
+public void removeInbound(InetAddressAndPort from){
+
+  InboundMessageHandlers handlers=messageHandlers.remove(from);
+
+  if (null != handlers)   handlers.releaseMetrics();
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Send a non-mutation message to a given endpoint. This method specifies a callback which is invoked with the actual response.
+
+ * @param message message to be sent.
+
+ * @param to      endpoint to which the message needs to be sent
+
+ * @param cb      callback interface which is used to pass the responses orsuggest that a timeout occurred to the invoker of the send().
+
+ */
+
+public void sendWithCallback(Message message,InetAddressAndPort to,RequestCallback cb){
+
+  sendWithCallback(message,to,cb,null);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+public void sendWithCallback(Message message,InetAddressAndPort to,RequestCallback cb,ConnectionType specifyConnection){
+
+  callbacks.addWithExpiration(cb,message,to);
+
+  if (cb.invokeOnFailure() && !message.callBackOnFailure())   message=message.withCallBackOnFailure();
+
+  send(message,to,specifyConnection);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Send a mutation message or a Paxos Commit to a given endpoint. This method specifies a callback which is invoked with the actual response. Also holds the message (only mutation messages) to determine if it needs to trigger a hint (uses StorageProxy for that).
+
+ * @param message message to be sent.
+
+ * @param to      endpoint to which the message needs to be sent
+
+ * @param handler callback interface which is used to pass the responses orsuggest that a timeout occurred to the invoker of the send().
+
+ */
+
+public void sendWriteWithCallback(Message message,Replica to,AbstractWriteResponseHandler<?> handler,boolean allowHints){
+
+  assert message.callBackOnFailure();
+
+  callbacks.addWithExpiration(handler,message,to,handler.consistencyLevel(),allowHints);
+
+  send(message,to.endpoint(),null);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Send a message to a given endpoint. This method adheres to the fire and forget style messaging.
+
+ * @param message messages to be sent.
+
+ * @param to      endpoint to which the message needs to be sent
+
+ */
+
+public void send(Message message,InetAddressAndPort to){
+
+  send(message,to,null);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+public void send(Message message,InetAddressAndPort to,ConnectionType specifyConnection){
+
+  if (logger.isTraceEnabled()) {
+
+    logger.trace("{} sending {} to {}@{}",FBUtilities.getBroadcastAddressAndPort(),message.verb(),message.id(),to);
+
+    if (to.equals(FBUtilities.getBroadcastAddressAndPort()))     logger.trace("Message-to-self {} going over MessagingService",message);
+
+  }
+
+  outboundSink.accept(message,to,specifyConnection);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+/** 
+
+ * Wait for callbacks and don't allow any more to be created (since they could require writing hints)
+
+ */
+
+public void shutdown(){
+
+  shutdown(1L,MINUTES,true,true);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+private void shutdownExecutors(long deadlineNanos) throws TimeoutException, InterruptedException {
+
+  socketFactory.shutdownNow();
+
+  socketFactory.awaitTerminationUntil(deadlineNanos);
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+public void shutdown(long timeout,TimeUnit units,boolean shutdownGracefully,boolean shutdownExecutors){
+
+  if (isShuttingDown) {
+
+    logger.info("Shutdown was already called");
+
+    return;
+
+  }
+
+  isShuttingDown=true;
+
+  logger.info("Waiting for messaging service to quiesce");
+
+  assert !MUTATION.executor().isShutdown();
+
+  if (shutdownGracefully) {
+
+    callbacks.shutdownGracefully();
+
+    List<Future<Void>> closing=new ArrayList<>();
+
+    for (    OutboundConnections pool : channelManagers.values())     closing.add(pool.close(true));
+
+    long deadline=System.nanoTime() + units.toNanos(timeout);
+
+    maybeFail(() -> new FutureCombiner(closing).get(timeout,units),() -> {
+
+      List<ExecutorService> inboundExecutors=new ArrayList<>();
+
+      inboundSockets.close(synchronizedList(inboundExecutors)::add).get();
+
+      ExecutorUtils.awaitTermination(1L,TimeUnit.MINUTES,inboundExecutors);
+
+    }
+
+,() -> {
+
+      if (shutdownExecutors)       shutdownExecutors(deadline);
+
+    }
+
+,() -> callbacks.awaitTerminationUntil(deadline),inboundSink::clear,outboundSink::clear);
+
+  }
+
+ else {
+
+    callbacks.shutdownNow(false);
+
+    List<Future<Void>> closing=new ArrayList<>();
+
+    List<ExecutorService> inboundExecutors=synchronizedList(new ArrayList<ExecutorService>());
+
+    closing.add(inboundSockets.close(inboundExecutors::add));
+
+    for (    OutboundConnections pool : channelManagers.values())     closing.add(pool.close(false));
+
+    long deadline=System.nanoTime() + units.toNanos(timeout);
+
+    maybeFail(() -> new FutureCombiner(closing).get(timeout,units),() -> {
+
+      if (shutdownExecutors)       shutdownExecutors(deadline);
+
+    }
+
+,() -> ExecutorUtils.awaitTermination(timeout,units,inboundExecutors),() -> callbacks.awaitTerminationUntil(deadline),inboundSink::clear,outboundSink::clear);
+
+  }
+
+}
+
+Location: MessagingService.java
+
+Content: 
+
+public void waitUntilListening() throws InterruptedException {
+
+  inboundSockets.open().await();
+
+}
+

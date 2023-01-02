@@ -1,0 +1,224 @@
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+@Override public HostDistance distance(Host host){
+
+  if (isLocalHost(host)) {
+
+    return HostDistance.LOCAL;
+
+  }
+
+ else {
+
+    return HostDistance.REMOTE;
+
+  }
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+private static Set<InetAddress> getLocalInetAddresses(){
+
+  try {
+
+    return Sets.newHashSet(Iterators.concat(Iterators.transform(Iterators.forEnumeration(NetworkInterface.getNetworkInterfaces()),new Function<NetworkInterface,Iterator<InetAddress>>(){
+
+      @Override public Iterator<InetAddress> apply(      NetworkInterface netIface){
+
+        return Iterators.forEnumeration(netIface.getInetAddresses());
+
+      }
+
+    }
+
+)));
+
+  }
+
+ catch (  SocketException e) {
+
+    logger.warn("Could not retrieve local network interfaces.",e);
+
+    return Collections.emptySet();
+
+  }
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+@Override public void init(Cluster cluster,Collection<Host> hosts){
+
+  Set<String> dcs=new HashSet<>();
+
+  for (  Host host : hosts) {
+
+    if (replicaAddresses.contains(host.getAddress()))     dcs.add(host.getDatacenter());
+
+  }
+
+  List<Host> replicaHosts=new ArrayList<>();
+
+  for (  Host host : hosts) {
+
+    if (dcs.contains(host.getDatacenter()))     replicaHosts.add(host);
+
+  }
+
+  liveReplicaHosts.addAll(replicaHosts);
+
+  allowedDCs.addAll(dcs);
+
+  logger.trace("Initialized with replica hosts: {}",replicaHosts);
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+private static boolean isLocalHost(Host host){
+
+  InetAddress hostAddress=host.getAddress();
+
+  return hostAddress.isLoopbackAddress() || localAddresses.contains(hostAddress);
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+public LimitedLocalNodeFirstLocalBalancingPolicy(String[] replicas){
+
+  for (  String replica : replicas) {
+
+    try {
+
+      InetAddress[] addresses=InetAddress.getAllByName(replica);
+
+      Collections.addAll(replicaAddresses,addresses);
+
+    }
+
+ catch (    UnknownHostException e) {
+
+      logger.warn("Invalid replica host name: {}, skipping it",replica);
+
+    }
+
+  }
+
+  if (logger.isTraceEnabled())   logger.trace("Created instance with the following replicas: {}",Arrays.asList(replicas));
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+@Override public Iterator<Host> newQueryPlan(String keyspace,Statement statement){
+
+  List<Host> local=new ArrayList<>(1);
+
+  List<Host> remote=new ArrayList<>(liveReplicaHosts.size());
+
+  for (  Host liveReplicaHost : liveReplicaHosts) {
+
+    if (isLocalHost(liveReplicaHost)) {
+
+      local.add(liveReplicaHost);
+
+    }
+
+ else {
+
+      remote.add(liveReplicaHost);
+
+    }
+
+  }
+
+  Collections.shuffle(remote);
+
+  logger.trace("Using the following hosts order for the new query plan: {} | {}",local,remote);
+
+  return Iterators.concat(local.iterator(),remote.iterator());
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+@Override public void onAdd(Host host){
+
+  if (liveReplicaHosts.contains(host)) {
+
+    liveReplicaHosts.add(host);
+
+    logger.trace("Added a new host {}",host);
+
+  }
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+@Override public void onDown(Host host){
+
+  if (liveReplicaHosts.remove(host)) {
+
+    logger.trace("The host {} is now down",host);
+
+  }
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+@Override public void onRemove(Host host){
+
+  if (liveReplicaHosts.remove(host)) {
+
+    logger.trace("Removed the host {}",host);
+
+  }
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+public void onSuspected(Host host){
+
+}
+
+Location: LimitedLocalNodeFirstLocalBalancingPolicy.java
+
+Content: 
+
+@Override public void onUp(Host host){
+
+  if (liveReplicaHosts.contains(host)) {
+
+    liveReplicaHosts.add(host);
+
+    logger.trace("The host {} is now up",host);
+
+  }
+
+}
+

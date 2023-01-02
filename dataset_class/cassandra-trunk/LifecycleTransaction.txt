@@ -1,0 +1,418 @@
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * remove the readers from the set we're modifying
+
+ */
+
+public void cancel(Iterable<SSTableReader> cancels){
+
+  for (  SSTableReader cancel : cancels)   cancel(cancel);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * remove the reader from the set we're modifying
+
+ */
+
+public void cancel(SSTableReader cancel){
+
+  logger.trace("Cancelling {} from transaction",cancel);
+
+  assert originals.contains(cancel) : "may only cancel a reader in the 'original' set: " + cancel + " vs "+ originals;
+
+  assert !(staged.contains(cancel) || logged.contains(cancel)) : "may only cancel a reader that has not been updated or obsoleted in this transaction: " + cancel;
+
+  originals.remove(cancel);
+
+  marked.remove(cancel);
+
+  identities.remove(cancel.instanceId);
+
+  maybeFail(unmarkCompacting(singleton(cancel),null));
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+private Throwable checkpoint(Throwable accumulate){
+
+  if (logger.isTraceEnabled())   logger.trace("Checkpointing staged {}",staged);
+
+  if (staged.isEmpty())   return accumulate;
+
+  Set<SSTableReader> toUpdate=toUpdate();
+
+  Set<SSTableReader> fresh=copyOf(fresh());
+
+  checkNotReplaced(filterIn(toUpdate,staged.update));
+
+  tracker.apply(compose(updateCompacting(emptySet(),fresh),updateLiveSet(toUpdate,staged.update)));
+
+  marked.addAll(fresh);
+
+  logged.log(staged);
+
+  accumulate=setReplaced(filterOut(toUpdate,staged.obsolete),accumulate);
+
+  accumulate=release(selfRefs(filterOut(toUpdate,staged.obsolete)),accumulate);
+
+  staged.clear();
+
+  return accumulate;
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * check this transaction has never been used
+
+ */
+
+private void checkUnused(){
+
+  assert logged.isEmpty();
+
+  assert staged.isEmpty();
+
+  assert identities.size() == originals.size();
+
+  assert originals.size() == marked.size();
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * new readers that haven't appeared previously (either in the original set or the logged updates)
+
+ */
+
+private Iterable<SSTableReader> fresh(){
+
+  return filterOut(staged.update,originals,logged.update);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * Get the files in the folder specified, provided that the filter returns true. A filter is given each file and its type, and decides which files should be returned and which should be discarded. To classify files into their type, we read transaction log files. Should we fail to read these log files after a few times, we look at onTxnErr to determine what to do.
+
+ * @param folder - the folder to scan
+
+ * @param onTxnErr - how to handle a failure to read a txn log file
+
+ * @param filter - A function that receives each file and its type, it should return true to have the file returned
+
+ * @return - the list of files that were scanned and for which the filter returned true
+
+ */
+
+public static List<File> getFiles(Path folder,BiPredicate<File,Directories.FileType> filter,Directories.OnTxnErr onTxnErr){
+
+  return new LogAwareFileLister(folder,filter,onTxnErr).list();
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+LifecycleTransaction(Tracker tracker,LogTransaction log,Iterable<SSTableReader> readers){
+
+  this.tracker=tracker;
+
+  this.log=log;
+
+  for (  SSTableReader reader : readers) {
+
+    originals.add(reader);
+
+    marked.add(reader);
+
+    identities.add(reader.instanceId);
+
+  }
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+@SuppressWarnings("resource") LifecycleTransaction(Tracker tracker,OperationType operationType,Iterable<SSTableReader> readers){
+
+  this(tracker,new LogTransaction(operationType,tracker),readers);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * construct an empty Transaction with no existing readers
+
+ */
+
+@SuppressWarnings("resource") public static LifecycleTransaction offline(OperationType operationType){
+
+  Tracker dummy=new Tracker(null,false);
+
+  return new LifecycleTransaction(dummy,new LogTransaction(operationType,dummy),Collections.emptyList());
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * construct a Transaction for use in an offline operation
+
+ */
+
+public static LifecycleTransaction offline(OperationType operationType,Iterable<SSTableReader> readers){
+
+  Tracker dummy=new Tracker(null,false);
+
+  dummy.addInitialSSTables(readers);
+
+  dummy.apply(updateCompacting(emptySet(),readers));
+
+  return new LifecycleTransaction(dummy,operationType,readers);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * construct a Transaction for use in an offline operation
+
+ */
+
+public static LifecycleTransaction offline(OperationType operationType,SSTableReader reader){
+
+  return offline(operationType,singleton(reader));
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+public SSTableReader onlyOne(){
+
+  assert originals.size() == 1;
+
+  return getFirst(originals,null);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+public UUID opId(){
+
+  return log.id();
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+public static boolean removeUnfinishedLeftovers(ColumnFamilyStore cfs){
+
+  return LogTransaction.removeUnfinishedLeftovers(cfs.getDirectories().getCFDirectories());
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * update the current replacement of any original reader back to its original start
+
+ */
+
+private List<SSTableReader> restoreUpdatedOriginals(){
+
+  Iterable<SSTableReader> torestore=filterIn(originals,logged.update,logged.obsolete);
+
+  return ImmutableList.copyOf(transform(torestore,(reader) -> current(reader).cloneWithRestoredStart(reader.first)));
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+private static Throwable runHooks(Iterable<Runnable> hooks,Throwable accumulate){
+
+  for (  Runnable hook : hooks) {
+
+    try {
+
+      hook.run();
+
+    }
+
+ catch (    Exception e) {
+
+      accumulate=Throwables.merge(accumulate,e);
+
+    }
+
+  }
+
+  return accumulate;
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+private Throwable runOnAbortooks(Throwable accumulate){
+
+  return runHooks(abortHooks,accumulate);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+public void runOnAbort(Runnable fn){
+
+  abortHooks.add(fn);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+private Throwable runOnCommitHooks(Throwable accumulate){
+
+  return runHooks(commitHooks,accumulate);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+public void runOnCommit(Runnable fn){
+
+  commitHooks.add(fn);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * remove the provided readers from this Transaction, and return a new Transaction to manage them only permitted to be called if the current Transaction has never been used
+
+ */
+
+public LifecycleTransaction split(Collection<SSTableReader> readers){
+
+  logger.trace("Splitting {} into new transaction",readers);
+
+  checkUnused();
+
+  for (  SSTableReader reader : readers)   assert identities.contains(reader.instanceId) : "may only split the same reader instance the transaction was opened with: " + reader;
+
+  for (  SSTableReader reader : readers) {
+
+    identities.remove(reader.instanceId);
+
+    originals.remove(reader);
+
+    marked.remove(reader);
+
+  }
+
+  return new LifecycleTransaction(tracker,log.type(),readers);
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+@VisibleForTesting public ReaderState state(SSTableReader reader){
+
+  SSTableReader currentlyVisible=ReaderState.visible(reader,in(logged.obsolete),logged.update,originals);
+
+  SSTableReader nextVisible=ReaderState.visible(reader,orIn(staged.obsolete,logged.obsolete),staged.update,logged.update,originals);
+
+  return new ReaderState(ReaderState.Action.get(logged.update.contains(reader),logged.obsolete.contains(reader)),ReaderState.Action.get(staged.update.contains(reader),staged.obsolete.contains(reader)),currentlyVisible,nextVisible,originals.contains(reader));
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+/** 
+
+ * return the readers we're replacing in checkpoint(), i.e. the currently visible version of those in staged
+
+ */
+
+private Set<SSTableReader> toUpdate(){
+
+  return copyOf(filterIn(current(),staged.obsolete,staged.update));
+
+}
+
+Location: LifecycleTransaction.java
+
+Content: 
+
+private Throwable unmarkCompacting(Set<SSTableReader> unmark,Throwable accumulate){
+
+  accumulate=tracker.apply(updateCompacting(unmark,emptySet()),accumulate);
+
+  accumulate=tracker.dropSSTablesIfInvalid(accumulate);
+
+  return accumulate;
+
+}
+

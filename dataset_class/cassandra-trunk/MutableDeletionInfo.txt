@@ -1,0 +1,254 @@
+Location: MutableDeletionInfo.java
+
+Content: 
+
+/** 
+
+ * Combines another DeletionInfo with this one and returns the result.  Whichever top-level tombstone has the higher markedForDeleteAt timestamp will be kept, along with its localDeletionTime.  The range tombstones will be combined.
+
+ * @return this object.
+
+ */
+
+public DeletionInfo add(DeletionInfo newInfo){
+
+  add(newInfo.getPartitionDeletion());
+
+  assert newInfo instanceof MutableDeletionInfo;
+
+  RangeTombstoneList newRanges=((MutableDeletionInfo)newInfo).ranges;
+
+  if (ranges == null)   ranges=newRanges == null ? null : newRanges.copy();
+
+ else   if (newRanges != null)   ranges.addAll(newRanges);
+
+  return this;
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+/** 
+
+ * Potentially replaces the top-level tombstone with another, keeping whichever has the higher markedForDeleteAt timestamp.
+
+ * @param newInfo the deletion time to add to this deletion info.
+
+ */
+
+public void add(DeletionTime newInfo){
+
+  if (newInfo.supersedes(partitionDeletion))   partitionDeletion=newInfo;
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public void add(RangeTombstone tombstone,ClusteringComparator comparator){
+
+  if (ranges == null)   ranges=new RangeTombstoneList(comparator,DatabaseDescriptor.getInitialRangeTombstoneListAllocationSize());
+
+  ranges.add(tombstone);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public static Builder builder(DeletionTime partitionLevelDeletion,ClusteringComparator comparator,boolean reversed){
+
+  return new Builder(partitionLevelDeletion,comparator,reversed);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public void collectStats(EncodingStats.Collector collector){
+
+  collector.update(partitionDeletion);
+
+  if (ranges != null)   ranges.collectStats(collector);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public DeletionTime getPartitionDeletion(){
+
+  return partitionDeletion;
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public boolean hasRanges(){
+
+  return ranges != null && !ranges.isEmpty();
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+/** 
+
+ * Returns a new DeletionInfo that has no top-level tombstone or any range tombstones.
+
+ */
+
+public static MutableDeletionInfo live(){
+
+  return new MutableDeletionInfo(DeletionTime.LIVE);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+/** 
+
+ * Whether this deletion info may modify the provided one if added to it.
+
+ */
+
+public boolean mayModify(DeletionInfo delInfo){
+
+  return partitionDeletion.compareTo(delInfo.getPartitionDeletion()) > 0 || hasRanges();
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public MutableDeletionInfo mutableCopy(){
+
+  return new MutableDeletionInfo(partitionDeletion,ranges == null ? null : ranges.copy());
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public MutableDeletionInfo(DeletionTime partitionDeletion){
+
+  this(partitionDeletion,null);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public MutableDeletionInfo(DeletionTime partitionDeletion,RangeTombstoneList ranges){
+
+  this.partitionDeletion=partitionDeletion;
+
+  this.ranges=ranges;
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+/** 
+
+ * Creates a DeletionInfo with only a top-level (row) tombstone.
+
+ * @param markedForDeleteAt the time after which the entire row should be considered deleted
+
+ * @param localDeletionTime what time the deletion write was applied locally (for purposes ofpurging the tombstone after gc_grace_seconds).
+
+ */
+
+public MutableDeletionInfo(long markedForDeleteAt,int localDeletionTime){
+
+  this(new DeletionTime(markedForDeleteAt,localDeletionTime == Integer.MIN_VALUE ? Integer.MAX_VALUE : localDeletionTime));
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public int rangeCount(){
+
+  return hasRanges() ? ranges.size() : 0;
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public RangeTombstone rangeCovering(Clustering<?> name){
+
+  return ranges == null ? null : ranges.search(name);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public Iterator<RangeTombstone> rangeIterator(boolean reversed){
+
+  return ranges == null ? Collections.emptyIterator() : ranges.iterator(reversed);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+public Iterator<RangeTombstone> rangeIterator(Slice slice,boolean reversed){
+
+  return ranges == null ? Collections.emptyIterator() : ranges.iterator(slice,reversed);
+
+}
+
+Location: MutableDeletionInfo.java
+
+Content: 
+
+private String rangesAsString(){
+
+  assert !ranges.isEmpty();
+
+  StringBuilder sb=new StringBuilder();
+
+  ClusteringComparator cc=ranges.comparator();
+
+  Iterator<RangeTombstone> iter=rangeIterator(false);
+
+  while (iter.hasNext()) {
+
+    RangeTombstone i=iter.next();
+
+    sb.append(i.deletedSlice().toString(cc));
+
+    sb.append('@');
+
+    sb.append(i.deletionTime());
+
+  }
+
+  return sb.toString();
+
+}
+

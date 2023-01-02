@@ -1,0 +1,176 @@
+Location: LatencyMetrics.java
+
+Content: 
+
+private void addChildren(LatencyMetrics latencyMetric){
+
+  this.children.add(latencyMetric);
+
+}
+
+Location: LatencyMetrics.java
+
+Content: 
+
+/** 
+
+ * takes nanoseconds 
+
+ */
+
+public void addNano(long nanos){
+
+  latency.update(nanos,TimeUnit.NANOSECONDS);
+
+  totalLatency.inc(nanos / 1000);
+
+}
+
+Location: LatencyMetrics.java
+
+Content: 
+
+public LatencyMetrics(MetricNameFactory factory,MetricNameFactory aliasFactory,String namePrefix){
+
+  this.factory=factory;
+
+  this.aliasFactory=aliasFactory;
+
+  this.namePrefix=namePrefix;
+
+  LatencyMetricsTimer timer=new LatencyMetrics.LatencyMetricsTimer(new DecayingEstimatedHistogramReservoir());
+
+  Counter counter=new LatencyMetricsCounter();
+
+  if (aliasFactory == null) {
+
+    latency=Metrics.register(factory.createMetricName(namePrefix + "Latency"),timer);
+
+    totalLatency=Metrics.register(factory.createMetricName(namePrefix + "TotalLatency"),counter);
+
+  }
+
+ else {
+
+    latency=Metrics.register(factory.createMetricName(namePrefix + "Latency"),aliasFactory.createMetricName(namePrefix + "Latency"),timer);
+
+    totalLatency=Metrics.register(factory.createMetricName(namePrefix + "TotalLatency"),aliasFactory.createMetricName(namePrefix + "TotalLatency"),counter);
+
+  }
+
+}
+
+Location: LatencyMetrics.java
+
+Content: 
+
+/** 
+
+ * Create LatencyMetrics with given group, type, prefix to append to each metric name, and scope.
+
+ * @param factory MetricName factory to use
+
+ * @param namePrefix Prefix to append to each metric name
+
+ */
+
+public LatencyMetrics(MetricNameFactory factory,String namePrefix){
+
+  this(factory,null,namePrefix);
+
+}
+
+Location: LatencyMetrics.java
+
+Content: 
+
+/** 
+
+ * Create LatencyMetrics with given group, type, prefix to append to each metric name, and scope.  Any updates to this will also run on parent
+
+ * @param factory MetricName factory to use
+
+ * @param namePrefix Prefix to append to each metric name
+
+ * @param parents any amount of parents to replicate updates to
+
+ */
+
+public LatencyMetrics(MetricNameFactory factory,String namePrefix,LatencyMetrics... parents){
+
+  this(factory,null,namePrefix);
+
+  this.parents=Arrays.asList(parents);
+
+  for (  LatencyMetrics parent : parents) {
+
+    parent.addChildren(this);
+
+  }
+
+}
+
+Location: LatencyMetrics.java
+
+Content: 
+
+/** 
+
+ * Create LatencyMetrics with given group, type, and scope. Name prefix for each metric will be empty.
+
+ * @param type Type name
+
+ * @param scope Scope
+
+ */
+
+public LatencyMetrics(String type,String scope){
+
+  this(type,"",scope);
+
+}
+
+Location: LatencyMetrics.java
+
+Content: 
+
+/** 
+
+ * Create LatencyMetrics with given group, type, prefix to append to each metric name, and scope.
+
+ * @param type Type name
+
+ * @param namePrefix Prefix to append to each metric name
+
+ * @param scope Scope of metrics
+
+ */
+
+public LatencyMetrics(String type,String namePrefix,String scope){
+
+  this(new DefaultNameFactory(type,scope),namePrefix);
+
+}
+
+Location: LatencyMetrics.java
+
+Content: 
+
+private synchronized void removeChildren(LatencyMetrics toRelease){
+
+  this.latency.releasedLatencyCount+=toRelease.latency.getCount();
+
+  DecayingEstimatedHistogramReservoir.EstimatedHistogramReservoirSnapshot childSnapshot=(DecayingEstimatedHistogramReservoir.EstimatedHistogramReservoirSnapshot)toRelease.latency.getSnapshot();
+
+  DecayingEstimatedHistogramReservoir.EstimatedHistogramReservoirSnapshot snapshot=(DecayingEstimatedHistogramReservoir.EstimatedHistogramReservoirSnapshot)this.latency.getSnapshot();
+
+  snapshot.add(childSnapshot);
+
+  snapshot.rebaseReservoir();
+
+  this.totalLatency.inc(toRelease.totalLatency.getCount());
+
+  this.children.removeIf(latencyMetrics -> latencyMetrics.equals(toRelease));
+
+}
+

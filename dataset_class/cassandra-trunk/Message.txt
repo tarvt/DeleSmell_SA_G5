@@ -1,0 +1,558 @@
+Location: Message.java
+
+Content: 
+
+private static Map<ParamType,Object> addParam(Map<ParamType,Object> params,ParamType type,Object value){
+
+  if (type == null)   return params;
+
+  params=new EnumMap<>(params);
+
+  params.put(type,value);
+
+  return params;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static <T>Builder<T> builder(Message<T> message){
+
+  return new Builder<T>().from(message.from()).withId(message.id()).ofVerb(message.verb()).withCreatedAt(message.createdAtNanos()).withExpiresAt(message.expiresAtNanos()).withFlags(message.header.flags).withParams(message.header.params).withPayload(message.payload);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static <T>Builder<T> builder(Verb verb,T payload){
+
+  return new Builder<T>().ofVerb(verb).withCreatedAt(approxTime.now()).withPayload(payload);
+
+}
+
+Location: Message.java
+
+Content: 
+
+private static Map<ParamType,Object> buildParams(ParamType type,Object value){
+
+  Map<ParamType,Object> params=NO_PARAMS;
+
+  if (Tracing.isTracing())   params=Tracing.instance.addTraceHeaders(new EnumMap<>(ParamType.class));
+
+  if (type != null) {
+
+    if (params.isEmpty())     params=new EnumMap<>(ParamType.class);
+
+    params.put(type,value);
+
+  }
+
+  return params;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Whether a failure response should be returned upon failure 
+
+ */
+
+boolean callBackOnFailure(){
+
+  return header.callBackOnFailure();
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Creation time of the message. If cross-node timeouts are enabled ( {@link DatabaseDescriptor#hasCrossNodeTimeout()}, {@code deserialize()} will use the marshalled value, otherwise will use current time on the deserializing machine.
+
+ */
+
+public long createdAtNanos(){
+
+  return header.createdAtNanos;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public long creationTimeMillis(){
+
+  return approxTime.translate().toMillisSinceEpoch(createdAtNanos());
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * For how long the message has lived. 
+
+ */
+
+public long elapsedSinceCreated(TimeUnit units){
+
+  return units.convert(approxTime.now() - createdAtNanos(),NANOSECONDS);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Builds a response Message with no payload, and all the right fields inferred from request Message 
+
+ */
+
+public Message<NoPayload> emptyResponse(){
+
+  return responseWith(NoPayload.noPayload);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public long expiresAtNanos(){
+
+  return header.expiresAtNanos;
+
+}
+
+Location: Message.java
+
+Content: 
+
+static Message<RequestFailureReason> failureResponse(long id,long expiresAtNanos,RequestFailureReason reason){
+
+  return outWithParam(id,Verb.FAILURE_RSP,expiresAtNanos,reason,null,null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Builds a failure response Message with an explicit reason, and fields inferred from request Message 
+
+ */
+
+public Message<RequestFailureReason> failureResponse(RequestFailureReason reason){
+
+  return failureResponse(id(),expiresAtNanos(),reason);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Used for cross-DC write optimisation - pick one node in the DC and have it relay the write to its local peers 
+
+ */
+
+@Nullable public ForwardingInfo forwardTo(){
+
+  return header.forwardTo();
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Sender of the message. 
+
+ */
+
+public InetAddressAndPort from(){
+
+  return header.from;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * WARNING: this is inaccurate for messages from pre40 nodes, which can use 0 as an id (but will do so rarely)
+
+ */
+
+@VisibleForTesting boolean hasId(){
+
+  return id() != NO_ID;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static <T>Message<T> internalResponse(Verb verb,T payload){
+
+  assert verb.isResponse();
+
+  return outWithParam(0,verb,payload,null,null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Whether the message has crossed the node boundary, that is whether it originated from another node. 
+
+ */
+
+public boolean isCrossNode(){
+
+  return !from().equals(FBUtilities.getBroadcastAddressAndPort());
+
+}
+
+Location: Message.java
+
+Content: 
+
+boolean isFailureResponse(){
+
+  return verb() == Verb.FAILURE_RSP;
+
+}
+
+Location: Message.java
+
+Content: 
+
+private Message(Header header,T payload){
+
+  this.header=header;
+
+  this.payload=payload;
+
+}
+
+Location: Message.java
+
+Content: 
+
+private static long nextId(){
+
+  long id;
+
+  do {
+
+    id=nextId.incrementAndGet();
+
+  }
+
+ while (id == NO_ID);
+
+  return id;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static <T>Message<T> outWithFlags(Verb verb,T payload,MessageFlag flag1,MessageFlag flag2){
+
+  assert !verb.isResponse();
+
+  return outWithParam(nextId(),verb,0,payload,flag2.addTo(flag1.addTo(0)),null,null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static <T>Message<T> outWithFlag(Verb verb,T payload,MessageFlag flag){
+
+  assert !verb.isResponse();
+
+  return outWithParam(nextId(),verb,0,payload,flag.addTo(0),null,null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+private static <T>Message<T> outWithParam(long id,Verb verb,long expiresAtNanos,T payload,int flags,ParamType paramType,Object paramValue){
+
+  if (payload == null)   throw new IllegalArgumentException();
+
+  InetAddressAndPort from=FBUtilities.getBroadcastAddressAndPort();
+
+  long createdAtNanos=approxTime.now();
+
+  if (expiresAtNanos == 0)   expiresAtNanos=verb.expiresAtNanos(createdAtNanos);
+
+  return new Message<>(new Header(id,verb,from,createdAtNanos,expiresAtNanos,flags,buildParams(paramType,paramValue)),payload);
+
+}
+
+Location: Message.java
+
+Content: 
+
+private static <T>Message<T> outWithParam(long id,Verb verb,long expiresAtNanos,T payload,ParamType paramType,Object paramValue){
+
+  return outWithParam(id,verb,expiresAtNanos,payload,0,paramType,paramValue);
+
+}
+
+Location: Message.java
+
+Content: 
+
+static <T>Message<T> outWithParam(long id,Verb verb,T payload,ParamType paramType,Object paramValue){
+
+  return outWithParam(id,verb,0,payload,paramType,paramValue);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Make a request  {@link Message} with supplied verb and payload. Will fill in remaining fieldsautomatically. If you know that you will need to set some params or flags - prefer using variants of  {@code out()}that allow providing them at point of message constructions, rather than allocating new messages with those added flags and params. See  {@code outWithFlag()},  {@code outWithFlags()}, and  {@code outWithParam()}family.
+
+ */
+
+public static <T>Message<T> out(Verb verb,T payload){
+
+  assert !verb.isResponse();
+
+  return outWithParam(nextId(),verb,payload,null,null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static <T>Message<T> out(Verb verb,T payload,long expiresAtNanos){
+
+  return outWithParam(nextId(),verb,expiresAtNanos,payload,0,null,null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+private int payloadSize(int version){
+
+switch (version) {
+
+case VERSION_30:
+
+    if (payloadSize30 < 0)     payloadSize30=serializer.payloadSize(this,VERSION_30);
+
+  return payloadSize30;
+
+case VERSION_3014:
+
+if (payloadSize3014 < 0) payloadSize3014=serializer.payloadSize(this,VERSION_3014);
+
+return payloadSize3014;
+
+case VERSION_40:
+
+if (payloadSize40 < 0) payloadSize40=serializer.payloadSize(this,VERSION_40);
+
+return payloadSize40;
+
+default :
+
+throw new IllegalStateException();
+
+}
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * The originator of the request - used when forwarding and will differ from  {@link #from()} 
+
+ */
+
+@Nullable public InetAddressAndPort respondTo(){
+
+  return header.respondTo();
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Builds a response Message with provided payload, and all the right fields inferred from request Message 
+
+ */
+
+public <T>Message<T> responseWith(T payload){
+
+  return outWithParam(id(),verb().responseVerb,expiresAtNanos(),payload,null,null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Serialized size of the entire message, for the provided messaging version. Caches the calculated value.
+
+ */
+
+public int serializedSize(int version){
+
+switch (version) {
+
+case VERSION_30:
+
+    if (serializedSize30 == 0)     serializedSize30=serializer.serializedSize(this,VERSION_30);
+
+  return serializedSize30;
+
+case VERSION_3014:
+
+if (serializedSize3014 == 0) serializedSize3014=serializer.serializedSize(this,VERSION_3014);
+
+return serializedSize3014;
+
+case VERSION_40:
+
+if (serializedSize40 == 0) serializedSize40=serializer.serializedSize(this,VERSION_40);
+
+return serializedSize40;
+
+default :
+
+throw new IllegalStateException();
+
+}
+
+}
+
+Location: Message.java
+
+Content: 
+
+@Nullable public UUID traceSession(){
+
+  return header.traceSession();
+
+}
+
+Location: Message.java
+
+Content: 
+
+@Nullable public TraceType traceType(){
+
+  return header.traceType();
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * See CASSANDRA-14145 
+
+ */
+
+public boolean trackRepairedData(){
+
+  return header.trackRepairedData();
+
+}
+
+Location: Message.java
+
+Content: 
+
+static void validateLegacyProtocolMagic(int magic) throws InvalidLegacyProtocolMagic {
+
+  if (magic != PROTOCOL_MAGIC)   throw new InvalidLegacyProtocolMagic(magic);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Verb verb(){
+
+  return header.verb;
+
+}
+
+Location: Message.java
+
+Content: 
+
+Message<T> withCallBackOnFailure(){
+
+  return new Message<>(header.withFlag(MessageFlag.CALL_BACK_ON_FAILURE),payload);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message<T> withForwardTo(ForwardingInfo peers){
+
+  return new Message<>(header.withParam(ParamType.FORWARD_TO,peers),payload);
+
+}
+

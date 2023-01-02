@@ -1,0 +1,256 @@
+Location: MappedBuffer.java
+
+Content: 
+
+public int comparePageTo(long offset,int length,AbstractType<?> comparator,ByteBuffer other){
+
+  return comparator.compare(getPageRegion(offset,length),other);
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public MappedBuffer duplicate(){
+
+  return new MappedBuffer(this);
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public int getInt(){
+
+  int value=getInt(position);
+
+  position+=4;
+
+  return value;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public long getLong(){
+
+  long value=getLong(position);
+
+  position+=8;
+
+  return value;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+private int getPageOffset(long position){
+
+  return (int)(position & pageSize - 1);
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public ByteBuffer getPageRegion(long position,int length){
+
+  if (!isPageAligned(position,length))   throw new IllegalArgumentException(String.format("range: %s-%s wraps more than one page",position,length));
+
+  ByteBuffer slice=pages[getPage(position)].duplicate();
+
+  int pageOffset=getPageOffset(position);
+
+  slice.position(pageOffset).limit(pageOffset + length);
+
+  return slice;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+private int getPage(long position){
+
+  return (int)(position >> sizeBits);
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public short getShort(){
+
+  short value=getShort(position);
+
+  position+=2;
+
+  return value;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public short getShort(long pos){
+
+  if (isPageAligned(pos,2))   return pages[getPage(pos)].getShort(getPageOffset(pos));
+
+  int ch1=get(pos) & 0xff;
+
+  int ch2=get(pos + 1) & 0xff;
+
+  return (short)((ch1 << 8) + ch2);
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public byte get(long pos){
+
+  return pages[getPage(pos)].get(getPageOffset(pos));
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+private boolean isPageAligned(long position,int length){
+
+  return pageSize - (getPageOffset(position) + length) > 0;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public long limit(){
+
+  return limit;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public MappedBuffer limit(long newLimit){
+
+  if (newLimit < position || newLimit > capacity)   throw new IllegalArgumentException();
+
+  limit=newLimit;
+
+  return this;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public MappedBuffer(ChannelProxy file){
+
+  this(file,30);
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+@VisibleForTesting protected MappedBuffer(ChannelProxy file,int numPageBits){
+
+  if (numPageBits > Integer.SIZE - 1)   throw new IllegalArgumentException("page size can't be bigger than 1G");
+
+  sizeBits=numPageBits;
+
+  pageSize=1 << sizeBits;
+
+  position=0;
+
+  limit=capacity=file.size();
+
+  pages=new MappedByteBuffer[(int)(file.size() / pageSize) + 1];
+
+  try {
+
+    long offset=0;
+
+    for (int i=0; i < pages.length; i++) {
+
+      long pageSize=Math.min(this.pageSize,(capacity - offset));
+
+      pages[i]=file.map(MapMode.READ_ONLY,offset,pageSize);
+
+      offset+=pageSize;
+
+    }
+
+  }
+
+  finally {
+
+    file.close();
+
+  }
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+private MappedBuffer(MappedBuffer other){
+
+  this.sizeBits=other.sizeBits;
+
+  this.pageSize=other.pageSize;
+
+  this.position=other.position;
+
+  this.limit=other.limit;
+
+  this.capacity=other.capacity;
+
+  this.pages=other.pages;
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public MappedBuffer(RandomAccessReader file){
+
+  this(file.getChannel(),30);
+
+}
+
+Location: MappedBuffer.java
+
+Content: 
+
+public MappedBuffer position(long newPosition){
+
+  if (newPosition < 0 || newPosition > limit)   throw new IllegalArgumentException("position: " + newPosition + ", limit: "+ limit);
+
+  position=newPosition;
+
+  return this;
+
+}
+

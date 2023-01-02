@@ -1,0 +1,480 @@
+Location: LogFile.java
+
+Content: 
+
+boolean aborted(){
+
+  return isLastRecordValidWithType(Type.ABORT);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+public void addAll(Type type,Iterable<SSTableReader> toBulkAdd){
+
+  for (  LogRecord record : makeRecords(type,toBulkAdd).values())   addRecord(record);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+void addRecord(LogRecord record){
+
+  if (completed())   throw new IllegalStateException("Transaction already completed");
+
+  if (records.contains(record))   throw new IllegalStateException("Record already exists");
+
+  replicas.append(record);
+
+  if (!records.add(record))   throw new IllegalStateException("Failed to add record");
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+void add(SSTable table){
+
+  addRecord(makeAddRecord(table));
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+boolean committed(){
+
+  return isLastRecordValidWithType(Type.COMMIT);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+boolean completed(){
+
+  return committed() || aborted();
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+private boolean contains(LogRecord record){
+
+  return records.contains(record);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+boolean contains(Type type,SSTable sstable,LogRecord record){
+
+  return contains(makeRecord(type,sstable,record));
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+void deleteFilesForRecordsOfType(Type type){
+
+  assert type == Type.REMOVE || type == Type.ADD;
+
+  Set<String> absolutePaths=new HashSet<>();
+
+  for (  LogRecord record : records) {
+
+    if (type.matches(record)) {
+
+      assert record.absolutePath.isPresent() : "type is either REMOVE or ADD, record should always have an absolutePath: " + record;
+
+      absolutePaths.add(record.absolutePath.get());
+
+    }
+
+  }
+
+  Map<String,List<File>> existingFiles=LogRecord.getExistingFiles(absolutePaths);
+
+  for (  List<File> toDelete : existingFiles.values())   LogFile.deleteRecordFiles(toDelete);
+
+  records.clear();
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+private static void deleteRecordFiles(List<File> existingFiles){
+
+  existingFiles.sort(Comparator.comparingLong(File::lastModified));
+
+  existingFiles.forEach(LogTransaction::delete);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+/** 
+
+ * Extract from the files passed in all those that are of the given type. Scan all records and select those that are of the given type, valid, and located in the same folder. For each such record extract from the files passed in those that belong to this record.
+
+ * @return a map linking each mapped record to its files, where the files where passed in as parameters.
+
+ */
+
+Map<LogRecord,Set<File>> getFilesOfType(Path folder,NavigableSet<File> files,Type type){
+
+  Map<LogRecord,Set<File>> ret=new HashMap<>();
+
+  records.stream().filter(type::matches).filter(LogRecord::isValid).filter(r -> r.isInFolder(folder)).forEach((r) -> ret.put(r,getRecordFiles(files,r)));
+
+  return ret;
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+LogRecord getLastRecord(){
+
+  return Iterables.getLast(records,null);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+private static Set<File> getRecordFiles(NavigableSet<File> files,LogRecord record){
+
+  String fileName=record.fileName();
+
+  return files.stream().filter(f -> f.getName().startsWith(fileName)).collect(Collectors.toSet());
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+private boolean isLastRecordValidWithType(Type type){
+
+  LogRecord lastRecord=getLastRecord();
+
+  return lastRecord != null && lastRecord.type == type && lastRecord.isValid();
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+static boolean isLogFile(File file){
+
+  return LogFile.FILE_REGEX.matcher(file.getName()).matches();
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+LogFile(OperationType type,UUID id){
+
+  this.type=type;
+
+  this.id=id;
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+LogFile(OperationType type,UUID id,List<File> replicas){
+
+  this(type,id);
+
+  this.replicas.addReplicas(replicas);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+private LogRecord makeAddRecord(SSTable table){
+
+  File directory=table.descriptor.directory;
+
+  String fileName=StringUtils.join(directory,File.separator,getFileName());
+
+  replicas.maybeCreateReplica(directory,fileName,records);
+
+  return LogRecord.make(Type.ADD,table);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+Map<SSTable,LogRecord> makeRecords(Type type,Iterable<SSTableReader> tables){
+
+  assert type == Type.ADD || type == Type.REMOVE;
+
+  for (  SSTableReader sstable : tables) {
+
+    File directory=sstable.descriptor.directory;
+
+    String fileName=StringUtils.join(directory,File.separator,getFileName());
+
+    replicas.maybeCreateReplica(directory,fileName,records);
+
+  }
+
+  return LogRecord.make(type,tables);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+/** 
+
+ * this version of makeRecord takes an existing LogRecord and converts it to a record with the given type. This avoids listing the directory and if the LogRecord already exists, we have all components for the sstable
+
+ */
+
+private LogRecord makeRecord(Type type,SSTable table,LogRecord record){
+
+  assert type == Type.ADD || type == Type.REMOVE;
+
+  File directory=table.descriptor.directory;
+
+  String fileName=StringUtils.join(directory,File.separator,getFileName());
+
+  replicas.maybeCreateReplica(directory,fileName,records);
+
+  return record.asType(type);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+static LogFile make(File logReplica){
+
+  return make(logReplica.getName(),Collections.singletonList(logReplica));
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+static LogFile make(String fileName,List<File> logReplicas){
+
+  Matcher matcher=LogFile.FILE_REGEX.matcher(fileName);
+
+  boolean matched=matcher.matches();
+
+  assert matched && matcher.groupCount() == 3;
+
+  OperationType operationType=OperationType.fromFileName(matcher.group(2));
+
+  UUID id=UUID.fromString(matcher.group(3));
+
+  return new LogFile(operationType,id,logReplicas);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+Throwable removeUnfinishedLeftovers(Throwable accumulate){
+
+  try {
+
+    Throwables.maybeFail(syncDirectory(accumulate));
+
+    deleteFilesForRecordsOfType(committed() ? Type.REMOVE : Type.ADD);
+
+    Throwables.maybeFail(syncDirectory(accumulate));
+
+    accumulate=replicas.delete(accumulate);
+
+  }
+
+ catch (  Throwable t) {
+
+    accumulate=merge(accumulate,t);
+
+  }
+
+  return accumulate;
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+void remove(SSTable table){
+
+  LogRecord record=makeAddRecord(table);
+
+  assert records.contains(record) : String.format("[%s] is not tracked by %s",record,id);
+
+  assert record.absolutePath.isPresent();
+
+  deleteRecordFiles(LogRecord.getExistingFiles(record.absolutePath.get()));
+
+  records.remove(record);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+/** 
+
+ * due to difference in timestamp resolution between jdk8 and 11 we need to return second resolution here (number should end in 000): https://bugs.openjdk.java.net/browse/JDK-8177809
+
+ */
+
+static long truncateMillis(long lastModified){
+
+  return lastModified - (lastModified % 1000);
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+boolean verify(){
+
+  records.clear();
+
+  if (!replicas.readRecords(records)) {
+
+    logger.error("Failed to read records for transaction log {}",this);
+
+    return false;
+
+  }
+
+  Set<String> absolutePaths=new HashSet<>();
+
+  for (  LogRecord record : records)   record.absolutePath.ifPresent(absolutePaths::add);
+
+  Map<String,List<File>> recordFiles=LogRecord.getExistingFiles(absolutePaths);
+
+  for (  LogRecord record : records) {
+
+    List<File> existingFiles=Collections.emptyList();
+
+    if (record.absolutePath.isPresent()) {
+
+      String key=record.absolutePath.get();
+
+      existingFiles=recordFiles.getOrDefault(key,Collections.emptyList());
+
+    }
+
+    LogFile.verifyRecord(record,existingFiles);
+
+  }
+
+  Optional<LogRecord> firstInvalid=records.stream().filter(LogRecord::isInvalidOrPartial).findFirst();
+
+  if (!firstInvalid.isPresent())   return true;
+
+  LogRecord failedOn=firstInvalid.get();
+
+  if (getLastRecord() != failedOn) {
+
+    setErrorInReplicas(failedOn);
+
+    return false;
+
+  }
+
+  records.stream().filter((r) -> r != failedOn).forEach(LogFile::verifyRecordWithCorruptedLastRecord);
+
+  if (records.stream().filter((r) -> r != failedOn).filter(LogRecord::isInvalid).map(this::setErrorInReplicas).findFirst().isPresent()) {
+
+    setErrorInReplicas(failedOn);
+
+    return false;
+
+  }
+
+  logger.warn("Last record of transaction {} is corrupt or incomplete [{}], " + "but all previous records match state on disk; continuing",id,failedOn.error());
+
+  return true;
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+static void verifyRecordWithCorruptedLastRecord(LogRecord record){
+
+  if (record.type == Type.REMOVE && record.status.onDiskRecord.numFiles < record.numFiles) {
+
+    record.setError(String.format("Incomplete fileset detected for sstable [%s]: " + "number of files [%d] should have been [%d].",record.fileName(),record.status.onDiskRecord.numFiles,record.numFiles));
+
+  }
+
+}
+
+Location: LogFile.java
+
+Content: 
+
+static void verifyRecord(LogRecord record,List<File> existingFiles){
+
+  if (record.checksum != record.computeChecksum()) {
+
+    record.setError(String.format("Invalid checksum for sstable [%s]: [%d] should have been [%d]",record.fileName(),record.checksum,record.computeChecksum()));
+
+    return;
+
+  }
+
+  if (record.type != Type.REMOVE)   return;
+
+  record.status.onDiskRecord=record.withExistingFiles(existingFiles);
+
+  if (truncateMillis(record.updateTime) != truncateMillis(record.status.onDiskRecord.updateTime) && record.status.onDiskRecord.updateTime > 0) {
+
+    record.setError(String.format("Unexpected files detected for sstable [%s]: " + "last update time [%tc] (%d) should have been [%tc] (%d)",record.fileName(),record.status.onDiskRecord.updateTime,record.status.onDiskRecord.updateTime,record.updateTime,record.updateTime));
+
+  }
+
+}
+

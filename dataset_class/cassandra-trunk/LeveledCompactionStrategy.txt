@@ -1,0 +1,136 @@
+Location: LeveledCompactionStrategy.java
+
+Content: 
+
+private SSTableReader findDroppableSSTable(final int gcBefore){
+
+  level:   for (int i=manifest.getLevelCount(); i >= 0; i--) {
+
+    if (manifest.getLevelSize(i) == 0)     continue;
+
+    List<SSTableReader> tombstoneSortedSSTables=manifest.getLevelSorted(i,(o1,o2) -> {
+
+      double r1=o1.getEstimatedDroppableTombstoneRatio(gcBefore);
+
+      double r2=o2.getEstimatedDroppableTombstoneRatio(gcBefore);
+
+      return -1 * Doubles.compare(r1,r2);
+
+    }
+
+);
+
+    Set<SSTableReader> compacting=cfs.getTracker().getCompacting();
+
+    for (    SSTableReader sstable : tombstoneSortedSSTables) {
+
+      if (sstable.getEstimatedDroppableTombstoneRatio(gcBefore) <= tombstoneThreshold)       continue level;
+
+ else       if (!compacting.contains(sstable) && !sstable.isMarkedSuspect() && worthDroppingTombstones(sstable,gcBefore))       return sstable;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: LeveledCompactionStrategy.java
+
+Content: 
+
+public int[] getAllLevelSize(){
+
+  return manifest.getAllLevelSize();
+
+}
+
+Location: LeveledCompactionStrategy.java
+
+Content: 
+
+public int getLevelSize(int i){
+
+  return manifest.getLevelSize(i);
+
+}
+
+Location: LeveledCompactionStrategy.java
+
+Content: 
+
+public LeveledCompactionStrategy(ColumnFamilyStore cfs,Map<String,String> options){
+
+  super(cfs,options);
+
+  int configuredMaxSSTableSize=160;
+
+  int configuredLevelFanoutSize=DEFAULT_LEVEL_FANOUT_SIZE;
+
+  boolean configuredSingleSSTableUplevel=false;
+
+  SizeTieredCompactionStrategyOptions localOptions=new SizeTieredCompactionStrategyOptions(options);
+
+  if (options != null) {
+
+    if (options.containsKey(SSTABLE_SIZE_OPTION)) {
+
+      configuredMaxSSTableSize=Integer.parseInt(options.get(SSTABLE_SIZE_OPTION));
+
+      if (!tolerateSstableSize) {
+
+        if (configuredMaxSSTableSize >= 1000)         logger.warn("Max sstable size of {}MB is configured for {}.{}; having a unit of compaction this large is probably a bad idea",configuredMaxSSTableSize,cfs.name,cfs.getTableName());
+
+        if (configuredMaxSSTableSize < 50)         logger.warn("Max sstable size of {}MB is configured for {}.{}.  Testing done for CASSANDRA-5727 indicates that performance improves up to 160MB",configuredMaxSSTableSize,cfs.name,cfs.getTableName());
+
+      }
+
+    }
+
+    if (options.containsKey(LEVEL_FANOUT_SIZE_OPTION)) {
+
+      configuredLevelFanoutSize=Integer.parseInt(options.get(LEVEL_FANOUT_SIZE_OPTION));
+
+    }
+
+    if (options.containsKey(SINGLE_SSTABLE_UPLEVEL_OPTION)) {
+
+      configuredSingleSSTableUplevel=Boolean.parseBoolean(options.get(SINGLE_SSTABLE_UPLEVEL_OPTION));
+
+    }
+
+  }
+
+  maxSSTableSizeInMB=configuredMaxSSTableSize;
+
+  levelFanoutSize=configuredLevelFanoutSize;
+
+  singleSSTableUplevel=configuredSingleSSTableUplevel;
+
+  manifest=new LeveledManifest(cfs,this.maxSSTableSizeInMB,this.levelFanoutSize,localOptions);
+
+  logger.trace("Created {}",manifest);
+
+}
+
+Location: LeveledCompactionStrategy.java
+
+Content: 
+
+@Override public void metadataChanged(StatsMetadata oldMetadata,SSTableReader sstable){
+
+  if (sstable.getSSTableLevel() != oldMetadata.sstableLevel)   manifest.newLevel(sstable,oldMetadata.sstableLevel);
+
+}
+
+Location: LeveledCompactionStrategy.java
+
+Content: 
+
+@Override public void replaceSSTables(Collection<SSTableReader> removed,Collection<SSTableReader> added){
+
+  manifest.replace(removed,added);
+
+}
+

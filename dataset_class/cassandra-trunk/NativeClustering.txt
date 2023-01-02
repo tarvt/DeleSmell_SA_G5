@@ -1,0 +1,74 @@
+Location: NativeClustering.java
+
+Content: 
+
+private NativeClustering(){
+
+  peer=0;
+
+}
+
+Location: NativeClustering.java
+
+Content: 
+
+public NativeClustering(NativeAllocator allocator,OpOrder.Group writeOp,Clustering<?> clustering){
+
+  int count=clustering.size();
+
+  int metadataSize=(count * 2) + 4;
+
+  int dataSize=clustering.dataSize();
+
+  int bitmapSize=((count + 7) >>> 3);
+
+  assert count < 64 << 10;
+
+  assert dataSize < 64 << 10;
+
+  peer=allocator.allocate(metadataSize + dataSize + bitmapSize,writeOp);
+
+  long bitmapStart=peer + metadataSize;
+
+  MemoryUtil.setShort(peer,(short)count);
+
+  MemoryUtil.setShort(peer + (metadataSize - 2),(short)dataSize);
+
+  MemoryUtil.setByte(bitmapStart,bitmapSize,(byte)0);
+
+  long dataStart=peer + metadataSize + bitmapSize;
+
+  int dataOffset=0;
+
+  for (int i=0; i < count; i++) {
+
+    MemoryUtil.setShort(peer + 2 + i * 2,(short)dataOffset);
+
+    ByteBuffer value=clustering.bufferAt(i);
+
+    if (value == null) {
+
+      long boffset=bitmapStart + (i >>> 3);
+
+      int b=MemoryUtil.getByte(boffset);
+
+      b|=1 << (i & 7);
+
+      MemoryUtil.setByte(boffset,(byte)b);
+
+      continue;
+
+    }
+
+    assert value.order() == ByteOrder.BIG_ENDIAN;
+
+    int size=value.remaining();
+
+    MemoryUtil.setBytes(dataStart + dataOffset,value);
+
+    dataOffset+=size;
+
+  }
+
+}
+

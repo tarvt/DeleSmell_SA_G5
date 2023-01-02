@@ -1,0 +1,392 @@
+Location: LogRecord.java
+
+Content: 
+
+String absolutePath(){
+
+  return absolutePath.isPresent() ? absolutePath.get() : "";
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+private static String absolutePath(String baseFilename){
+
+  return FileUtils.getCanonicalPath(baseFilename + Component.separator);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+LogRecord asType(Type type){
+
+  return new LogRecord(type,absolutePath.orElse(null),updateTime,numFiles);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+long computeChecksum(){
+
+  CRC32 crc32=new CRC32();
+
+  crc32.update((absolutePath()).getBytes(FileUtils.CHARSET));
+
+  crc32.update(type.toString().getBytes(FileUtils.CHARSET));
+
+  FBUtilities.updateChecksumInt(crc32,(int)updateTime);
+
+  FBUtilities.updateChecksumInt(crc32,(int)(updateTime >>> 32));
+
+  FBUtilities.updateChecksumInt(crc32,numFiles);
+
+  return crc32.getValue() & (Long.MAX_VALUE);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+String error(){
+
+  return status.error.orElse("");
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+private String format(){
+
+  return String.format("%s:[%s,%d,%d][%d]",type.toString(),absolutePath(),updateTime,numFiles,checksum);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+/** 
+
+ * absoluteFilePaths contains full file parts up to (but excluding) the component name This method finds all files on disk beginning with any of the paths in absoluteFilePaths
+
+ * @return a map from absoluteFilePath to actual file on disk.
+
+ */
+
+public static Map<String,List<File>> getExistingFiles(Set<String> absoluteFilePaths){
+
+  Map<String,List<File>> fileMap=new HashMap<>();
+
+  Map<File,TreeSet<String>> dirToFileNamePrefix=new HashMap<>();
+
+  for (  String absolutePath : absoluteFilePaths) {
+
+    Path fullPath=Paths.get(absolutePath);
+
+    Path path=fullPath.getParent();
+
+    if (path != null)     dirToFileNamePrefix.computeIfAbsent(path.toFile(),(k) -> new TreeSet<>()).add(fullPath.getFileName().toString());
+
+  }
+
+  FilenameFilter ff=(dir,name) -> {
+
+    TreeSet<String> dirSet=dirToFileNamePrefix.get(dir);
+
+    String baseName=dirSet.floor(name);
+
+    if (baseName != null && name.startsWith(baseName)) {
+
+      String absolutePath=new File(dir,baseName).getPath();
+
+      fileMap.computeIfAbsent(absolutePath,k -> new ArrayList<>()).add(new File(dir,name));
+
+    }
+
+    return false;
+
+  }
+
+;
+
+  for (  File f : dirToFileNamePrefix.keySet())   f.listFiles(ff);
+
+  return fileMap;
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public static List<File> getExistingFiles(String absoluteFilePath){
+
+  Path path=Paths.get(absoluteFilePath);
+
+  File[] files=path.getParent().toFile().listFiles((dir,name) -> name.startsWith(path.getFileName().toString()));
+
+  return files == null ? Collections.emptyList() : Arrays.asList(files);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public boolean isFinal(){
+
+  return type.isFinal();
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+boolean isInFolder(Path folder){
+
+  return absolutePath.isPresent() ? FileUtils.isContained(folder.toFile(),Paths.get(absolutePath.get()).toFile()) : false;
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+boolean isInvalid(){
+
+  return !isValid();
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+boolean isInvalidOrPartial(){
+
+  return isInvalid() || partial();
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+boolean isValid(){
+
+  return !status.hasError() && type != Type.UNKNOWN;
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+private LogRecord(Type type,long updateTime){
+
+  this(type,null,updateTime,0,0,null);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+private LogRecord(Type type,String absolutePath,long updateTime,int numFiles){
+
+  this(type,absolutePath,updateTime,numFiles,0,null);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+private LogRecord(Type type,String absolutePath,long updateTime,int numFiles,long checksum,String raw){
+
+  assert !type.hasFile() || absolutePath != null : "Expected file path for file records";
+
+  this.type=type;
+
+  this.absolutePath=type.hasFile() ? Optional.of(absolutePath) : Optional.<String>empty();
+
+  this.updateTime=type == Type.REMOVE ? updateTime : 0;
+
+  this.numFiles=type.hasFile() ? numFiles : 0;
+
+  this.status=new Status();
+
+  if (raw == null) {
+
+    assert checksum == 0;
+
+    this.checksum=computeChecksum();
+
+    this.raw=format();
+
+  }
+
+ else {
+
+    this.checksum=checksum;
+
+    this.raw=raw;
+
+  }
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public static LogRecord makeAbort(long updateTime){
+
+  return new LogRecord(Type.ABORT,updateTime);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public static LogRecord makeCommit(long updateTime){
+
+  return new LogRecord(Type.COMMIT,updateTime);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public static LogRecord make(String line){
+
+  try {
+
+    Matcher matcher=REGEX.matcher(line);
+
+    if (!matcher.matches())     return new LogRecord(Type.UNKNOWN,null,0,0,0,line).setError(String.format("Failed to parse [%s]",line));
+
+    Type type=Type.fromPrefix(matcher.group(1));
+
+    return new LogRecord(type,matcher.group(2),Long.parseLong(matcher.group(3)),Integer.parseInt(matcher.group(4)),Long.parseLong(matcher.group(5)),line);
+
+  }
+
+ catch (  IllegalArgumentException e) {
+
+    return new LogRecord(Type.UNKNOWN,null,0,0,0,line).setError(String.format("Failed to parse line: %s",e.getMessage()));
+
+  }
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public static Map<SSTable,LogRecord> make(Type type,Iterable<SSTableReader> tables){
+
+  Map<String,SSTable> absolutePaths=new HashMap<>();
+
+  for (  SSTableReader table : tables)   absolutePaths.put(absolutePath(table.descriptor.baseFilename()),table);
+
+  Map<String,List<File>> existingFiles=getExistingFiles(absolutePaths.keySet());
+
+  Map<SSTable,LogRecord> records=new HashMap<>(existingFiles.size());
+
+  for (  Map.Entry<String,List<File>> entry : existingFiles.entrySet()) {
+
+    List<File> filesOnDisk=entry.getValue();
+
+    String baseFileName=entry.getKey();
+
+    SSTable sstable=absolutePaths.get(baseFileName);
+
+    records.put(sstable,make(type,filesOnDisk,sstable.getAllFilePaths().size(),baseFileName));
+
+  }
+
+  return records;
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public static LogRecord make(Type type,List<File> files,int minFiles,String absolutePath){
+
+  List<Long> positiveModifiedTimes=files.stream().map(File::lastModified).filter(lm -> lm > 0).collect(Collectors.toList());
+
+  long lastModified=positiveModifiedTimes.stream().reduce(0L,Long::max);
+
+  return new LogRecord(type,absolutePath,lastModified,Math.max(minFiles,positiveModifiedTimes.size()));
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public static LogRecord make(Type type,SSTable table){
+
+  String absoluteTablePath=absolutePath(table.descriptor.baseFilename());
+
+  return make(type,getExistingFiles(absoluteTablePath),table.getAllFilePaths().size(),absoluteTablePath);
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+boolean partial(){
+
+  return status.partial;
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+LogRecord setError(String error){
+
+  status.setError(error);
+
+  return this;
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+void setPartial(){
+
+  status.partial=true;
+
+}
+
+Location: LogRecord.java
+
+Content: 
+
+public LogRecord withExistingFiles(List<File> existingFiles){
+
+  return make(type,existingFiles,0,absolutePath.get());
+
+}
+

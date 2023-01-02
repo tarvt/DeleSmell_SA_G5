@@ -1,0 +1,206 @@
+Location: LogTransaction.java
+
+Content: 
+
+@VisibleForTesting Throwable complete(Throwable accumulate){
+
+  if (logger.isTraceEnabled())   logger.trace("Completing txn {} with last record {}",txnFile.toString(),txnFile.getLastRecord());
+
+  try {
+
+    accumulate=selfRef.ensureReleased(accumulate);
+
+    return accumulate;
+
+  }
+
+ catch (  Throwable t) {
+
+    logger.error("Failed to complete file transaction id {}",id(),t);
+
+    return Throwables.merge(accumulate,t);
+
+  }
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+@VisibleForTesting List<String> logFilePaths(){
+
+  return txnFile.getFilePaths();
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+@VisibleForTesting List<File> logFiles(){
+
+  return txnFile.getFiles();
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+LogTransaction(OperationType opType){
+
+  this(opType,null);
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+LogTransaction(OperationType opType,Tracker tracker){
+
+  this.tracker=tracker;
+
+  this.txnFile=new LogFile(opType,UUIDGen.getTimeUUID());
+
+  this.lock=new Object();
+
+  this.selfRef=new Ref<>(this,new TransactionTidier(txnFile,lock));
+
+  if (logger.isTraceEnabled())   logger.trace("Created transaction logs with id {}",txnFile.id());
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+Map<SSTable,LogRecord> makeRemoveRecords(Iterable<SSTableReader> sstables){
+
+synchronized (lock) {
+
+    return txnFile.makeRecords(Type.REMOVE,sstables);
+
+  }
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+/** 
+
+ * helper method for tests, creates the remove records per sstable
+
+ */
+
+@VisibleForTesting SSTableTidier obsoleted(SSTableReader sstable){
+
+  return obsoleted(sstable,LogRecord.make(Type.REMOVE,sstable));
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+/** 
+
+ * Schedule a reader for deletion as soon as it is fully unreferenced.
+
+ */
+
+SSTableTidier obsoleted(SSTableReader reader,LogRecord logRecord){
+
+synchronized (lock) {
+
+    if (logger.isTraceEnabled())     logger.trace("Track OLD sstable {} in {}",reader.getFilename(),txnFile.toString());
+
+    if (txnFile.contains(Type.ADD,reader,logRecord)) {
+
+      if (txnFile.contains(Type.REMOVE,reader,logRecord))       throw new IllegalArgumentException();
+
+      return new SSTableTidier(reader,true,this);
+
+    }
+
+    txnFile.addRecord(logRecord);
+
+    if (tracker != null)     tracker.notifyDeleting(reader);
+
+    return new SSTableTidier(reader,false,this);
+
+  }
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+@VisibleForTesting static boolean removeUnfinishedLeftovers(List<File> directories){
+
+  LogFilesByName logFiles=new LogFilesByName();
+
+  directories.forEach(logFiles::list);
+
+  return logFiles.removeUnfinishedLeftovers();
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+/** 
+
+ * Removes any leftovers from unifinished transactions as indicated by any transaction log files that are found in the table directories. This means that any old sstable files for transactions that were committed, or any new sstable files for transactions that were aborted or still in progress, should be removed *if it is safe to do so*. Refer to the checks in LogFile.verify for further details on the safety checks before removing transaction leftovers and refer to the comments at the beginning of this file or in NEWS.txt for further details on transaction logs. This method is called on startup and by the standalone sstableutil tool when the cleanup option is specified,
+
+ * @see org.apache.cassandra.tools.StandaloneSSTableUtil
+
+ * @return true if the leftovers of all transaction logs found were removed, false otherwise.
+
+ */
+
+static boolean removeUnfinishedLeftovers(TableMetadata metadata){
+
+  return removeUnfinishedLeftovers(new Directories(metadata).getCFDirectories());
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+static void rescheduleFailedDeletions(){
+
+  Runnable task;
+
+  while (null != (task=failedDeletions.poll()))   ScheduledExecutors.nonPeriodicTasks.submit(task);
+
+  SnapshotDeletingTask.rescheduleFailedTasks();
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+@VisibleForTesting LogFile txnFile(){
+
+  return txnFile;
+
+}
+
+Location: LogTransaction.java
+
+Content: 
+
+static void waitForDeletions(){
+
+  FBUtilities.waitOnFuture(ScheduledExecutors.nonPeriodicTasks.schedule(Runnables.doNothing(),0,TimeUnit.MILLISECONDS));
+
+}
+

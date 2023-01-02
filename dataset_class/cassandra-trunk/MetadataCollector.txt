@@ -1,0 +1,308 @@
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector addCellPerPartitionCount(long cellCount){
+
+  estimatedCellPerPartitionCount.add(cellCount);
+
+  return this;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+/** 
+
+ * Ratio is compressed/uncompressed and it is if you have 1.x then compression isn't helping
+
+ */
+
+public MetadataCollector addCompressionRatio(long compressed,long uncompressed){
+
+  compressionRatio=(double)compressed / uncompressed;
+
+  return this;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector addKey(ByteBuffer key){
+
+  long hashed=MurmurHash.hash2_64(key,key.position(),key.remaining(),0);
+
+  cardinality.offerHashed(hashed);
+
+  return this;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector addPartitionSizeInBytes(long partitionSize){
+
+  estimatedPartitionSize.add(partitionSize);
+
+  return this;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector commitLogIntervals(IntervalSet<CommitLogPosition> commitLogIntervals){
+
+  this.commitLogIntervals=commitLogIntervals;
+
+  return this;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+static EstimatedHistogram defaultCellPerPartitionCountHistogram(){
+
+  return new EstimatedHistogram(118);
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+static EstimatedHistogram defaultPartitionSizeHistogram(){
+
+  return new EstimatedHistogram(150);
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public static StatsMetadata defaultStatsMetadata(){
+
+  return new StatsMetadata(defaultPartitionSizeHistogram(),defaultCellPerPartitionCountHistogram(),IntervalSet.empty(),Long.MIN_VALUE,Long.MAX_VALUE,Integer.MAX_VALUE,Integer.MAX_VALUE,0,Integer.MAX_VALUE,NO_COMPRESSION_RATIO,defaultTombstoneDropTimeHistogram(),0,Collections.<ByteBuffer>emptyList(),Collections.<ByteBuffer>emptyList(),true,ActiveRepairService.UNREPAIRED_SSTABLE,-1,-1,null,false);
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+static TombstoneHistogram defaultTombstoneDropTimeHistogram(){
+
+  return TombstoneHistogram.createDefault();
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public Map<MetadataType,MetadataComponent> finalizeMetadata(String partitioner,double bloomFilterFPChance,long repairedAt,UUID pendingRepair,boolean isTransient,SerializationHeader header){
+
+  Preconditions.checkState((minClustering == null && maxClustering == null) || comparator.compare(maxClustering,minClustering) >= 0);
+
+  ByteBuffer[] minValues=minClustering != null ? minClustering.getBufferArray() : EMPTY_CLUSTERING;
+
+  ByteBuffer[] maxValues=maxClustering != null ? maxClustering.getBufferArray() : EMPTY_CLUSTERING;
+
+  Map<MetadataType,MetadataComponent> components=new EnumMap<>(MetadataType.class);
+
+  components.put(MetadataType.VALIDATION,new ValidationMetadata(partitioner,bloomFilterFPChance));
+
+  components.put(MetadataType.STATS,new StatsMetadata(estimatedPartitionSize,estimatedCellPerPartitionCount,commitLogIntervals,timestampTracker.min(),timestampTracker.max(),localDeletionTimeTracker.min(),localDeletionTimeTracker.max(),ttlTracker.min(),ttlTracker.max(),compressionRatio,estimatedTombstoneDropTime.build(),sstableLevel,makeList(minValues),makeList(maxValues),hasLegacyCounterShards,repairedAt,totalColumnsSet,totalRows,pendingRepair,isTransient));
+
+  components.put(MetadataType.COMPACTION,new CompactionMetadata(cardinality));
+
+  components.put(MetadataType.HEADER,header.toComponent());
+
+  return components;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+private static List<ByteBuffer> makeList(ByteBuffer[] values){
+
+  List<ByteBuffer> l=new ArrayList<ByteBuffer>(values.length);
+
+  for (int i=0; i < values.length; i++)   if (values[i] == null)   break;
+
+ else   l.add(values[i]);
+
+  return l;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector(ClusteringComparator comparator){
+
+  this.comparator=comparator;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector(Iterable<SSTableReader> sstables,ClusteringComparator comparator,int level){
+
+  this(comparator);
+
+  IntervalSet.Builder<CommitLogPosition> intervals=new IntervalSet.Builder<>();
+
+  for (  SSTableReader sstable : sstables) {
+
+    intervals.addAll(sstable.getSSTableMetadata().commitLogIntervals);
+
+  }
+
+  commitLogIntervals(intervals.build());
+
+  sstableLevel(level);
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector sstableLevel(int sstableLevel){
+
+  this.sstableLevel=sstableLevel;
+
+  return this;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public MetadataCollector updateClusteringValues(ClusteringPrefix<?> clustering){
+
+  minClustering=minClustering == null || comparator.compare(clustering,minClustering) < 0 ? clustering.minimize() : minClustering;
+
+  maxClustering=maxClustering == null || comparator.compare(clustering,maxClustering) > 0 ? clustering.minimize() : maxClustering;
+
+  return this;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public void updateColumnSetPerRow(long columnSetInRow){
+
+  totalColumnsSet+=columnSetInRow;
+
+  ++totalRows;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public void updateHasLegacyCounterShards(boolean hasLegacyCounterShards){
+
+  this.hasLegacyCounterShards=this.hasLegacyCounterShards || hasLegacyCounterShards;
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+private void updateLocalDeletionTime(int newLocalDeletionTime){
+
+  localDeletionTimeTracker.update(newLocalDeletionTime);
+
+  if (newLocalDeletionTime != Cell.NO_DELETION_TIME)   estimatedTombstoneDropTime.update(newLocalDeletionTime);
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+private void updateTimestamp(long newTimestamp){
+
+  timestampTracker.update(newTimestamp);
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+private void updateTTL(int newTTL){
+
+  ttlTracker.update(newTTL);
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public void update(Cell<?> cell){
+
+  updateTimestamp(cell.timestamp());
+
+  updateTTL(cell.ttl());
+
+  updateLocalDeletionTime(cell.localDeletionTime());
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public void update(DeletionTime dt){
+
+  if (!dt.isLive()) {
+
+    updateTimestamp(dt.markedForDeleteAt());
+
+    updateLocalDeletionTime(dt.localDeletionTime());
+
+  }
+
+}
+
+Location: MetadataCollector.java
+
+Content: 
+
+public void update(LivenessInfo newInfo){
+
+  if (newInfo.isEmpty())   return;
+
+  updateTimestamp(newInfo.timestamp());
+
+  updateTTL(newInfo.ttl());
+
+  updateLocalDeletionTime(newInfo.localExpirationTime());
+
+}
+

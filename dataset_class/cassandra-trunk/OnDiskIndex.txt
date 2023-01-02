@@ -1,0 +1,390 @@
+Location: OnDiskIndex.java
+
+Content: 
+
+private PointerTerm findPointer(ByteBuffer query){
+
+  PointerTerm ptr=null;
+
+  for (  PointerLevel level : levels) {
+
+    if ((ptr=level.getPointer(ptr,query)) == null)     return null;
+
+  }
+
+  return ptr;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private int getBlockIdx(PointerTerm ptr,ByteBuffer query){
+
+  int blockIdx=0;
+
+  if (ptr != null) {
+
+    int cmp=ptr.compareTo(comparator,query);
+
+    blockIdx=(cmp == 0 || cmp > 0) ? ptr.getBlock() : ptr.getBlock() + 1;
+
+  }
+
+  return blockIdx;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private RangeIterator<Long,Token> getBlockIterator(int blockIdx){
+
+  DataBlock block=dataLevel.getBlock(blockIdx);
+
+  return (block.hasCombinedIndex) ? block.getBlockIndex().iterator(keyFetcher) : block.getRange(0,block.termCount());
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public AbstractType<?> getComparator(){
+
+  return comparator;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private int getDataBlock(ByteBuffer query){
+
+  return levels.length == 0 ? 0 : getBlockIdx(findPointer(query),query);
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public String getIndexPath(){
+
+  return indexPath;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private DataTerm getTerm(ByteBuffer query){
+
+  SearchResult<DataTerm> term=searchIndex(query,getDataBlock(query));
+
+  return term.cmp == 0 ? term.result : null;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public boolean hasMarkedPartials(){
+
+  return hasMarkedPartials;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public Iterator<DataTerm> iteratorAt(ByteBuffer query,IteratorOrder order,boolean inclusive){
+
+  Expression e=new Expression("",comparator);
+
+  Expression.Bound bound=new Expression.Bound(query,inclusive);
+
+switch (order) {
+
+case DESC:
+
+    e.setLower(bound);
+
+  break;
+
+case ASC:
+
+e.setUpper(bound);
+
+break;
+
+default :
+
+throw new IllegalArgumentException("Unknown order: " + order);
+
+}
+
+return new TermIterator(levels.length == 0 ? 0 : getBlockIdx(findPointer(query),query),e,order);
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public DataTerm max(){
+
+  DataBlock block=dataLevel.getBlock(dataLevel.blockCount - 1);
+
+  return block.getTerm(block.termCount() - 1);
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public ByteBuffer maxKey(){
+
+  return maxKey;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public DataTerm min(){
+
+  return dataLevel.getBlock(0).getTerm(0);
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public ByteBuffer minKey(){
+
+  return minKey;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+public OnDiskIndexBuilder.Mode mode(){
+
+  return mode;
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+@SuppressWarnings("resource") public OnDiskIndex(File index,AbstractType<?> cmp,Function<Long,DecoratedKey> keyReader){
+
+  keyFetcher=keyReader;
+
+  comparator=cmp;
+
+  indexPath=index.getAbsolutePath();
+
+  RandomAccessFile backingFile=null;
+
+  try {
+
+    backingFile=new RandomAccessFile(index,"r");
+
+    descriptor=new Descriptor(backingFile.readUTF());
+
+    termSize=OnDiskIndexBuilder.TermSize.of(backingFile.readShort());
+
+    minTerm=ByteBufferUtil.readWithShortLength(backingFile);
+
+    maxTerm=ByteBufferUtil.readWithShortLength(backingFile);
+
+    minKey=ByteBufferUtil.readWithShortLength(backingFile);
+
+    maxKey=ByteBufferUtil.readWithShortLength(backingFile);
+
+    mode=OnDiskIndexBuilder.Mode.mode(backingFile.readUTF());
+
+    hasMarkedPartials=backingFile.readBoolean();
+
+    indexSize=backingFile.length();
+
+    indexFile=new MappedBuffer(new ChannelProxy(indexPath,backingFile.getChannel()));
+
+    indexFile.position(indexFile.getLong(indexSize - 8));
+
+    int numLevels=indexFile.getInt();
+
+    levels=new PointerLevel[numLevels];
+
+    for (int i=0; i < levels.length; i++) {
+
+      int blockCount=indexFile.getInt();
+
+      levels[i]=new PointerLevel(indexFile.position(),blockCount);
+
+      indexFile.position(indexFile.position() + blockCount * 8);
+
+    }
+
+    int blockCount=indexFile.getInt();
+
+    dataLevel=new DataLevel(indexFile.position(),blockCount);
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSReadError(e,index);
+
+  }
+
+ finally {
+
+    FileUtils.closeQuietly(backingFile);
+
+  }
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private SearchResult<DataTerm> searchIndex(ByteBuffer query,int blockIdx){
+
+  return dataLevel.getBlock(blockIdx).search(comparator,query);
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private RangeIterator<Long,Token> searchPoint(int lowerBlock,Expression expression){
+
+  Iterator<DataTerm> terms=new TermIterator(lowerBlock,expression,IteratorOrder.DESC);
+
+  RangeUnionIterator.Builder<Long,Token> builder=RangeUnionIterator.builder();
+
+  while (terms.hasNext()) {
+
+    try {
+
+      builder.add(terms.next().getTokens());
+
+    }
+
+  finally {
+
+      expression.checkpoint();
+
+    }
+
+  }
+
+  return builder.build();
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private RangeIterator<Long,Token> searchRange(Expression range){
+
+  Expression.Bound lower=range.lower;
+
+  Expression.Bound upper=range.upper;
+
+  int lowerBlock=lower == null ? 0 : getDataBlock(lower.value);
+
+  int upperBlock=upper == null ? dataLevel.blockCount - 1 : (lower != null && comparator.compare(lower.value,upper.value) == 0) ? lowerBlock : getDataBlock(upper.value);
+
+  return (mode != OnDiskIndexBuilder.Mode.SPARSE || lowerBlock == upperBlock || upperBlock - lowerBlock <= 1) ? searchPoint(lowerBlock,range) : searchRange(lowerBlock,lower,upperBlock,upper);
+
+}
+
+Location: OnDiskIndex.java
+
+Content: 
+
+private RangeIterator<Long,Token> searchRange(int lowerBlock,Expression.Bound lower,int upperBlock,Expression.Bound upper){
+
+  SearchResult<DataTerm> lowerPosition=(lower == null) ? null : searchIndex(lower.value,lowerBlock);
+
+  SearchResult<DataTerm> upperPosition=(upper == null) ? null : searchIndex(upper.value,upperBlock);
+
+  RangeUnionIterator.Builder<Long,Token> builder=RangeUnionIterator.builder();
+
+  int firstFullBlockIdx=lowerBlock, lastFullBlockIdx=upperBlock;
+
+  if (lowerPosition != null && (lowerPosition.index > 0 || !lower.inclusive)) {
+
+    DataBlock block=dataLevel.getBlock(lowerBlock);
+
+    int start=(lower.inclusive || lowerPosition.cmp != 0) ? lowerPosition.index : lowerPosition.index + 1;
+
+    builder.add(block.getRange(start,block.termCount()));
+
+    firstFullBlockIdx=lowerBlock + 1;
+
+  }
+
+  if (upperPosition != null) {
+
+    DataBlock block=dataLevel.getBlock(upperBlock);
+
+    int lastIndex=block.termCount() - 1;
+
+    if (upperPosition.index != lastIndex || !upper.inclusive) {
+
+      int end=(upperPosition.cmp < 0 || (upperPosition.cmp == 0 && upper.inclusive)) ? upperPosition.index + 1 : upperPosition.index;
+
+      builder.add(block.getRange(0,end));
+
+      lastFullBlockIdx=upperBlock - 1;
+
+    }
+
+  }
+
+  int totalSuperBlocks=(lastFullBlockIdx - firstFullBlockIdx) / OnDiskIndexBuilder.SUPER_BLOCK_SIZE;
+
+  if (totalSuperBlocks == 0) {
+
+    for (int i=firstFullBlockIdx; i <= lastFullBlockIdx; i++)     builder.add(dataLevel.getBlock(i).getBlockIndex().iterator(keyFetcher));
+
+    return builder.build();
+
+  }
+
+  int superBlockAlignedStart=firstFullBlockIdx == 0 ? 0 : (int)FBUtilities.align(firstFullBlockIdx,OnDiskIndexBuilder.SUPER_BLOCK_SIZE);
+
+  for (int blockIdx=firstFullBlockIdx; blockIdx < Math.min(superBlockAlignedStart,lastFullBlockIdx); blockIdx++)   builder.add(getBlockIterator(blockIdx));
+
+  int superBlockIdx=superBlockAlignedStart / OnDiskIndexBuilder.SUPER_BLOCK_SIZE;
+
+  for (int offset=0; offset < totalSuperBlocks - 1; offset++)   builder.add(dataLevel.getSuperBlock(superBlockIdx++).iterator());
+
+  int lastCoveredBlock=superBlockIdx * OnDiskIndexBuilder.SUPER_BLOCK_SIZE;
+
+  for (int offset=0; offset <= (lastFullBlockIdx - lastCoveredBlock); offset++)   builder.add(getBlockIterator(lastCoveredBlock + offset));
+
+  return builder.build();
+
+}
+

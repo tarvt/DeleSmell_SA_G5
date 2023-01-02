@@ -1,0 +1,116 @@
+Location: ListType.java
+
+Content: 
+
+static <VL,VR>int compareListOrSet(AbstractType<?> elementsComparator,VL left,ValueAccessor<VL> accessorL,VR right,ValueAccessor<VR> accessorR){
+
+  if (accessorL.isEmpty(left) || accessorR.isEmpty(right))   return Boolean.compare(accessorR.isEmpty(right),accessorL.isEmpty(left));
+
+  int sizeL=CollectionSerializer.readCollectionSize(left,accessorL,ProtocolVersion.V3);
+
+  int offsetL=CollectionSerializer.sizeOfCollectionSize(sizeL,ProtocolVersion.V3);
+
+  int sizeR=CollectionSerializer.readCollectionSize(right,accessorR,ProtocolVersion.V3);
+
+  int offsetR=TypeSizes.INT_SIZE;
+
+  for (int i=0; i < Math.min(sizeL,sizeR); i++) {
+
+    VL v1=CollectionSerializer.readValue(left,accessorL,offsetL,ProtocolVersion.V3);
+
+    offsetL+=CollectionSerializer.sizeOfValue(v1,accessorL,ProtocolVersion.V3);
+
+    VR v2=CollectionSerializer.readValue(right,accessorR,offsetR,ProtocolVersion.V3);
+
+    offsetR+=CollectionSerializer.sizeOfValue(v2,accessorR,ProtocolVersion.V3);
+
+    int cmp=elementsComparator.compare(v1,accessorL,v2,accessorR);
+
+    if (cmp != 0)     return cmp;
+
+  }
+
+  return sizeL == sizeR ? 0 : (sizeL < sizeR ? -1 : 1);
+
+}
+
+Location: ListType.java
+
+Content: 
+
+public AbstractType<T> getElementsType(){
+
+  return elements;
+
+}
+
+Location: ListType.java
+
+Content: 
+
+public static <T>ListType<T> getInstance(AbstractType<T> elements,boolean isMultiCell){
+
+  ConcurrentHashMap<AbstractType<?>,ListType> internMap=isMultiCell ? instances : frozenInstances;
+
+  ListType<T> t=internMap.get(elements);
+
+  return null == t ? internMap.computeIfAbsent(elements,k -> new ListType<>(k,isMultiCell)) : t;
+
+}
+
+Location: ListType.java
+
+Content: 
+
+public ByteBuffer getSliceFromSerialized(ByteBuffer collection,ByteBuffer from,ByteBuffer to){
+
+  throw new UnsupportedOperationException();
+
+}
+
+Location: ListType.java
+
+Content: 
+
+private ListType(AbstractType<T> elements,boolean isMultiCell){
+
+  super(ComparisonType.CUSTOM,Kind.LIST);
+
+  this.elements=elements;
+
+  this.serializer=ListSerializer.getInstance(elements.getSerializer());
+
+  this.isMultiCell=isMultiCell;
+
+}
+
+Location: ListType.java
+
+Content: 
+
+public static String setOrListToJsonString(ByteBuffer buffer,AbstractType elementsType,ProtocolVersion protocolVersion){
+
+  ByteBuffer value=buffer.duplicate();
+
+  StringBuilder sb=new StringBuilder("[");
+
+  int size=CollectionSerializer.readCollectionSize(value,protocolVersion);
+
+  int offset=CollectionSerializer.sizeOfCollectionSize(size,protocolVersion);
+
+  for (int i=0; i < size; i++) {
+
+    if (i > 0)     sb.append(", ");
+
+    ByteBuffer element=CollectionSerializer.readValue(value,ByteBufferAccessor.instance,offset,protocolVersion);
+
+    offset+=CollectionSerializer.sizeOfValue(element,ByteBufferAccessor.instance,protocolVersion);
+
+    sb.append(elementsType.toJSONString(element,protocolVersion));
+
+  }
+
+  return sb.append("]").toString();
+
+}
+

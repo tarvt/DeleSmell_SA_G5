@@ -1,0 +1,458 @@
+Location: Memtable.java
+
+Content: 
+
+public Throwable abortRunnables(List<FlushRunnable> runnables,Throwable t){
+
+  if (runnables != null)   for (  FlushRunnable runnable : runnables)   t=runnable.writer.abort(t);
+
+  return t;
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public boolean accepts(OpOrder.Group opGroup,CommitLogPosition commitLogPosition){
+
+  OpOrder.Barrier barrier=this.writeBarrier;
+
+  if (barrier == null)   return true;
+
+  if (!barrier.isAfter(opGroup))   return false;
+
+  if (commitLogPosition == null)   return true;
+
+  while (true) {
+
+    CommitLogPosition currentLast=commitLogUpperBound.get();
+
+    if (currentLast instanceof LastCommitLogPosition)     return currentLast.compareTo(commitLogPosition) >= 0;
+
+    if (currentLast != null && currentLast.compareTo(commitLogPosition) >= 0)     return true;
+
+    if (commitLogUpperBound.compareAndSet(currentLast,commitLogPosition))     return true;
+
+  }
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public int compareTo(Memtable that){
+
+  return this.approximateCommitLogLowerBound.compareTo(that.approximateCommitLogLowerBound);
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+private List<FlushRunnable> createFlushRunnables(LifecycleTransaction txn){
+
+  DiskBoundaries diskBoundaries=cfs.getDiskBoundaries();
+
+  List<PartitionPosition> boundaries=diskBoundaries.positions;
+
+  List<Directories.DataDirectory> locations=diskBoundaries.directories;
+
+  if (boundaries == null)   return Collections.singletonList(new FlushRunnable(txn));
+
+  List<FlushRunnable> runnables=new ArrayList<>(boundaries.size());
+
+  PartitionPosition rangeStart=cfs.getPartitioner().getMinimumToken().minKeyBound();
+
+  try {
+
+    for (int i=0; i < boundaries.size(); i++) {
+
+      PartitionPosition t=boundaries.get(i);
+
+      runnables.add(new FlushRunnable(rangeStart,t,locations.get(i),txn));
+
+      rangeStart=t;
+
+    }
+
+    return runnables;
+
+  }
+
+ catch (  Throwable e) {
+
+    throw Throwables.propagate(abortRunnables(runnables,e));
+
+  }
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+private static MemtablePool createMemtableAllocatorPool(){
+
+  long heapLimit=DatabaseDescriptor.getMemtableHeapSpaceInMb() << 20;
+
+  long offHeapLimit=DatabaseDescriptor.getMemtableOffheapSpaceInMb() << 20;
+
+switch (DatabaseDescriptor.getMemtableAllocationType()) {
+
+case unslabbed_heap_buffers:
+
+    return new HeapPool(heapLimit,DatabaseDescriptor.getMemtableCleanupThreshold(),new ColumnFamilyStore.FlushLargestColumnFamily());
+
+case heap_buffers:
+
+  return new SlabPool(heapLimit,0,DatabaseDescriptor.getMemtableCleanupThreshold(),new ColumnFamilyStore.FlushLargestColumnFamily());
+
+case offheap_buffers:
+
+return new SlabPool(heapLimit,offHeapLimit,DatabaseDescriptor.getMemtableCleanupThreshold(),new ColumnFamilyStore.FlushLargestColumnFamily());
+
+case offheap_objects:
+
+return new NativePool(heapLimit,offHeapLimit,DatabaseDescriptor.getMemtableCleanupThreshold(),new ColumnFamilyStore.FlushLargestColumnFamily());
+
+default :
+
+throw new AssertionError();
+
+}
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+private static int estimateRowOverhead(final int count){
+
+  try (final OpOrder.Group group=new OpOrder().start()){
+
+    int rowOverhead;
+
+    MemtableAllocator allocator=MEMORY_POOL.newAllocator();
+
+    ConcurrentNavigableMap<PartitionPosition,Object> partitions=new ConcurrentSkipListMap<>();
+
+    final Object val=new Object();
+
+    for (int i=0; i < count; i++)     partitions.put(allocator.clone(new BufferDecoratedKey(new LongToken(i),ByteBufferUtil.EMPTY_BYTE_BUFFER),group),val);
+
+    double avgSize=ObjectSizes.measureDeep(partitions) / (double)count;
+
+    rowOverhead=(int)((avgSize - Math.floor(avgSize)) < 0.05 ? Math.floor(avgSize) : Math.ceil(avgSize));
+
+    rowOverhead-=ObjectSizes.measureDeep(new LongToken(0));
+
+    rowOverhead+=AtomicBTreePartition.EMPTY_SIZE;
+
+    allocator.setDiscarding();
+
+    allocator.setDiscarded();
+
+    return rowOverhead;
+
+  }
+
+ }
+
+Location: Memtable.java
+
+Content: 
+
+private int findMinLocalDeletionTime(Iterator<Map.Entry<PartitionPosition,AtomicBTreePartition>> iterator){
+
+  int minLocalDeletionTime=Integer.MAX_VALUE;
+
+  while (iterator.hasNext()) {
+
+    Map.Entry<PartitionPosition,AtomicBTreePartition> entry=iterator.next();
+
+    minLocalDeletionTime=Math.min(minLocalDeletionTime,entry.getValue().stats().minLocalDeletionTime);
+
+  }
+
+  return minLocalDeletionTime;
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public List<FlushRunnable> flushRunnables(LifecycleTransaction txn){
+
+  return createFlushRunnables(txn);
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public CommitLogPosition getCommitLogLowerBound(){
+
+  return commitLogLowerBound.get();
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public CommitLogPosition getCommitLogUpperBound(){
+
+  return commitLogUpperBound.get();
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public long getLiveDataSize(){
+
+  return liveDataSize.get();
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public long getOperations(){
+
+  return currentOperations.get();
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public Partition getPartition(DecoratedKey key){
+
+  return partitions.get(key);
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public boolean isClean(){
+
+  return partitions.isEmpty();
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+/** 
+
+ * @return true if this memtable is expired. Expiration time is determined by CF's memtable_flush_period_in_ms.
+
+ */
+
+public boolean isExpired(){
+
+  int period=cfs.metadata().params.memtableFlushPeriodInMs;
+
+  return period > 0 && (System.nanoTime() - creationNano >= TimeUnit.MILLISECONDS.toNanos(period));
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public MemtableUnfilteredPartitionIterator makePartitionIterator(final ColumnFilter columnFilter,final DataRange dataRange){
+
+  AbstractBounds<PartitionPosition> keyRange=dataRange.keyRange();
+
+  boolean startIsMin=keyRange.left.isMinimum();
+
+  boolean stopIsMin=keyRange.right.isMinimum();
+
+  boolean isBound=keyRange instanceof Bounds;
+
+  boolean includeStart=isBound || keyRange instanceof IncludingExcludingBounds;
+
+  boolean includeStop=isBound || keyRange instanceof Range;
+
+  Map<PartitionPosition,AtomicBTreePartition> subMap;
+
+  if (startIsMin)   subMap=stopIsMin ? partitions : partitions.headMap(keyRange.right,includeStop);
+
+ else   subMap=stopIsMin ? partitions.tailMap(keyRange.left,includeStart) : partitions.subMap(keyRange.left,includeStart,keyRange.right,includeStop);
+
+  int minLocalDeletionTime=Integer.MAX_VALUE;
+
+  if (cfs.getCompactionStrategyManager().onlyPurgeRepairedTombstones())   minLocalDeletionTime=findMinLocalDeletionTime(subMap.entrySet().iterator());
+
+  final Iterator<Map.Entry<PartitionPosition,AtomicBTreePartition>> iter=subMap.entrySet().iterator();
+
+  return new MemtableUnfilteredPartitionIterator(cfs,iter,minLocalDeletionTime,columnFilter,dataRange);
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+/** 
+
+ * For testing only. Give this memtable too big a size to make it always fail flushing.
+
+ */
+
+@VisibleForTesting public void makeUnflushable(){
+
+  liveDataSize.addAndGet(1L * 1024 * 1024* 1024* 1024* 1024);
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public boolean mayContainDataBefore(CommitLogPosition position){
+
+  return approximateCommitLogLowerBound.compareTo(position) < 0;
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public Memtable(AtomicReference<CommitLogPosition> commitLogLowerBound,ColumnFamilyStore cfs){
+
+  this.cfs=cfs;
+
+  this.commitLogLowerBound=commitLogLowerBound;
+
+  this.allocator=MEMORY_POOL.newAllocator();
+
+  this.initialComparator=cfs.metadata().comparator;
+
+  this.cfs.scheduleFlush();
+
+  this.columnsCollector=new ColumnsCollector(cfs.metadata().regularAndStaticColumns());
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+@VisibleForTesting public Memtable(TableMetadata metadata){
+
+  this.initialComparator=metadata.comparator;
+
+  this.cfs=null;
+
+  this.allocator=null;
+
+  this.columnsCollector=new ColumnsCollector(metadata.regularAndStaticColumns());
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+public int partitionCount(){
+
+  return partitions.size();
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+/** 
+
+ * Should only be called by ColumnFamilyStore.apply via Keyspace.apply, which supplies the appropriate OpOrdering. commitLogSegmentPosition should only be null if this is a secondary index, in which case it is *expected* to be null
+
+ */
+
+long put(PartitionUpdate update,UpdateTransaction indexer,OpOrder.Group opGroup){
+
+  AtomicBTreePartition previous=partitions.get(update.partitionKey());
+
+  long initialSize=0;
+
+  if (previous == null) {
+
+    final DecoratedKey cloneKey=allocator.clone(update.partitionKey(),opGroup);
+
+    AtomicBTreePartition empty=new AtomicBTreePartition(cfs.metadata,cloneKey,allocator);
+
+    previous=partitions.putIfAbsent(cloneKey,empty);
+
+    if (previous == null) {
+
+      previous=empty;
+
+      int overhead=(int)(cloneKey.getToken().getHeapSize() + ROW_OVERHEAD_HEAP_SIZE);
+
+      allocator.onHeap().allocate(overhead,opGroup);
+
+      initialSize=8;
+
+    }
+
+  }
+
+  long[] pair=previous.addAllWithSizeDelta(update,opGroup,indexer);
+
+  minTimestamp=Math.min(minTimestamp,previous.stats().minTimestamp);
+
+  liveDataSize.addAndGet(initialSize + pair[0]);
+
+  columnsCollector.update(update.columns());
+
+  statsCollector.update(update.stats());
+
+  currentOperations.addAndGet(update.operationCount());
+
+  return pair[1];
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+void setDiscarded(){
+
+  allocator.setDiscarded();
+
+}
+
+Location: Memtable.java
+
+Content: 
+
+@VisibleForTesting public void setDiscarding(OpOrder.Barrier writeBarrier,AtomicReference<CommitLogPosition> commitLogUpperBound){
+
+  assert this.writeBarrier == null;
+
+  this.commitLogUpperBound=commitLogUpperBound;
+
+  this.writeBarrier=writeBarrier;
+
+  allocator.setDiscarding();
+
+}
+

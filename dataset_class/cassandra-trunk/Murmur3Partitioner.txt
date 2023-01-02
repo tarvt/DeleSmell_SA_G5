@@ -1,0 +1,282 @@
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public Map<Token,Float> describeOwnership(List<Token> sortedTokens){
+
+  Map<Token,Float> ownerships=new HashMap<Token,Float>();
+
+  Iterator<Token> i=sortedTokens.iterator();
+
+  if (!i.hasNext())   throw new RuntimeException("No nodes present in the cluster. Has this node finished starting up?");
+
+  if (sortedTokens.size() == 1)   ownerships.put(i.next(),new Float(1.0));
+
+ else {
+
+    final BigInteger ri=BigInteger.valueOf(MAXIMUM).subtract(BigInteger.valueOf(MINIMUM.token + 1));
+
+    final BigDecimal r=new BigDecimal(ri);
+
+    Token start=i.next();
+
+    BigInteger ti=BigInteger.valueOf(((LongToken)start).token);
+
+    Token t;
+
+    BigInteger tim1=ti;
+
+    while (i.hasNext()) {
+
+      t=i.next();
+
+      ti=BigInteger.valueOf(((LongToken)t).token);
+
+      float age=new BigDecimal(ti.subtract(tim1).add(ri).mod(ri)).divide(r,6,BigDecimal.ROUND_HALF_EVEN).floatValue();
+
+      ownerships.put(t,age);
+
+      tim1=ti;
+
+    }
+
+    float x=new BigDecimal(BigInteger.valueOf(((LongToken)start).token).subtract(ti).add(ri).mod(ri)).divide(r,6,BigDecimal.ROUND_HALF_EVEN).floatValue();
+
+    ownerships.put(start,x);
+
+  }
+
+  return ownerships;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+private long[] getHash(ByteBuffer key){
+
+  long[] hash=new long[2];
+
+  MurmurHash.hash3_x64_128(key,key.position(),key.remaining(),0,hash);
+
+  return hash;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public Token getMaximumToken(){
+
+  return new LongToken(Long.MAX_VALUE);
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public int getMaxTokenSize(){
+
+  return MAXIMUM_TOKEN_SIZE;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public LongToken getMinimumToken(){
+
+  return MINIMUM;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public LongToken getRandomToken(){
+
+  return getRandomToken(ThreadLocalRandom.current());
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public LongToken getRandomToken(Random r){
+
+  return new LongToken(normalize(r.nextLong()));
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public Token.TokenFactory getTokenFactory(){
+
+  return tokenFactory;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public AbstractType<?> getTokenValidator(){
+
+  return LongType.instance;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+/** 
+
+ * Generate the token of a key. Note that we need to ensure all generated token are strictly bigger than MINIMUM. In particular we don't want MINIMUM to correspond to any key because the range (MINIMUM, X] doesn't include MINIMUM but we use such range to select all data whose token is smaller than X.
+
+ */
+
+public LongToken getToken(ByteBuffer key){
+
+  return getToken(key,getHash(key));
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+private LongToken getToken(ByteBuffer key,long[] hash){
+
+  if (key.remaining() == 0)   return MINIMUM;
+
+  return new LongToken(normalize(hash[0]));
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public Token midpoint(Token lToken,Token rToken){
+
+  BigInteger l=BigInteger.valueOf(((LongToken)lToken).token), r=BigInteger.valueOf(((LongToken)rToken).token), midpoint;
+
+  if (l.compareTo(r) < 0) {
+
+    BigInteger sum=l.add(r);
+
+    midpoint=sum.shiftRight(1);
+
+  }
+
+ else {
+
+    BigInteger max=BigInteger.valueOf(MAXIMUM);
+
+    BigInteger min=BigInteger.valueOf(MINIMUM.token);
+
+    midpoint=(max.subtract(min).add(l).add(r)).shiftRight(1);
+
+    if (midpoint.compareTo(max) > 0)     midpoint=min.add(midpoint.subtract(max));
+
+  }
+
+  return new LongToken(midpoint.longValue());
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+private long normalize(long v){
+
+  return v == Long.MIN_VALUE ? Long.MAX_VALUE : v;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public AbstractType<?> partitionOrdering(){
+
+  return partitionOrdering;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public boolean preservesOrder(){
+
+  return false;
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public Optional<Splitter> splitter(){
+
+  return Optional.of(splitter);
+
+}
+
+Location: Murmur3Partitioner.java
+
+Content: 
+
+public Token split(Token lToken,Token rToken,double ratioToLeft){
+
+  BigDecimal l=BigDecimal.valueOf(((LongToken)lToken).token), r=BigDecimal.valueOf(((LongToken)rToken).token), ratio=BigDecimal.valueOf(ratioToLeft);
+
+  long newToken;
+
+  if (l.compareTo(r) < 0) {
+
+    newToken=r.subtract(l).multiply(ratio).add(l).toBigInteger().longValue();
+
+  }
+
+ else {
+
+    BigDecimal max=BigDecimal.valueOf(MAXIMUM);
+
+    BigDecimal min=BigDecimal.valueOf(MINIMUM.token);
+
+    BigInteger token=max.subtract(min).add(r).subtract(l).multiply(ratio).add(l).toBigInteger();
+
+    BigInteger maxToken=BigInteger.valueOf(MAXIMUM);
+
+    if (token.compareTo(maxToken) <= 0) {
+
+      newToken=token.longValue();
+
+    }
+
+ else {
+
+      BigInteger minToken=BigInteger.valueOf(MINIMUM.token);
+
+      newToken=minToken.add(token.subtract(maxToken)).longValue();
+
+    }
+
+  }
+
+  return new LongToken(newToken);
+
+}
+

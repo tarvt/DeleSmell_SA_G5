@@ -1,0 +1,114 @@
+Location: NoReplicationTokenAllocator.java
+
+Content: 
+
+/** 
+
+ * Used in tests.
+
+ */
+
+protected void createTokenInfos(){
+
+  createTokenInfos(createUnitInfos(Maps.newHashMap()));
+
+}
+
+Location: NoReplicationTokenAllocator.java
+
+Content: 
+
+/** 
+
+ * Construct the token ring as a CircularList of TokenInfo, and populate the ownership of the UnitInfo's provided
+
+ */
+
+private TokenInfo<Unit> createTokenInfos(Map<Unit,UnitInfo<Unit>> units){
+
+  if (units.isEmpty())   return null;
+
+  TokenInfo<Unit> prev=null;
+
+  TokenInfo<Unit> first=null;
+
+  for (  Map.Entry<Token,Unit> en : sortedTokens.entrySet()) {
+
+    Token t=en.getKey();
+
+    UnitInfo<Unit> ni=units.get(en.getValue());
+
+    TokenInfo<Unit> ti=new TokenInfo<>(t,ni);
+
+    first=ti.insertAfter(first,prev);
+
+    prev=ti;
+
+  }
+
+  TokenInfo<Unit> curr=first;
+
+  tokensInUnits.clear();
+
+  sortedUnits.clear();
+
+  do {
+
+    populateTokenInfoAndAdjustUnit(curr);
+
+    curr=curr.next;
+
+  }
+
+ while (curr != first);
+
+  for (  UnitInfo<Unit> unitInfo : units.values()) {
+
+    sortedUnits.add(new Weighted<UnitInfo>(unitInfo.ownership,unitInfo));
+
+  }
+
+  TokenAllocatorDiagnostics.tokenInfosCreated(this,sortedUnits,sortedTokens,first);
+
+  return first;
+
+}
+
+Location: NoReplicationTokenAllocator.java
+
+Content: 
+
+public NoReplicationTokenAllocator(NavigableMap<Token,Unit> sortedTokens,ReplicationStrategy<Unit> strategy,IPartitioner partitioner){
+
+  super(sortedTokens,strategy,partitioner);
+
+}
+
+Location: NoReplicationTokenAllocator.java
+
+Content: 
+
+private void populateTokenInfoAndAdjustUnit(TokenInfo<Unit> token){
+
+  token.replicationStart=token.prevInRing().token;
+
+  token.replicationThreshold=token.token;
+
+  token.replicatedOwnership=token.replicationStart.size(token.token);
+
+  token.owningUnit.ownership+=token.replicatedOwnership;
+
+  PriorityQueue<Weighted<TokenInfo>> unitTokens=tokensInUnits.get(token.owningUnit.unit);
+
+  if (unitTokens == null) {
+
+    unitTokens=Queues.newPriorityQueue();
+
+    tokensInUnits.put(token.owningUnit.unit,unitTokens);
+
+  }
+
+  unitTokens.add(new Weighted<TokenInfo>(token.replicatedOwnership,token));
+
+}
+

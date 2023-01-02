@@ -1,0 +1,160 @@
+Location: MonitoringTask.java
+
+Content: 
+
+static void addFailedOperation(Monitorable operation,long nowNanos){
+
+  instance.failedOperationsQueue.offer(new FailedOperation(operation,nowNanos));
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+static void addSlowOperation(Monitorable operation,long nowNanos){
+
+  instance.slowOperationsQueue.offer(new SlowOperation(operation,nowNanos));
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+public void cancel(){
+
+  reportingTask.cancel(false);
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+@VisibleForTesting List<String> getFailedOperations(){
+
+  return getLogMessages(failedOperationsQueue.popOperations());
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+private List<String> getLogMessages(AggregatedOperations operations){
+
+  String ret=operations.getLogMessage();
+
+  return ret.isEmpty() ? Collections.emptyList() : Arrays.asList(ret.split("\n"));
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+@VisibleForTesting List<String> getSlowOperations(){
+
+  return getLogMessages(slowOperationsQueue.popOperations());
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+@VisibleForTesting boolean logFailedOperations(long nowNanos){
+
+  AggregatedOperations failedOperations=failedOperationsQueue.popOperations();
+
+  if (!failedOperations.isEmpty()) {
+
+    long elapsedNanos=nowNanos - approxLastLogTimeNanos;
+
+    noSpamLogger.warn("Some operations timed out, details available at debug level (debug.log)");
+
+    if (logger.isDebugEnabled())     logger.debug("{} operations timed out in the last {} msecs:{}{}",failedOperations.num(),NANOSECONDS.toMillis(elapsedNanos),LINE_SEPARATOR,failedOperations.getLogMessage());
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+@VisibleForTesting private void logOperations(long approxCurrentTimeNanos){
+
+  logSlowOperations(approxCurrentTimeNanos);
+
+  logFailedOperations(approxCurrentTimeNanos);
+
+  approxLastLogTimeNanos=approxCurrentTimeNanos;
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+@VisibleForTesting boolean logSlowOperations(long approxCurrentTimeNanos){
+
+  AggregatedOperations slowOperations=slowOperationsQueue.popOperations();
+
+  if (!slowOperations.isEmpty()) {
+
+    long approxElapsedNanos=approxCurrentTimeNanos - approxLastLogTimeNanos;
+
+    noSpamLogger.info("Some operations were slow, details available at debug level (debug.log)");
+
+    if (logger.isDebugEnabled())     logger.debug("{} operations were slow in the last {} msecs:{}{}",slowOperations.num(),NANOSECONDS.toMillis(approxElapsedNanos),LINE_SEPARATOR,slowOperations.getLogMessage());
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+@VisibleForTesting static MonitoringTask make(int reportIntervalMillis,int maxTimedoutOperations){
+
+  if (instance != null) {
+
+    instance.cancel();
+
+    instance=null;
+
+  }
+
+  return new MonitoringTask(reportIntervalMillis,maxTimedoutOperations);
+
+}
+
+Location: MonitoringTask.java
+
+Content: 
+
+private MonitoringTask(int reportIntervalMillis,int maxOperations){
+
+  this.failedOperationsQueue=new OperationsQueue(maxOperations);
+
+  this.slowOperationsQueue=new OperationsQueue(maxOperations);
+
+  this.approxLastLogTimeNanos=approxTime.now();
+
+  logger.info("Scheduling monitoring task with report interval of {} ms, max operations {}",reportIntervalMillis,maxOperations);
+
+  this.reportingTask=ScheduledExecutors.scheduledTasks.scheduleWithFixedDelay(() -> logOperations(approxTime.now()),reportIntervalMillis,reportIntervalMillis,TimeUnit.MILLISECONDS);
+
+}
+

@@ -1,0 +1,226 @@
+Location: MmappedRegions.java
+
+Content: 
+
+public void closeQuietly(){
+
+  Throwable err=close(null);
+
+  if (err != null) {
+
+    JVMStabilityInspector.inspectThrowable(err);
+
+    LoggerFactory.getLogger(getClass()).error("Error while closing mmapped regions",err);
+
+  }
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+public static MmappedRegions empty(ChannelProxy channel){
+
+  return new MmappedRegions(channel,null,0);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+public void extend(long length){
+
+  if (length < 0)   throw new IllegalArgumentException("Length must not be negative");
+
+  assert !isCopy() : "Copies cannot be extended";
+
+  if (length <= state.length)   return;
+
+  updateState(length);
+
+  copy=new State(state);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+public Region floor(long position){
+
+  assert !isCleanedUp() : "Attempted to use closed region";
+
+  return state.floor(position);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+private boolean isCopy(){
+
+  return copy == null;
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+public boolean isValid(ChannelProxy channel){
+
+  return state.isValid(channel);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+/** 
+
+ * @param channel file to map. the MmappedRegions instance will hold shared copy of given channel.
+
+ * @param metadata
+
+ * @return new instance
+
+ */
+
+public static MmappedRegions map(ChannelProxy channel,CompressionMetadata metadata){
+
+  if (metadata == null)   throw new IllegalArgumentException("metadata cannot be null");
+
+  return new MmappedRegions(channel,metadata,0);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+public static MmappedRegions map(ChannelProxy channel,long length){
+
+  if (length <= 0)   throw new IllegalArgumentException("Length must be positive");
+
+  return new MmappedRegions(channel,null,length);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+private MmappedRegions(ChannelProxy channel,CompressionMetadata metadata,long length){
+
+  this(new State(channel),metadata,length);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+private MmappedRegions(MmappedRegions original){
+
+  super(original);
+
+  this.state=original.copy;
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+private MmappedRegions(State state,CompressionMetadata metadata,long length){
+
+  super(new Tidier(state));
+
+  this.state=state;
+
+  if (metadata != null) {
+
+    assert length == 0 : "expected no length with metadata";
+
+    updateState(metadata);
+
+  }
+
+ else   if (length > 0) {
+
+    updateState(length);
+
+  }
+
+  this.copy=new State(state);
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+private void updateState(CompressionMetadata metadata){
+
+  long offset=0;
+
+  long lastSegmentOffset=0;
+
+  long segmentSize=0;
+
+  while (offset < metadata.dataLength) {
+
+    CompressionMetadata.Chunk chunk=metadata.chunkFor(offset);
+
+    if (segmentSize + chunk.length + 4 > MAX_SEGMENT_SIZE) {
+
+      if (segmentSize > 0) {
+
+        state.add(lastSegmentOffset,segmentSize);
+
+        lastSegmentOffset+=segmentSize;
+
+        segmentSize=0;
+
+      }
+
+    }
+
+    segmentSize+=chunk.length + 4;
+
+    offset+=metadata.chunkLength();
+
+  }
+
+  if (segmentSize > 0)   state.add(lastSegmentOffset,segmentSize);
+
+  state.length=lastSegmentOffset + segmentSize;
+
+}
+
+Location: MmappedRegions.java
+
+Content: 
+
+private void updateState(long length){
+
+  state.length=length;
+
+  long pos=state.getPosition();
+
+  while (pos < length) {
+
+    long size=Math.min(MAX_SEGMENT_SIZE,length - pos);
+
+    state.add(pos,size);
+
+    pos+=size;
+
+  }
+
+}
+

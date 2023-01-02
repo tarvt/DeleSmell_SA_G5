@@ -1,0 +1,126 @@
+Location: NetworkTopologyStrategy.java
+
+Content: 
+
+public Set<String> getDatacenters(){
+
+  return datacenters.keySet();
+
+}
+
+Location: NetworkTopologyStrategy.java
+
+Content: 
+
+public ReplicationFactor getReplicationFactor(String dc){
+
+  ReplicationFactor replicas=datacenters.get(dc);
+
+  return replicas == null ? ReplicationFactor.ZERO : replicas;
+
+}
+
+Location: NetworkTopologyStrategy.java
+
+Content: 
+
+public NetworkTopologyStrategy(String keyspaceName,TokenMetadata tokenMetadata,IEndpointSnitch snitch,Map<String,String> configOptions) throws ConfigurationException {
+
+  super(keyspaceName,tokenMetadata,snitch,configOptions);
+
+  int replicas=0;
+
+  int trans=0;
+
+  Map<String,ReplicationFactor> newDatacenters=new HashMap<>();
+
+  if (configOptions != null) {
+
+    for (    Entry<String,String> entry : configOptions.entrySet()) {
+
+      String dc=entry.getKey();
+
+      if (dc.equalsIgnoreCase(REPLICATION_FACTOR))       throw new ConfigurationException(REPLICATION_FACTOR + " should not appear as an option at construction time for NetworkTopologyStrategy");
+
+      ReplicationFactor rf=ReplicationFactor.fromString(entry.getValue());
+
+      replicas+=rf.allReplicas;
+
+      trans+=rf.transientReplicas();
+
+      newDatacenters.put(dc,rf);
+
+    }
+
+  }
+
+  datacenters=Collections.unmodifiableMap(newDatacenters);
+
+  aggregateRf=ReplicationFactor.withTransient(replicas,trans);
+
+  logger.info("Configured datacenter replicas are {}",FBUtilities.toString(datacenters));
+
+}
+
+Location: NetworkTopologyStrategy.java
+
+Content: 
+
+/** 
+
+ * Support datacenter auto-expansion for CASSANDRA-14303. This hook allows us to safely auto-expand the "replication_factor" options out into the known datacenters. It is called via reflection from {@link AbstractReplicationStrategy#prepareReplicationStrategyOptions(Class,Map,Map)}.
+
+ * @param options The proposed strategy options that will be potentially mutated
+
+ * @param previousOptions Any previous strategy options in the case of an ALTER statement
+
+ */
+
+protected static void prepareOptions(Map<String,String> options,Map<String,String> previousOptions){
+
+  String replication=options.remove(REPLICATION_FACTOR);
+
+  if (replication == null && options.size() == 0) {
+
+    replication=previousOptions.get(REPLICATION_FACTOR);
+
+  }
+
+ else   if (replication != null) {
+
+    previousOptions.entrySet().stream().filter(e -> !e.getKey().equals(REPLICATION_FACTOR)).forEach(e -> options.putIfAbsent(e.getKey(),e.getValue()));
+
+  }
+
+  if (replication != null) {
+
+    ReplicationFactor defaultReplicas=ReplicationFactor.fromString(replication);
+
+    Datacenters.getValidDatacenters().forEach(dc -> options.putIfAbsent(dc,defaultReplicas.toParseableString()));
+
+  }
+
+  options.values().removeAll(Collections.singleton("0"));
+
+}
+
+Location: NetworkTopologyStrategy.java
+
+Content: 
+
+private int sizeOrZero(Collection<?> collection){
+
+  return collection != null ? collection.size() : 0;
+
+}
+
+Location: NetworkTopologyStrategy.java
+
+Content: 
+
+private int sizeOrZero(Multimap<?,?> collection){
+
+  return collection != null ? collection.asMap().size() : 0;
+
+}
+
