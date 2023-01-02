@@ -1,0 +1,148 @@
+Location: CompressionInfo.java
+
+Content: 
+
+/** 
+
+ * Returns the offset and length of the file chunks.
+
+ * @return the offset and length of the file chunks.
+
+ */
+
+public abstract CompressionMetadata.Chunk[] chunks();
+
+Location: CompressionInfo.java
+
+Content: 
+
+/** 
+
+ * Computes the size of the file to transfer.
+
+ * @return the size of the file in bytes
+
+ */
+
+public long getTotalSize(){
+
+  long size=0;
+
+  for (  CompressionMetadata.Chunk chunk : chunks()) {
+
+    size+=chunk.length + 4;
+
+  }
+
+  return size;
+
+}
+
+Location: CompressionInfo.java
+
+Content: 
+
+/** 
+
+ * Create a  {@code CompressionInfo} instance which is fully initialized.
+
+ * @param chunks the file chunks
+
+ * @param parameters the compression parameters
+
+ */
+
+public static CompressionInfo newInstance(CompressionMetadata.Chunk[] chunks,CompressionParams parameters){
+
+  assert chunks != null && parameters != null;
+
+  return new CompressionInfo(){
+
+    @Override public Chunk[] chunks(){
+
+      return chunks;
+
+    }
+
+    @Override public CompressionParams parameters(){
+
+      return parameters;
+
+    }
+
+  }
+
+;
+
+}
+
+Location: CompressionInfo.java
+
+Content: 
+
+/** 
+
+ * Create a  {@code CompressionInfo} that will computes the file chunks only upon request.<p>The instance returned by that method will only computes the file chunks when the  {@code chunks}, {@code equals} or {@code hashcode} methods are called for the first time. This is done to reduce the GCpressure. See CASSANDRA-10680 for more details</p>.
+
+ * @param metadata the compression metadata
+
+ * @param sections the file sections
+
+ * @return a {@code CompressionInfo} that will computes the file chunks only upon request.
+
+ */
+
+static CompressionInfo newLazyInstance(CompressionMetadata metadata,List<SSTableReader.PartitionPositionBounds> sections){
+
+  if (metadata == null) {
+
+    return null;
+
+  }
+
+  return new CompressionInfo(){
+
+    private volatile Chunk[] chunks;
+
+    @Override public synchronized Chunk[] chunks(){
+
+      if (chunks == null)       chunks=metadata.getChunksForSections(sections);
+
+      return chunks;
+
+    }
+
+    @Override public CompressionParams parameters(){
+
+      return metadata.parameters;
+
+    }
+
+    @Override public long getTotalSize(){
+
+      if (chunks == null)       return metadata.getTotalSizeForSections(sections);
+
+      return super.getTotalSize();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: CompressionInfo.java
+
+Content: 
+
+/** 
+
+ * Returns the compression parameters.
+
+ * @return the compression parameters.
+
+ */
+
+public abstract CompressionParams parameters();
+

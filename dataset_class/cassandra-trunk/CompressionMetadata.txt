@@ -1,0 +1,364 @@
+Location: CompressionMetadata.java
+
+Content: 
+
+/** 
+
+ * Get a chunk of compressed data (offset, length) corresponding to given position
+
+ * @param position Position in the file.
+
+ * @return pair of chunk offset and length.
+
+ */
+
+public Chunk chunkFor(long position){
+
+  long idx=8 * (position / parameters.chunkLength());
+
+  if (idx >= chunkOffsetsSize)   throw new CorruptSSTableException(new EOFException(),indexFilePath);
+
+  if (idx < 0)   throw new CorruptSSTableException(new IllegalArgumentException(String.format("Invalid negative chunk index %d with position %d",idx,position)),indexFilePath);
+
+  long chunkOffset=chunkOffsets.getLong(idx);
+
+  long nextChunkOffset=(idx + 8 == chunkOffsetsSize) ? compressedFileLength : chunkOffsets.getLong(idx + 8);
+
+  return new Chunk(chunkOffset,(int)(nextChunkOffset - chunkOffset - 4));
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+public int chunkLength(){
+
+  return parameters.chunkLength();
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+@VisibleForTesting public CompressionMetadata(Descriptor desc,long compressedLength){
+
+  this(desc.filenameFor(Component.COMPRESSION_INFO),compressedLength,desc.version.hasMaxCompressedLength());
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+@VisibleForTesting public CompressionMetadata(String filePath,CompressionParams parameters,Memory offsets,long offsetsSize,long dataLength,long compressedLength){
+
+  this.indexFilePath=filePath;
+
+  this.parameters=parameters;
+
+  this.dataLength=dataLength;
+
+  this.compressedFileLength=compressedLength;
+
+  this.chunkOffsets=offsets;
+
+  this.chunkOffsetsSize=offsetsSize;
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+@VisibleForTesting public CompressionMetadata(String indexFilePath,long compressedLength,boolean hasMaxCompressedSize){
+
+  this.indexFilePath=indexFilePath;
+
+  try (DataInputStream stream=new DataInputStream(Files.newInputStream(Paths.get(indexFilePath)))){
+
+    String compressorName=stream.readUTF();
+
+    int optionCount=stream.readInt();
+
+    Map<String,String> options=new HashMap<>(optionCount);
+
+    for (int i=0; i < optionCount; ++i) {
+
+      String key=stream.readUTF();
+
+      String value=stream.readUTF();
+
+      options.put(key,value);
+
+    }
+
+    int chunkLength=stream.readInt();
+
+    int maxCompressedSize=Integer.MAX_VALUE;
+
+    if (hasMaxCompressedSize)     maxCompressedSize=stream.readInt();
+
+    try {
+
+      parameters=new CompressionParams(compressorName,chunkLength,maxCompressedSize,options);
+
+    }
+
+ catch (    ConfigurationException e) {
+
+      throw new RuntimeException("Cannot create CompressionParams for stored parameters",e);
+
+    }
+
+    dataLength=stream.readLong();
+
+    compressedFileLength=compressedLength;
+
+    chunkOffsets=readChunkOffsets(stream);
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+catch (  IOException e) {
+
+    throw new CorruptSSTableException(e,indexFilePath);
+
+  }
+
+  this.chunkOffsetsSize=chunkOffsets.size();
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+public ICompressor compressor(){
+
+  return parameters.getSstableCompressor();
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+public static CompressionMetadata createWithLength(String dataFilePath,long compressedLength){
+
+  return new CompressionMetadata(Descriptor.fromFilename(dataFilePath),compressedLength);
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+/** 
+
+ * Create metadata about given compressed file including uncompressed data length, chunk size and list of the chunk offsets of the compressed data. This is an expensive operation! Don't create more than one for each sstable.
+
+ * @param dataFilePath Path to the compressed file
+
+ * @return metadata about given compressed file.
+
+ */
+
+public static CompressionMetadata create(String dataFilePath){
+
+  return createWithLength(dataFilePath,new File(dataFilePath).length());
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+/** 
+
+ * @param sections Collection of sections in uncompressed file
+
+ * @return Array of chunks which corresponds to given sections of uncompressed file, sorted by chunk offset
+
+ */
+
+public Chunk[] getChunksForSections(Collection<SSTableReader.PartitionPositionBounds> sections){
+
+  SortedSet<Chunk> offsets=new TreeSet<>((o1,o2) -> Longs.compare(o1.offset,o2.offset));
+
+  for (  SSTableReader.PartitionPositionBounds section : sections) {
+
+    int startIndex=(int)(section.lowerPosition / parameters.chunkLength());
+
+    int endIndex=(int)(section.upperPosition / parameters.chunkLength());
+
+    if (section.upperPosition % parameters.chunkLength() == 0)     endIndex--;
+
+    for (int i=startIndex; i <= endIndex; i++) {
+
+      long offset=i * 8L;
+
+      long chunkOffset=chunkOffsets.getLong(offset);
+
+      long nextChunkOffset=offset + 8 == chunkOffsetsSize ? compressedFileLength : chunkOffsets.getLong(offset + 8);
+
+      offsets.add(new Chunk(chunkOffset,(int)(nextChunkOffset - chunkOffset - 4)));
+
+    }
+
+  }
+
+  return offsets.toArray(new Chunk[offsets.size()]);
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+/** 
+
+ * @param sections Collection of sections in uncompressed file. Should not contain sections that overlap each other.
+
+ * @return Total chunk size in bytes for given sections including checksum.
+
+ */
+
+public long getTotalSizeForSections(Collection<SSTableReader.PartitionPositionBounds> sections){
+
+  long size=0;
+
+  long lastOffset=-1;
+
+  for (  SSTableReader.PartitionPositionBounds section : sections) {
+
+    int startIndex=(int)(section.lowerPosition / parameters.chunkLength());
+
+    int endIndex=(int)(section.upperPosition / parameters.chunkLength());
+
+    if (section.upperPosition % parameters.chunkLength() == 0)     endIndex--;
+
+    for (int i=startIndex; i <= endIndex; i++) {
+
+      long offset=i * 8L;
+
+      long chunkOffset=chunkOffsets.getLong(offset);
+
+      if (chunkOffset > lastOffset) {
+
+        lastOffset=chunkOffset;
+
+        long nextChunkOffset=offset + 8 == chunkOffsetsSize ? compressedFileLength : chunkOffsets.getLong(offset + 8);
+
+        size+=(nextChunkOffset - chunkOffset);
+
+      }
+
+    }
+
+  }
+
+  return size;
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+public int maxCompressedLength(){
+
+  return parameters.maxCompressedLength();
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+/** 
+
+ * Returns the amount of memory in bytes used off heap.
+
+ * @return the amount of memory in bytes used off heap
+
+ */
+
+public long offHeapSize(){
+
+  return chunkOffsets.size();
+
+}
+
+Location: CompressionMetadata.java
+
+Content: 
+
+/** 
+
+ * Read offsets of the individual chunks from the given input.
+
+ * @param input Source of the data.
+
+ * @return collection of the chunk offsets.
+
+ */
+
+private Memory readChunkOffsets(DataInput input){
+
+  final int chunkCount;
+
+  try {
+
+    chunkCount=input.readInt();
+
+    if (chunkCount <= 0)     throw new IOException("Compressed file with 0 chunks encountered: " + input);
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSReadError(e,indexFilePath);
+
+  }
+
+  @SuppressWarnings("resource") Memory offsets=Memory.allocate(chunkCount * 8L);
+
+  int i=0;
+
+  try {
+
+    for (i=0; i < chunkCount; i++) {
+
+      offsets.setLong(i * 8L,input.readLong());
+
+    }
+
+    return offsets;
+
+  }
+
+ catch (  IOException e) {
+
+    if (offsets != null)     offsets.close();
+
+    if (e instanceof EOFException) {
+
+      String msg=String.format("Corrupted Index File %s: read %d but expected %d chunks.",indexFilePath,i,chunkCount);
+
+      throw new CorruptSSTableException(new IOException(msg,e),indexFilePath);
+
+    }
+
+    throw new FSReadError(e,indexFilePath);
+
+  }
+
+}
+

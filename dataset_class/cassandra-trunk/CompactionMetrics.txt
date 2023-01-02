@@ -1,0 +1,122 @@
+Location: CompactionMetrics.java
+
+Content: 
+
+public CompactionMetrics(final ThreadPoolExecutor... collectors){
+
+  pendingTasks=Metrics.register(factory.createMetricName("PendingTasks"),new Gauge<Integer>(){
+
+    public Integer getValue(){
+
+      int n=0;
+
+      for (      String keyspaceName : Schema.instance.getKeyspaces()) {
+
+        for (        ColumnFamilyStore cfs : Keyspace.open(keyspaceName).getColumnFamilyStores())         n+=cfs.getCompactionStrategyManager().getEstimatedRemainingTasks();
+
+      }
+
+      return n + CompactionManager.instance.active.getCompactions().size();
+
+    }
+
+  }
+
+);
+
+  pendingTasksByTableName=Metrics.register(factory.createMetricName("PendingTasksByTableName"),new Gauge<Map<String,Map<String,Integer>>>(){
+
+    @Override public Map<String,Map<String,Integer>> getValue(){
+
+      Map<String,Map<String,Integer>> resultMap=new HashMap<>();
+
+      for (      String keyspaceName : Schema.instance.getKeyspaces()) {
+
+        for (        ColumnFamilyStore cfs : Keyspace.open(keyspaceName).getColumnFamilyStores()) {
+
+          int taskNumber=cfs.getCompactionStrategyManager().getEstimatedRemainingTasks();
+
+          if (taskNumber > 0) {
+
+            if (!resultMap.containsKey(keyspaceName)) {
+
+              resultMap.put(keyspaceName,new HashMap<>());
+
+            }
+
+            resultMap.get(keyspaceName).put(cfs.getTableName(),taskNumber);
+
+          }
+
+        }
+
+      }
+
+      for (      CompactionInfo.Holder compaction : CompactionManager.instance.active.getCompactions()) {
+
+        TableMetadata metaData=compaction.getCompactionInfo().getTableMetadata();
+
+        if (metaData == null) {
+
+          continue;
+
+        }
+
+        if (!resultMap.containsKey(metaData.keyspace)) {
+
+          resultMap.put(metaData.keyspace,new HashMap<>());
+
+        }
+
+        Map<String,Integer> tableNameToCountMap=resultMap.get(metaData.keyspace);
+
+        if (tableNameToCountMap.containsKey(metaData.name)) {
+
+          tableNameToCountMap.put(metaData.name,tableNameToCountMap.get(metaData.name) + 1);
+
+        }
+
+ else {
+
+          tableNameToCountMap.put(metaData.name,1);
+
+        }
+
+      }
+
+      return resultMap;
+
+    }
+
+  }
+
+);
+
+  completedTasks=Metrics.register(factory.createMetricName("CompletedTasks"),new Gauge<Long>(){
+
+    public Long getValue(){
+
+      long completedTasks=0;
+
+      for (      ThreadPoolExecutor collector : collectors)       completedTasks+=collector.getCompletedTaskCount();
+
+      return completedTasks;
+
+    }
+
+  }
+
+);
+
+  totalCompactionsCompleted=Metrics.meter(factory.createMetricName("TotalCompactionsCompleted"));
+
+  bytesCompacted=Metrics.counter(factory.createMetricName("BytesCompacted"));
+
+  compactionsReduced=Metrics.counter(factory.createMetricName("CompactionsReduced"));
+
+  sstablesDropppedFromCompactions=Metrics.counter(factory.createMetricName("SSTablesDroppedFromCompaction"));
+
+  compactionsAborted=Metrics.counter(factory.createMetricName("CompactionsAborted"));
+
+}
+

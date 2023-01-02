@@ -1,0 +1,806 @@
+Location: CounterContext.java
+
+Content: 
+
+public <V>V clearAllLocal(V context,ValueAccessor<V> accessor){
+
+  int count=Math.abs(accessor.getShort(context,0));
+
+  if (count == 0)   return context;
+
+  List<Short> globalShardIndexes=new ArrayList<>(count);
+
+  for (int i=0; i < count; i++) {
+
+    short elt=accessor.getShort(context,HEADER_SIZE_LENGTH + i * HEADER_ELT_LENGTH);
+
+    if (elt < 0)     globalShardIndexes.add(elt);
+
+  }
+
+  if (count == globalShardIndexes.size())   return context;
+
+  V cleared=accessor.allocate(accessor.size(context) - (count - globalShardIndexes.size()) * HEADER_ELT_LENGTH);
+
+  accessor.putShort(cleared,0,(short)globalShardIndexes.size());
+
+  for (int i=0; i < globalShardIndexes.size(); i++)   accessor.putShort(cleared,HEADER_SIZE_LENGTH + i * HEADER_ELT_LENGTH,globalShardIndexes.get(i));
+
+  int origHeaderLength=headerLength(context,accessor);
+
+  accessor.copyTo(context,origHeaderLength,cleared,accessor,headerLength(cleared,accessor),accessor.size(context) - origHeaderLength);
+
+  return cleared;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+private static int compareId(ByteBuffer bb1,int pos1,ByteBuffer bb2,int pos2){
+
+  return ByteBufferUtil.compareSubArrays(bb1,pos1,bb2,pos2,CounterId.LENGTH);
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+private Relationship compare(ContextState leftState,ContextState rightState){
+
+  long leftClock=leftState.getClock();
+
+  long leftCount=leftState.getCount();
+
+  long rightClock=rightState.getClock();
+
+  long rightCount=rightState.getCount();
+
+  if (leftState.isGlobal() || rightState.isGlobal()) {
+
+    if (leftState.isGlobal() && rightState.isGlobal()) {
+
+      if (leftClock == rightClock) {
+
+        if (leftCount != rightCount && CompactionManager.isCompactionManager.get()) {
+
+          logger.warn("invalid global counter shard detected; ({}, {}, {}) and ({}, {}, {}) differ only in " + "count; will pick highest to self-heal on compaction",leftState.getCounterId(),leftClock,leftCount,rightState.getCounterId(),rightClock,rightCount);
+
+        }
+
+        if (leftCount > rightCount)         return Relationship.GREATER_THAN;
+
+ else         if (leftCount == rightCount)         return Relationship.EQUAL;
+
+ else         return Relationship.LESS_THAN;
+
+      }
+
+ else {
+
+        return leftClock > rightClock ? Relationship.GREATER_THAN : Relationship.LESS_THAN;
+
+      }
+
+    }
+
+ else {
+
+      return leftState.isGlobal() ? Relationship.GREATER_THAN : Relationship.LESS_THAN;
+
+    }
+
+  }
+
+  if (leftState.isLocal() || rightState.isLocal()) {
+
+    if (leftState.isLocal() && rightState.isLocal())     return Relationship.DISJOINT;
+
+ else     return leftState.isLocal() ? Relationship.GREATER_THAN : Relationship.LESS_THAN;
+
+  }
+
+  if (leftClock == rightClock) {
+
+    if (leftCount != rightCount && CompactionManager.isCompactionManager.get()) {
+
+      logger.warn("invalid remote counter shard detected; ({}, {}, {}) and ({}, {}, {}) differ only in " + "count; will pick highest to self-heal on compaction",leftState.getCounterId(),leftClock,leftCount,rightState.getCounterId(),rightClock,rightCount);
+
+    }
+
+    if (leftCount > rightCount)     return Relationship.GREATER_THAN;
+
+ else     if (leftCount == rightCount)     return Relationship.EQUAL;
+
+ else     return Relationship.LESS_THAN;
+
+  }
+
+ else {
+
+    if ((leftClock >= 0 && rightClock > 0 && leftClock >= rightClock) || (leftClock < 0 && (rightClock > 0 || leftClock < rightClock)))     return Relationship.GREATER_THAN;
+
+ else     return Relationship.LESS_THAN;
+
+  }
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Creates a counter context with a single global, 2.1+ shard (a result of increment).
+
+ */
+
+public ByteBuffer createGlobal(CounterId id,long clock,long count){
+
+  ContextState state=ContextState.allocate(1,0,0);
+
+  state.writeGlobal(id,clock,count);
+
+  return state.context;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Creates a counter context with a single local shard. For use by tests of compatibility with pre-2.1 counters only.
+
+ */
+
+public ByteBuffer createLocal(long count){
+
+  ContextState state=ContextState.allocate(0,1,0);
+
+  state.writeLocal(CounterId.getLocalId(),1L,count);
+
+  return state.context;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Creates a counter context with a single remote shard. For use by tests of compatibility with pre-2.1 counters only.
+
+ */
+
+public ByteBuffer createRemote(CounterId id,long clock,long count){
+
+  ContextState state=ContextState.allocate(0,0,1);
+
+  state.writeRemote(id,clock,count);
+
+  return state.context;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Creates a counter context with a single local shard with clock id of UPDATE_CLOCK_ID. This is only used in a PartitionUpdate until the update has gone through CounterMutation.apply(), at which point this special local shard will be replaced by a regular global one. It should never hit commitlog / memtable / disk, but can hit network. We use this so that if an update statement has multiple increments of the same counter we properly add them rather than keeping only one of them. NOTE: Before CASSANDRA-13691 we used a regular local shard without a hard-coded clock id value here. It was problematic, because it was possible to return a false positive, and on read path encode an old counter cell from 2.0 era with a regular local shard as a counter update, and to break the 2.1 coordinator.
+
+ */
+
+public ByteBuffer createUpdate(long count){
+
+  ContextState state=ContextState.allocate(0,1,0);
+
+  state.writeLocal(UPDATE_CLOCK_ID,1L,count);
+
+  return state.context;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Determine the count relationship between two contexts. EQUAL:        Equal set of nodes and every count is equal. GREATER_THAN: Superset of nodes and every count is equal or greater than its corollary. LESS_THAN:    Subset of nodes and every count is equal or less than its corollary. DISJOINT:     Node sets are not equal and/or counts are not all greater or less than. Strategy: compare node logical clocks (like a version vector).
+
+ * @param left counter context.
+
+ * @param right counter context.
+
+ * @return the Relationship between the contexts.
+
+ */
+
+public Relationship diff(ByteBuffer left,ByteBuffer right){
+
+  Relationship relationship=Relationship.EQUAL;
+
+  ContextState leftState=ContextState.wrap(left);
+
+  ContextState rightState=ContextState.wrap(right);
+
+  while (leftState.hasRemaining() && rightState.hasRemaining()) {
+
+    int compareId=leftState.compareIdTo(rightState);
+
+    if (compareId == 0) {
+
+      long leftClock=leftState.getClock();
+
+      long rightClock=rightState.getClock();
+
+      long leftCount=leftState.getCount();
+
+      long rightCount=rightState.getCount();
+
+      leftState.moveToNext();
+
+      rightState.moveToNext();
+
+      if (leftClock == rightClock) {
+
+        if (leftCount != rightCount) {
+
+          return Relationship.DISJOINT;
+
+        }
+
+      }
+
+ else       if ((leftClock >= 0 && rightClock > 0 && leftClock > rightClock) || (leftClock < 0 && (rightClock > 0 || leftClock < rightClock))) {
+
+        if (relationship == Relationship.EQUAL)         relationship=Relationship.GREATER_THAN;
+
+ else         if (relationship == Relationship.LESS_THAN)         return Relationship.DISJOINT;
+
+      }
+
+ else {
+
+        if (relationship == Relationship.EQUAL)         relationship=Relationship.LESS_THAN;
+
+ else         if (relationship == Relationship.GREATER_THAN)         return Relationship.DISJOINT;
+
+      }
+
+    }
+
+ else     if (compareId > 0) {
+
+      rightState.moveToNext();
+
+      if (relationship == Relationship.EQUAL)       relationship=Relationship.LESS_THAN;
+
+ else       if (relationship == Relationship.GREATER_THAN)       return Relationship.DISJOINT;
+
+    }
+
+ else {
+
+      leftState.moveToNext();
+
+      if (relationship == Relationship.EQUAL)       relationship=Relationship.GREATER_THAN;
+
+ else       if (relationship == Relationship.LESS_THAN)       return Relationship.DISJOINT;
+
+    }
+
+  }
+
+  if (leftState.hasRemaining()) {
+
+    if (relationship == Relationship.EQUAL)     return Relationship.GREATER_THAN;
+
+ else     if (relationship == Relationship.LESS_THAN)     return Relationship.DISJOINT;
+
+  }
+
+  if (rightState.hasRemaining()) {
+
+    if (relationship == Relationship.EQUAL)     return Relationship.LESS_THAN;
+
+ else     if (relationship == Relationship.GREATER_THAN)     return Relationship.DISJOINT;
+
+  }
+
+  return relationship;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Finds the position of a shard with the given id within the context (via binary search).
+
+ */
+
+@VisibleForTesting public int findPositionOf(ByteBuffer context,CounterId id){
+
+  int headerLength=headerLength(context,ByteBufferAccessor.instance);
+
+  int offset=context.position() + headerLength;
+
+  int left=0;
+
+  int right=(context.remaining() - headerLength) / STEP_LENGTH - 1;
+
+  while (right >= left) {
+
+    int middle=(left + right) / 2;
+
+    int cmp=compareId(context,offset + middle * STEP_LENGTH,id.bytes(),id.bytes().position());
+
+    if (cmp == -1)     left=middle + 1;
+
+ else     if (cmp == 0)     return offset + middle * STEP_LENGTH;
+
+ else     right=middle - 1;
+
+  }
+
+  return -1;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Returns the clock and the count associated with the given counter id, or (0, 0) if no such shard is present.
+
+ */
+
+@VisibleForTesting public ClockAndCount getClockAndCountOf(ByteBuffer context,CounterId id){
+
+  int position=findPositionOf(context,id);
+
+  if (position == -1)   return ClockAndCount.BLANK;
+
+  long clock=context.getLong(position + CounterId.LENGTH);
+
+  long count=context.getLong(position + CounterId.LENGTH + CLOCK_LENGTH);
+
+  return ClockAndCount.create(clock,count);
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Returns the clock and the count associated with the local counter id, or (0, 0) if no such shard is present.
+
+ */
+
+public ClockAndCount getLocalClockAndCount(ByteBuffer context){
+
+  return getClockAndCountOf(context,CounterId.getLocalId());
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Returns the count associated with the local counter id, or 0 if no such shard is present.
+
+ */
+
+public long getLocalCount(ByteBuffer context){
+
+  return getLocalClockAndCount(context).count;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Detects whether or not the context has any legacy (local or remote) shards in it.
+
+ */
+
+public <V>boolean hasLegacyShards(V context,ValueAccessor<V> accessor){
+
+  int totalCount=(accessor.size(context) - headerLength(context,accessor)) / STEP_LENGTH;
+
+  int localAndGlobalCount=Math.abs(accessor.getShort(context,0));
+
+  if (localAndGlobalCount < totalCount)   return true;
+
+  for (int i=0; i < localAndGlobalCount; i++)   if (accessor.getShort(context,HEADER_SIZE_LENGTH + i * HEADER_ELT_LENGTH) >= 0)   return true;
+
+  return false;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+public static <V>int headerLength(V context,ValueAccessor<V> accessor){
+
+  return HEADER_SIZE_LENGTH + Math.abs(accessor.getShort(context,0)) * HEADER_ELT_LENGTH;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Checks if a context is an update (see createUpdate() for justification).
+
+ */
+
+public boolean isUpdate(ByteBuffer context){
+
+  return ContextState.wrap(context).getCounterId().equals(UPDATE_CLOCK_ID);
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Mark context to delete local references afterward. Marking is done by multiply #elt by -1 to preserve header length and #elt count in order to clear all local refs later.
+
+ * @param context a counter context
+
+ * @return context that marked to delete local refs
+
+ */
+
+public ByteBuffer markLocalToBeCleared(ByteBuffer context){
+
+  short count=context.getShort(context.position());
+
+  if (count <= 0)   return context;
+
+  boolean hasLocalShards=false;
+
+  for (int i=0; i < count; i++) {
+
+    if (context.getShort(context.position() + HEADER_SIZE_LENGTH + i * HEADER_ELT_LENGTH) >= 0) {
+
+      hasLocalShards=true;
+
+      break;
+
+    }
+
+  }
+
+  if (!hasLocalShards)   return context;
+
+  ByteBuffer marked=ByteBuffer.allocate(context.remaining());
+
+  marked.putShort(marked.position(),(short)(count * -1));
+
+  ByteBufferUtil.copyBytes(context,context.position() + HEADER_SIZE_LENGTH,marked,marked.position() + HEADER_SIZE_LENGTH,context.remaining() - HEADER_SIZE_LENGTH);
+
+  return marked;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Return a context w/ an aggregated count for each counter id.
+
+ * @param left counter context.
+
+ * @param right counter context.
+
+ */
+
+public ByteBuffer merge(ByteBuffer left,ByteBuffer right){
+
+  boolean leftIsSuperSet=true;
+
+  boolean rightIsSuperSet=true;
+
+  int globalCount=0;
+
+  int localCount=0;
+
+  int remoteCount=0;
+
+  ContextState leftState=ContextState.wrap(left);
+
+  ContextState rightState=ContextState.wrap(right);
+
+  while (leftState.hasRemaining() && rightState.hasRemaining()) {
+
+    int cmp=leftState.compareIdTo(rightState);
+
+    if (cmp == 0) {
+
+      Relationship rel=compare(leftState,rightState);
+
+      if (rel == Relationship.GREATER_THAN)       rightIsSuperSet=false;
+
+ else       if (rel == Relationship.LESS_THAN)       leftIsSuperSet=false;
+
+ else       if (rel == Relationship.DISJOINT)       leftIsSuperSet=rightIsSuperSet=false;
+
+      if (leftState.isGlobal() || rightState.isGlobal())       globalCount+=1;
+
+ else       if (leftState.isLocal() || rightState.isLocal())       localCount+=1;
+
+ else       remoteCount+=1;
+
+      leftState.moveToNext();
+
+      rightState.moveToNext();
+
+    }
+
+ else     if (cmp > 0) {
+
+      leftIsSuperSet=false;
+
+      if (rightState.isGlobal())       globalCount+=1;
+
+ else       if (rightState.isLocal())       localCount+=1;
+
+ else       remoteCount+=1;
+
+      rightState.moveToNext();
+
+    }
+
+ else {
+
+      rightIsSuperSet=false;
+
+      if (leftState.isGlobal())       globalCount+=1;
+
+ else       if (leftState.isLocal())       localCount+=1;
+
+ else       remoteCount+=1;
+
+      leftState.moveToNext();
+
+    }
+
+  }
+
+  if (leftState.hasRemaining())   rightIsSuperSet=false;
+
+ else   if (rightState.hasRemaining())   leftIsSuperSet=false;
+
+  if (leftIsSuperSet)   return left;
+
+ else   if (rightIsSuperSet)   return right;
+
+  while (leftState.hasRemaining()) {
+
+    if (leftState.isGlobal())     globalCount+=1;
+
+ else     if (leftState.isLocal())     localCount+=1;
+
+ else     remoteCount+=1;
+
+    leftState.moveToNext();
+
+  }
+
+  while (rightState.hasRemaining()) {
+
+    if (rightState.isGlobal())     globalCount+=1;
+
+ else     if (rightState.isLocal())     localCount+=1;
+
+ else     remoteCount+=1;
+
+    rightState.moveToNext();
+
+  }
+
+  leftState.reset();
+
+  rightState.reset();
+
+  return merge(ContextState.allocate(globalCount,localCount,remoteCount),leftState,rightState);
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+private ByteBuffer merge(ContextState mergedState,ContextState leftState,ContextState rightState){
+
+  while (leftState.hasRemaining() && rightState.hasRemaining()) {
+
+    int cmp=leftState.compareIdTo(rightState);
+
+    if (cmp == 0) {
+
+      Relationship rel=compare(leftState,rightState);
+
+      if (rel == Relationship.DISJOINT)       mergedState.writeLocal(leftState.getCounterId(),leftState.getClock() + rightState.getClock(),leftState.getCount() + rightState.getCount());
+
+ else       if (rel == Relationship.GREATER_THAN)       leftState.copyTo(mergedState);
+
+ else       rightState.copyTo(mergedState);
+
+      rightState.moveToNext();
+
+      leftState.moveToNext();
+
+    }
+
+ else     if (cmp > 0) {
+
+      rightState.copyTo(mergedState);
+
+      rightState.moveToNext();
+
+    }
+
+ else {
+
+      leftState.copyTo(mergedState);
+
+      leftState.moveToNext();
+
+    }
+
+  }
+
+  while (leftState.hasRemaining()) {
+
+    leftState.copyTo(mergedState);
+
+    leftState.moveToNext();
+
+  }
+
+  while (rightState.hasRemaining()) {
+
+    rightState.copyTo(mergedState);
+
+    rightState.moveToNext();
+
+  }
+
+  return mergedState.context;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+public <V>boolean shouldClearLocal(V context,ValueAccessor<V> accessor){
+
+  return accessor.getShort(context,0) < 0;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Human-readable String from context.
+
+ * @param context counter context.
+
+ * @return a human-readable String of the context.
+
+ */
+
+public String toString(ByteBuffer context){
+
+  ContextState state=ContextState.wrap(context);
+
+  StringBuilder sb=new StringBuilder();
+
+  sb.append("[");
+
+  while (state.hasRemaining()) {
+
+    if (state.getElementIndex() > 0)     sb.append(",");
+
+    sb.append("{");
+
+    sb.append(state.getCounterId()).append(", ");
+
+    sb.append(state.getClock()).append(", ");
+
+    sb.append(state.getCount());
+
+    sb.append("}");
+
+    if (state.isGlobal())     sb.append("$");
+
+ else     if (state.isLocal())     sb.append("*");
+
+    state.moveToNext();
+
+  }
+
+  sb.append("]");
+
+  return sb.toString();
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+public <V>long total(Cell<V> cell){
+
+  return total(cell.value(),cell.accessor());
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+/** 
+
+ * Returns the aggregated count across all counter ids.
+
+ * @param context a counter context
+
+ * @return the aggregated count represented by {@code context}
+
+ */
+
+public <V>long total(V context,ValueAccessor<V> accessor){
+
+  long total=0L;
+
+  for (int offset=headerLength(context,accessor), size=accessor.size(context); offset < size; offset+=STEP_LENGTH)   total+=accessor.getLong(context,offset + CounterId.LENGTH + CLOCK_LENGTH);
+
+  return total;
+
+}
+
+Location: CounterContext.java
+
+Content: 
+
+public <V>void validateContext(V context,ValueAccessor<V> accessor) throws MarshalException {
+
+  if ((accessor.size(context) - headerLength(context,accessor)) % STEP_LENGTH != 0)   throw new MarshalException("Invalid size for a counter context");
+
+}
+

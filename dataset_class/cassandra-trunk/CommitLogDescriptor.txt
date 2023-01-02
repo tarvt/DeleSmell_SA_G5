@@ -1,0 +1,274 @@
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public String cdcIndexFileName(){
+
+  return FILENAME_PREFIX + version + SEPARATOR+ id+ "_cdc.idx";
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public CommitLogDescriptor(int version,long id,ParameterizedClass compression,EncryptionContext encryptionContext){
+
+  this.version=version;
+
+  this.id=id;
+
+  this.compression=compression;
+
+  this.encryptionContext=encryptionContext;
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public CommitLogDescriptor(long id,ParameterizedClass compression,EncryptionContext encryptionContext){
+
+  this(current_version,id,compression,encryptionContext);
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+@VisibleForTesting static String constructParametersString(ParameterizedClass compression,EncryptionContext encryptionContext,Map<String,String> additionalHeaders){
+
+  Map<String,Object> params=new TreeMap<>();
+
+  if (compression != null) {
+
+    params.put(COMPRESSION_PARAMETERS_KEY,compression.parameters);
+
+    params.put(COMPRESSION_CLASS_KEY,compression.class_name);
+
+  }
+
+  if (encryptionContext != null)   params.putAll(encryptionContext.toHeaderParameters());
+
+  params.putAll(additionalHeaders);
+
+  return JSONValue.toJSONString(params);
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public boolean equalsIgnoringCompression(CommitLogDescriptor that){
+
+  return this.version == that.version && this.id == that.id;
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public boolean equals(CommitLogDescriptor that){
+
+  return equalsIgnoringCompression(that) && Objects.equal(this.compression,that.compression) && Objects.equal(encryptionContext,that.encryptionContext);
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public static CommitLogDescriptor fromHeader(File file,EncryptionContext encryptionContext){
+
+  try (RandomAccessFile raf=new RandomAccessFile(file,"r")){
+
+    assert raf.getFilePointer() == 0;
+
+    return readHeader(raf,encryptionContext);
+
+  }
+
+ catch (  EOFException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+catch (  IOException e) {
+
+    throw new FSReadError(e,file);
+
+  }
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public EncryptionContext getEncryptionContext(){
+
+  return encryptionContext;
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public int getMessagingVersion(){
+
+switch (version) {
+
+case VERSION_30:
+
+    return MessagingService.VERSION_30;
+
+case VERSION_40:
+
+  return MessagingService.VERSION_40;
+
+default :
+
+throw new IllegalStateException("Unknown commitlog version " + version);
+
+}
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+/** 
+
+ * @param filename  the filename to check
+
+ * @return true if filename could be a commit log based on it's filename
+
+ */
+
+public static boolean isValid(String filename){
+
+  return COMMIT_LOG_FILE_PATTERN.matcher(filename).matches();
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+@SuppressWarnings("unchecked") @VisibleForTesting static ParameterizedClass parseCompression(Map<?,?> params){
+
+  if (params == null || params.isEmpty())   return null;
+
+  String className=(String)params.get(COMPRESSION_CLASS_KEY);
+
+  if (className == null)   return null;
+
+  Map<String,String> cparams=(Map<String,String>)params.get(COMPRESSION_PARAMETERS_KEY);
+
+  return new ParameterizedClass(className,cparams);
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public static CommitLogDescriptor readHeader(DataInput input,EncryptionContext encryptionContext) throws IOException {
+
+  CRC32 checkcrc=new CRC32();
+
+  int version=input.readInt();
+
+  if (version < VERSION_30)   throw new IllegalArgumentException("Unsupported pre-3.0 commit log found; cannot read.");
+
+  updateChecksumInt(checkcrc,version);
+
+  long id=input.readLong();
+
+  updateChecksumInt(checkcrc,(int)(id & 0xFFFFFFFFL));
+
+  updateChecksumInt(checkcrc,(int)(id >>> 32));
+
+  int parametersLength=input.readShort() & 0xFFFF;
+
+  updateChecksumInt(checkcrc,parametersLength);
+
+  byte[] parametersBytes=new byte[parametersLength];
+
+  input.readFully(parametersBytes);
+
+  checkcrc.update(parametersBytes,0,parametersBytes.length);
+
+  int crc=input.readInt();
+
+  if (crc == (int)checkcrc.getValue()) {
+
+    Map<?,?> map=(Map<?,?>)JSONValue.parse(new String(parametersBytes,StandardCharsets.UTF_8));
+
+    return new CommitLogDescriptor(version,id,parseCompression(map),EncryptionContext.createFromMap(map,encryptionContext));
+
+  }
+
+  return null;
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+public static void writeHeader(ByteBuffer out,CommitLogDescriptor descriptor){
+
+  writeHeader(out,descriptor,Collections.<String,String>emptyMap());
+
+}
+
+Location: CommitLogDescriptor.java
+
+Content: 
+
+/** 
+
+ * @param additionalHeaders Allow segments to pass custom header data
+
+ */
+
+public static void writeHeader(ByteBuffer out,CommitLogDescriptor descriptor,Map<String,String> additionalHeaders){
+
+  CRC32 crc=new CRC32();
+
+  out.putInt(descriptor.version);
+
+  updateChecksumInt(crc,descriptor.version);
+
+  out.putLong(descriptor.id);
+
+  updateChecksumInt(crc,(int)(descriptor.id & 0xFFFFFFFFL));
+
+  updateChecksumInt(crc,(int)(descriptor.id >>> 32));
+
+  String parametersString=constructParametersString(descriptor.compression,descriptor.encryptionContext,additionalHeaders);
+
+  byte[] parametersBytes=parametersString.getBytes(StandardCharsets.UTF_8);
+
+  if (parametersBytes.length != (((short)parametersBytes.length) & 0xFFFF))   throw new ConfigurationException(String.format("Compression parameters too long, length %d cannot be above 65535.",parametersBytes.length));
+
+  out.putShort((short)parametersBytes.length);
+
+  updateChecksumInt(crc,parametersBytes.length);
+
+  out.put(parametersBytes);
+
+  crc.update(parametersBytes,0,parametersBytes.length);
+
+  out.putInt((int)crc.getValue());
+
+}
+

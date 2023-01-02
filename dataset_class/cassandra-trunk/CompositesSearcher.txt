@@ -1,0 +1,152 @@
+Location: CompositesSearcher.java
+
+Content: 
+
+public CompositesSearcher(ReadCommand command,RowFilter.Expression expression,CassandraIndex index){
+
+  super(command,expression,index);
+
+}
+
+Location: CompositesSearcher.java
+
+Content: 
+
+private void deleteAllEntries(final List<IndexEntry> entries,final WriteContext ctx,final int nowInSec){
+
+  entries.forEach(entry -> index.deleteStaleEntry(entry.indexValue,entry.indexClustering,new DeletionTime(entry.timestamp,nowInSec),ctx));
+
+}
+
+Location: CompositesSearcher.java
+
+Content: 
+
+@SuppressWarnings("resource") private UnfilteredRowIterator filterStaleEntries(UnfilteredRowIterator dataIter,final ByteBuffer indexValue,final List<IndexEntry> entries,final WriteContext ctx,final int nowInSec){
+
+  final List<IndexEntry> staleEntries=new ArrayList<>();
+
+  if (!dataIter.partitionLevelDeletion().isLive()) {
+
+    DeletionTime deletion=dataIter.partitionLevelDeletion();
+
+    entries.forEach(e -> {
+
+      if (deletion.deletes(e.timestamp))       staleEntries.add(e);
+
+    }
+
+);
+
+  }
+
+  UnfilteredRowIterator iteratorToReturn=null;
+
+  if (isStaticColumn()) {
+
+    if (entries.size() != 1)     throw new AssertionError("A partition should have at most one index within a static column index");
+
+    iteratorToReturn=dataIter;
+
+    if (index.isStale(dataIter.staticRow(),indexValue,nowInSec)) {
+
+      staleEntries.addAll(entries);
+
+      iteratorToReturn=UnfilteredRowIterators.noRowsIterator(dataIter.metadata(),dataIter.partitionKey(),Rows.EMPTY_STATIC_ROW,dataIter.partitionLevelDeletion(),dataIter.isReverseOrder());
+
+    }
+
+    deleteAllEntries(staleEntries,ctx,nowInSec);
+
+  }
+
+ else {
+
+    ClusteringComparator comparator=dataIter.metadata().comparator;
+
+class Transform extends Transformation {
+
+      private int entriesIdx;
+
+      @Override public Row applyToRow(      Row row){
+
+        IndexEntry entry=findEntry(row.clustering());
+
+        if (!index.isStale(row,indexValue,nowInSec))         return row;
+
+        staleEntries.add(entry);
+
+        return null;
+
+      }
+
+      private IndexEntry findEntry(      Clustering<?> clustering){
+
+        assert entriesIdx < entries.size();
+
+        while (entriesIdx < entries.size()) {
+
+          IndexEntry entry=entries.get(entriesIdx++);
+
+          Clustering<?> indexedEntryClustering=entry.indexedEntryClustering;
+
+          int cmp=comparator.compare(indexedEntryClustering,clustering);
+
+          assert cmp <= 0;
+
+          if (cmp == 0)           return entry;
+
+          if (!dataIter.metadata().hasStaticColumns() || !containsOnlyNullValues(indexedEntryClustering))           staleEntries.add(entry);
+
+        }
+
+        throw new AssertionError();
+
+      }
+
+      private boolean containsOnlyNullValues(      Clustering<?> indexedEntryClustering){
+
+        int i=0;
+
+        for (; i < indexedEntryClustering.size() && indexedEntryClustering.get(i) == null; i++)         ;
+
+        return i == indexedEntryClustering.size();
+
+      }
+
+      @Override public void onPartitionClose(){
+
+        deleteAllEntries(staleEntries,ctx,nowInSec);
+
+      }
+
+    }
+
+    iteratorToReturn=Transformation.apply(dataIter,new Transform());
+
+  }
+
+  return iteratorToReturn;
+
+}
+
+Location: CompositesSearcher.java
+
+Content: 
+
+private boolean isMatchingEntry(DecoratedKey partitionKey,IndexEntry entry,ReadCommand command){
+
+  return command.selectsKey(partitionKey) && command.selectsClustering(partitionKey,entry.indexedEntryClustering);
+
+}
+
+Location: CompositesSearcher.java
+
+Content: 
+
+private boolean isStaticColumn(){
+
+  return index.getIndexedColumn().isStatic();
+
+}
+

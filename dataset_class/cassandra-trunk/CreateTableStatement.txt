@@ -1,0 +1,314 @@
+Location: CreateTableStatement.java
+
+Content: 
+
+public TableMetadata.Builder builder(Types types){
+
+  attrs.validate();
+
+  TableParams params=attrs.asNewTableParams();
+
+  Map<ColumnIdentifier,CQL3Type> columns=new TreeMap<>(comparing(o -> o.bytes));
+
+  rawColumns.forEach((column,type) -> columns.put(column,type.prepare(keyspaceName,types)));
+
+  columns.forEach((column,type) -> {
+
+    if (type.isUDT() && type.getType().isMultiCell()) {
+
+      ((UserType)type.getType()).fieldTypes().forEach(field -> {
+
+        if (field.isMultiCell())         throw ire("Non-frozen UDTs with nested non-frozen collections are not supported");
+
+      }
+
+);
+
+    }
+
+  }
+
+);
+
+  HashSet<ColumnIdentifier> primaryKeyColumns=new HashSet<>();
+
+  concat(partitionKeyColumns,clusteringColumns).forEach(column -> {
+
+    CQL3Type type=columns.get(column);
+
+    if (null == type)     throw ire("Unknown column '%s' referenced in PRIMARY KEY for table '%s'",column,tableName);
+
+    if (!primaryKeyColumns.add(column))     throw ire("Duplicate column '%s' in PRIMARY KEY clause for table '%s'",column,tableName);
+
+    if (type.getType().isMultiCell()) {
+
+      if (type.isCollection())       throw ire("Invalid non-frozen collection type %s for PRIMARY KEY column '%s'",type,column);
+
+ else       throw ire("Invalid non-frozen user-defined type %s for PRIMARY KEY column '%s'",type,column);
+
+    }
+
+    if (type.getType().isCounter())     throw ire("counter type is not supported for PRIMARY KEY column '%s'",column);
+
+    if (type.getType().referencesDuration())     throw ire("duration type is not supported for PRIMARY KEY column '%s'",column);
+
+    if (staticColumns.contains(column))     throw ire("Static column '%s' cannot be part of the PRIMARY KEY",column);
+
+  }
+
+);
+
+  List<AbstractType<?>> partitionKeyTypes=new ArrayList<>();
+
+  List<AbstractType<?>> clusteringTypes=new ArrayList<>();
+
+  partitionKeyColumns.forEach(column -> {
+
+    CQL3Type type=columns.remove(column);
+
+    partitionKeyTypes.add(type.getType());
+
+  }
+
+);
+
+  clusteringColumns.forEach(column -> {
+
+    CQL3Type type=columns.remove(column);
+
+    boolean reverse=!clusteringOrder.getOrDefault(column,true);
+
+    clusteringTypes.add(reverse ? ReversedType.getInstance(type.getType()) : type.getType());
+
+  }
+
+);
+
+  if (clusteringOrder.size() > clusteringColumns.size())   throw ire("Only clustering columns can be defined in CLUSTERING ORDER directive");
+
+  int n=0;
+
+  for (  ColumnIdentifier id : clusteringOrder.keySet()) {
+
+    ColumnIdentifier c=clusteringColumns.get(n);
+
+    if (!id.equals(c)) {
+
+      if (clusteringOrder.containsKey(c))       throw ire("The order of columns in the CLUSTERING ORDER directive must match that of the clustering columns (%s must appear before %s)",c,id);
+
+ else       throw ire("Missing CLUSTERING ORDER for column %s",c);
+
+    }
+
+    ++n;
+
+  }
+
+  if (useCompactStorage) {
+
+    validateCompactTable(clusteringTypes,columns);
+
+  }
+
+ else {
+
+    if (clusteringColumns.isEmpty() && !staticColumns.isEmpty())     throw ire("Static columns are only useful (and thus allowed) if the table has at least one clustering column");
+
+  }
+
+  boolean hasCounters=rawColumns.values().stream().anyMatch(CQL3Type.Raw::isCounter);
+
+  if (hasCounters) {
+
+    if (columns.values().stream().anyMatch(t -> !t.getType().isCounter()))     throw ire("Cannot mix counter and non counter columns in the same table");
+
+    if (params.defaultTimeToLive > 0)     throw ire("Cannot set %s on a table with counters",TableParams.Option.DEFAULT_TIME_TO_LIVE);
+
+  }
+
+  TableMetadata.Builder builder=TableMetadata.builder(keyspaceName,tableName);
+
+  if (attrs.hasProperty(TableAttributes.ID))   builder.id(attrs.getId());
+
+  builder.isCounter(hasCounters).params(params);
+
+  for (int i=0; i < partitionKeyColumns.size(); i++)   builder.addPartitionKeyColumn(partitionKeyColumns.get(i),partitionKeyTypes.get(i));
+
+  for (int i=0; i < clusteringColumns.size(); i++)   builder.addClusteringColumn(clusteringColumns.get(i),clusteringTypes.get(i));
+
+  if (useCompactStorage) {
+
+    fixupCompactTable(clusteringTypes,columns,hasCounters,builder);
+
+  }
+
+ else {
+
+    columns.forEach((column,type) -> {
+
+      if (staticColumns.contains(column))       builder.addStaticColumn(column,type.getType());
+
+ else       builder.addRegularColumn(column,type.getType());
+
+    }
+
+);
+
+  }
+
+  return builder;
+
+}
+
+Location: CreateTableStatement.java
+
+Content: 
+
+@Override public Set<String> clientWarnings(KeyspacesDiff diff){
+
+  int tableCount=Schema.instance.getNumberOfTables();
+
+  if (tableCount > DatabaseDescriptor.tableCountWarnThreshold()) {
+
+    String msg=String.format("Cluster already contains %d tables in %d keyspaces. Having a large number of tables will significantly slow down schema dependent cluster operations.",tableCount,Schema.instance.getKeyspaces().size());
+
+    logger.warn(msg);
+
+    return ImmutableSet.of(msg);
+
+  }
+
+  return ImmutableSet.of();
+
+}
+
+Location: CreateTableStatement.java
+
+Content: 
+
+@Override Set<IResource> createdResources(KeyspacesDiff diff){
+
+  return ImmutableSet.of(DataResource.table(keyspaceName,tableName));
+
+}
+
+Location: CreateTableStatement.java
+
+Content: 
+
+public CreateTableStatement(String keyspaceName,String tableName,Map<ColumnIdentifier,CQL3Type.Raw> rawColumns,Set<ColumnIdentifier> staticColumns,List<ColumnIdentifier> partitionKeyColumns,List<ColumnIdentifier> clusteringColumns,LinkedHashMap<ColumnIdentifier,Boolean> clusteringOrder,TableAttributes attrs,boolean ifNotExists,boolean useCompactStorage){
+
+  super(keyspaceName);
+
+  this.tableName=tableName;
+
+  this.rawColumns=rawColumns;
+
+  this.staticColumns=staticColumns;
+
+  this.partitionKeyColumns=partitionKeyColumns;
+
+  this.clusteringColumns=clusteringColumns;
+
+  this.clusteringOrder=clusteringOrder;
+
+  this.attrs=attrs;
+
+  this.ifNotExists=ifNotExists;
+
+  this.useCompactStorage=useCompactStorage;
+
+}
+
+Location: CreateTableStatement.java
+
+Content: 
+
+private void fixupCompactTable(List<AbstractType<?>> clusteringTypes,Map<ColumnIdentifier,CQL3Type> columns,boolean hasCounters,TableMetadata.Builder builder){
+
+  Set<TableMetadata.Flag> flags=EnumSet.noneOf(TableMetadata.Flag.class);
+
+  boolean isDense=!clusteringTypes.isEmpty();
+
+  boolean isCompound=clusteringTypes.size() > 1;
+
+  if (isDense)   flags.add(TableMetadata.Flag.DENSE);
+
+  if (isCompound)   flags.add(TableMetadata.Flag.COMPOUND);
+
+  if (hasCounters)   flags.add(TableMetadata.Flag.COUNTER);
+
+  boolean isStaticCompact=!isDense && !isCompound;
+
+  builder.flags(flags);
+
+  columns.forEach((name,type) -> {
+
+    if (staticColumns.contains(name) || isStaticCompact)     builder.addStaticColumn(name,type.getType());
+
+ else     builder.addRegularColumn(name,type.getType());
+
+  }
+
+);
+
+  DefaultNames names=new DefaultNames(builder.columnNames());
+
+  if (isStaticCompact) {
+
+    builder.addClusteringColumn(names.defaultClusteringName(),UTF8Type.instance);
+
+    builder.addRegularColumn(names.defaultCompactValueName(),hasCounters ? CounterColumnType.instance : BytesType.instance);
+
+  }
+
+ else   if (!builder.hasRegularColumns()) {
+
+    builder.addRegularColumn(names.defaultCompactValueName(),EmptyType.instance);
+
+  }
+
+}
+
+Location: CreateTableStatement.java
+
+Content: 
+
+public static TableMetadata.Builder parse(String cql,String keyspace){
+
+  return CQLFragmentParser.parseAny(CqlParser::createTableStatement,cql,"CREATE TABLE").keyspace(keyspace).prepare(null).builder(Types.none());
+
+}
+
+Location: CreateTableStatement.java
+
+Content: 
+
+private void validateCompactTable(List<AbstractType<?>> clusteringTypes,Map<ColumnIdentifier,CQL3Type> columns){
+
+  boolean isDense=!clusteringTypes.isEmpty();
+
+  if (columns.values().stream().anyMatch(c -> c.getType().isMultiCell()))   throw ire("Non-frozen collections and UDTs are not supported with COMPACT STORAGE");
+
+  if (!staticColumns.isEmpty())   throw ire("Static columns are not supported in COMPACT STORAGE tables");
+
+  if (clusteringTypes.isEmpty()) {
+
+    if (columns.isEmpty())     throw ire("No definition found that is not part of the PRIMARY KEY");
+
+  }
+
+  if (isDense) {
+
+    if (columns.size() > 1)     throw ire(String.format("COMPACT STORAGE with composite PRIMARY KEY allows no more than one column not part of the PRIMARY KEY (got: %s)",StringUtils.join(columns.keySet(),", ")));
+
+  }
+
+ else {
+
+    if (columns.isEmpty())     throw ire("COMPACT STORAGE with non-composite PRIMARY KEY require one column not part of the PRIMARY KEY, none given");
+
+  }
+
+}
+

@@ -1,0 +1,238 @@
+Location: CQLSSTableWriter.java
+
+Content: 
+
+/** 
+
+ * Adds a new row to the writer. <p> Each provided value type should correspond to the types of the CQL column the value is for. The correspondance between java type and CQL type is the same one than the one documented at www.datastax.com/drivers/java/2.0/apidocs/com/datastax/driver/core/DataType.Name.html#asJavaClass(). <p> If you prefer providing the values directly as binary, use {@link #rawAddRow} instead.
+
+ * @param values the row values (corresponding to the bind variables of theinsertion statement used when creating by this writer).
+
+ * @return this writer.
+
+ */
+
+public CQLSSTableWriter addRow(List<Object> values) throws InvalidRequestException, IOException {
+
+  int size=Math.min(values.size(),boundNames.size());
+
+  List<ByteBuffer> rawValues=new ArrayList<>(size);
+
+  for (int i=0; i < size; i++) {
+
+    Object value=values.get(i);
+
+    rawValues.add(serialize(value,typeCodecs.get(i)));
+
+  }
+
+  return rawAddRow(rawValues);
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+/** 
+
+ * Adds a new row to the writer. <p> This is equivalent to the other addRow methods, but takes a map whose keys are the names of the columns to add instead of taking a list of the values in the order of the insert statement used during construction of this write. <p> Please note that the column names in the map keys must be in lowercase unless the declared column name is a <a href="http://cassandra.apache.org/doc/cql3/CQL.html#identifiers">case-sensitive quoted identifier</a> (in which case the map key must use the exact case of the column).
+
+ * @param values a map of colum name to column values representing the newrow to add. Note that if a column is not part of the map, it's value will be  {@code null}. If the map contains keys that does not correspond to one of the column of the insert statement used when creating this writer, the the corresponding value is ignored.
+
+ * @return this writer.
+
+ */
+
+public CQLSSTableWriter addRow(Map<String,Object> values) throws InvalidRequestException, IOException {
+
+  int size=boundNames.size();
+
+  List<ByteBuffer> rawValues=new ArrayList<>(size);
+
+  for (int i=0; i < size; i++) {
+
+    ColumnSpecification spec=boundNames.get(i);
+
+    Object value=values.get(spec.name.toString());
+
+    rawValues.add(serialize(value,typeCodecs.get(i)));
+
+  }
+
+  return rawAddRow(rawValues);
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+/** 
+
+ * Adds a new row to the writer. <p> This is a shortcut for  {@code addRow(Arrays.asList(values))}.
+
+ * @param values the row values (corresponding to the bind variables of theinsertion statement used when creating by this writer).
+
+ * @return this writer.
+
+ */
+
+public CQLSSTableWriter addRow(Object... values) throws InvalidRequestException, IOException {
+
+  return addRow(Arrays.asList(values));
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+private CQLSSTableWriter(AbstractSSTableSimpleWriter writer,UpdateStatement insert,List<ColumnSpecification> boundNames){
+
+  this.writer=writer;
+
+  this.insert=insert;
+
+  this.boundNames=boundNames;
+
+  this.typeCodecs=boundNames.stream().map(bn -> UDHelper.codecFor(UDHelper.driverType(bn.type))).collect(Collectors.toList());
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+/** 
+
+ * Returns the User Defined type, used in this SSTable Writer, that can be used to create UDTValue instances.
+
+ * @param dataType name of the User Defined type
+
+ * @return user defined type
+
+ */
+
+public UserType getUDType(String dataType){
+
+  KeyspaceMetadata ksm=Schema.instance.getKeyspaceMetadata(insert.keyspace());
+
+  org.apache.cassandra.db.marshal.UserType userType=ksm.types.getNullable(ByteBufferUtil.bytes(dataType));
+
+  return (UserType)UDHelper.driverType(userType);
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+/** 
+
+ * Adds a new row to the writer given already serialized values.
+
+ * @param values the row values (corresponding to the bind variables of theinsertion statement used when creating by this writer) as binary.
+
+ * @return this writer.
+
+ */
+
+public CQLSSTableWriter rawAddRow(ByteBuffer... values) throws InvalidRequestException, IOException {
+
+  return rawAddRow(Arrays.asList(values));
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+/** 
+
+ * Adds a new row to the writer given already serialized values. <p> This is a shortcut for  {@code rawAddRow(Arrays.asList(values))}.
+
+ * @param values the row values (corresponding to the bind variables of theinsertion statement used when creating by this writer) as binary.
+
+ * @return this writer.
+
+ */
+
+public CQLSSTableWriter rawAddRow(List<ByteBuffer> values) throws InvalidRequestException, IOException {
+
+  if (values.size() != boundNames.size())   throw new InvalidRequestException(String.format("Invalid number of arguments, expecting %d values but got %d",boundNames.size(),values.size()));
+
+  QueryOptions options=QueryOptions.forInternalCalls(null,values);
+
+  List<ByteBuffer> keys=insert.buildPartitionKeyNames(options);
+
+  SortedSet<Clustering<?>> clusterings=insert.createClustering(options);
+
+  long now=System.currentTimeMillis();
+
+  UpdateParameters params=new UpdateParameters(insert.metadata,insert.updatedColumns(),options,insert.getTimestamp(TimeUnit.MILLISECONDS.toMicros(now),options),(int)TimeUnit.MILLISECONDS.toSeconds(now),insert.getTimeToLive(options),Collections.emptyMap());
+
+  try {
+
+    for (    ByteBuffer key : keys) {
+
+      for (      Clustering<?> clustering : clusterings)       insert.addUpdateForKey(writer.getUpdateFor(key),clustering,params);
+
+    }
+
+    return this;
+
+  }
+
+ catch (  SSTableSimpleUnsortedWriter.SyncException e) {
+
+    throw (IOException)e.getCause();
+
+  }
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+/** 
+
+ * Adds a new row to the writer given already serialized values. <p> This is equivalent to the other rawAddRow methods, but takes a map whose keys are the names of the columns to add instead of taking a list of the values in the order of the insert statement used during construction of this write.
+
+ * @param values a map of colum name to column values representing the newrow to add. Note that if a column is not part of the map, it's value will be  {@code null}. If the map contains keys that does not correspond to one of the column of the insert statement used when creating this writer, the the corresponding value is ignored.
+
+ * @return this writer.
+
+ */
+
+public CQLSSTableWriter rawAddRow(Map<String,ByteBuffer> values) throws InvalidRequestException, IOException {
+
+  int size=Math.min(values.size(),boundNames.size());
+
+  List<ByteBuffer> rawValues=new ArrayList<>(size);
+
+  for (int i=0; i < size; i++) {
+
+    ColumnSpecification spec=boundNames.get(i);
+
+    rawValues.add(values.get(spec.name.toString()));
+
+  }
+
+  return rawAddRow(rawValues);
+
+}
+
+Location: CQLSSTableWriter.java
+
+Content: 
+
+private ByteBuffer serialize(Object value,TypeCodec codec){
+
+  if (value == null || value == UNSET_VALUE)   return (ByteBuffer)value;
+
+  return codec.serialize(value,ProtocolVersion.CURRENT);
+
+}
+

@@ -1,0 +1,98 @@
+Location: CompressedInputStream.java
+
+Content: 
+
+/** 
+
+ * @return accumulated size of all chunks read so far - including checksums
+
+ */
+
+long chunkBytesRead(){
+
+  return chunkBytesRead;
+
+}
+
+Location: CompressedInputStream.java
+
+Content: 
+
+/** 
+
+ * @param input Input input to read compressed data from
+
+ * @param compressionInfo Compression info
+
+ */
+
+public CompressedInputStream(DataInputPlus input,CompressionInfo compressionInfo,ChecksumType checksumType,DoubleSupplier validateChecksumChance){
+
+  super(ByteBuffer.allocateDirect(compressionInfo.parameters().chunkLength()));
+
+  buffer.limit(0);
+
+  this.input=input;
+
+  this.checksumType=checksumType;
+
+  this.validateChecksumChance=validateChecksumChance;
+
+  compressionParams=compressionInfo.parameters();
+
+  compressedChunks=Iterators.forArray(compressionInfo.chunks());
+
+  compressedChunk=ByteBuffer.allocateDirect(compressionParams.chunkLength());
+
+}
+
+Location: CompressedInputStream.java
+
+Content: 
+
+private void maybeValidateChecksum(ByteBuffer buffer,int expectedChecksum) throws IOException {
+
+  double validateChance=validateChecksumChance.getAsDouble();
+
+  if (validateChance >= 1.0d || (validateChance > 0.0d && validateChance > ThreadLocalRandom.current().nextDouble())) {
+
+    int position=buffer.position();
+
+    int actualChecksum=(int)checksumType.of(buffer);
+
+    buffer.position(position);
+
+    if (expectedChecksum != actualChecksum)     throw new IOException(format("Checksum didn't match (expected: %d, actual: %d)",expectedChecksum,actualChecksum));
+
+  }
+
+}
+
+Location: CompressedInputStream.java
+
+Content: 
+
+private void readChunkSlow(ByteBuffer dst) throws IOException {
+
+  if (copyArray == null)   copyArray=new byte[dst.remaining()];
+
+ else   if (copyArray.length < dst.remaining())   copyArray=new byte[max((int)(copyArray.length * GROWTH_FACTOR),dst.remaining())];
+
+  input.readFully(copyArray,0,dst.remaining());
+
+  dst.put(copyArray,0,dst.remaining());
+
+}
+
+Location: CompressedInputStream.java
+
+Content: 
+
+private void readChunk(ByteBuffer dst) throws IOException {
+
+  if (input instanceof RebufferingInputStream)   ((RebufferingInputStream)input).readFully(dst);
+
+ else   readChunkSlow(dst);
+
+}
+

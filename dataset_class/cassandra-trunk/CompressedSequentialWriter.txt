@@ -1,0 +1,106 @@
+Location: CompressedSequentialWriter.java
+
+Content: 
+
+/** 
+
+ * Create CompressedSequentialWriter without digest file.
+
+ * @param file File to write
+
+ * @param offsetsPath File name to write compression metadata
+
+ * @param digestFile File to write digest
+
+ * @param option Write option (buffer size and type will be set the same as compression params)
+
+ * @param parameters Compression mparameters
+
+ * @param sstableMetadataCollector Metadata collector
+
+ */
+
+public CompressedSequentialWriter(File file,String offsetsPath,File digestFile,SequentialWriterOption option,CompressionParams parameters,MetadataCollector sstableMetadataCollector){
+
+  super(file,SequentialWriterOption.newBuilder().bufferSize(option.bufferSize()).bufferType(option.bufferType()).bufferSize(parameters.chunkLength()).bufferType(parameters.getSstableCompressor().preferredBufferType()).finishOnClose(option.finishOnClose()).build());
+
+  this.compressor=parameters.getSstableCompressor();
+
+  this.digestFile=Optional.ofNullable(digestFile);
+
+  compressed=compressor.preferredBufferType().allocate(compressor.initialCompressedBufferLength(buffer.capacity()));
+
+  maxCompressedLength=parameters.maxCompressedLength();
+
+  metadataWriter=CompressionMetadata.Writer.open(parameters,offsetsPath);
+
+  this.sstableMetadataCollector=sstableMetadataCollector;
+
+  crcMetadata=new ChecksumWriter(new DataOutputStream(Channels.newOutputStream(channel)));
+
+}
+
+Location: CompressedSequentialWriter.java
+
+Content: 
+
+public CompressionMetadata open(long overrideLength){
+
+  if (overrideLength <= 0)   overrideLength=uncompressedSize;
+
+  return metadataWriter.open(overrideLength,chunkOffset);
+
+}
+
+Location: CompressedSequentialWriter.java
+
+Content: 
+
+/** 
+
+ * Seek to the offset where next compressed data chunk should be stored.
+
+ */
+
+private void seekToChunkStart(){
+
+  if (getOnDiskFilePointer() != chunkOffset) {
+
+    try {
+
+      fchannel.position(chunkOffset);
+
+    }
+
+ catch (    IOException e) {
+
+      throw new FSReadError(e,getPath());
+
+    }
+
+  }
+
+}
+
+Location: CompressedSequentialWriter.java
+
+Content: 
+
+private void truncate(long toFileSize,long toBufferOffset){
+
+  try {
+
+    fchannel.truncate(toFileSize);
+
+    lastFlushOffset=toBufferOffset;
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,getPath());
+
+  }
+
+}
+

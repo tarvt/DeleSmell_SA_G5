@@ -1,0 +1,232 @@
+Location: CqlRecordWriter.java
+
+Content: 
+
+/** 
+
+ * add where clauses for partition keys and cluster columns
+
+ */
+
+private String appendKeyWhereClauses(String cqlQuery){
+
+  String keyWhereClause="";
+
+  for (  ColumnMetadata partitionKey : partitionKeyColumns)   keyWhereClause+=String.format("%s = ?",keyWhereClause.isEmpty() ? quote(partitionKey.getName()) : (" AND " + quote(partitionKey.getName())));
+
+  for (  ColumnMetadata clusterColumn : clusterColumns)   keyWhereClause+=" AND " + quote(clusterColumn.getName()) + " = ?";
+
+  return cqlQuery + " WHERE " + keyWhereClause;
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+private static void closeSession(Session session){
+
+  try {
+
+    if (session != null)     session.getCluster().closeAsync();
+
+  }
+
+ catch (  Throwable t) {
+
+    logger.warn("Error closing connection",t);
+
+  }
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+/** 
+
+ * Fills the deprecated RecordWriter interface for streaming. 
+
+ */
+
+@Deprecated public void close(org.apache.hadoop.mapred.Reporter reporter) throws IOException {
+
+  close();
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+/** 
+
+ * Close this <code>RecordWriter</code> to future operations, but not before flushing out the batched mutations.
+
+ * @param context the context of the task
+
+ * @throws IOException
+
+ */
+
+public void close(TaskAttemptContext context) throws IOException, InterruptedException {
+
+  close();
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+CqlRecordWriter(Configuration conf){
+
+  this.conf=conf;
+
+  this.queueSize=conf.getInt(CqlOutputFormat.QUEUE_SIZE,32 * FBUtilities.getAvailableProcessors());
+
+  batchThreshold=conf.getLong(CqlOutputFormat.BATCH_THRESHOLD,32);
+
+  this.clients=new HashMap<>();
+
+  String keyspace=ConfigHelper.getOutputKeyspace(conf);
+
+  try (Cluster cluster=CqlConfigHelper.getOutputCluster(ConfigHelper.getOutputInitialAddress(conf),conf)){
+
+    Metadata metadata=cluster.getMetadata();
+
+    ringCache=new NativeRingCache(conf,metadata);
+
+    TableMetadata tableMetadata=metadata.getKeyspace(Metadata.quote(keyspace)).getTable(ConfigHelper.getOutputColumnFamily(conf));
+
+    clusterColumns=tableMetadata.getClusteringColumns();
+
+    partitionKeyColumns=tableMetadata.getPartitionKey();
+
+    String cqlQuery=CqlConfigHelper.getOutputCql(conf).trim();
+
+    if (cqlQuery.toLowerCase(Locale.ENGLISH).startsWith("insert"))     throw new UnsupportedOperationException("INSERT with CqlRecordWriter is not supported, please use UPDATE/DELETE statement");
+
+    cql=appendKeyWhereClauses(cqlQuery);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+CqlRecordWriter(Configuration conf,Progressable progressable){
+
+  this(conf);
+
+  this.progressable=progressable;
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+/** 
+
+ * Upon construction, obtain the map that this writer will use to collect mutations, and the ring cache for the given keyspace.
+
+ * @param context the task attempt context
+
+ * @throws IOException
+
+ */
+
+CqlRecordWriter(TaskAttemptContext context) throws IOException {
+
+  this(HadoopCompat.getConfiguration(context));
+
+  this.context=context;
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+private ByteBuffer getPartitionKey(Map<String,ByteBuffer> keyColumns){
+
+  ByteBuffer partitionKey;
+
+  if (partitionKeyColumns.size() > 1) {
+
+    ByteBuffer[] keys=new ByteBuffer[partitionKeyColumns.size()];
+
+    for (int i=0; i < keys.length; i++)     keys[i]=keyColumns.get(partitionKeyColumns.get(i).getName());
+
+    partitionKey=CompositeType.build(ByteBufferAccessor.instance,keys);
+
+  }
+
+ else {
+
+    partitionKey=keyColumns.get(partitionKeyColumns.get(0).getName());
+
+  }
+
+  return partitionKey;
+
+}
+
+Location: CqlRecordWriter.java
+
+Content: 
+
+/** 
+
+ * If the key is to be associated with a valid value, a mutation is created for it with the given table and columns. In the event the value in the column is missing (i.e., null), then it is marked for {@link Deletion}. Similarly, if the entire value for a key is missing (i.e., null), then the entire key is marked for  {@link Deletion}. </p>
+
+ * @param keyColumns the key to write.
+
+ * @param values the values to write.
+
+ * @throws IOException
+
+ */
+
+@Override public void write(Map<String,ByteBuffer> keyColumns,List<ByteBuffer> values) throws IOException {
+
+  TokenRange range=ringCache.getRange(getPartitionKey(keyColumns));
+
+  final InetAddress address=ringCache.getEndpoints(range).get(0);
+
+  RangeClient client=clients.get(address);
+
+  if (client == null) {
+
+    client=new RangeClient(ringCache.getEndpoints(range));
+
+    client.start();
+
+    clients.put(address,client);
+
+  }
+
+  List<ByteBuffer> allValues=new ArrayList<ByteBuffer>(values);
+
+  for (  ColumnMetadata column : partitionKeyColumns)   allValues.add(keyColumns.get(column.getName()));
+
+  for (  ColumnMetadata column : clusterColumns)   allValues.add(keyColumns.get(column.getName()));
+
+  client.put(allValues);
+
+  if (progressable != null)   progressable.progress();
+
+  if (context != null)   HadoopCompat.progress(context);
+
+}
+

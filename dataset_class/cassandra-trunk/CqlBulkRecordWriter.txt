@@ -1,0 +1,198 @@
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+CqlBulkRecordWriter(Configuration conf) throws IOException {
+
+  this.conf=conf;
+
+  DatabaseDescriptor.setStreamThroughputOutboundMegabitsPerSec(Integer.parseInt(conf.get(STREAM_THROTTLE_MBITS,"0")));
+
+  maxFailures=Integer.parseInt(conf.get(MAX_FAILED_HOSTS,"0"));
+
+  bufferSize=Integer.parseInt(conf.get(BUFFER_SIZE_IN_MB,"64"));
+
+  setConfigs();
+
+}
+
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+CqlBulkRecordWriter(Configuration conf,Progressable progress) throws IOException {
+
+  this(conf);
+
+  this.progress=progress;
+
+  setConfigs();
+
+}
+
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+CqlBulkRecordWriter(TaskAttemptContext context) throws IOException {
+
+  this(HadoopCompat.getConfiguration(context));
+
+  this.context=context;
+
+  setConfigs();
+
+}
+
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+protected String getOutputLocation() throws IOException {
+
+  String dir=conf.get(OUTPUT_LOCATION,JAVA_IO_TMPDIR.getString());
+
+  if (dir == null)   throw new IOException("Output directory not defined, if hadoop is not setting java.io.tmpdir then define " + OUTPUT_LOCATION);
+
+  return dir;
+
+}
+
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+private File getTableDirectory() throws IOException {
+
+  File dir=new File(String.format("%s%s%s%s%s-%s",getOutputLocation(),File.separator,keyspace,File.separator,table,UUID.randomUUID().toString()));
+
+  if (!dir.exists() && !dir.mkdirs()) {
+
+    throw new IOException("Failed to created output directory: " + dir);
+
+  }
+
+  return dir;
+
+}
+
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+private void prepareWriter() throws IOException {
+
+  if (writer == null) {
+
+    writer=CQLSSTableWriter.builder().forTable(schema).using(insertStatement).withPartitioner(ConfigHelper.getOutputPartitioner(conf)).inDirectory(outputDir).withBufferSizeInMB(Integer.parseInt(conf.get(BUFFER_SIZE_IN_MB,"64"))).withPartitioner(partitioner).build();
+
+  }
+
+  if (loader == null) {
+
+    ExternalClient externalClient=new ExternalClient(conf);
+
+    externalClient.setTableMetadata(TableMetadataRef.forOfflineTools(CreateTableStatement.parse(schema,keyspace).build()));
+
+    loader=new SSTableLoader(outputDir,externalClient,new NullOutputHandler()){
+
+      @Override public void onSuccess(      StreamState finalState){
+
+        if (deleteSrc)         FileUtils.deleteRecursive(outputDir);
+
+      }
+
+    }
+
+;
+
+  }
+
+}
+
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+private void setConfigs() throws IOException {
+
+  keyspace=ConfigHelper.getOutputKeyspace(conf);
+
+  table=ConfigHelper.getOutputColumnFamily(conf);
+
+  String aliasedCf=CqlBulkOutputFormat.getTableForAlias(conf,table);
+
+  if (aliasedCf != null)   table=aliasedCf;
+
+  schema=CqlBulkOutputFormat.getTableSchema(conf,table);
+
+  insertStatement=CqlBulkOutputFormat.getTableInsertStatement(conf,table);
+
+  outputDir=getTableDirectory();
+
+  deleteSrc=CqlBulkOutputFormat.getDeleteSourceOnSuccess(conf);
+
+  try {
+
+    partitioner=ConfigHelper.getInputPartitioner(conf);
+
+  }
+
+ catch (  Exception e) {
+
+    partitioner=Murmur3Partitioner.instance;
+
+  }
+
+  try {
+
+    for (    String hostToIgnore : CqlBulkOutputFormat.getIgnoreHosts(conf))     ignores.add(InetAddressAndPort.getByName(hostToIgnore));
+
+  }
+
+ catch (  UnknownHostException e) {
+
+    throw new RuntimeException(("Unknown host: " + e.getMessage()));
+
+  }
+
+}
+
+Location: CqlBulkRecordWriter.java
+
+Content: 
+
+/** 
+
+ * <p> The column values must correspond to the order in which they appear in the insert stored procedure.  Key is not used, so it can be null or any object. </p>
+
+ * @param key any object or null.
+
+ * @param values the values to write.
+
+ * @throws IOException
+
+ */
+
+@Override public void write(Object key,List<ByteBuffer> values) throws IOException {
+
+  prepareWriter();
+
+  try {
+
+    ((CQLSSTableWriter)writer).rawAddRow(values);
+
+    if (null != progress)     progress.progress();
+
+    if (null != context)     HadoopCompat.progress(context);
+
+  }
+
+ catch (  InvalidRequestException e) {
+
+    throw new IOException("Error adding row with key: " + key,e);
+
+  }
+
+}
+

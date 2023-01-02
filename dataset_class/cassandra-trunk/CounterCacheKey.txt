@@ -1,0 +1,126 @@
+Location: CounterCacheKey.java
+
+Content: 
+
+private CounterCacheKey(TableMetadata tableMetadata,ByteBuffer partitionKey,ByteBuffer cellName){
+
+  this(tableMetadata,ByteBufferUtil.getArray(partitionKey),ByteBufferUtil.getArray(cellName));
+
+}
+
+Location: CounterCacheKey.java
+
+Content: 
+
+private CounterCacheKey(TableMetadata tableMetadata,byte[] partitionKey,byte[] cellName){
+
+  super(tableMetadata);
+
+  this.partitionKey=partitionKey;
+
+  this.cellName=cellName;
+
+}
+
+Location: CounterCacheKey.java
+
+Content: 
+
+public static CounterCacheKey create(TableMetadata tableMetadata,ByteBuffer partitionKey,Clustering<?> clustering,ColumnMetadata c,CellPath path){
+
+  return new CounterCacheKey(tableMetadata,partitionKey,makeCellName(clustering,c,path));
+
+}
+
+Location: CounterCacheKey.java
+
+Content: 
+
+private static ByteBuffer makeCellName(Clustering<?> clustering,ColumnMetadata c,CellPath path){
+
+  int cs=clustering.size();
+
+  ByteBuffer[] values=new ByteBuffer[cs + 1 + (path == null ? 0 : path.size())];
+
+  for (int i=0; i < cs; i++)   values[i]=clustering.bufferAt(i);
+
+  values[cs]=c.name.bytes;
+
+  if (path != null)   for (int i=0; i < path.size(); i++)   values[cs + 1 + i]=path.get(i);
+
+  return CompositeType.build(ByteBufferAccessor.instance,values);
+
+}
+
+Location: CounterCacheKey.java
+
+Content: 
+
+/** 
+
+ * Reads the value of the counter represented by this key.
+
+ * @param cfs the store for the table this is a key of.
+
+ * @return the value for the counter represented by this key, or {@code null} if thereis not such counter.
+
+ */
+
+public ByteBuffer readCounterValue(ColumnFamilyStore cfs){
+
+  TableMetadata metadata=cfs.metadata();
+
+  assert metadata.id.equals(tableId) && Objects.equals(metadata.indexName().orElse(null),indexName);
+
+  DecoratedKey key=cfs.decorateKey(partitionKey());
+
+  int clusteringSize=metadata.comparator.size();
+
+  List<ByteBuffer> buffers=CompositeType.splitName(ByteBuffer.wrap(cellName),ByteBufferAccessor.instance);
+
+  assert buffers.size() >= clusteringSize + 1;
+
+  Clustering<?> clustering=Clustering.make(buffers.subList(0,clusteringSize).toArray(new ByteBuffer[clusteringSize]));
+
+  ColumnMetadata column=metadata.getColumn(buffers.get(clusteringSize));
+
+  if (column == null)   return null;
+
+  CellPath path=column.isComplex() ? CellPath.create(buffers.get(buffers.size() - 1)) : null;
+
+  int nowInSec=FBUtilities.nowInSeconds();
+
+  ColumnFilter.Builder builder=ColumnFilter.selectionBuilder();
+
+  if (path == null)   builder.add(column);
+
+ else   builder.select(column,path);
+
+  ClusteringIndexFilter filter=new ClusteringIndexNamesFilter(FBUtilities.singleton(clustering,metadata.comparator),false);
+
+  SinglePartitionReadCommand cmd=SinglePartitionReadCommand.create(metadata,nowInSec,key,builder.build(),filter);
+
+  try (ReadExecutionController controller=cmd.executionController();RowIterator iter=UnfilteredRowIterators.filter(cmd.queryMemtableAndDisk(cfs,controller),nowInSec)){
+
+    ByteBuffer value=null;
+
+    if (column.isStatic())     value=iter.staticRow().getCell(column).buffer();
+
+ else     if (iter.hasNext())     value=iter.next().getCell(column).buffer();
+
+    return value;
+
+  }
+
+ }
+
+Location: CounterCacheKey.java
+
+Content: 
+
+public static CounterCacheKey read(TableMetadata tableMetadata,DataInputPlus in) throws IOException {
+
+  return new CounterCacheKey(tableMetadata,ByteBufferUtil.readBytesWithLength(in),ByteBufferUtil.readBytesWithLength(in));
+
+}
+

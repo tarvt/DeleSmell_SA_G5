@@ -1,0 +1,190 @@
+Location: CompactionIterator.java
+
+Content: 
+
+public CompactionIterator(OperationType type,List<ISSTableScanner> scanners,AbstractCompactionController controller,int nowInSec,UUID compactionId){
+
+  this(type,scanners,controller,nowInSec,compactionId,ActiveCompactionsTracker.NOOP);
+
+}
+
+Location: CompactionIterator.java
+
+Content: 
+
+@SuppressWarnings("resource") public CompactionIterator(OperationType type,List<ISSTableScanner> scanners,AbstractCompactionController controller,int nowInSec,UUID compactionId,ActiveCompactionsTracker activeCompactions){
+
+  this.controller=controller;
+
+  this.type=type;
+
+  this.scanners=scanners;
+
+  this.nowInSec=nowInSec;
+
+  this.compactionId=compactionId;
+
+  this.bytesRead=0;
+
+  long bytes=0;
+
+  for (  ISSTableScanner scanner : scanners)   bytes+=scanner.getLengthInBytes();
+
+  this.totalBytes=bytes;
+
+  this.mergeCounters=new long[scanners.size()];
+
+  sstables=scanners.stream().map(ISSTableScanner::getBackingSSTables).flatMap(Collection::stream).collect(ImmutableSet.toImmutableSet());
+
+  this.activeCompactions=activeCompactions == null ? ActiveCompactionsTracker.NOOP : activeCompactions;
+
+  this.activeCompactions.beginCompaction(this);
+
+  UnfilteredPartitionIterator merged=scanners.isEmpty() ? EmptyIterators.unfilteredPartition(controller.cfs.metadata()) : UnfilteredPartitionIterators.merge(scanners,listener());
+
+  merged=Transformation.apply(merged,new GarbageSkipper(controller));
+
+  merged=Transformation.apply(merged,new Purger(controller,nowInSec));
+
+  merged=DuplicateRowChecker.duringCompaction(merged,type);
+
+  compacted=Transformation.apply(merged,new AbortableUnfilteredPartitionTransformation(this));
+
+}
+
+Location: CompactionIterator.java
+
+Content: 
+
+public long[] getMergedRowCounts(){
+
+  return mergeCounters;
+
+}
+
+Location: CompactionIterator.java
+
+Content: 
+
+public long getTotalSourceCQLRows(){
+
+  return totalSourceCQLRows;
+
+}
+
+Location: CompactionIterator.java
+
+Content: 
+
+private UnfilteredPartitionIterators.MergeListener listener(){
+
+  return new UnfilteredPartitionIterators.MergeListener(){
+
+    public UnfilteredRowIterators.MergeListener getRowMergeListener(    DecoratedKey partitionKey,    List<UnfilteredRowIterator> versions){
+
+      int merged=0;
+
+      for (int i=0, isize=versions.size(); i < isize; i++) {
+
+        @SuppressWarnings("resource") UnfilteredRowIterator iter=versions.get(i);
+
+        if (iter != null)         merged++;
+
+      }
+
+      assert merged > 0;
+
+      CompactionIterator.this.updateCounterFor(merged);
+
+      if (type != OperationType.COMPACTION || !controller.cfs.indexManager.hasIndexes())       return null;
+
+      Columns statics=Columns.NONE;
+
+      Columns regulars=Columns.NONE;
+
+      for (int i=0, isize=versions.size(); i < isize; i++) {
+
+        @SuppressWarnings("resource") UnfilteredRowIterator iter=versions.get(i);
+
+        if (iter != null) {
+
+          statics=statics.mergeTo(iter.columns().statics);
+
+          regulars=regulars.mergeTo(iter.columns().regulars);
+
+        }
+
+      }
+
+      final RegularAndStaticColumns regularAndStaticColumns=new RegularAndStaticColumns(statics,regulars);
+
+      final CompactionTransaction indexTransaction=controller.cfs.indexManager.newCompactionTransaction(partitionKey,regularAndStaticColumns,versions.size(),nowInSec);
+
+      return new UnfilteredRowIterators.MergeListener(){
+
+        public void onMergedPartitionLevelDeletion(        DeletionTime mergedDeletion,        DeletionTime[] versions){
+
+        }
+
+        public Row onMergedRows(        Row merged,        Row[] versions){
+
+          indexTransaction.start();
+
+          indexTransaction.onRowMerge(merged,versions);
+
+          indexTransaction.commit();
+
+          return merged;
+
+        }
+
+        public void onMergedRangeTombstoneMarkers(        RangeTombstoneMarker mergedMarker,        RangeTombstoneMarker[] versions){
+
+        }
+
+        public void close(){
+
+        }
+
+      }
+
+;
+
+    }
+
+    public void close(){
+
+    }
+
+  }
+
+;
+
+}
+
+Location: CompactionIterator.java
+
+Content: 
+
+private void updateBytesRead(){
+
+  long n=0;
+
+  for (  ISSTableScanner scanner : scanners)   n+=scanner.getCurrentPosition();
+
+  bytesRead=n;
+
+}
+
+Location: CompactionIterator.java
+
+Content: 
+
+private void updateCounterFor(int rows){
+
+  assert rows > 0 && rows - 1 < mergeCounters.length;
+
+  mergeCounters[rows - 1]+=1;
+
+}
+

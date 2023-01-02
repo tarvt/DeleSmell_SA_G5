@@ -1,0 +1,78 @@
+Location: CreateIndexStatement.java
+
+Content: 
+
+public CreateIndexStatement(String keyspaceName,String tableName,String indexName,List<IndexTarget.Raw> rawIndexTargets,IndexAttributes attrs,boolean ifNotExists){
+
+  super(keyspaceName);
+
+  this.tableName=tableName;
+
+  this.indexName=indexName;
+
+  this.rawIndexTargets=rawIndexTargets;
+
+  this.attrs=attrs;
+
+  this.ifNotExists=ifNotExists;
+
+}
+
+Location: CreateIndexStatement.java
+
+Content: 
+
+private String generateIndexName(KeyspaceMetadata keyspace,List<IndexTarget> targets){
+
+  String baseName=targets.size() == 1 ? IndexMetadata.generateDefaultIndexName(tableName,targets.get(0).column) : IndexMetadata.generateDefaultIndexName(tableName);
+
+  return keyspace.findAvailableIndexName(baseName);
+
+}
+
+Location: CreateIndexStatement.java
+
+Content: 
+
+private void validateIndexTarget(TableMetadata table,IndexTarget target){
+
+  ColumnMetadata column=table.getColumn(target.column);
+
+  if (null == column)   throw ire("Column '%s' doesn't exist",target.column);
+
+  if (column.type.referencesDuration()) {
+
+    if (column.type.isCollection())     throw ire("Secondary indexes are not supported on collections containing durations");
+
+    if (column.type.isTuple())     throw ire("Secondary indexes are not supported on tuples containing durations");
+
+    if (column.type.isUDT())     throw ire("Secondary indexes are not supported on UDTs containing durations");
+
+    throw ire("Secondary indexes are not supported on duration columns");
+
+  }
+
+  if (table.isCompactTable()) {
+
+    TableMetadata.CompactTableMetadata compactTable=(TableMetadata.CompactTableMetadata)table;
+
+    if (column.isPrimaryKeyColumn())     throw new InvalidRequestException("Secondary indexes are not supported on PRIMARY KEY columns in COMPACT STORAGE tables");
+
+    if (compactTable.compactValueColumn.equals(column))     throw new InvalidRequestException("Secondary indexes are not supported on compact value column of COMPACT STORAGE tables");
+
+  }
+
+  if (column.isPartitionKey() && table.partitionKeyColumns().size() == 1)   throw ire("Cannot create secondary index on the only partition key column %s",column);
+
+  if (column.type.isFrozenCollection() && target.type != Type.FULL)   throw ire("Cannot create %s() index on frozen column %s. Frozen collections are immutable and must be fully " + "indexed by using the 'full(%s)' modifier",target.type,column,column);
+
+  if (!column.type.isFrozenCollection() && target.type == Type.FULL)   throw ire("full() indexes can only be created on frozen collections");
+
+  if (!column.type.isCollection() && target.type != Type.SIMPLE)   throw ire("Cannot create %s() index on %s. Non-collection columns only support simple indexes",target.type,column);
+
+  if (!(column.type instanceof MapType && column.type.isMultiCell()) && (target.type == Type.KEYS || target.type == Type.KEYS_AND_VALUES))   throw ire("Cannot create index on %s of column %s with non-map type",target.type,column);
+
+  if (column.type.isUDT() && column.type.isMultiCell())   throw ire("Cannot create index on non-frozen UDT column %s",column);
+
+}
+

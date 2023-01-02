@@ -1,0 +1,88 @@
+Location: CreateTypeStatement.java
+
+Content: 
+
+public Keyspaces apply(Keyspaces schema){
+
+  KeyspaceMetadata keyspace=schema.getNullable(keyspaceName);
+
+  if (null == keyspace)   throw ire("Keyspace '%s' doesn't exist",keyspaceName);
+
+  UserType existingType=keyspace.types.getNullable(bytes(typeName));
+
+  if (null != existingType) {
+
+    if (ifNotExists)     return schema;
+
+    throw ire("A user type with name '%s' already exists",typeName);
+
+  }
+
+  Set<FieldIdentifier> usedNames=new HashSet<>();
+
+  for (  FieldIdentifier name : fieldNames)   if (!usedNames.add(name))   throw ire("Duplicate field name '%s' in type '%s'",name,typeName);
+
+  for (  CQL3Type.Raw type : rawFieldTypes) {
+
+    if (type.isCounter())     throw ire("A user type cannot contain counters");
+
+    if (type.isUDT() && !type.isFrozen())     throw ire("A user type cannot contain non-frozen UDTs");
+
+  }
+
+  List<AbstractType<?>> fieldTypes=rawFieldTypes.stream().map(t -> t.prepare(keyspaceName,keyspace.types).getType()).collect(toList());
+
+  UserType udt=new UserType(keyspaceName,bytes(typeName),fieldNames,fieldTypes,true);
+
+  return schema.withAddedOrUpdated(keyspace.withSwapped(keyspace.types.with(udt)));
+
+}
+
+Location: CreateTypeStatement.java
+
+Content: 
+
+public void authorize(ClientState client){
+
+  client.ensureKeyspacePermission(keyspaceName,Permission.CREATE);
+
+}
+
+Location: CreateTypeStatement.java
+
+Content: 
+
+public CreateTypeStatement(String keyspaceName,String typeName,List<FieldIdentifier> fieldNames,List<CQL3Type.Raw> rawFieldTypes,boolean ifNotExists){
+
+  super(keyspaceName);
+
+  this.typeName=typeName;
+
+  this.fieldNames=fieldNames;
+
+  this.rawFieldTypes=rawFieldTypes;
+
+  this.ifNotExists=ifNotExists;
+
+}
+
+Location: CreateTypeStatement.java
+
+Content: 
+
+@Override public AuditLogContext getAuditLogContext(){
+
+  return new AuditLogContext(AuditLogEntryType.CREATE_TYPE,keyspaceName,typeName);
+
+}
+
+Location: CreateTypeStatement.java
+
+Content: 
+
+SchemaChange schemaChangeEvent(KeyspacesDiff diff){
+
+  return new SchemaChange(Change.CREATED,Target.TYPE,keyspaceName,typeName);
+
+}
+

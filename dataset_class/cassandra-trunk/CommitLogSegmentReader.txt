@@ -1,0 +1,76 @@
+Location: CommitLogSegmentReader.java
+
+Content: 
+
+protected CommitLogSegmentReader(CommitLogReadHandler handler,CommitLogDescriptor descriptor,RandomAccessReader reader,boolean tolerateTruncation){
+
+  this.handler=handler;
+
+  this.descriptor=descriptor;
+
+  this.reader=reader;
+
+  this.tolerateTruncation=tolerateTruncation;
+
+  end=(int)reader.getFilePointer();
+
+  if (descriptor.getEncryptionContext().isEnabled())   segmenter=new EncryptedSegmenter(descriptor,reader);
+
+ else   if (descriptor.compression != null)   segmenter=new CompressedSegmenter(descriptor,reader);
+
+ else   segmenter=new NoOpSegmenter(reader);
+
+}
+
+Location: CommitLogSegmentReader.java
+
+Content: 
+
+private int readSyncMarker(CommitLogDescriptor descriptor,int offset,RandomAccessReader reader) throws IOException {
+
+  if (offset > reader.length() - SYNC_MARKER_SIZE) {
+
+    return -1;
+
+  }
+
+  reader.seek(offset);
+
+  CRC32 crc=new CRC32();
+
+  updateChecksumInt(crc,(int)(descriptor.id & 0xFFFFFFFFL));
+
+  updateChecksumInt(crc,(int)(descriptor.id >>> 32));
+
+  updateChecksumInt(crc,(int)reader.getPosition());
+
+  final int end=reader.readInt();
+
+  long filecrc=reader.readInt() & 0xffffffffL;
+
+  if (crc.getValue() != filecrc) {
+
+    if (end != 0 || filecrc != 0) {
+
+      String msg=String.format("Encountered bad header at position %d of commit log %s, with invalid CRC. " + "The end of segment marker should be zero.",offset,reader.getPath());
+
+      throw new SegmentReadException(msg,true);
+
+    }
+
+    return -1;
+
+  }
+
+ else   if (end < offset || end > reader.length()) {
+
+    String msg=String.format("Encountered bad header at position %d of commit log %s, with bad position but valid CRC",offset,reader.getPath());
+
+    throw new SegmentReadException(msg,false);
+
+  }
+
+  return end;
+
+}
+

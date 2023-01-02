@@ -1,0 +1,242 @@
+Location: CQL3CasRequest.java
+
+Content: 
+
+public void addConditions(Clustering<?> clustering,Collection<ColumnCondition> conds,QueryOptions options) throws InvalidRequestException {
+
+  RowCondition condition=getConditionsForRow(clustering);
+
+  if (condition == null) {
+
+    condition=new ColumnsConditions(clustering);
+
+    setConditionsForRow(clustering,condition);
+
+  }
+
+ else   if (!(condition instanceof ColumnsConditions)) {
+
+    throw new InvalidRequestException("Cannot mix IF conditions and IF NOT EXISTS for the same row");
+
+  }
+
+  ((ColumnsConditions)condition).addConditions(conds,options);
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+private void addExistsCondition(Clustering<?> clustering,RowCondition condition,boolean isNotExist){
+
+  assert condition instanceof ExistCondition || condition instanceof NotExistCondition;
+
+  RowCondition previous=getConditionsForRow(clustering);
+
+  if (previous != null) {
+
+    if (previous.getClass().equals(condition.getClass())) {
+
+      assert hasExists;
+
+      return;
+
+    }
+
+ else {
+
+      throw (previous instanceof NotExistCondition || previous instanceof ExistCondition) ? new InvalidRequestException("Cannot mix IF EXISTS and IF NOT EXISTS conditions for the same row") : new InvalidRequestException("Cannot mix IF conditions and IF " + (isNotExist ? "NOT " : "") + "EXISTS for the same row");
+
+    }
+
+  }
+
+  setConditionsForRow(clustering,condition);
+
+  hasExists=true;
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+public void addExist(Clustering<?> clustering) throws InvalidRequestException {
+
+  addExistsCondition(clustering,new ExistCondition(clustering),false);
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+public void addNotExist(Clustering<?> clustering) throws InvalidRequestException {
+
+  addExistsCondition(clustering,new NotExistCondition(clustering),true);
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+void addRangeDeletion(Slice slice,ModificationStatement stmt,QueryOptions options,long timestamp,int nowInSeconds){
+
+  rangeDeletions.add(new RangeDeletion(slice,stmt,options,timestamp,nowInSeconds));
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+void addRowUpdate(Clustering<?> clustering,ModificationStatement stmt,QueryOptions options,long timestamp,int nowInSeconds){
+
+  updates.add(new RowUpdate(clustering,stmt,options,timestamp,nowInSeconds));
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+/** 
+
+ * Checks whether the conditions represented by this object applies provided the current state of the partition on which those conditions are.
+
+ * @param current the partition with current data corresponding to these conditions. More precisely, this must bethe result of executing the command returned by  {@link #readCommand}. This can be empty but it should not be {@code null}.
+
+ * @return whether the conditions represented by this object applies or not.
+
+ */
+
+public boolean appliesTo(FilteredPartition current) throws InvalidRequestException {
+
+  if (staticConditions != null && !staticConditions.appliesTo(current))   return false;
+
+  for (  RowCondition condition : conditions.values()) {
+
+    if (!condition.appliesTo(current))     return false;
+
+  }
+
+  return true;
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+private RegularAndStaticColumns columnsToRead(){
+
+  if (hasExists) {
+
+    RegularAndStaticColumns allColumns=metadata.regularAndStaticColumns();
+
+    Columns statics=updatesStaticRow ? allColumns.statics : Columns.NONE;
+
+    Columns regulars=updatesRegularRows ? allColumns.regulars : Columns.NONE;
+
+    return new RegularAndStaticColumns(statics,regulars);
+
+  }
+
+  return conditionColumns;
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+public CQL3CasRequest(TableMetadata metadata,DecoratedKey key,RegularAndStaticColumns conditionColumns,boolean updatesRegularRows,boolean updatesStaticRow){
+
+  this.metadata=metadata;
+
+  this.key=key;
+
+  this.conditions=new TreeMap<>(metadata.comparator);
+
+  this.conditionColumns=conditionColumns;
+
+  this.updatesRegularRows=updatesRegularRows;
+
+  this.updatesStaticRow=updatesStaticRow;
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+private RowCondition getConditionsForRow(Clustering<?> clustering){
+
+  return clustering == Clustering.STATIC_CLUSTERING ? staticConditions : conditions.get(clustering);
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+public PartitionUpdate makeUpdates(FilteredPartition current) throws InvalidRequestException {
+
+  PartitionUpdate.Builder updateBuilder=new PartitionUpdate.Builder(metadata,key,updatedColumns(),conditions.size());
+
+  for (  RowUpdate upd : updates)   upd.applyUpdates(current,updateBuilder);
+
+  for (  RangeDeletion upd : rangeDeletions)   upd.applyUpdates(current,updateBuilder);
+
+  PartitionUpdate partitionUpdate=updateBuilder.build();
+
+  IndexRegistry.obtain(metadata).validate(partitionUpdate);
+
+  return partitionUpdate;
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+public SinglePartitionReadQuery readCommand(int nowInSec){
+
+  assert staticConditions != null || !conditions.isEmpty();
+
+  ColumnFilter columnFilter=ColumnFilter.selection(metadata,columnsToRead());
+
+  if (conditions.isEmpty())   return SinglePartitionReadQuery.create(metadata,nowInSec,columnFilter,RowFilter.NONE,DataLimits.cqlLimits(1),key,new ClusteringIndexSliceFilter(Slices.ALL,false));
+
+  ClusteringIndexNamesFilter filter=new ClusteringIndexNamesFilter(conditions.navigableKeySet(),false);
+
+  return SinglePartitionReadQuery.create(metadata,nowInSec,key,columnFilter,filter);
+
+}
+
+Location: CQL3CasRequest.java
+
+Content: 
+
+private void setConditionsForRow(Clustering<?> clustering,RowCondition condition){
+
+  if (clustering == Clustering.STATIC_CLUSTERING) {
+
+    assert staticConditions == null;
+
+    staticConditions=condition;
+
+  }
+
+ else {
+
+    RowCondition previous=conditions.put(clustering,condition);
+
+    assert previous == null;
+
+  }
+
+}
+

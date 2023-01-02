@@ -1,0 +1,320 @@
+Location: CommitLogReplayer.java
+
+Content: 
+
+/** 
+
+ * Flushes all keyspaces associated with this replayer in parallel, blocking until their flushes are complete.
+
+ * @return the number of mutations replayed
+
+ */
+
+public int blockForWrites(){
+
+  for (  Map.Entry<TableId,AtomicInteger> entry : commitLogReader.getInvalidMutations())   logger.warn("Skipped {} mutations from unknown (probably removed) CF with id {}",entry.getValue(),entry.getKey());
+
+  FBUtilities.waitOnFutures(futures);
+
+  logger.trace("Finished waiting on mutations from recovery");
+
+  futures.clear();
+
+  boolean flushingSystem=false;
+
+  List<Future<?>> futures=new ArrayList<Future<?>>();
+
+  for (  Keyspace keyspace : keyspacesReplayed) {
+
+    if (keyspace.getName().equals(SchemaConstants.SYSTEM_KEYSPACE_NAME))     flushingSystem=true;
+
+    futures.addAll(keyspace.flush());
+
+  }
+
+  if (!flushingSystem)   futures.add(Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME).getColumnFamilyStore(SystemKeyspace.BATCHES).forceFlush());
+
+  FBUtilities.waitOnFutures(futures);
+
+  return replayedCount.get();
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+CommitLogReplayer(CommitLog commitLog,CommitLogPosition globalPosition,Map<TableId,IntervalSet<CommitLogPosition>> cfPersisted,ReplayFilter replayFilter){
+
+  this.keyspacesReplayed=new NonBlockingHashSet<>();
+
+  this.futures=new ArrayDeque<>();
+
+  this.replayedCount=new AtomicInteger();
+
+  this.cfPersisted=cfPersisted;
+
+  this.globalPosition=globalPosition;
+
+  this.replayFilter=replayFilter;
+
+  this.archiver=commitLog.archiver;
+
+  this.commitLogReader=new CommitLogReader();
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+public static CommitLogReplayer construct(CommitLog commitLog){
+
+  Map<TableId,IntervalSet<CommitLogPosition>> cfPersisted=new HashMap<>();
+
+  ReplayFilter replayFilter=ReplayFilter.create();
+
+  for (  ColumnFamilyStore cfs : ColumnFamilyStore.all()) {
+
+    CommitLogPosition truncatedAt=SystemKeyspace.getTruncatedPosition(cfs.metadata.id);
+
+    if (truncatedAt != null) {
+
+      long restoreTime=commitLog.archiver.restorePointInTime;
+
+      long truncatedTime=SystemKeyspace.getTruncatedAt(cfs.metadata.id);
+
+      if (truncatedTime > restoreTime) {
+
+        if (replayFilter.includes(cfs.metadata)) {
+
+          logger.info("Restore point in time is before latest truncation of table {}.{}. Clearing truncation record.",cfs.metadata.keyspace,cfs.metadata.name);
+
+          SystemKeyspace.removeTruncationRecord(cfs.metadata.id);
+
+          truncatedAt=null;
+
+        }
+
+      }
+
+    }
+
+    IntervalSet<CommitLogPosition> filter=persistedIntervals(cfs.getLiveSSTables(),truncatedAt);
+
+    cfPersisted.put(cfs.metadata.id,filter);
+
+  }
+
+  CommitLogPosition globalPosition=firstNotCovered(cfPersisted.values());
+
+  logger.debug("Global replay position is {} from columnfamilies {}",globalPosition,FBUtilities.toString(cfPersisted));
+
+  return new CommitLogReplayer(commitLog,globalPosition,cfPersisted,replayFilter);
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+/** 
+
+ * Find the earliest commit log position that is not covered by the known flushed ranges for some table. For efficiency this assumes that the first contiguously flushed interval we know of contains the moment that the given table was constructed* and hence we can start replay from the end of that interval. If such an interval is not known, we must replay from the beginning. * This is not true only until if the very first flush of a table stalled or failed, while the second or latter succeeded. The chances of this happening are at most very low, and if the assumption does prove to be incorrect during replay there is little chance that the affected deployment is in production.
+
+ */
+
+public static CommitLogPosition firstNotCovered(Collection<IntervalSet<CommitLogPosition>> ranges){
+
+  return ranges.stream().map(intervals -> Iterables.getFirst(intervals.ends(),CommitLogPosition.NONE)).min(Ordering.natural()).get();
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+/** 
+
+ * Upon replay completion, CDC needs to hard-link files in the CDC folder and calculate index files so consumers can begin their work.
+
+ */
+
+private void handleCDCReplayCompletion(File f) throws IOException {
+
+  ((CommitLogSegmentManagerCDC)CommitLog.instance.segmentManager).addCDCSize(f.length());
+
+  File dest=new File(DatabaseDescriptor.getCDCLogLocation(),f.getName());
+
+  if (!dest.exists())   FileUtils.createHardLink(f,dest);
+
+  CommitLogDescriptor desc;
+
+  try (RandomAccessReader reader=RandomAccessReader.open(f)){
+
+    desc=CommitLogDescriptor.readHeader(reader,DatabaseDescriptor.getEncryptionContext());
+
+    assert desc != null;
+
+    assert f.length() < Integer.MAX_VALUE;
+
+    CommitLogSegment.writeCDCIndexFile(desc,(int)f.length(),true);
+
+  }
+
+ }
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+public void handleMutation(Mutation m,int size,int entryLocation,CommitLogDescriptor desc){
+
+  if (DatabaseDescriptor.isCDCEnabled() && m.trackedByCDC())   sawCDCMutation=true;
+
+  pendingMutationBytes+=size;
+
+  futures.offer(mutationInitiator.initiateMutation(m,desc.id,size,entryLocation,this));
+
+  while (futures.size() > MAX_OUTSTANDING_REPLAY_COUNT || pendingMutationBytes > MAX_OUTSTANDING_REPLAY_BYTES || (!futures.isEmpty() && futures.peek().isDone())) {
+
+    pendingMutationBytes-=FBUtilities.waitOnFuture(futures.poll());
+
+  }
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+/** 
+
+ * The logic for whether or not we throw on an error is identical for the replayer between recoverable or non.
+
+ */
+
+public void handleUnrecoverableError(CommitLogReadException exception) throws IOException {
+
+  shouldSkipSegmentOnError(exception);
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+/** 
+
+ * A set of known safe-to-discard commit log replay positions, based on the range covered by on disk sstables and those prior to the most recent truncation record
+
+ */
+
+public static IntervalSet<CommitLogPosition> persistedIntervals(Iterable<SSTableReader> onDisk,CommitLogPosition truncatedAt){
+
+  IntervalSet.Builder<CommitLogPosition> builder=new IntervalSet.Builder<>();
+
+  for (  SSTableReader reader : onDisk)   builder.addAll(reader.getSSTableMetadata().commitLogIntervals);
+
+  if (truncatedAt != null)   builder.add(CommitLogPosition.NONE,truncatedAt);
+
+  return builder.build();
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+protected boolean pointInTimeExceeded(Mutation fm){
+
+  long restoreTarget=archiver.restorePointInTime;
+
+  for (  PartitionUpdate upd : fm.getPartitionUpdates()) {
+
+    if (archiver.precision.toMillis(upd.maxTimestamp()) > restoreTarget)     return true;
+
+  }
+
+  return false;
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+public void replayFiles(File[] clogs) throws IOException {
+
+  List<File> filteredLogs=CommitLogReader.filterCommitLogFiles(clogs);
+
+  int i=0;
+
+  for (  File file : filteredLogs) {
+
+    i++;
+
+    sawCDCMutation=false;
+
+    commitLogReader.readCommitLogSegment(this,file,globalPosition,i == filteredLogs.size());
+
+    if (sawCDCMutation)     handleCDCReplayCompletion(file);
+
+  }
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+public void replayPath(File file,boolean tolerateTruncation) throws IOException {
+
+  sawCDCMutation=false;
+
+  commitLogReader.readCommitLogSegment(this,file,globalPosition,CommitLogReader.ALL_MUTATIONS,tolerateTruncation);
+
+  if (sawCDCMutation)   handleCDCReplayCompletion(file);
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+/** 
+
+ * consult the known-persisted ranges for our sstables; if the position is covered by one of them it does not need to be replayed
+
+ * @return true iff replay is necessary
+
+ */
+
+private boolean shouldReplay(TableId tableId,CommitLogPosition position){
+
+  return !cfPersisted.get(tableId).contains(position);
+
+}
+
+Location: CommitLogReplayer.java
+
+Content: 
+
+public boolean shouldSkipSegmentOnError(CommitLogReadException exception) throws IOException {
+
+  if (exception.permissible)   logger.error("Ignoring commit log replay error likely due to incomplete flush to disk",exception);
+
+ else   if (Boolean.getBoolean(IGNORE_REPLAY_ERRORS_PROPERTY))   logger.error("Ignoring commit log replay error",exception);
+
+ else   if (!CommitLog.handleCommitError("Failed commit log replay",exception)) {
+
+    logger.error("Replay stopped. If you wish to override this error and continue starting the node ignoring " + "commit log replay problems, specify -D" + IGNORE_REPLAY_ERRORS_PROPERTY + "=true "+ "on the command line");
+
+    throw new CommitLogReplayException(exception.getMessage(),exception);
+
+  }
+
+  return false;
+
+}
+
