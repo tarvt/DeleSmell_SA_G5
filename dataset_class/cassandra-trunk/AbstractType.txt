@@ -1,0 +1,468 @@
+Location: AbstractType.java
+
+Content: 
+
+protected AbstractType(ComparisonType comparisonType){
+
+  this.comparisonType=comparisonType;
+
+  this.isByteOrderComparable=comparisonType == ComparisonType.BYTE_ORDER;
+
+  reverseComparator=(o1,o2) -> AbstractType.this.compare(o2,o1);
+
+  try {
+
+    Method custom=getClass().getMethod("compareCustom",Object.class,ValueAccessor.class,Object.class,ValueAccessor.class);
+
+    if ((custom.getDeclaringClass() == AbstractType.class) == (comparisonType == CUSTOM))     throw new IllegalStateException((comparisonType == CUSTOM ? "compareCustom must be overridden if ComparisonType is CUSTOM" : "compareCustom should not be overridden if ComparisonType is not CUSTOM") + " (" + getClass().getSimpleName()+ ")");
+
+  }
+
+ catch (  NoSuchMethodException e) {
+
+    throw new IllegalStateException();
+
+  }
+
+  comparatorSet=new ValueComparators((l,r) -> compare(l,ByteArrayAccessor.instance,r,ByteArrayAccessor.instance),(l,r) -> compare(l,ByteBufferAccessor.instance,r,ByteBufferAccessor.instance));
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public static List<String> asCQLTypeStringList(List<AbstractType<?>> abstractTypes){
+
+  List<String> r=new ArrayList<>(abstractTypes.size());
+
+  for (  AbstractType<?> abstractType : abstractTypes)   r.add(abstractType.asCQL3Type().toString());
+
+  return r;
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public void checkComparable(){
+
+switch (comparisonType) {
+
+case NOT_COMPARABLE:
+
+    throw new IllegalArgumentException(this + " cannot be used in comparisons, so cannot be used as a clustering column");
+
+}
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+/** 
+
+ * An alternative comparison function used by CollectionsType in conjunction with CompositeType. This comparator is only called to compare components of a CompositeType. It gets the value of the previous component as argument (or null if it's the first component of the composite). Unless you're doing something very similar to CollectionsType, you shouldn't override this.
+
+ */
+
+public <VL,VR>int compareCollectionMembers(VL left,ValueAccessor<VL> accessorL,VR right,ValueAccessor<VR> accessorR,VL collectionName){
+
+  return compare(left,accessorL,right,accessorR);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+static <VL,VR,T extends Comparable<T>>int compareComposed(VL left,ValueAccessor<VL> accessorL,VR right,ValueAccessor<VR> accessorR,AbstractType<T> type){
+
+  if (accessorL.isEmpty(left) || accessorR.isEmpty(right))   return Boolean.compare(accessorR.isEmpty(right),accessorL.isEmpty(left));
+
+  return type.compose(left,accessorL).compareTo(type.compose(right,accessorR));
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public final int compare(ByteBuffer left,ByteBuffer right){
+
+  return compare(left,ByteBufferAccessor.instance,right,ByteBufferAccessor.instance);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public final <VL,VR>int compare(VL left,ValueAccessor<VL> accessorL,VR right,ValueAccessor<VR> accessorR){
+
+  return isByteOrderComparable ? ValueAccessor.compare(left,accessorL,right,accessorR) : compareCustom(left,accessorL,right,accessorR);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public final T compose(ByteBuffer bytes){
+
+  return getSerializer().deserialize(bytes);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public <V>T compose(V value,ValueAccessor<V> accessor){
+
+  return getSerializer().deserialize(value,accessor);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public ByteBuffer decompose(T value){
+
+  return getSerializer().serialize(value);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public final String getString(ByteBuffer bytes){
+
+  return getString(bytes,ByteBufferAccessor.instance);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public String getString(Collection<ByteBuffer> names){
+
+  StringBuilder builder=new StringBuilder();
+
+  for (  ByteBuffer name : names) {
+
+    builder.append(getString(name)).append(",");
+
+  }
+
+  return builder.toString();
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public boolean isCollection(){
+
+  return false;
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public boolean isCounter(){
+
+  return false;
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public boolean isFreezable(){
+
+  return false;
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public boolean isFrozenCollection(){
+
+  return isCollection() && !isMultiCell();
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public boolean isTuple(){
+
+  return false;
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public boolean isUDT(){
+
+  return false;
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public static AbstractType<?> parseDefaultParameters(AbstractType<?> baseType,TypeParser parser) throws SyntaxException {
+
+  Map<String,String> parameters=parser.getKeyValueParameters();
+
+  String reversed=parameters.get("reversed");
+
+  if (reversed != null && (reversed.isEmpty() || reversed.equals("true"))) {
+
+    return ReversedType.getInstance(baseType);
+
+  }
+
+ else {
+
+    return baseType;
+
+  }
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public byte[] readArray(DataInputPlus in,int maxValueSize) throws IOException {
+
+  return read(ByteArrayAccessor.instance,in,maxValueSize);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public ByteBuffer readBuffer(DataInputPlus in) throws IOException {
+
+  return readBuffer(in,Integer.MAX_VALUE);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public ByteBuffer readBuffer(DataInputPlus in,int maxValueSize) throws IOException {
+
+  return read(ByteBufferAccessor.instance,in,maxValueSize);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public <V>V read(ValueAccessor<V> accessor,DataInputPlus in,int maxValueSize) throws IOException {
+
+  int length=valueLengthIfFixed();
+
+  if (length >= 0)   return accessor.read(in,length);
+
+ else {
+
+    int l=(int)in.readUnsignedVInt();
+
+    if (l < 0)     throw new IOException("Corrupt (negative) value length encountered");
+
+    if (l > maxValueSize)     throw new IOException(String.format("Corrupt value length %d encountered, as it exceeds the maximum of %d, " + "which is set via max_value_size_in_mb in cassandra.yaml",l,maxValueSize));
+
+    return accessor.read(in,l);
+
+  }
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public final boolean referencesUserType(ByteBuffer name){
+
+  return referencesUserType(name,ByteBufferAccessor.instance);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public void skipValue(DataInputPlus in) throws IOException {
+
+  int length=valueLengthIfFixed();
+
+  if (length >= 0)   in.skipBytesFully(length);
+
+ else   ByteBufferUtil.skipWithVIntLength(in);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+/** 
+
+ * Tests whether a CQL value having this type can be assigned to the provided receiver.
+
+ */
+
+public AssignmentTestable.TestResult testAssignment(AbstractType<?> receiverType){
+
+  if (isFreezable() && !isMultiCell())   receiverType=receiverType.freeze();
+
+  if (isReversed() && !receiverType.isReversed())   receiverType=ReversedType.getInstance(receiverType);
+
+  if (equals(receiverType))   return AssignmentTestable.TestResult.EXACT_MATCH;
+
+  if (receiverType.isValueCompatibleWith(this))   return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+
+  return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public final AssignmentTestable.TestResult testAssignment(String keyspace,ColumnSpecification receiver){
+
+  return testAssignment(receiver.type);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public <V>String toJSONString(V value,ValueAccessor<V> accessor,ProtocolVersion protocolVersion){
+
+  return toJSONString(accessor.toBuffer(value),protocolVersion);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+/** 
+
+ * Validate cell value. Unlike  {@linkplain #validate(java.nio.ByteBuffer)}, cell value is passed to validate its content. Usually, this is the same as validate except collection.
+
+ * @param cellValue ByteBuffer representing cell value
+
+ * @throws MarshalException
+
+ */
+
+public <V>void validateCellValue(V cellValue,ValueAccessor<V> accessor) throws MarshalException {
+
+  validate(cellValue,accessor);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public <V>void validateCollectionMember(V value,V collectionName,ValueAccessor<V> accessor) throws MarshalException {
+
+  getSerializer().validate(value,accessor);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public void validate(ByteBuffer bytes) throws MarshalException {
+
+  validate(bytes,ByteBufferAccessor.instance);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public <V>void validate(V value,ValueAccessor<V> accessor) throws MarshalException {
+
+  getSerializer().validate(value,accessor);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public void writeValue(ByteBuffer value,DataOutputPlus out) throws IOException {
+
+  writeValue(value,ByteBufferAccessor.instance,out);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public <V>void writeValue(V value,ValueAccessor<V> accessor,DataOutputPlus out) throws IOException {
+
+  assert !accessor.isEmpty(value);
+
+  if (valueLengthIfFixed() >= 0)   accessor.write(value,out);
+
+ else   accessor.writeWithVIntLength(value,out);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public long writtenLength(ByteBuffer value){
+
+  return writtenLength(value,ByteBufferAccessor.instance);
+
+}
+
+Location: AbstractType.java
+
+Content: 
+
+public <V>long writtenLength(V value,ValueAccessor<V> accessor){
+
+  assert !accessor.isEmpty(value) : "bytes should not be empty for type " + this;
+
+  return valueLengthIfFixed() >= 0 ? accessor.size(value) : accessor.sizeWithVIntLength(value);
+
+}
+

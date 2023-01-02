@@ -1,0 +1,84 @@
+Location: AlterKeyspaceStatement.java
+
+Content: 
+
+public AlterKeyspaceStatement(String keyspaceName,KeyspaceAttributes attrs){
+
+  super(keyspaceName);
+
+  this.attrs=attrs;
+
+}
+
+Location: AlterKeyspaceStatement.java
+
+Content: 
+
+private void validateNoRangeMovements(){
+
+  if (allow_alter_rf_during_range_movement)   return;
+
+  Stream<InetAddressAndPort> endpoints=Stream.concat(Gossiper.instance.getLiveMembers().stream(),Gossiper.instance.getUnreachableMembers().stream());
+
+  List<InetAddressAndPort> notNormalEndpoints=endpoints.filter(endpoint -> !FBUtilities.getBroadcastAddressAndPort().equals(endpoint) && !Gossiper.instance.getEndpointStateForEndpoint(endpoint).isNormalState()).collect(Collectors.toList());
+
+  if (!notNormalEndpoints.isEmpty()) {
+
+    throw new ConfigurationException("Cannot alter RF while some endpoints are not in normal state (no range movements): " + notNormalEndpoints);
+
+  }
+
+}
+
+Location: AlterKeyspaceStatement.java
+
+Content: 
+
+private void validateTransientReplication(AbstractReplicationStrategy oldStrategy,AbstractReplicationStrategy newStrategy){
+
+  if (allow_unsafe_transient_changes)   return;
+
+  ReplicationFactor oldRF=oldStrategy.getReplicationFactor();
+
+  ReplicationFactor newRF=newStrategy.getReplicationFactor();
+
+  int oldTrans=oldRF.transientReplicas();
+
+  int oldFull=oldRF.fullReplicas;
+
+  int newTrans=newRF.transientReplicas();
+
+  int newFull=newRF.fullReplicas;
+
+  if (newTrans > 0) {
+
+    if (DatabaseDescriptor.getNumTokens() > 1)     throw new ConfigurationException(String.format("Transient replication is not supported with vnodes yet"));
+
+    Keyspace ks=Keyspace.open(keyspaceName);
+
+    for (    ColumnFamilyStore cfs : ks.getColumnFamilyStores()) {
+
+      if (cfs.viewManager.hasViews()) {
+
+        throw new ConfigurationException("Cannot use transient replication on keyspaces using materialized views");
+
+      }
+
+      if (cfs.indexManager.hasIndexes()) {
+
+        throw new ConfigurationException("Cannot use transient replication on keyspaces using secondary indexes");
+
+      }
+
+    }
+
+  }
+
+  if (oldFull > newFull && oldTrans > 0)   throw new ConfigurationException("Can't add full replicas if there are any transient replicas. You must first remove all transient replicas, then change the # of full replicas, then add back the transient replicas");
+
+  boolean numReplicasChanged=oldTrans + oldFull != newTrans + newFull;
+
+  if (numReplicasChanged && (newTrans > oldTrans && newTrans != oldTrans + 1))   throw new ConfigurationException("Can only safely increase number of transients one at a time with incremental repair run in between each time");
+
+}
+

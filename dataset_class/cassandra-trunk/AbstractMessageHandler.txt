@@ -1,0 +1,304 @@
+Location: AbstractMessageHandler.java
+
+Content: 
+
+public AbstractMessageHandler(FrameDecoder decoder,Channel channel,int largeThreshold,long queueCapacity,Limit endpointReserveCapacity,Limit globalReserveCapacity,WaitQueue endpointWaitQueue,WaitQueue globalWaitQueue,OnHandlerClosed onClosed){
+
+  this.decoder=decoder;
+
+  this.channel=channel;
+
+  this.largeThreshold=largeThreshold;
+
+  this.queueCapacity=queueCapacity;
+
+  this.endpointReserveCapacity=endpointReserveCapacity;
+
+  this.endpointWaitQueue=endpointWaitQueue;
+
+  this.globalReserveCapacity=globalReserveCapacity;
+
+  this.globalWaitQueue=globalWaitQueue;
+
+  this.onClosed=onClosed;
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+protected ResourceLimits.Outcome acquireCapacity(Limit endpointReserve,Limit globalReserve,int bytes){
+
+  long currentQueueSize=queueSize;
+
+  if (currentQueueSize + bytes <= queueCapacity) {
+
+    queueSizeUpdater.addAndGet(this,bytes);
+
+    return ResourceLimits.Outcome.SUCCESS;
+
+  }
+
+  long allocatedExcess=min(currentQueueSize + bytes - queueCapacity,bytes);
+
+  if (!globalReserve.tryAllocate(allocatedExcess))   return ResourceLimits.Outcome.INSUFFICIENT_GLOBAL;
+
+  if (!endpointReserve.tryAllocate(allocatedExcess)) {
+
+    globalReserve.release(allocatedExcess);
+
+    globalWaitQueue.signal();
+
+    return ResourceLimits.Outcome.INSUFFICIENT_ENDPOINT;
+
+  }
+
+  long newQueueSize=queueSizeUpdater.addAndGet(this,bytes);
+
+  long actualExcess=max(0,min(newQueueSize - queueCapacity,bytes));
+
+  if (actualExcess != allocatedExcess) {
+
+    long excess=allocatedExcess - actualExcess;
+
+    endpointReserve.release(excess);
+
+    globalReserve.release(excess);
+
+    endpointWaitQueue.signal();
+
+    globalWaitQueue.signal();
+
+  }
+
+  return ResourceLimits.Outcome.SUCCESS;
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+/** 
+
+ * Try to acquire permits for the inbound message. In case of failure, register with the right wait queue to be reactivated once permit capacity is regained.
+
+ */
+
+@SuppressWarnings("BooleanMethodIsAlwaysInverted") protected boolean acquireCapacity(Limit endpointReserve,Limit globalReserve,int bytes,long currentTimeNanos,long expiresAtNanos){
+
+  ResourceLimits.Outcome outcome=acquireCapacity(endpointReserve,globalReserve,bytes);
+
+  if (outcome == ResourceLimits.Outcome.INSUFFICIENT_ENDPOINT)   ticket=endpointWaitQueue.register(this,bytes,currentTimeNanos,expiresAtNanos);
+
+ else   if (outcome == ResourceLimits.Outcome.INSUFFICIENT_GLOBAL)   ticket=globalWaitQueue.register(this,bytes,currentTimeNanos,expiresAtNanos);
+
+  if (outcome != ResourceLimits.Outcome.SUCCESS)   throttledCount++;
+
+  return outcome == ResourceLimits.Outcome.SUCCESS;
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+private EventLoop eventLoop(){
+
+  return channel.eventLoop();
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+protected abstract void fatalExceptionCaught(Throwable t);
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+protected abstract String id();
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+private void onEndpointReserveCapacityRegained(Limit endpointReserve,long elapsedNanos){
+
+  onReserveCapacityRegained(endpointReserve,globalReserveCapacity,elapsedNanos);
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+private void onGlobalReserveCapacityRegained(Limit globalReserve,long elapsedNanos){
+
+  onReserveCapacityRegained(endpointReserveCapacity,globalReserve,elapsedNanos);
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+private void onReserveCapacityRegained(Limit endpointReserve,Limit globalReserve,long elapsedNanos){
+
+  if (isClosed)   return;
+
+  assert channel.eventLoop().inEventLoop();
+
+  ticket=null;
+
+  throttledNanos+=elapsedNanos;
+
+  try {
+
+    if (processUpToOneMessage(endpointReserve,globalReserve))     decoder.reactivate();
+
+  }
+
+ catch (  Throwable t) {
+
+    fatalExceptionCaught(t);
+
+  }
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+protected abstract void processCorruptFrame(CorruptFrame frame) throws InvalidCrc ;
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+protected abstract boolean processFirstFrameOfLargeMessage(IntactFrame frame,Limit endpointReserve,Limit globalReserve) throws IOException ;
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+private boolean processFrameOfContainedMessages(ShareableBytes bytes,Limit endpointReserve,Limit globalReserve) throws IOException {
+
+  while (bytes.hasRemaining())   if (!processOneContainedMessage(bytes,endpointReserve,globalReserve))   return false;
+
+  return true;
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+private boolean processIntactFrame(IntactFrame frame,Limit endpointReserve,Limit globalReserve) throws IOException {
+
+  if (frame.isSelfContained)   return processFrameOfContainedMessages(frame.contents,endpointReserve,globalReserve);
+
+ else   if (null == largeMessage)   return processFirstFrameOfLargeMessage(frame,endpointReserve,globalReserve);
+
+ else   return processSubsequentFrameOfLargeMessage(frame);
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+protected abstract boolean processOneContainedMessage(ShareableBytes bytes,Limit endpointReserve,Limit globalReserve) throws IOException ;
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+protected boolean processSubsequentFrameOfLargeMessage(Frame frame){
+
+  receivedBytes+=frame.frameSize;
+
+  if (largeMessage.supply(frame)) {
+
+    receivedCount++;
+
+    largeMessage=null;
+
+  }
+
+  return true;
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+private boolean processUpToOneMessage(Limit endpointReserve,Limit globalReserve) throws IOException {
+
+  UpToOneMessageFrameProcessor processor=new UpToOneMessageFrameProcessor(endpointReserve,globalReserve);
+
+  decoder.processBacklog(processor);
+
+  return processor.isActive;
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+@Override public boolean process(Frame frame) throws IOException {
+
+  if (frame instanceof IntactFrame)   return processIntactFrame((IntactFrame)frame,endpointReserveCapacity,globalReserveCapacity);
+
+  processCorruptFrame((CorruptFrame)frame);
+
+  return true;
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+public void releaseCapacity(int bytes){
+
+  long oldQueueSize=queueSizeUpdater.getAndAdd(this,-bytes);
+
+  if (oldQueueSize > queueCapacity) {
+
+    long excess=min(oldQueueSize - queueCapacity,bytes);
+
+    endpointReserveCapacity.release(excess);
+
+    globalReserveCapacity.release(excess);
+
+    endpointWaitQueue.signal();
+
+    globalWaitQueue.signal();
+
+  }
+
+}
+
+Location: AbstractMessageHandler.java
+
+Content: 
+
+/** 
+
+ * Invoked to release capacity for a message that has been fully, successfully processed. Normally no different from invoking  {@link #releaseCapacity(int)}, but is necessary for the verifier to be able to delay capacity release for backpressure testing.
+
+ */
+
+@VisibleForTesting protected void releaseProcessedCapacity(int size,Header header){
+
+  releaseCapacity(size);
+
+}
+

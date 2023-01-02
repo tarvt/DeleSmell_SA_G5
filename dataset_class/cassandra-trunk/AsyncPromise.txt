@@ -1,0 +1,340 @@
+Location: AsyncPromise.java
+
+Content: 
+
+private static <F extends Future<?>>GenericFutureListener<F> appendListener(GenericFutureListener<F> prevListener,GenericFutureListener<F> newListener){
+
+  GenericFutureListener<F> result=newListener;
+
+  if (prevListener != null && prevListener != NOTIFYING) {
+
+    result=future -> {
+
+      invokeListener(prevListener,future);
+
+      newListener.operationComplete(future);
+
+    }
+
+;
+
+  }
+
+  if (prevListener instanceof DeferredGenericFutureListener<?>) {
+
+    GenericFutureListener<F> wrap=result;
+
+    result=(DeferredGenericFutureListener<F>)wrap::operationComplete;
+
+  }
+
+  return result;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public AsyncPromise(EventExecutor executor){
+
+  this(executor,UNSET);
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+private AsyncPromise(EventExecutor executor,FailureHolder initialState){
+
+  this.executor=executor;
+
+  this.result=initialState;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+AsyncPromise(EventExecutor executor,FailureHolder initialState,GenericFutureListener<? extends Future<? super V>> listener){
+
+  this(executor,initialState);
+
+  this.listeners=listener;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public AsyncPromise(EventExecutor executor,GenericFutureListener<? extends Future<? super V>> listener){
+
+  this(executor);
+
+  this.listeners=listener;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+/** 
+
+ * A clean way to implement each variant of await using lambdas; we permit a nanos parameter so that we can implement this without any unnecessary lambda allocations, although not all implementations need the nanos parameter (i.e. those that wait indefinitely)
+
+ */
+
+private <T extends Throwable>boolean await(long nanos,Awaiter<T> awaiter) throws T {
+
+  if (isDone())   return true;
+
+  WaitQueue.Signal await=registerToWait();
+
+  if (null != await)   return awaiter.await(await,nanos);
+
+  return true;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+/** 
+
+ * Shared implementation of get() after suitable await(); assumes isDone(), and returns either the success result or throws the suitable exception under failure
+
+ */
+
+@SuppressWarnings("unchecked") private V getWhenDone() throws ExecutionException {
+
+  Object result=this.result;
+
+  if (isSuccess(result))   return (V)result;
+
+  if (result == CANCELLED)   throw new CancellationException();
+
+  throw new ExecutionException(((FailureHolder)result).cause);
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+private static <F extends Future<?>>void invokeListener(GenericFutureListener<F> listener,F future){
+
+  try {
+
+    listener.operationComplete(future);
+
+  }
+
+ catch (  Throwable t) {
+
+    logger.error("Failed to invoke listener {} to {}",listener,future,t);
+
+  }
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+private static boolean isCancelled(Object result){
+
+  return result == CANCELLED;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+private static boolean isDone(Object result){
+
+  return result != UNSET && result != UNCANCELLABLE;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+private static boolean isSuccess(Object result){
+
+  return !(result instanceof FailureHolder);
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+private void notifyWaiters(){
+
+  WaitQueue waiting=this.waiting;
+
+  if (waiting != null)   waiting.signalAll();
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+/** 
+
+ * Register a signal that will be notified when the promise is completed; if the promise becomes completed before this signal is registered, null is returned
+
+ */
+
+private WaitQueue.Signal registerToWait(){
+
+  WaitQueue waiting=this.waiting;
+
+  if (waiting == null && !waitingUpdater.compareAndSet(this,null,waiting=new WaitQueue()))   waiting=this.waiting;
+
+  assert waiting != null;
+
+  WaitQueue.Signal signal=waiting.register();
+
+  if (!isDone())   return signal;
+
+  signal.cancel();
+
+  return null;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+private void rethrowIfFailed(){
+
+  Throwable cause=this.cause();
+
+  if (cause != null) {
+
+    PlatformDependent.throwException(cause);
+
+  }
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public Promise<V> setSuccess(V v){
+
+  if (!trySuccess(v))   throw new IllegalStateException("complete already: " + this);
+
+  return this;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public boolean setUncancellable(){
+
+  if (trySet(UNCANCELLABLE))   return true;
+
+  return result == UNCANCELLABLE;
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public boolean tryFailure(Throwable throwable){
+
+  return trySet(new FailureHolder(throwable));
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+/** 
+
+ * Shared implementation of various promise completion methods. Updates the result if it is possible to do so, returning success/failure. If the promise is UNSET the new value will succeed; if it is UNCANCELLABLE it will succeed only if the new value is not CANCELLED otherwise it will fail, as isDone() is implied If the update succeeds, and the new state implies isDone(), any listeners and waiters will be notified
+
+ */
+
+private boolean trySet(Object v){
+
+  while (true) {
+
+    Object current=result;
+
+    if (isDone(current) || (current == UNCANCELLABLE && v == CANCELLED))     return false;
+
+    if (resultUpdater.compareAndSet(this,current,v)) {
+
+      if (v != UNCANCELLABLE) {
+
+        hongshuai();
+
+        if (!executor.inEventLoop()) {
+
+          executor.execute(this::notifyListeners);
+
+          return;
+
+        }
+
+        if (listeners == null || listeners instanceof DeferredGenericFutureListener<?>)         return;
+
+        notifyWaiters();
+
+      }
+
+      return true;
+
+    }
+
+  }
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public boolean trySuccess(V v){
+
+  return trySet(v);
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public static <V>AsyncPromise<V> uncancellable(EventExecutor executor){
+
+  return new AsyncPromise<>(executor,UNCANCELLABLE);
+
+}
+
+Location: AsyncPromise.java
+
+Content: 
+
+public static <V>AsyncPromise<V> uncancellable(EventExecutor executor,GenericFutureListener<? extends Future<? super V>> listener){
+
+  return new AsyncPromise<>(executor,UNCANCELLABLE);
+
+}
+

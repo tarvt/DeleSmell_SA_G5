@@ -1,0 +1,78 @@
+Location: Attributes.java
+
+Content: 
+
+private Attributes(Term timestamp,Term timeToLive){
+
+  this.timestamp=timestamp;
+
+  this.timeToLive=timeToLive;
+
+}
+
+Location: Attributes.java
+
+Content: 
+
+public int getTimeToLive(QueryOptions options,TableMetadata metadata) throws InvalidRequestException {
+
+  if (timeToLive == null) {
+
+    ExpirationDateOverflowHandling.maybeApplyExpirationDateOverflowPolicy(metadata,metadata.params.defaultTimeToLive,true);
+
+    return metadata.params.defaultTimeToLive;
+
+  }
+
+  ByteBuffer tval=timeToLive.bindAndGet(options);
+
+  if (tval == null)   return 0;
+
+  if (tval == ByteBufferUtil.UNSET_BYTE_BUFFER)   return metadata.params.defaultTimeToLive;
+
+  try {
+
+    Int32Type.instance.validate(tval);
+
+  }
+
+ catch (  MarshalException e) {
+
+    throw new InvalidRequestException("Invalid timestamp value: " + tval);
+
+  }
+
+  int ttl=Int32Type.instance.compose(tval);
+
+  if (ttl < 0)   throw new InvalidRequestException("A TTL must be greater or equal to 0, but was " + ttl);
+
+  if (ttl > MAX_TTL)   throw new InvalidRequestException(String.format("ttl is too large. requested (%d) maximum (%d)",ttl,MAX_TTL));
+
+  if (metadata.params.defaultTimeToLive != LivenessInfo.NO_TTL && ttl == LivenessInfo.NO_TTL)   return LivenessInfo.NO_TTL;
+
+  ExpirationDateOverflowHandling.maybeApplyExpirationDateOverflowPolicy(metadata,ttl,false);
+
+  return ttl;
+
+}
+
+Location: Attributes.java
+
+Content: 
+
+public boolean isTimeToLiveSet(){
+
+  return timeToLive != null;
+
+}
+
+Location: Attributes.java
+
+Content: 
+
+public static Attributes none(){
+
+  return new Attributes(null,null);
+
+}
+

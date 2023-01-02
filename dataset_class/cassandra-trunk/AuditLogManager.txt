@@ -1,0 +1,300 @@
+Location: AuditLogManager.java
+
+Content: 
+
+private AuditLogManager(){
+
+  final AuditLogOptions auditLogOptions=DatabaseDescriptor.getAuditLoggingOptions();
+
+  if (auditLogOptions.enabled) {
+
+    logger.info("Audit logging is enabled.");
+
+    auditLogger=getAuditLogger(auditLogOptions.logger);
+
+  }
+
+ else {
+
+    logger.debug("Audit logging is disabled.");
+
+    auditLogger=new NoOpAuditLogger(Collections.emptyMap());
+
+  }
+
+  filter=AuditLogFilter.create(auditLogOptions);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void authFailure(QueryState state,Exception cause){
+
+  AuditLogEntry entry=new AuditLogEntry.Builder(state).setOperation("LOGIN FAILURE").setType(AuditLogEntryType.LOGIN_ERROR).build();
+
+  log(entry,cause);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void authSuccess(QueryState state){
+
+  AuditLogEntry entry=new AuditLogEntry.Builder(state).setOperation("LOGIN SUCCESSFUL").setType(AuditLogEntryType.LOGIN_SUCCESS).build();
+
+  log(entry);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void batchFailure(BatchStatement.Type batchType,List<? extends CQLStatement> statements,List<String> queries,List<List<ByteBuffer>> values,QueryOptions options,QueryState state,Exception cause){
+
+  String auditMessage=String.format("BATCH of %d statements at consistency %s",statements.size(),options.getConsistency());
+
+  AuditLogEntry entry=new AuditLogEntry.Builder(state).setOperation(auditMessage).setOptions(options).setType(AuditLogEntryType.BATCH).build();
+
+  log(entry,cause);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+private static List<AuditLogEntry> buildEntriesForBatch(List<? extends CQLStatement> statements,List<String> queries,QueryState state,QueryOptions options,long queryStartTimeMillis){
+
+  List<AuditLogEntry> auditLogEntries=new ArrayList<>(statements.size() + 1);
+
+  UUID batchId=UUID.randomUUID();
+
+  String queryString=String.format("BatchId:[%s] - BATCH of [%d] statements",batchId,statements.size());
+
+  AuditLogEntry entry=new AuditLogEntry.Builder(state).setOperation(queryString).setOptions(options).setTimestamp(queryStartTimeMillis).setBatch(batchId).setType(AuditLogEntryType.BATCH).build();
+
+  auditLogEntries.add(entry);
+
+  for (int i=0; i < statements.size(); i++) {
+
+    CQLStatement statement=statements.get(i);
+
+    entry=new AuditLogEntry.Builder(state).setType(statement.getAuditLogContext().auditLogEntryType).setOperation(queries.get(i)).setTimestamp(queryStartTimeMillis).setScope(statement).setKeyspace(state,statement).setOptions(options).setBatch(batchId).build();
+
+    auditLogEntries.add(entry);
+
+  }
+
+  return auditLogEntries;
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+/** 
+
+ * Disables AuditLog, designed to be invoked only via JMX/ Nodetool, not from anywhere else in the codepath.
+
+ */
+
+public synchronized void disableAuditLog(){
+
+  unregisterAsListener();
+
+  IAuditLogger oldLogger=auditLogger;
+
+  auditLogger=new NoOpAuditLogger(Collections.emptyMap());
+
+  oldLogger.stop();
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+/** 
+
+ * Enables AuditLog, designed to be invoked only via JMX/ Nodetool, not from anywhere else in the codepath.
+
+ * @param auditLogOptions AuditLogOptions to be used for enabling AuditLog
+
+ * @throws ConfigurationException It can throw configuration exception when provided logger class does not exist in the classpath
+
+ */
+
+public synchronized void enable(AuditLogOptions auditLogOptions) throws ConfigurationException {
+
+  filter=AuditLogFilter.create(auditLogOptions);
+
+  IAuditLogger oldLogger=auditLogger;
+
+  if (oldLogger.getClass().getSimpleName().equals(auditLogOptions.logger.class_name))   return;
+
+  auditLogger=getAuditLogger(auditLogOptions.logger);
+
+  registerAsListener();
+
+  oldLogger.stop();
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void executeFailure(CQLStatement statement,String query,QueryOptions options,QueryState state,Exception cause){
+
+  AuditLogEntry entry=null;
+
+  if (cause instanceof PreparedQueryNotFoundException) {
+
+    entry=new AuditLogEntry.Builder(state).setOperation(query == null ? "null" : query).setOptions(options).build();
+
+  }
+
+ else   if (statement != null) {
+
+    entry=new AuditLogEntry.Builder(state).setOperation(query == null ? statement.toString() : query).setType(statement.getAuditLogContext().auditLogEntryType).setScope(statement).setKeyspace(state,statement).setOptions(options).build();
+
+  }
+
+  if (entry != null)   log(entry,cause);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+private IAuditLogger getAuditLogger(ParameterizedClass logger) throws ConfigurationException {
+
+  if (logger.class_name != null) {
+
+    return FBUtilities.newAuditLogger(logger.class_name,logger.parameters == null ? Collections.emptyMap() : logger.parameters);
+
+  }
+
+  return FBUtilities.newAuditLogger(BinAuditLogger.class.getName(),Collections.emptyMap());
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+@VisibleForTesting public IAuditLogger getLogger(){
+
+  return auditLogger;
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void initialize(){
+
+  if (DatabaseDescriptor.getAuditLoggingOptions().enabled)   registerAsListener();
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+private void log(AuditLogEntry logEntry,Exception e){
+
+  AuditLogEntry.Builder builder=new AuditLogEntry.Builder(logEntry);
+
+  if (e instanceof UnauthorizedException) {
+
+    builder.setType(AuditLogEntryType.UNAUTHORIZED_ATTEMPT);
+
+  }
+
+ else   if (e instanceof AuthenticationException) {
+
+    builder.setType(AuditLogEntryType.LOGIN_ERROR);
+
+  }
+
+ else {
+
+    builder.setType(AuditLogEntryType.REQUEST_FAILURE);
+
+  }
+
+  builder.appendToOperation(e.getMessage());
+
+  log(builder.build());
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void prepareFailure(@Nullable CQLStatement stmt,@Nullable String query,QueryState state,Exception cause){
+
+  AuditLogEntry entry=new AuditLogEntry.Builder(state).setOperation(query).setType(AuditLogEntryType.PREPARE_STATEMENT).build();
+
+  log(entry,cause);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void prepareSuccess(CQLStatement statement,String query,QueryState state,long queryTime,ResultMessage.Prepared response){
+
+  AuditLogEntry entry=new AuditLogEntry.Builder(state).setOperation(query).setType(AuditLogEntryType.PREPARE_STATEMENT).setScope(statement).setKeyspace(statement).build();
+
+  log(entry);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+public void queryFailure(CQLStatement stmt,String query,QueryOptions options,QueryState state,Exception cause){
+
+  AuditLogEntry entry=new AuditLogEntry.Builder(state).setOperation(query).setOptions(options).build();
+
+  log(entry,cause);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+private void registerAsListener(){
+
+  QueryEvents.instance.registerListener(this);
+
+  AuthEvents.instance.registerListener(this);
+
+}
+
+Location: AuditLogManager.java
+
+Content: 
+
+private void unregisterAsListener(){
+
+  QueryEvents.instance.unregisterListener(this);
+
+  AuthEvents.instance.unregisterListener(this);
+
+}
+

@@ -1,0 +1,540 @@
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+protected AbstractReplicationStrategy(String keyspaceName,TokenMetadata tokenMetadata,IEndpointSnitch snitch,Map<String,String> configOptions){
+
+  assert snitch != null;
+
+  assert tokenMetadata != null;
+
+  this.tokenMetadata=tokenMetadata;
+
+  this.snitch=snitch;
+
+  this.configOptions=configOptions == null ? Collections.<String,String>emptyMap() : configOptions;
+
+  this.keyspaceName=keyspaceName;
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+/** 
+
+ * Calculate the natural endpoints for the given token. Endpoints are returned in the order they occur in the ring following the searchToken, as defined by the replication strategy. Note that the order of the replicas is _implicitly relied upon_ by the definition of "primary" range in {@link org.apache.cassandra.service.StorageService#getPrimaryRangesForEndpoint(String,InetAddressAndPort)}which is in turn relied on by various components like repair and size estimate calculations.
+
+ * @see #getNaturalReplicasForToken(org.apache.cassandra.dht.RingPosition)
+
+ * @param tokenMetadata the token metadata used to find the searchToken, e.g. contains token to endpointmapping information
+
+ * @param searchToken the token to find the natural endpoints for
+
+ * @return a copy of the natural endpoints for the given token
+
+ */
+
+public abstract EndpointsForRange calculateNaturalReplicas(Token searchToken,TokenMetadata tokenMetadata);
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+private static AbstractReplicationStrategy createInternal(String keyspaceName,Class<? extends AbstractReplicationStrategy> strategyClass,TokenMetadata tokenMetadata,IEndpointSnitch snitch,Map<String,String> strategyOptions) throws ConfigurationException {
+
+  AbstractReplicationStrategy strategy;
+
+  Class[] parameterTypes=new Class[]{String.class,TokenMetadata.class,IEndpointSnitch.class,Map.class};
+
+  try {
+
+    Constructor<? extends AbstractReplicationStrategy> constructor=strategyClass.getConstructor(parameterTypes);
+
+    strategy=constructor.newInstance(keyspaceName,tokenMetadata,snitch,strategyOptions);
+
+  }
+
+ catch (  InvocationTargetException e) {
+
+    Throwable targetException=e.getTargetException();
+
+    throw new ConfigurationException(targetException.getMessage(),targetException);
+
+  }
+
+catch (  Exception e) {
+
+    throw new ConfigurationException("Error constructing replication strategy class",e);
+
+  }
+
+  return strategy;
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public static AbstractReplicationStrategy createReplicationStrategy(String keyspaceName,Class<? extends AbstractReplicationStrategy> strategyClass,TokenMetadata tokenMetadata,IEndpointSnitch snitch,Map<String,String> strategyOptions){
+
+  AbstractReplicationStrategy strategy=createInternal(keyspaceName,strategyClass,tokenMetadata,snitch,strategyOptions);
+
+  try {
+
+    strategy.validateExpectedOptions();
+
+  }
+
+ catch (  ConfigurationException e) {
+
+    logger.warn("Ignoring {}",e.getMessage());
+
+  }
+
+  strategy.validateOptions();
+
+  return strategy;
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public RangesByEndpoint getAddressReplicas(){
+
+  return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap());
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public RangesAtEndpoint getAddressReplicas(InetAddressAndPort endpoint){
+
+  return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap(),endpoint);
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public RangesByEndpoint getAddressReplicas(TokenMetadata metadata){
+
+  RangesByEndpoint.Builder map=new RangesByEndpoint.Builder();
+
+  for (  Token token : metadata.sortedTokens()) {
+
+    Range<Token> range=metadata.getPrimaryRangeFor(token);
+
+    for (    Replica replica : calculateNaturalReplicas(token,metadata)) {
+
+      Preconditions.checkState(range.equals(replica.range()) || this instanceof LocalStrategy);
+
+      map.put(replica.endpoint(),replica);
+
+    }
+
+  }
+
+  return map.build();
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public RangesAtEndpoint getAddressReplicas(TokenMetadata metadata,InetAddressAndPort endpoint){
+
+  RangesAtEndpoint.Builder builder=RangesAtEndpoint.builder(endpoint);
+
+  for (  Token token : metadata.sortedTokens()) {
+
+    Range<Token> range=metadata.getPrimaryRangeFor(token);
+
+    Replica replica=calculateNaturalReplicas(token,metadata).byEndpoint().get(endpoint);
+
+    if (replica != null) {
+
+      Preconditions.checkState(range.equals(replica.range()) || this instanceof LocalStrategy);
+
+      builder.add(replica,Conflict.DUPLICATE);
+
+    }
+
+  }
+
+  return builder.build();
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public EndpointsForRange getCachedReplicas(Token t){
+
+  long lastVersion=tokenMetadata.getRingVersion();
+
+  if (lastVersion > lastInvalidatedVersion) {
+
+synchronized (this) {
+
+      if (lastVersion > lastInvalidatedVersion) {
+
+        logger.trace("clearing cached endpoints");
+
+        cachedReplicas.clear();
+
+        lastInvalidatedVersion=lastVersion;
+
+      }
+
+    }
+
+  }
+
+  return cachedReplicas.get(t);
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public static Class<AbstractReplicationStrategy> getClass(String cls) throws ConfigurationException {
+
+  String className=cls.contains(".") ? cls : "org.apache.cassandra.locator." + cls;
+
+  if ("org.apache.cassandra.locator.OldNetworkTopologyStrategy".equals(className))   throw new ConfigurationException("The support for the OldNetworkTopologyStrategy has been removed in C* version 4.0. The keyspace strategy should be switch to NetworkTopologyStrategy");
+
+  Class<AbstractReplicationStrategy> strategyClass=FBUtilities.classForName(className,"replication strategy");
+
+  if (!AbstractReplicationStrategy.class.isAssignableFrom(strategyClass)) {
+
+    throw new ConfigurationException(String.format("Specified replication strategy class (%s) is not derived from AbstractReplicationStrategy",className));
+
+  }
+
+  return strategyClass;
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public Replica getLocalReplicaFor(RingPosition searchPosition){
+
+  return getNaturalReplicas(searchPosition).byEndpoint().get(FBUtilities.getBroadcastAddressAndPort());
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+/** 
+
+ * get the (possibly cached) endpoints that should store the given Token. Note that while the endpoints are conceptually a Set (no duplicates will be included), we return a List to avoid an extra allocation when sorting by proximity later
+
+ * @param searchPosition the position the natural endpoints are requested for
+
+ * @return a copy of the natural endpoints for the given token
+
+ */
+
+public EndpointsForToken getNaturalReplicasForToken(RingPosition searchPosition){
+
+  return getNaturalReplicas(searchPosition).forToken(searchPosition.getToken());
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public EndpointsForRange getNaturalReplicas(RingPosition searchPosition){
+
+  Token searchToken=searchPosition.getToken();
+
+  Token keyToken=TokenMetadata.firstToken(tokenMetadata.sortedTokens(),searchToken);
+
+  EndpointsForRange endpoints=getCachedReplicas(keyToken);
+
+  if (endpoints == null) {
+
+    TokenMetadata tm=tokenMetadata.cachedOnlyTokenMap();
+
+    keyToken=TokenMetadata.firstToken(tm.sortedTokens(),searchToken);
+
+    endpoints=calculateNaturalReplicas(searchToken,tm);
+
+    cachedReplicas.put(keyToken,endpoints);
+
+  }
+
+  return endpoints;
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public RangesAtEndpoint getPendingAddressRanges(TokenMetadata metadata,Collection<Token> pendingTokens,InetAddressAndPort pendingAddress){
+
+  TokenMetadata temp=metadata.cloneOnlyTokenMap();
+
+  temp.updateNormalTokens(pendingTokens,pendingAddress);
+
+  return getAddressReplicas(temp,pendingAddress);
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public RangesAtEndpoint getPendingAddressRanges(TokenMetadata metadata,Token pendingToken,InetAddressAndPort pendingAddress){
+
+  return getPendingAddressRanges(metadata,Collections.singleton(pendingToken),pendingAddress);
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public EndpointsByRange getRangeAddresses(TokenMetadata metadata){
+
+  EndpointsByRange.Builder map=new EndpointsByRange.Builder();
+
+  for (  Token token : metadata.sortedTokens()) {
+
+    Range<Token> range=metadata.getPrimaryRangeFor(token);
+
+    for (    Replica replica : calculateNaturalReplicas(token,metadata)) {
+
+      Preconditions.checkState(range.equals(replica.range()) || this instanceof LocalStrategy);
+
+      map.put(range,replica);
+
+    }
+
+  }
+
+  return map.build();
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+/** 
+
+ * calculate the RF based on strategy_options. When overwriting, ensure that this get() is FAST, as this is called often.
+
+ * @return the replication factor
+
+ */
+
+public abstract ReplicationFactor getReplicationFactor();
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public <T>AbstractWriteResponseHandler<T> getWriteResponseHandler(ReplicaPlan.ForTokenWrite replicaPlan,Runnable callback,WriteType writeType,long queryStartNanoTime){
+
+  return getWriteResponseHandler(replicaPlan,callback,writeType,queryStartNanoTime,DatabaseDescriptor.getIdealConsistencyLevel());
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public <T>AbstractWriteResponseHandler<T> getWriteResponseHandler(ReplicaPlan.ForTokenWrite replicaPlan,Runnable callback,WriteType writeType,long queryStartNanoTime,ConsistencyLevel idealConsistencyLevel){
+
+  AbstractWriteResponseHandler resultResponseHandler;
+
+  if (replicaPlan.consistencyLevel().isDatacenterLocal()) {
+
+    resultResponseHandler=new DatacenterWriteResponseHandler<T>(replicaPlan,callback,writeType,queryStartNanoTime);
+
+  }
+
+ else   if (replicaPlan.consistencyLevel() == ConsistencyLevel.EACH_QUORUM && (this instanceof NetworkTopologyStrategy)) {
+
+    resultResponseHandler=new DatacenterSyncWriteResponseHandler<T>(replicaPlan,callback,writeType,queryStartNanoTime);
+
+  }
+
+ else {
+
+    resultResponseHandler=new WriteResponseHandler<T>(replicaPlan,callback,writeType,queryStartNanoTime);
+
+  }
+
+  if (idealConsistencyLevel != null) {
+
+    if (idealConsistencyLevel == replicaPlan.consistencyLevel()) {
+
+      resultResponseHandler.setIdealCLResponseHandler(resultResponseHandler);
+
+    }
+
+ else {
+
+      AbstractWriteResponseHandler idealHandler=getWriteResponseHandler(replicaPlan.withConsistencyLevel(idealConsistencyLevel),callback,writeType,queryStartNanoTime,idealConsistencyLevel);
+
+      resultResponseHandler.setIdealCLResponseHandler(idealHandler);
+
+    }
+
+  }
+
+  return resultResponseHandler;
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public boolean hasSameSettings(AbstractReplicationStrategy other){
+
+  return getClass().equals(other.getClass()) && getReplicationFactor().equals(other.getReplicationFactor());
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public boolean hasTransientReplicas(){
+
+  return getReplicationFactor().hasTransientReplicas();
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+/** 
+
+ * Before constructing the ARS we first give it a chance to prepare the options map in any way it would like to. For example datacenter auto-expansion or other templating to make the user interface more usable. Note that this may mutate the passed strategyOptions Map. We do this prior to the construction of the strategyClass itself because at that point the option map is already immutable and comes from  {@link org.apache.cassandra.schema.ReplicationParams}(and should probably stay that way so we don't start having bugs related to ReplicationParams being mutable). Instead ARS classes get a static hook here via the prepareOptions(Map, Map) method to mutate the user input before it becomes an immutable part of the ReplicationParams.
+
+ * @param strategyClass The class to call prepareOptions on
+
+ * @param strategyOptions The proposed strategy options that will be potentially mutated by the prepareOptionsmethod.
+
+ * @param previousStrategyOptions In the case of an ALTER statement, the previous strategy options of this class.This map cannot be mutated.
+
+ */
+
+public static void prepareReplicationStrategyOptions(Class<? extends AbstractReplicationStrategy> strategyClass,Map<String,String> strategyOptions,Map<String,String> previousStrategyOptions){
+
+  try {
+
+    Method method=strategyClass.getDeclaredMethod("prepareOptions",Map.class,Map.class);
+
+    method.invoke(null,strategyOptions,previousStrategyOptions);
+
+  }
+
+ catch (  NoSuchMethodException|IllegalAccessException|InvocationTargetException ign) {
+
+  }
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public Collection<String> recognizedOptions(){
+
+  return null;
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+protected void validateExpectedOptions() throws ConfigurationException {
+
+  Collection expectedOptions=recognizedOptions();
+
+  if (expectedOptions == null)   return;
+
+  for (  String key : configOptions.keySet()) {
+
+    if (!expectedOptions.contains(key))     throw new ConfigurationException(String.format("Unrecognized strategy option {%s} passed to %s for keyspace %s",key,getClass().getSimpleName(),keyspaceName));
+
+  }
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public abstract void validateOptions() throws ConfigurationException ;
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+protected void validateReplicationFactor(String s) throws ConfigurationException {
+
+  try {
+
+    ReplicationFactor rf=ReplicationFactor.fromString(s);
+
+    if (rf.hasTransientReplicas()) {
+
+      if (DatabaseDescriptor.getNumTokens() > 1)       throw new ConfigurationException(String.format("Transient replication is not supported with vnodes yet"));
+
+    }
+
+  }
+
+ catch (  IllegalArgumentException e) {
+
+    throw new ConfigurationException(e.getMessage());
+
+  }
+
+}
+
+Location: AbstractReplicationStrategy.java
+
+Content: 
+
+public static void validateReplicationStrategy(String keyspaceName,Class<? extends AbstractReplicationStrategy> strategyClass,TokenMetadata tokenMetadata,IEndpointSnitch snitch,Map<String,String> strategyOptions) throws ConfigurationException {
+
+  AbstractReplicationStrategy strategy=createInternal(keyspaceName,strategyClass,tokenMetadata,snitch,strategyOptions);
+
+  strategy.validateExpectedOptions();
+
+  strategy.validateOptions();
+
+  if (strategy.hasTransientReplicas() && !DatabaseDescriptor.isTransientReplicationEnabled()) {
+
+    throw new ConfigurationException("Transient replication is disabled. Enable in cassandra.yaml to use.");
+
+  }
+
+}
+

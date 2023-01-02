@@ -1,0 +1,196 @@
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+/** 
+
+ * Append a  {@link ByteBuf} to the end of the einternal queue.Note: it's expected this method is invoked on the netty event loop.
+
+ */
+
+public boolean append(ByteBuf buf) throws IllegalStateException {
+
+  if (isClosed)   return false;
+
+  queue.add(buf);
+
+  if (isClosed)   while ((buf=queue.poll()) != null)   buf.release();
+
+  return true;
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+public AsyncStreamingInputPlus(Channel channel){
+
+  this(channel,DEFAULT_REBUFFER_BLOCK_IN_MILLIS,TimeUnit.MILLISECONDS);
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+AsyncStreamingInputPlus(Channel channel,long rebufferTimeout,TimeUnit rebufferTimeoutUnit){
+
+  super(Unpooled.EMPTY_BUFFER.nioBuffer());
+
+  currentBuf=Unpooled.EMPTY_BUFFER;
+
+  queue=new LinkedBlockingQueue<>();
+
+  rebufferTimeoutNanos=rebufferTimeoutUnit.toNanos(rebufferTimeout);
+
+  this.channel=channel;
+
+  channel.config().setAutoRead(false);
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+/** 
+
+ * Consumes bytes in the stream until the given length
+
+ */
+
+public void consume(Consumer consumer,long length) throws IOException {
+
+  while (length > 0) {
+
+    if (!buffer.hasRemaining())     reBuffer();
+
+    final int position=buffer.position();
+
+    final int limit=buffer.limit();
+
+    buffer.limit(position + (int)Math.min(length,limit - position));
+
+    try {
+
+      int copied=consumer.accept(buffer);
+
+      buffer.position(position + copied);
+
+      length-=copied;
+
+    }
+
+  finally {
+
+      buffer.limit(limit);
+
+    }
+
+  }
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+public ByteBufAllocator getAllocator(){
+
+  return channel.alloc();
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+public void maybeIssueRead(){
+
+  if (isEmpty())   channel.read();
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}Release open buffers and poll the  {@link #queue} for more data.<p> This is best, and more or less expected, to be invoked on a consuming thread (not the event loop) becasue if we block on the queue we can't fill it on the event loop (as that's where the buffers are coming from).
+
+ * @throws EOFException when no further reading from this instance should occur. Implies this instance is closed.
+
+ * @throws InputTimeoutException when no new buffers arrive for reading beforethe  {@link #rebufferTimeoutNanos} elapses while blocking. It's then not safe to reuse this instance again.
+
+ */
+
+@Override protected void reBuffer() throws EOFException, InputTimeoutException {
+
+  if (queue.isEmpty())   channel.read();
+
+  currentBuf.release();
+
+  currentBuf=null;
+
+  buffer=null;
+
+  ByteBuf next=null;
+
+  try {
+
+    next=queue.poll(rebufferTimeoutNanos,TimeUnit.NANOSECONDS);
+
+  }
+
+ catch (  InterruptedException ie) {
+
+  }
+
+  if (null == next)   throw new InputTimeoutException();
+
+  if (next == Unpooled.EMPTY_BUFFER)   throw new EOFException();
+
+  currentBuf=next;
+
+  buffer=next.nioBuffer();
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+/** 
+
+ * Mark this stream as closed, but do not release any of the resources. Note: this is best to be called from the producer thread.
+
+ */
+
+public void requestClosure(){
+
+  queue.add(Unpooled.EMPTY_BUFFER);
+
+}
+
+Location: AsyncStreamingInputPlus.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}As long as this method is invoked on the consuming thread the returned value will be accurate.
+
+ */
+
+@VisibleForTesting public int unsafeAvailable(){
+
+  long count=buffer != null ? buffer.remaining() : 0;
+
+  for (  ByteBuf buf : queue)   count+=buf.readableBytes();
+
+  return Ints.checkedCast(count);
+
+}
+

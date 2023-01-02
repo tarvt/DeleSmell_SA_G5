@@ -1,0 +1,124 @@
+Location: AbstractFunctionSelector.java
+
+Content: 
+
+protected AbstractFunctionSelector(T fun,List<Selector> argSelectors){
+
+  this.fun=fun;
+
+  this.argSelectors=argSelectors;
+
+  this.args=Arrays.asList(new ByteBuffer[argSelectors.size()]);
+
+}
+
+Location: AbstractFunctionSelector.java
+
+Content: 
+
+protected List<ByteBuffer> args(){
+
+  return args;
+
+}
+
+Location: AbstractFunctionSelector.java
+
+Content: 
+
+public static Factory newFactory(final Function fun,final SelectorFactories factories) throws InvalidRequestException {
+
+  if (fun.isAggregate()) {
+
+    if (factories.doesAggregation())     throw new InvalidRequestException("aggregate functions cannot be used as arguments of aggregate functions");
+
+  }
+
+  return new Factory(){
+
+    protected String getColumnName(){
+
+      return fun.columnName(factories.getColumnNames());
+
+    }
+
+    protected AbstractType<?> getReturnType(){
+
+      return fun.returnType();
+
+    }
+
+    protected void addColumnMapping(    SelectionColumnMapping mapping,    ColumnSpecification resultsColumn){
+
+      SelectionColumnMapping tmpMapping=SelectionColumnMapping.newMapping();
+
+      for (      Factory factory : factories)       factory.addColumnMapping(tmpMapping,resultsColumn);
+
+      if (tmpMapping.getMappings().get(resultsColumn).isEmpty())       mapping.addMapping(resultsColumn,(ColumnMetadata)null);
+
+ else       mapping.addMapping(resultsColumn,tmpMapping.getMappings().values());
+
+    }
+
+    public void addFunctionsTo(    List<Function> functions){
+
+      fun.addFunctionsTo(functions);
+
+      factories.addFunctionsTo(functions);
+
+    }
+
+    public Selector newInstance(    QueryOptions options) throws InvalidRequestException {
+
+      return fun.isAggregate() ? new AggregateFunctionSelector(fun,factories.newInstances(options)) : new ScalarFunctionSelector(fun,factories.newInstances(options));
+
+    }
+
+    public boolean isWritetimeSelectorFactory(){
+
+      return factories.containsWritetimeSelectorFactory();
+
+    }
+
+    public boolean isTTLSelectorFactory(){
+
+      return factories.containsTTLSelectorFactory();
+
+    }
+
+    public boolean isAggregateSelectorFactory(){
+
+      return fun.isAggregate() || factories.doesAggregation();
+
+    }
+
+    @Override public boolean areAllFetchedColumnsKnown(){
+
+      return Iterables.all(factories,f -> f.areAllFetchedColumnsKnown());
+
+    }
+
+    @Override public void addFetchedColumns(    ColumnFilter.Builder builder){
+
+      for (      Selector.Factory factory : factories)       factory.addFetchedColumns(builder);
+
+    }
+
+  }
+
+;
+
+}
+
+Location: AbstractFunctionSelector.java
+
+Content: 
+
+protected void setArg(int i,ByteBuffer value) throws InvalidRequestException {
+
+  RequestValidations.checkBindValueSet(value,"Invalid unset value for argument in call to function %s",fun.name().name);
+
+  args.set(i,value);
+
+}
+

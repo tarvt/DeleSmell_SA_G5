@@ -1,0 +1,270 @@
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+AbstractReplicaCollection(ReplicaList list){
+
+  this.list=list;
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+public static <C extends ReplicaCollection<C>,B extends Builder<C>>Collector<Replica,B,C> collector(Set<Collector.Characteristics> characteristics,Supplier<B> supplier){
+
+  return new Collector<Replica,B,C>(){
+
+    private final BiConsumer<B,Replica> accumulator=Builder::add;
+
+    private final BinaryOperator<B> combiner=(a,b) -> {
+
+      a.addAll(b);
+
+      return a;
+
+    }
+
+;
+
+    private final Function<B,C> finisher=Builder::build;
+
+    public Supplier<B> supplier(){
+
+      return supplier;
+
+    }
+
+    public BiConsumer<B,Replica> accumulator(){
+
+      return accumulator;
+
+    }
+
+    public BinaryOperator<B> combiner(){
+
+      return combiner;
+
+    }
+
+    public Function<B,C> finisher(){
+
+      return finisher;
+
+    }
+
+    public Set<Characteristics> characteristics(){
+
+      return characteristics;
+
+    }
+
+  }
+
+;
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+static <C extends AbstractReplicaCollection<C>>C concat(C replicas,C extraReplicas,Builder.Conflict ignoreConflicts){
+
+  if (extraReplicas.isEmpty())   return replicas;
+
+  if (replicas.isEmpty())   return extraReplicas;
+
+  Builder<C> builder=replicas.newBuilder(replicas.size() + extraReplicas.size());
+
+  builder.addAll(replicas,Builder.Conflict.NONE);
+
+  builder.addAll(extraReplicas,ignoreConflicts);
+
+  return builder.build();
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+/** 
+
+ * see  {@link ReplicaCollection#count(Predicate)}
+
+ */
+
+public int count(Predicate<Replica> predicate){
+
+  int count=0;
+
+  for (int i=0; i < list.size(); ++i)   if (predicate.test(list.get(i)))   ++count;
+
+  return count;
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+/** 
+
+ * see  {@link ReplicaCollection#filterLazily(Predicate)}
+
+ */
+
+public final Iterable<Replica> filterLazily(Predicate<Replica> predicate){
+
+  return filterLazily(predicate,Integer.MAX_VALUE);
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+/** 
+
+ * see  {@link ReplicaCollection#filterLazily(Predicate,int)}
+
+ */
+
+public final Iterable<Replica> filterLazily(Predicate<Replica> predicate,int limit){
+
+  return () -> list.filterIterator(predicate,limit);
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+/** 
+
+ * see  {@link ReplicaCollection#filter(Predicate)}
+
+ */
+
+public final C filter(Predicate<Replica> predicate){
+
+  return filter(predicate,Integer.MAX_VALUE);
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+/** 
+
+ * see  {@link ReplicaCollection#filter(Predicate,int)}
+
+ */
+
+public final C filter(Predicate<Replica> predicate,int limit){
+
+  if (isEmpty())   return snapshot();
+
+  ReplicaList copy=null;
+
+  int beginRun=-1, endRun=-1;
+
+  int i=0;
+
+  for (; i < list.size(); ++i) {
+
+    Replica replica=list.get(i);
+
+    if (predicate.test(replica)) {
+
+      if (copy != null)       copy.add(replica);
+
+ else       if (beginRun < 0)       beginRun=i;
+
+ else       if (endRun > 0) {
+
+        copy=new ReplicaList(Math.min(limit,(list.size() - i) + (endRun - beginRun)));
+
+        for (int j=beginRun; j < endRun; ++j)         copy.add(list.get(j));
+
+        copy.add(list.get(i));
+
+      }
+
+      if (--limit == 0) {
+
+        ++i;
+
+        break;
+
+      }
+
+    }
+
+ else     if (beginRun >= 0 && endRun < 0)     endRun=i;
+
+  }
+
+  if (beginRun < 0)   beginRun=endRun=0;
+
+  if (endRun < 0)   endRun=i;
+
+  if (copy == null)   return subList(beginRun,endRun);
+
+  return snapshot(copy);
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+/** 
+
+ * see  {@link ReplicaCollection#sorted(Comparator)}
+
+ */
+
+public final C sorted(Comparator<Replica> comparator){
+
+  return snapshot(list.sorted(comparator));
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+public final Stream<Replica> stream(){
+
+  return list.stream();
+
+}
+
+Location: AbstractReplicaCollection.java
+
+Content: 
+
+/** 
+
+ * see  {@link ReplicaCollection#subList(int,int)}
+
+ */
+
+public final C subList(int start,int end){
+
+  if (start == 0 && end == size())   return snapshot();
+
+  ReplicaList subList;
+
+  if (start == end)   subList=EMPTY_LIST;
+
+ else   subList=list.subList(start,end);
+
+  return snapshot(subList);
+
+}
+

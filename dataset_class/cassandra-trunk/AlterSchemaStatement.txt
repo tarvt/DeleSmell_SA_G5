@@ -1,0 +1,108 @@
+Location: AlterSchemaStatement.java
+
+Content: 
+
+protected AlterSchemaStatement(String keyspaceName){
+
+  this.keyspaceName=keyspaceName;
+
+}
+
+Location: AlterSchemaStatement.java
+
+Content: 
+
+public ResultMessage executeLocally(QueryState state,QueryOptions options){
+
+  return execute(state,true);
+
+}
+
+Location: AlterSchemaStatement.java
+
+Content: 
+
+public ResultMessage execute(QueryState state,boolean locally){
+
+  if (SchemaConstants.isLocalSystemKeyspace(keyspaceName))   throw ire("System keyspace '%s' is not user-modifiable",keyspaceName);
+
+  KeyspaceMetadata keyspace=Schema.instance.getKeyspaceMetadata(keyspaceName);
+
+  if (null != keyspace && keyspace.isVirtual())   throw ire("Virtual keyspace '%s' is not user-modifiable",keyspaceName);
+
+  validateKeyspaceName();
+
+  KeyspacesDiff diff=MigrationManager.announce(this,locally);
+
+  clientWarnings(diff).forEach(ClientWarn.instance::warn);
+
+  if (diff.isEmpty())   return new ResultMessage.Void();
+
+  AuthenticatedUser user=state.getClientState().getUser();
+
+  if (null != user && !user.isAnonymous())   createdResources(diff).forEach(r -> grantPermissionsOnResource(r,user));
+
+  return new ResultMessage.SchemaChange(schemaChangeEvent(diff));
+
+}
+
+Location: AlterSchemaStatement.java
+
+Content: 
+
+public ResultMessage execute(QueryState state,QueryOptions options,long queryStartNanoTime){
+
+  return execute(state,false);
+
+}
+
+Location: AlterSchemaStatement.java
+
+Content: 
+
+private void grantPermissionsOnResource(IResource resource,AuthenticatedUser user){
+
+  try {
+
+    DatabaseDescriptor.getAuthorizer().grant(AuthenticatedUser.SYSTEM_USER,resource.applicablePermissions(),resource,user.getPrimaryRole());
+
+  }
+
+ catch (  UnsupportedOperationException e) {
+
+  }
+
+}
+
+Location: AlterSchemaStatement.java
+
+Content: 
+
+static InvalidRequestException ire(String format,Object... args){
+
+  return new InvalidRequestException(String.format(format,args));
+
+}
+
+Location: AlterSchemaStatement.java
+
+Content: 
+
+private void validateKeyspaceName(){
+
+  if (!SchemaConstants.isValidName(keyspaceName)) {
+
+    throw ire("Keyspace name must not be empty, more than %d characters long, " + "or contain non-alphanumeric-underscore characters (got '%s')",SchemaConstants.NAME_LENGTH,keyspaceName);
+
+  }
+
+}
+
+Location: AlterSchemaStatement.java
+
+Content: 
+
+public final void validate(ClientState state){
+
+}
+

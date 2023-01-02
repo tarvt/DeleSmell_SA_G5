@@ -1,0 +1,226 @@
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+public AsyncChannelOutputPlus(Channel channel){
+
+  super(null,null);
+
+  this.channel=channel;
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+/** 
+
+ * Create a ChannelPromise for a flush of the given size. <p> This method will not return until the write is permitted by the provided watermarks and in flight bytes, and on its completion will mark the requested bytes flushed. <p> If this method returns normally, the ChannelPromise MUST be writtenAndFlushed, or else completed exceptionally.
+
+ */
+
+protected ChannelPromise beginFlush(int byteCount,int lowWaterMark,int highWaterMark) throws IOException {
+
+  waitForSpace(byteCount,lowWaterMark,highWaterMark);
+
+  return AsyncChannelPromise.withListener(channel,future -> {
+
+    if (future.isSuccess() && null == flushFailed) {
+
+      flushedToNetwork+=byteCount;
+
+      releaseSpace(byteCount);
+
+    }
+
+ else     if (null == flushFailed) {
+
+      Throwable cause=future.cause();
+
+      if (cause == null) {
+
+        cause=new FlushException("Flush failed for unknown reason");
+
+        cause.fillInStackTrace();
+
+      }
+
+      flushFailed=cause;
+
+      releaseSpace(flushing - flushed);
+
+    }
+
+ else {
+
+      assert flushing == flushed;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+/** 
+
+ * Perform an asynchronous flush, then waits until all outstanding flushes have completed
+
+ * @throws IOException if any flush fails
+
+ */
+
+@Override public void flush() throws IOException {
+
+  doFlush(0);
+
+  waitUntilFlushed(0,0);
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+public long flushed(){
+
+  return flushing;
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+public long flushedToNetwork(){
+
+  return flushedToNetwork;
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+@Override protected WritableByteChannel newDefaultChannel(){
+
+  throw new UnsupportedOperationException();
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+/** 
+
+ * Utility method for waitUntilFlushed, which actually parks the current thread until the necessary number of bytes have been flushed This may only be invoked by the writer thread, never by the eventLoop.
+
+ */
+
+protected void parkUntilFlushed(long wakeUpWhenFlushed,long signalWhenFlushed){
+
+  assert wakeUpWhenFlushed <= signalWhenFlushed;
+
+  assert waiting == null;
+
+  this.waiting=Thread.currentThread();
+
+  this.signalWhenFlushed=signalWhenFlushed;
+
+  while (flushed < wakeUpWhenFlushed)   LockSupport.park();
+
+  waiting=null;
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+private void propagateFailedFlush() throws IOException {
+
+  Throwable t=flushFailed;
+
+  if (t != null) {
+
+    if (SocketFactory.isCausedByConnectionReset(t))     throw new FlushException("The channel this output stream was writing to has been closed",t);
+
+    throw new FlushException("This output stream is in an unsafe state after an asynchronous flush failed",t);
+
+  }
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+/** 
+
+ * Update our flushed count, and signal any waiters. This may only be invoked by the eventLoop, never by the writer thread.
+
+ */
+
+protected void releaseSpace(long bytesFlushed){
+
+  long newFlushed=flushed + bytesFlushed;
+
+  flushed=newFlushed;
+
+  Thread thread=waiting;
+
+  if (thread != null && signalWhenFlushed <= newFlushed)   LockSupport.unpark(thread);
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+/** 
+
+ * Imposes our lowWaterMark/highWaterMark constraints, and propagates any exceptions thrown by prior flushes. If we currently have lowWaterMark or fewer bytes flushing, we are good to go. If our new write will not take us over our highWaterMark, we are good to go. Otherwise we wait until either of these conditions are met. This may only be invoked by the writer thread, never by the eventLoop.
+
+ * @throws IOException if a prior asynchronous flush failed
+
+ */
+
+private void waitForSpace(int bytesToWrite,int lowWaterMark,int highWaterMark) throws IOException {
+
+  int wakeUpWhenFlushing=highWaterMark - bytesToWrite;
+
+  waitUntilFlushed(max(lowWaterMark,wakeUpWhenFlushing),lowWaterMark);
+
+  flushing+=bytesToWrite;
+
+}
+
+Location: AsyncChannelOutputPlus.java
+
+Content: 
+
+/** 
+
+ * Implementation of waitForSpace, which calculates what flushed points we need to wait for, parks if necessary and propagates flush failures. This may only be invoked by the writer thread, never by the eventLoop.
+
+ */
+
+void waitUntilFlushed(int wakeUpWhenExcessBytesWritten,int signalWhenExcessBytesWritten) throws IOException {
+
+  assert signalWhenExcessBytesWritten <= wakeUpWhenExcessBytesWritten;
+
+  long wakeUpWhenFlushed=flushing - wakeUpWhenExcessBytesWritten;
+
+  if (flushed < wakeUpWhenFlushed)   parkUntilFlushed(wakeUpWhenFlushed,flushing - signalWhenExcessBytesWritten);
+
+  propagateFailedFlush();
+
+}
+

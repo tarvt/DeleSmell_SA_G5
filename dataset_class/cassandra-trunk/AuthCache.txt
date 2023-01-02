@@ -1,0 +1,106 @@
+Location: AuthCache.java
+
+Content: 
+
+/** 
+
+ * @param name Used for MBean
+
+ * @param setValidityDelegate Used to set cache validity period. See {@link Policy#expireAfterWrite()}
+
+ * @param getValidityDelegate Getter for validity period
+
+ * @param setUpdateIntervalDelegate Used to set cache update interval. See {@link Policy#refreshAfterWrite()}
+
+ * @param getUpdateIntervalDelegate Getter for update interval
+
+ * @param setMaxEntriesDelegate Used to set max # entries in cache. See {@link com.github.benmanes.caffeine.cache.Policy.Eviction#setMaximum(long)}
+
+ * @param getMaxEntriesDelegate Getter for max entries.
+
+ * @param loadFunction Function to load the cache. Called on {@link #get(Object)}
+
+ * @param cacheEnabledDelegate Used to determine if cache is enabled.
+
+ */
+
+protected AuthCache(String name,IntConsumer setValidityDelegate,IntSupplier getValidityDelegate,IntConsumer setUpdateIntervalDelegate,IntSupplier getUpdateIntervalDelegate,IntConsumer setMaxEntriesDelegate,IntSupplier getMaxEntriesDelegate,Function<K,V> loadFunction,BooleanSupplier cacheEnabledDelegate){
+
+  this.name=checkNotNull(name);
+
+  this.setValidityDelegate=checkNotNull(setValidityDelegate);
+
+  this.getValidityDelegate=checkNotNull(getValidityDelegate);
+
+  this.setUpdateIntervalDelegate=checkNotNull(setUpdateIntervalDelegate);
+
+  this.getUpdateIntervalDelegate=checkNotNull(getUpdateIntervalDelegate);
+
+  this.setMaxEntriesDelegate=checkNotNull(setMaxEntriesDelegate);
+
+  this.getMaxEntriesDelegate=checkNotNull(getMaxEntriesDelegate);
+
+  this.loadFunction=checkNotNull(loadFunction);
+
+  this.enableCache=checkNotNull(cacheEnabledDelegate);
+
+  init();
+
+}
+
+Location: AuthCache.java
+
+Content: 
+
+/** 
+
+ * (Re-)initialise the underlying cache. Will update validity, max entries, and update interval if any have changed. The underlying  {@link LoadingCache} will be initiated based on the provided {@code loadFunction}. Note: If you need some unhandled cache setting to be set you should extend  {@link AuthCache} and override this method.
+
+ * @param existing If not null will only update cache update validity, max entries, and update interval.
+
+ * @return New {@link LoadingCache} if existing was null, otherwise the existing {@code cache}
+
+ */
+
+protected LoadingCache<K,V> initCache(LoadingCache<K,V> existing){
+
+  if (!enableCache.getAsBoolean())   return null;
+
+  if (getValidity() <= 0)   return null;
+
+  logger.info("(Re)initializing {} (validity period/update interval/max entries) ({}/{}/{})",name,getValidity(),getUpdateInterval(),getMaxEntries());
+
+  if (existing == null) {
+
+    return Caffeine.newBuilder().refreshAfterWrite(getUpdateInterval(),TimeUnit.MILLISECONDS).expireAfterWrite(getValidity(),TimeUnit.MILLISECONDS).maximumSize(getMaxEntries()).executor(MoreExecutors.directExecutor()).build(loadFunction::apply);
+
+  }
+
+  cache.policy().refreshAfterWrite().ifPresent(policy -> policy.setExpiresAfter(getUpdateInterval(),TimeUnit.MILLISECONDS));
+
+  cache.policy().expireAfterWrite().ifPresent(policy -> policy.setExpiresAfter(getValidity(),TimeUnit.MILLISECONDS));
+
+  cache.policy().eviction().ifPresent(policy -> policy.setMaximum(getMaxEntries()));
+
+  return cache;
+
+}
+
+Location: AuthCache.java
+
+Content: 
+
+/** 
+
+ * Invalidate a key
+
+ * @param k key to invalidate
+
+ */
+
+public void invalidate(K k){
+
+  if (cache != null)   cache.invalidate(k);
+
+}
+

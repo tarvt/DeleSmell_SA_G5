@@ -1,0 +1,106 @@
+Location: AbstractTokenTreeBuilder.java
+
+Content: 
+
+public void add(TokenTreeBuilder other){
+
+  add(other.iterator());
+
+}
+
+Location: AbstractTokenTreeBuilder.java
+
+Content: 
+
+protected static void alignBuffer(ByteBuffer buffer,int blockSize){
+
+  long curPos=buffer.position();
+
+  if ((curPos & (blockSize - 1)) != 0)   buffer.position((int)FBUtilities.align(curPos,blockSize));
+
+}
+
+Location: AbstractTokenTreeBuilder.java
+
+Content: 
+
+protected abstract void constructTree();
+
+Location: AbstractTokenTreeBuilder.java
+
+Content: 
+
+protected void flushBuffer(ByteBuffer buffer,DataOutputPlus o,boolean align) throws IOException {
+
+  if (align)   alignBuffer(buffer,BLOCK_BYTES);
+
+  buffer.flip();
+
+  o.write(buffer);
+
+  buffer.clear();
+
+}
+
+Location: AbstractTokenTreeBuilder.java
+
+Content: 
+
+public long getTokenCount(){
+
+  return tokenCount;
+
+}
+
+Location: AbstractTokenTreeBuilder.java
+
+Content: 
+
+public int serializedSize(){
+
+  if (numBlocks == 1)   return BLOCK_HEADER_BYTES + ((int)tokenCount * BLOCK_ENTRY_BYTES) + (((Leaf)root).overflowCollisionCount() * OVERFLOW_ENTRY_BYTES);
+
+ else   return numBlocks * BLOCK_BYTES;
+
+}
+
+Location: AbstractTokenTreeBuilder.java
+
+Content: 
+
+public void write(DataOutputPlus out) throws IOException {
+
+  ByteBuffer blockBuffer=ByteBuffer.allocate(BLOCK_BYTES);
+
+  Iterator<Node> levelIterator=root.levelIterator();
+
+  long childBlockIndex=1;
+
+  while (levelIterator != null) {
+
+    Node firstChild=null;
+
+    while (levelIterator.hasNext()) {
+
+      Node block=levelIterator.next();
+
+      if (firstChild == null && !block.isLeaf())       firstChild=((InteriorNode)block).children.get(0);
+
+      if (block.isSerializable()) {
+
+        block.serialize(childBlockIndex,blockBuffer);
+
+        flushBuffer(blockBuffer,out,numBlocks != 1);
+
+      }
+
+      childBlockIndex+=block.childCount();
+
+    }
+
+    levelIterator=(firstChild == null) ? null : firstChild.levelIterator();
+
+  }
+
+}
+
