@@ -1,0 +1,168 @@
+Location: YamlConfigurationLoader.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public static <T>T fromMap(Map<String,Object> map,boolean shouldCheck,Class<T> klass){
+
+  Constructor constructor=new YamlConfigurationLoader.CustomConstructor(klass,klass.getClassLoader());
+
+  YamlConfigurationLoader.PropertiesChecker propertiesChecker=new YamlConfigurationLoader.PropertiesChecker();
+
+  constructor.setPropertyUtils(propertiesChecker);
+
+  Yaml yaml=new Yaml(constructor);
+
+  Node node=yaml.represent(map);
+
+  constructor.setComposer(new Composer(null,null){
+
+    @Override public Node getSingleNode(){
+
+      return node;
+
+    }
+
+  }
+
+);
+
+  T value=(T)constructor.getSingleData(klass);
+
+  if (shouldCheck)   propertiesChecker.check();
+
+  return value;
+
+}
+
+Location: YamlConfigurationLoader.java
+
+Content: 
+
+public static <T>T fromMap(Map<String,Object> map,Class<T> klass){
+
+  return fromMap(map,true,klass);
+
+}
+
+Location: YamlConfigurationLoader.java
+
+Content: 
+
+/** 
+
+ * Inspect the classpath to find storage configuration file
+
+ */
+
+private static URL getStorageConfigURL() throws ConfigurationException {
+
+  String configUrl=System.getProperty("cassandra.config");
+
+  if (configUrl == null)   configUrl=DEFAULT_CONFIGURATION;
+
+  URL url;
+
+  try {
+
+    url=new URL(configUrl);
+
+    url.openStream().close();
+
+  }
+
+ catch (  Exception e) {
+
+    ClassLoader loader=DatabaseDescriptor.class.getClassLoader();
+
+    url=loader.getResource(configUrl);
+
+    if (url == null) {
+
+      String required="file:" + File.separator + File.separator;
+
+      if (!configUrl.startsWith(required))       throw new ConfigurationException(String.format("Expecting URI in variable: [cassandra.config]. Found[%s]. Please prefix the file with [%s%s] for local " + "files and [%s<server>%s] for remote files. If you are executing this from an external tool, it needs " + "to set Config.setClientMode(true) to avoid loading configuration.",configUrl,required,File.separator,required,File.separator));
+
+      throw new ConfigurationException("Cannot locate " + configUrl + ".  If this is a local file, please confirm you've provided "+ required+ File.separator+ " as a URI prefix.");
+
+    }
+
+  }
+
+  logger.info("Configuration location: {}",url);
+
+  return url;
+
+}
+
+Location: YamlConfigurationLoader.java
+
+Content: 
+
+@Override public Config loadConfig() throws ConfigurationException {
+
+  if (storageConfigURL == null)   storageConfigURL=getStorageConfigURL();
+
+  return loadConfig(storageConfigURL);
+
+}
+
+Location: YamlConfigurationLoader.java
+
+Content: 
+
+public Config loadConfig(URL url) throws ConfigurationException {
+
+  try {
+
+    logger.debug("Loading settings from {}",url);
+
+    byte[] configBytes;
+
+    try (InputStream is=url.openStream()){
+
+      configBytes=ByteStreams.toByteArray(is);
+
+    }
+
+ catch (    IOException e) {
+
+      throw new AssertionError(e);
+
+    }
+
+    Constructor constructor=new CustomConstructor(Config.class,Yaml.class.getClassLoader());
+
+    PropertiesChecker propertiesChecker=new PropertiesChecker();
+
+    constructor.setPropertyUtils(propertiesChecker);
+
+    Yaml yaml=new Yaml(constructor);
+
+    Config result=loadConfig(yaml,configBytes);
+
+    propertiesChecker.check();
+
+    return result;
+
+  }
+
+ catch (  YAMLException e) {
+
+    throw new ConfigurationException("Invalid yaml: " + url + SystemUtils.LINE_SEPARATOR+ " Error: "+ e.getMessage(),false);
+
+  }
+
+}
+
+Location: YamlConfigurationLoader.java
+
+Content: 
+
+private static Config loadConfig(Yaml yaml,byte[] configBytes){
+
+  Config config=yaml.loadAs(new ByteArrayInputStream(configBytes),Config.class);
+
+  return config == null ? new Config() : config;
+
+}
+

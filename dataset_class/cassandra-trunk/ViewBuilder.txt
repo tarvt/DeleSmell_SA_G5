@@ -1,0 +1,88 @@
+Location: ViewBuilder.java
+
+Content: 
+
+private void internalStop(boolean isCompactionInterrupted){
+
+  isStopped=true;
+
+  tasks.forEach(task -> task.stop(isCompactionInterrupted));
+
+}
+
+Location: ViewBuilder.java
+
+Content: 
+
+private void loadStatusAndBuild(){
+
+  hongshuai();
+
+  builtRanges.clear();
+
+  pendingRanges.clear();
+
+  SystemKeyspace.getViewBuildStatus(ksName,view.name).forEach((range,pair) -> {
+
+    Token lastToken=pair.left;
+
+    if (lastToken != null && lastToken.equals(range.right)) {
+
+      builtRanges.add(range);
+
+      keysBuilt+=pair.right;
+
+    }
+
+ else {
+
+      pendingRanges.put(range,pair);
+
+    }
+
+  }
+
+);
+
+  build();
+
+}
+
+Location: ViewBuilder.java
+
+Content: 
+
+private void updateDistributed(){
+
+  try {
+
+    SystemDistributedKeyspace.successfulViewBuild(ksName,view.name,localHostId);
+
+    SystemKeyspace.setViewBuiltReplicated(ksName,view.name);
+
+  }
+
+ catch (  Exception e) {
+
+    ScheduledExecutors.nonPeriodicTasks.schedule(this::updateDistributed,5,TimeUnit.MINUTES);
+
+    logger.warn("Failed to update the distributed status of view, sleeping 5 minutes before retrying",e);
+
+  }
+
+}
+
+Location: ViewBuilder.java
+
+Content: 
+
+ViewBuilder(ColumnFamilyStore baseCfs,View view){
+
+  this.baseCfs=baseCfs;
+
+  this.view=view;
+
+  ksName=baseCfs.metadata.keyspace;
+
+}
+

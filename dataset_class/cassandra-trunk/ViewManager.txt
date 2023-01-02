@@ -1,0 +1,184 @@
+Location: ViewManager.java
+
+Content: 
+
+public static Lock acquireLockFor(int keyAndCfidHash){
+
+  Lock lock=LOCKS.get(keyAndCfidHash);
+
+  if (lock.tryLock())   return lock;
+
+  return null;
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+public void addView(ViewMetadata definition){
+
+  if (!keyspace.hasColumnFamilyStore(definition.baseTableId)) {
+
+    logger.warn("Not adding view {} because the base table {} is unknown",definition.name(),definition.baseTableId);
+
+    return;
+
+  }
+
+  View view=new View(definition,keyspace.getColumnFamilyStore(definition.baseTableId));
+
+  forTable(view.getDefinition().baseTableId).add(view);
+
+  viewsByName.put(definition.name(),view);
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+private Iterable<View> allViews(){
+
+  return viewsByName.values();
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+public void buildAllViews(){
+
+  for (  View view : allViews())   view.build();
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+/** 
+
+ * Stops the building of the specified view, no-op if it isn't building.
+
+ * @param name the name of the view
+
+ */
+
+public void dropView(String name){
+
+  View view=viewsByName.remove(name);
+
+  if (view == null)   return;
+
+  view.stopBuild();
+
+  forTable(view.getDefinition().baseTableId).removeByName(name);
+
+  SystemKeyspace.setViewRemoved(keyspace.getName(),view.name);
+
+  SystemDistributedKeyspace.setViewRemoved(keyspace.getName(),view.name);
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+public TableViews forTable(TableId id){
+
+  TableViews views=viewsByBaseTable.get(id);
+
+  if (views == null) {
+
+    views=new TableViews(id);
+
+    TableViews previous=viewsByBaseTable.putIfAbsent(id,views);
+
+    if (previous != null)     views=previous;
+
+  }
+
+  return views;
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+public void reload(boolean buildAllViews){
+
+  Views views=keyspace.getMetadata().views;
+
+  Map<String,ViewMetadata> newViewsByName=Maps.newHashMapWithExpectedSize(views.size());
+
+  for (  ViewMetadata definition : views) {
+
+    newViewsByName.put(definition.name(),definition);
+
+  }
+
+  for (  Map.Entry<String,ViewMetadata> entry : newViewsByName.entrySet()) {
+
+    if (!viewsByName.containsKey(entry.getKey()))     addView(entry.getValue());
+
+  }
+
+  if (!buildAllViews)   return;
+
+  if (!StorageService.instance.isInitialized()) {
+
+    logger.info("Not submitting build tasks for views in keyspace {} as " + "storage service is not initialized",keyspace.getName());
+
+    return;
+
+  }
+
+  for (  View view : allViews()) {
+
+    view.build();
+
+    view.updateDefinition(newViewsByName.get(view.name));
+
+  }
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+public boolean updatesAffectView(Collection<? extends IMutation> mutations,boolean coordinatorBatchlog){
+
+  if (!enableCoordinatorBatchlog && coordinatorBatchlog)   return false;
+
+  for (  IMutation mutation : mutations) {
+
+    for (    PartitionUpdate update : mutation.getPartitionUpdates()) {
+
+      assert keyspace.getName().equals(update.metadata().keyspace);
+
+      if (coordinatorBatchlog && keyspace.getReplicationStrategy().getReplicationFactor().allReplicas == 1)       continue;
+
+      if (!forTable(update.metadata().id).updatedViews(update).isEmpty())       return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: ViewManager.java
+
+Content: 
+
+public ViewManager(Keyspace keyspace){
+
+  this.keyspace=keyspace;
+
+}
+

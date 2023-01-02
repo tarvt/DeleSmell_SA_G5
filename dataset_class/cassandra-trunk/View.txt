@@ -1,0 +1,640 @@
+Location: View.java
+
+Content: 
+
+@VisibleForTesting public Iterable<SSTableReader> allKnownSSTables(){
+
+  return Iterables.concat(sstables,filterOut(compacting,sstables));
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * When views contains a primary key column that is not part of the base table primary key, we use that column liveness info as the view PK, to ensure that whenever that column is not live in the base, the row is not live in the view. This is done to prevent cells other than the view PK from making the view row alive when the view PK column is not live in the base. So in this case we tie the row liveness, to the primary key liveness. See CASSANDRA-11500 for context.
+
+ */
+
+public boolean enforceStrictLiveness(){
+
+  return !baseNonPKColumnsInViewPK.isEmpty();
+
+}
+
+Location: View.java
+
+Content: 
+
+public static Iterable<ViewMetadata> findAll(String keyspace,String baseTable){
+
+  KeyspaceMetadata ksm=Schema.instance.getKeyspaceMetadata(keyspace);
+
+  return Iterables.filter(ksm.views,view -> view.baseTableName.equals(baseTable));
+
+}
+
+Location: View.java
+
+Content: 
+
+@Nullable public static TableMetadataRef findBaseTable(String keyspace,String viewName){
+
+  ViewMetadata view=Schema.instance.getView(keyspace,viewName);
+
+  return (view == null) ? null : Schema.instance.getTableMetadataRef(view.baseTableId);
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * @return the active memtable and all the memtables that are pending flush.
+
+ */
+
+public Iterable<Memtable> getAllMemtables(){
+
+  return concat(flushingMemtables,liveMemtables);
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * The base column corresponding to the provided view column. This should never return  {@code null} since a view can't have its "own" columns.
+
+ */
+
+public ColumnMetadata getBaseColumn(ColumnMetadata viewColumn){
+
+  ColumnMetadata baseColumn=baseCfs.metadata().getColumn(viewColumn.name);
+
+  assert baseColumn != null;
+
+  return baseColumn;
+
+}
+
+Location: View.java
+
+Content: 
+
+public Collection<SSTableIndex> getIndexes(){
+
+  return view.values();
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * Returns the ReadQuery used to filter this view.  Internal users should access the query this way to ensure it has been prepared.
+
+ */
+
+ReadQuery getReadQuery(){
+
+  if (query == null)   query=getSelectStatement().getQuery(QueryOptions.forInternalCalls(Collections.emptyList()),FBUtilities.nowInSeconds());
+
+  return query;
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * Returns the SelectStatement used to populate and filter this view.  Internal users should access the select statement this way to ensure it has been prepared.
+
+ */
+
+SelectStatement getSelectStatement(){
+
+  if (null == select) {
+
+    SelectStatement.Parameters parameters=new SelectStatement.Parameters(Collections.emptyMap(),Collections.emptyList(),false,true,false);
+
+    SelectStatement.RawStatement rawSelect=new SelectStatement.RawStatement(new QualifiedName(baseCfs.keyspace.getName(),baseCfs.name),parameters,selectClause(),definition.whereClause,null,null);
+
+    rawSelect.setBindVariables(Collections.emptyList());
+
+    select=rawSelect.prepare(true);
+
+  }
+
+  return select;
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * The view column corresponding to the provided base column. This <b>can</b> return  {@code null} if the column is denormalized in the view.
+
+ */
+
+public ColumnMetadata getViewColumn(ColumnMetadata baseColumn){
+
+  return definition.metadata.getColumn(baseColumn.name);
+
+}
+
+Location: View.java
+
+Content: 
+
+public boolean hasSamePrimaryKeyColumnsAsBaseTable(){
+
+  return baseNonPKColumnsInViewPK.isEmpty();
+
+}
+
+Location: View.java
+
+Content: 
+
+private static <T extends Comparable<T>>Predicate<T> lessThan(final T lessThan){
+
+  return new Predicate<T>(){
+
+    public boolean apply(    T t){
+
+      return t.compareTo(lessThan) < 0;
+
+    }
+
+  }
+
+;
+
+}
+
+Location: View.java
+
+Content: 
+
+public Set<SSTableReader> liveSSTables(){
+
+  return sstables;
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * Returns the sstables that have any partition between  {@code left} and {@code right}, when both bounds are taken inclusively. The interval formed by  {@code left} and {@code right} shouldn't wrap.
+
+ */
+
+public Iterable<SSTableReader> liveSSTablesInBounds(PartitionPosition left,PartitionPosition right){
+
+  assert !AbstractBounds.strictlyWrapsAround(left,right);
+
+  if (intervalTree.isEmpty())   return Collections.emptyList();
+
+  PartitionPosition stopInTree=right.isMinimum() ? intervalTree.max() : right;
+
+  return intervalTree.search(Interval.create(left,stopInTree));
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * Whether a given base row matches the view filter (and thus if is should have a corresponding entry). <p> Note that this differs from  {@link #mayBeAffectedBy} in that the provide row <b>must</b> be the currentstate of the base row, not just some updates to it. This method also has no false positive: a base row either do or don't match the view filter.
+
+ * @param partitionKey the partition key that is updated.
+
+ * @param baseRow the current state of a particular base row.
+
+ * @param nowInSec the current time in seconds (to decide what is live and what isn't).
+
+ * @return {@code true} if {@code baseRow} matches the view filters, {@code false} otherwise.
+
+ */
+
+public boolean matchesViewFilter(DecoratedKey partitionKey,Row baseRow,int nowInSec){
+
+  return getReadQuery().selectsClustering(partitionKey,baseRow.clustering()) && getSelectStatement().rowFilterForInternalCalls().isSatisfiedBy(baseCfs.metadata(),partitionKey,baseRow,nowInSec);
+
+}
+
+Location: View.java
+
+Content: 
+
+public List<SSTableIndex> match(ByteBuffer minKey,ByteBuffer maxKey){
+
+  return keyIntervalTree.search(Interval.create(new Key(minKey,keyValidator),new Key(maxKey,keyValidator),(SSTableIndex)null));
+
+}
+
+Location: View.java
+
+Content: 
+
+public Set<SSTableIndex> match(Expression expression){
+
+  return termTree.search(expression);
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * Whether the view might be affected by the provided update. <p> Note that having this method return  {@code true} is not an absolute guarantee that the view will beupdated, just that it most likely will, but a  {@code false} return guarantees it won't be affected).
+
+ * @param partitionKey the partition key that is updated.
+
+ * @param update the update being applied.
+
+ * @return {@code false} if we can guarantee that inserting {@code update} for key {@code partitionKey}won't affect the view in any way,  {@code true} otherwise.
+
+ */
+
+public boolean mayBeAffectedBy(DecoratedKey partitionKey,Row update){
+
+  if (!getReadQuery().selectsClustering(partitionKey,update.clustering()))   return false;
+
+  return true;
+
+}
+
+Location: View.java
+
+Content: 
+
+static Predicate<View> permitCompacting(final Iterable<SSTableReader> readers){
+
+  return new Predicate<View>(){
+
+    public boolean apply(    View view){
+
+      for (      SSTableReader reader : readers)       if (view.compacting.contains(reader) || view.sstablesMap.get(reader) != reader || reader.isMarkedCompacted())       return false;
+
+      return true;
+
+    }
+
+  }
+
+;
+
+}
+
+Location: View.java
+
+Content: 
+
+private List<RawSelector> selectClause(){
+
+  return definition.metadata.columns().stream().map(c -> c.name.toString()).map(Selectable.RawIdentifier::forQuoted).map(c -> new RawSelector(c,null)).collect(Collectors.toList());
+
+}
+
+Location: View.java
+
+Content: 
+
+public static Function<View,Iterable<SSTableReader>> selectFunction(SSTableSet sstableSet){
+
+  return (view) -> view.select(sstableSet);
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * @return a ViewFragment containing the sstables and memtables that may need to be mergedfor rows within @param rowBounds, inclusive, according to the interval tree.
+
+ */
+
+public static Function<View,Iterable<SSTableReader>> selectLive(AbstractBounds<PartitionPosition> rowBounds){
+
+  return (view) -> view.liveSSTablesInBounds(rowBounds.left,rowBounds.right);
+
+}
+
+Location: View.java
+
+Content: 
+
+public Iterable<SSTableReader> select(SSTableSet sstableSet){
+
+switch (sstableSet) {
+
+case LIVE:
+
+    return sstables;
+
+case NONCOMPACTING:
+
+  return filter(sstables,(s) -> !compacting.contains(s));
+
+case CANONICAL:
+
+Set<SSTableReader> canonicalSSTables=new HashSet<>();
+
+for (SSTableReader sstable : compacting) if (sstable.openReason != SSTableReader.OpenReason.EARLY) canonicalSSTables.add(sstable);
+
+for (SSTableReader sstable : sstables) if (!compacting.contains(sstable) && sstable.openReason != SSTableReader.OpenReason.EARLY) canonicalSSTables.add(sstable);
+
+return canonicalSSTables;
+
+default :
+
+throw new IllegalStateException();
+
+}
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * @return a ViewFragment containing the sstables and memtables that may need to be mergedfor the given @param key, according to the interval tree
+
+ */
+
+public static Function<View,Iterable<SSTableReader>> select(SSTableSet sstableSet,DecoratedKey key){
+
+  assert sstableSet == SSTableSet.LIVE;
+
+  return (view) -> view.intervalTree.search(key);
+
+}
+
+Location: View.java
+
+Content: 
+
+public static Function<View,Iterable<SSTableReader>> select(SSTableSet sstableSet,Predicate<SSTableReader> filter){
+
+  return (view) -> view.sstables(sstableSet,filter);
+
+}
+
+Location: View.java
+
+Content: 
+
+public static List<SSTableReader> sstablesInBounds(PartitionPosition left,PartitionPosition right,SSTableIntervalTree intervalTree){
+
+  assert !AbstractBounds.strictlyWrapsAround(left,right);
+
+  if (intervalTree.isEmpty())   return Collections.emptyList();
+
+  PartitionPosition stopInTree=right.isMinimum() ? intervalTree.max() : right;
+
+  return intervalTree.search(Interval.create(left,stopInTree));
+
+}
+
+Location: View.java
+
+Content: 
+
+public Iterable<SSTableReader> sstables(SSTableSet sstableSet,Predicate<SSTableReader> filter){
+
+  return filter(select(sstableSet),filter);
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * Stops the building of this view, no-op if it isn't building.
+
+ */
+
+synchronized void stopBuild(){
+
+  if (builder != null) {
+
+    logger.debug("Stopping current view builder due to schema change");
+
+    builder.stop();
+
+    builder=null;
+
+  }
+
+}
+
+Location: View.java
+
+Content: 
+
+static Function<View,View> updateCompacting(final Set<SSTableReader> unmark,final Iterable<SSTableReader> mark){
+
+  if (unmark.isEmpty() && Iterables.isEmpty(mark))   return Functions.identity();
+
+  return new Function<View,View>(){
+
+    public View apply(    View view){
+
+      assert all(mark,Helpers.idIn(view.sstablesMap));
+
+      return new View(view.liveMemtables,view.flushingMemtables,view.sstablesMap,replace(view.compactingMap,unmark,mark),view.intervalTree);
+
+    }
+
+  }
+
+;
+
+}
+
+Location: View.java
+
+Content: 
+
+/** 
+
+ * This updates the columns stored which are dependent on the base TableMetadata.
+
+ */
+
+public void updateDefinition(ViewMetadata definition){
+
+  this.definition=definition;
+
+  List<ColumnMetadata> nonPKDefPartOfViewPK=new ArrayList<>();
+
+  for (  ColumnMetadata baseColumn : baseCfs.metadata.get().columns()) {
+
+    ColumnMetadata viewColumn=getViewColumn(baseColumn);
+
+    if (viewColumn != null && !baseColumn.isPrimaryKeyColumn() && viewColumn.isPrimaryKeyColumn())     nonPKDefPartOfViewPK.add(baseColumn);
+
+  }
+
+  this.baseNonPKColumnsInViewPK=nonPKDefPartOfViewPK;
+
+}
+
+Location: View.java
+
+Content: 
+
+static Function<View,View> updateLiveSet(final Set<SSTableReader> remove,final Iterable<SSTableReader> add){
+
+  if (remove.isEmpty() && Iterables.isEmpty(add))   return Functions.identity();
+
+  return new Function<View,View>(){
+
+    public View apply(    View view){
+
+      Map<SSTableReader,SSTableReader> sstableMap=replace(view.sstablesMap,remove,add);
+
+      return new View(view.liveMemtables,view.flushingMemtables,sstableMap,view.compactingMap,SSTableIntervalTree.build(sstableMap.keySet()));
+
+    }
+
+  }
+
+;
+
+}
+
+Location: View.java
+
+Content: 
+
+public View(ColumnIndex index,Collection<SSTableIndex> currentView,Collection<SSTableReader> oldSSTables,Set<SSTableIndex> newIndexes){
+
+  Map<Descriptor,SSTableIndex> newView=new HashMap<>();
+
+  AbstractType<?> validator=index.getValidator();
+
+  TermTree.Builder termTreeBuilder=(validator instanceof AsciiType || validator instanceof UTF8Type) ? new PrefixTermTree.Builder(index.getMode().mode,validator) : new RangeTermTree.Builder(index.getMode().mode,validator);
+
+  List<Interval<Key,SSTableIndex>> keyIntervals=new ArrayList<>();
+
+  Collection<SSTableReader> toRemove=new HashSet<>(oldSSTables);
+
+  toRemove.removeAll(newIndexes.stream().map(SSTableIndex::getSSTable).collect(Collectors.toSet()));
+
+  for (  SSTableIndex sstableIndex : Iterables.concat(newIndexes,currentView)) {
+
+    SSTableReader sstable=sstableIndex.getSSTable();
+
+    if (toRemove.contains(sstable) || sstable.isMarkedCompacted() || newView.containsKey(sstable.descriptor)) {
+
+      sstableIndex.release();
+
+      continue;
+
+    }
+
+    newView.put(sstable.descriptor,sstableIndex);
+
+    termTreeBuilder.add(sstableIndex);
+
+    keyIntervals.add(Interval.create(new Key(sstableIndex.minKey(),index.keyValidator()),new Key(sstableIndex.maxKey(),index.keyValidator()),sstableIndex));
+
+  }
+
+  this.view=newView;
+
+  this.termTree=termTreeBuilder.build();
+
+  this.keyValidator=index.keyValidator();
+
+  this.keyIntervalTree=IntervalTree.build(keyIntervals);
+
+  if (keyIntervalTree.intervalCount() != termTree.intervalCount())   throw new IllegalStateException(String.format("mismatched sizes for intervals tree for keys vs terms: %d != %d",keyIntervalTree.intervalCount(),termTree.intervalCount()));
+
+}
+
+Location: View.java
+
+Content: 
+
+public View(ColumnIndex index,Set<SSTableIndex> indexes){
+
+  this(index,Collections.<SSTableIndex>emptyList(),Collections.<SSTableReader>emptyList(),indexes);
+
+}
+
+Location: View.java
+
+Content: 
+
+View(List<Memtable> liveMemtables,List<Memtable> flushingMemtables,Map<SSTableReader,SSTableReader> sstables,Map<SSTableReader,SSTableReader> compacting,SSTableIntervalTree intervalTree){
+
+  assert liveMemtables != null;
+
+  assert flushingMemtables != null;
+
+  assert sstables != null;
+
+  assert compacting != null;
+
+  assert intervalTree != null;
+
+  this.liveMemtables=liveMemtables;
+
+  this.flushingMemtables=flushingMemtables;
+
+  this.sstablesMap=sstables;
+
+  this.sstables=sstablesMap.keySet();
+
+  this.compactingMap=compacting;
+
+  this.compacting=compactingMap.keySet();
+
+  this.intervalTree=intervalTree;
+
+}
+
+Location: View.java
+
+Content: 
+
+public View(ViewMetadata definition,ColumnFamilyStore baseCfs){
+
+  this.baseCfs=baseCfs;
+
+  this.name=definition.name();
+
+  updateDefinition(definition);
+
+}
+

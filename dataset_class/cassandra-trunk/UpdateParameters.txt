@@ -1,0 +1,240 @@
+Location: UpdateParameters.java
+
+Content: 
+
+public void addCell(ColumnMetadata column,ByteBuffer value) throws InvalidRequestException {
+
+  addCell(column,null,value);
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void addCell(ColumnMetadata column,CellPath path,ByteBuffer value) throws InvalidRequestException {
+
+  Cell<?> cell=ttl == LivenessInfo.NO_TTL ? BufferCell.live(column,timestamp,value,path) : BufferCell.expiring(column,timestamp,ttl,nowInSec,value,path);
+
+  builder.addCell(cell);
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void addCounter(ColumnMetadata column,long increment) throws InvalidRequestException {
+
+  assert ttl == LivenessInfo.NO_TTL;
+
+  builder.addCell(BufferCell.live(column,timestamp,CounterContext.instance().createUpdate(increment)));
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void addPrimaryKeyLivenessInfo(){
+
+  builder.addPrimaryKeyLivenessInfo(LivenessInfo.create(timestamp,ttl,nowInSec));
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void addRowDeletion(){
+
+  if (metadata.isCompactTable() && builder.clustering() != Clustering.STATIC_CLUSTERING)   addTombstone(((TableMetadata.CompactTableMetadata)metadata).compactValueColumn);
+
+ else   builder.addRowDeletion(Row.Deletion.regular(deletionTime));
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void addTombstone(ColumnMetadata column) throws InvalidRequestException {
+
+  addTombstone(column,null);
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void addTombstone(ColumnMetadata column,CellPath path) throws InvalidRequestException {
+
+  builder.addCell(BufferCell.tombstone(column,timestamp,nowInSec,path));
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public Row buildRow(){
+
+  Row built=builder.build();
+
+  builder=null;
+
+  return built;
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public Clustering<?> currentClustering(){
+
+  return builder.clustering();
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+/** 
+
+ * Returns the prefetched row with the already performed modifications. <p>If no modification have yet been performed this method will return the fetched row or  {@code null} ifthe row does not exist. If some modifications (updates or deletions) have already been done the row returned will be the result of the merge of the fetched row and of the pending mutations.</p>
+
+ * @param key the partition key
+
+ * @param clustering the row clustering
+
+ * @return the prefetched row with the already performed modifications
+
+ */
+
+public Row getPrefetchedRow(DecoratedKey key,Clustering<?> clustering){
+
+  if (prefetchedRows == null)   return null;
+
+  Partition partition=prefetchedRows.get(key);
+
+  Row prefetchedRow=partition == null ? null : partition.getRow(clustering);
+
+  Row pendingMutations=builder.copy().build();
+
+  if (pendingMutations.isEmpty())   return prefetchedRow;
+
+  if (prefetchedRow == null)   return pendingMutations;
+
+  return Rows.merge(prefetchedRow,pendingMutations).purge(DeletionPurger.PURGE_ALL,nowInSec,metadata.enforceStrictLiveness());
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public RangeTombstone makeRangeTombstone(ClusteringComparator comparator,Clustering<?> clustering){
+
+  return makeRangeTombstone(Slice.make(comparator,clustering));
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public RangeTombstone makeRangeTombstone(Slice slice){
+
+  return new RangeTombstone(slice,deletionTime);
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public <V>void newRow(Clustering<V> clustering) throws InvalidRequestException {
+
+  if (metadata.isCompactTable()) {
+
+    if (TableMetadata.Flag.isDense(metadata.flags) && !TableMetadata.Flag.isCompound(metadata.flags)) {
+
+      assert clustering.size() == 1 : clustering.toString(metadata);
+
+      V value=clustering.get(0);
+
+      if (value == null || clustering.accessor().isEmpty(value))       throw new InvalidRequestException("Invalid empty or null value for column " + metadata.clusteringColumns().get(0).name);
+
+    }
+
+  }
+
+  if (clustering == Clustering.STATIC_CLUSTERING) {
+
+    if (staticBuilder == null)     staticBuilder=BTreeRow.unsortedBuilder();
+
+    builder=staticBuilder;
+
+  }
+
+ else {
+
+    if (regularBuilder == null)     regularBuilder=BTreeRow.unsortedBuilder();
+
+    builder=regularBuilder;
+
+  }
+
+  builder.newRow(clustering);
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void setComplexDeletionTimeForOverwrite(ColumnMetadata column){
+
+  builder.addComplexDeletion(column,new DeletionTime(deletionTime.markedForDeleteAt() - 1,deletionTime.localDeletionTime()));
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public void setComplexDeletionTime(ColumnMetadata column){
+
+  builder.addComplexDeletion(column,deletionTime);
+
+}
+
+Location: UpdateParameters.java
+
+Content: 
+
+public UpdateParameters(TableMetadata metadata,RegularAndStaticColumns updatedColumns,QueryOptions options,long timestamp,int nowInSec,int ttl,Map<DecoratedKey,Partition> prefetchedRows) throws InvalidRequestException {
+
+  this.metadata=metadata;
+
+  this.updatedColumns=updatedColumns;
+
+  this.options=options;
+
+  this.nowInSec=nowInSec;
+
+  this.timestamp=timestamp;
+
+  this.ttl=ttl;
+
+  this.deletionTime=new DeletionTime(timestamp,nowInSec);
+
+  this.prefetchedRows=prefetchedRows;
+
+  if (timestamp == Long.MIN_VALUE)   throw new InvalidRequestException(String.format("Out of bound timestamp, must be in [%d, %d]",Long.MIN_VALUE + 1,Long.MAX_VALUE));
+
+}
+

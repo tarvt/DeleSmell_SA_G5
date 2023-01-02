@@ -1,0 +1,344 @@
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Returns an iterator that concatenate two atom iterators. This method assumes that both iterator are from the same partition and that the atom from {@code iter2} come after the ones of {@code iter1} (that is, that concatenating the iteratormake sense).
+
+ */
+
+public static UnfilteredRowIterator concat(final UnfilteredRowIterator iter1,final UnfilteredRowIterator iter2){
+
+  assert iter1.metadata().id.equals(iter2.metadata().id) && iter1.partitionKey().equals(iter2.partitionKey()) && iter1.partitionLevelDeletion().equals(iter2.partitionLevelDeletion())&& iter1.isReverseOrder() == iter2.isReverseOrder() && iter1.staticRow().equals(iter2.staticRow());
+
+class Extend implements MoreRows<UnfilteredRowIterator> {
+
+    boolean returned=false;
+
+    public UnfilteredRowIterator moreContents(){
+
+      if (returned)       return null;
+
+      returned=true;
+
+      return iter2;
+
+    }
+
+  }
+
+  return MoreRows.extend(iter1,new Extend(),iter1.columns().mergeTo(iter2.columns()));
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Returns an iterator that concatenate the specified atom with the iterator.
+
+ */
+
+public static UnfilteredRowIterator concat(final Unfiltered first,final UnfilteredRowIterator rest){
+
+  return new WrappingUnfilteredRowIterator(rest){
+
+    private boolean hasReturnedFirst;
+
+    @Override public boolean hasNext(){
+
+      return hasReturnedFirst ? super.hasNext() : true;
+
+    }
+
+    @Override public Unfiltered next(){
+
+      if (!hasReturnedFirst) {
+
+        hasReturnedFirst=true;
+
+        return first;
+
+      }
+
+      return super.next();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Digests the partition represented by the provided iterator.
+
+ * @param iterator the iterator to digest.
+
+ * @param digest the {@link Digest} to use.
+
+ * @param version the messaging protocol to use when producing the digest.
+
+ */
+
+public static void digest(UnfilteredRowIterator iterator,Digest digest,int version){
+
+  digest.update(iterator.partitionKey().getKey());
+
+  iterator.partitionLevelDeletion().digest(digest);
+
+  iterator.columns().regulars.digest(digest);
+
+  if (iterator.staticRow() != Rows.EMPTY_STATIC_ROW)   iterator.columns().statics.digest(digest);
+
+  digest.updateWithBoolean(iterator.isReverseOrder());
+
+  iterator.staticRow().digest(digest);
+
+  while (iterator.hasNext()) {
+
+    Unfiltered unfiltered=iterator.next();
+
+    unfiltered.digest(digest);
+
+  }
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Wraps the provided iterator so it logs the returned atoms for debugging purposes. <p> Note that this is only meant for debugging as this can log a very large amount of logging at INFO.
+
+ */
+
+public static UnfilteredRowIterator loggingIterator(UnfilteredRowIterator iterator,final String id,final boolean fullDetails){
+
+  TableMetadata metadata=iterator.metadata();
+
+  logger.info("[{}] Logging iterator on {}.{}, partition key={}, reversed={}, deletion={}",id,metadata.keyspace,metadata.name,metadata.partitionKeyType.getString(iterator.partitionKey().getKey()),iterator.isReverseOrder(),iterator.partitionLevelDeletion().markedForDeleteAt());
+
+class Logger extends Transformation {
+
+    @Override public Row applyToStatic(    Row row){
+
+      if (!row.isEmpty())       logger.info("[{}] {}",id,row.toString(metadata,fullDetails));
+
+      return row;
+
+    }
+
+    @Override public Row applyToRow(    Row row){
+
+      logger.info("[{}] {}",id,row.toString(metadata,fullDetails));
+
+      return row;
+
+    }
+
+    @Override public RangeTombstoneMarker applyToMarker(    RangeTombstoneMarker marker){
+
+      logger.info("[{}] {}",id,marker.toString(metadata));
+
+      return marker;
+
+    }
+
+  }
+
+  return Transformation.apply(iterator,new Logger());
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Returns an iterator that is the result of merging other iterators.
+
+ */
+
+public static UnfilteredRowIterator merge(List<UnfilteredRowIterator> iterators){
+
+  assert !iterators.isEmpty();
+
+  if (iterators.size() == 1)   return iterators.get(0);
+
+  return UnfilteredRowMergeIterator.create(iterators,null);
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Returns an iterator that is the result of merging other iterators, and (optionally) using specific MergeListener. Note that this method assumes that there is at least 2 iterators to merge.
+
+ */
+
+public static UnfilteredRowIterator merge(List<UnfilteredRowIterator> iterators,MergeListener mergeListener){
+
+  return UnfilteredRowMergeIterator.create(iterators,mergeListener);
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Returns an empty unfiltered iterator for a given partition.
+
+ */
+
+public static UnfilteredRowIterator noRowsIterator(final TableMetadata metadata,final DecoratedKey partitionKey,final Row staticRow,final DeletionTime partitionDeletion,final boolean isReverseOrder){
+
+  return EmptyIterators.unfilteredRow(metadata,partitionKey,isReverseOrder,staticRow,partitionDeletion);
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+public static UnfilteredRowIterator singleton(Unfiltered unfiltered,TableMetadata metadata,DecoratedKey partitionKey,DeletionTime partitionLevelDeletion,RegularAndStaticColumns columns,Row staticRow,boolean isReverseOrder,EncodingStats encodingStats){
+
+  return new AbstractUnfilteredRowIterator(metadata,partitionKey,partitionLevelDeletion,columns,staticRow,isReverseOrder,encodingStats){
+
+    boolean isDone=false;
+
+    protected Unfiltered computeNext(){
+
+      if (!isDone) {
+
+        isDone=true;
+
+        return unfiltered;
+
+      }
+
+      return endOfData();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+private UnfilteredRowIterators(){
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Filter the provided iterator to exclude cells that have been fetched but are not queried by the user (see ColumnFilter for detailes).
+
+ * @param iterator the iterator to filter.
+
+ * @param filter the {@code ColumnFilter} to use when deciding which columns are the one queried by theuser. This should be the filter that was used when querying  {@code iterator}.
+
+ * @return the filtered iterator..
+
+ */
+
+public static UnfilteredRowIterator withOnlyQueriedData(UnfilteredRowIterator iterator,ColumnFilter filter){
+
+  if (filter.allFetchedColumnsAreQueried())   return iterator;
+
+  return Transformation.apply(iterator,new WithOnlyQueriedData(filter));
+
+}
+
+Location: UnfilteredRowIterators.java
+
+Content: 
+
+/** 
+
+ * Validate that the data of the provided iterator is valid, that is that the values it contains are valid for the type they represent, and more generally that the infos stored are sensible. This is mainly used by scrubber to detect problems in sstables.
+
+ * @param iterator the partition to check.
+
+ * @param filename the name of the file the data is comming from.
+
+ * @return an iterator that returns the same data than {@code iterator} but thatchecks said data and throws a  {@code CorruptedSSTableException} if it detectsinvalid data.
+
+ */
+
+public static UnfilteredRowIterator withValidation(UnfilteredRowIterator iterator,final String filename){
+
+class Validator extends Transformation {
+
+    @Override public Row applyToStatic(    Row row){
+
+      validate(row);
+
+      return row;
+
+    }
+
+    @Override public Row applyToRow(    Row row){
+
+      validate(row);
+
+      return row;
+
+    }
+
+    @Override public RangeTombstoneMarker applyToMarker(    RangeTombstoneMarker marker){
+
+      validate(marker);
+
+      return marker;
+
+    }
+
+    private void validate(    Unfiltered unfiltered){
+
+      try {
+
+        unfiltered.validateData(iterator.metadata());
+
+      }
+
+ catch (      MarshalException me) {
+
+        throw new CorruptSSTableException(me,filename);
+
+      }
+
+    }
+
+  }
+
+  return Transformation.apply(iterator,new Validator());
+
+}
+

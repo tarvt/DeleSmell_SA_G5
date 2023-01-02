@@ -1,0 +1,214 @@
+Location: UDAggregate.java
+
+Content: 
+
+public static UDAggregate create(Collection<UDFunction> functions,FunctionName name,List<AbstractType<?>> argTypes,AbstractType<?> returnType,FunctionName stateFunc,FunctionName finalFunc,AbstractType<?> stateType,ByteBuffer initcond){
+
+  List<AbstractType<?>> stateTypes=new ArrayList<>(argTypes.size() + 1);
+
+  stateTypes.add(stateType);
+
+  stateTypes.addAll(argTypes);
+
+  List<AbstractType<?>> finalTypes=Collections.singletonList(stateType);
+
+  return new UDAggregate(name,argTypes,returnType,findFunction(name,functions,stateFunc,stateTypes),null == finalFunc ? null : findFunction(name,functions,finalFunc,finalTypes),initcond);
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+private boolean equalsWithoutTypesAndFunctions(UDAggregate other){
+
+  return name.equals(other.name) && argTypes.size() == other.argTypes.size() && Objects.equal(initcond,other.initcond);
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public ScalarFunction finalFunction(){
+
+  return finalFunction;
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+private static UDFunction findFunction(FunctionName udaName,Collection<UDFunction> functions,FunctionName name,List<AbstractType<?>> arguments){
+
+  return functions.stream().filter(f -> f.name().equals(name) && Functions.typesMatch(f.argTypes(),arguments)).findFirst().orElseThrow(() -> new ConfigurationException(String.format("Unable to find function %s referenced by UDA %s",name,udaName)));
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public boolean hasReferenceTo(Function function){
+
+  return stateFunction == function || finalFunction == function;
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public ByteBuffer initialCondition(){
+
+  return initcond;
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public Aggregate newAggregate() throws InvalidRequestException {
+
+  return new Aggregate(){
+
+    private long stateFunctionCount;
+
+    private long stateFunctionDuration;
+
+    private Object state;
+
+    private boolean needsInit=true;
+
+    public void addInput(    ProtocolVersion protocolVersion,    List<ByteBuffer> values) throws InvalidRequestException {
+
+      maybeInit(protocolVersion);
+
+      long startTime=System.nanoTime();
+
+      stateFunctionCount++;
+
+      if (stateFunction instanceof UDFunction) {
+
+        UDFunction udf=(UDFunction)stateFunction;
+
+        if (udf.isCallableWrtNullable(values))         state=udf.executeForAggregate(protocolVersion,state,values);
+
+      }
+
+ else {
+
+        throw new UnsupportedOperationException("UDAs only support UDFs");
+
+      }
+
+      stateFunctionDuration+=(System.nanoTime() - startTime) / 1000;
+
+    }
+
+    private void maybeInit(    ProtocolVersion protocolVersion){
+
+      if (needsInit) {
+
+        state=initcond != null ? UDHelper.deserialize(stateTypeCodec,protocolVersion,initcond.duplicate()) : null;
+
+        stateFunctionDuration=0;
+
+        stateFunctionCount=0;
+
+        needsInit=false;
+
+      }
+
+    }
+
+    public ByteBuffer compute(    ProtocolVersion protocolVersion) throws InvalidRequestException {
+
+      maybeInit(protocolVersion);
+
+      Tracing.trace("Executed UDA {}: {} call(s) to state function {} in {}\u03bcs",name(),stateFunctionCount,stateFunction.name(),stateFunctionDuration);
+
+      if (finalFunction == null)       return UDFunction.decompose(stateTypeCodec,protocolVersion,state);
+
+      if (finalFunction instanceof UDFunction) {
+
+        UDFunction udf=(UDFunction)finalFunction;
+
+        Object result=udf.executeForAggregate(protocolVersion,state,Collections.emptyList());
+
+        return UDFunction.decompose(returnTypeCodec,protocolVersion,result);
+
+      }
+
+      throw new UnsupportedOperationException("UDAs only support UDFs");
+
+    }
+
+    public void reset(){
+
+      needsInit=true;
+
+    }
+
+  }
+
+;
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public ScalarFunction stateFunction(){
+
+  return stateFunction;
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public AbstractType<?> stateType(){
+
+  return stateType;
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public UDAggregate(FunctionName name,List<AbstractType<?>> argTypes,AbstractType<?> returnType,ScalarFunction stateFunc,ScalarFunction finalFunc,ByteBuffer initcond){
+
+  super(name,argTypes,returnType);
+
+  this.stateFunction=stateFunc;
+
+  this.finalFunction=finalFunc;
+
+  this.stateType=stateFunc.returnType();
+
+  this.stateTypeCodec=UDHelper.codecFor(UDHelper.driverType(stateType));
+
+  this.returnTypeCodec=UDHelper.codecFor(UDHelper.driverType(returnType));
+
+  this.initcond=initcond;
+
+}
+
+Location: UDAggregate.java
+
+Content: 
+
+public UDAggregate withUpdatedUserType(Collection<UDFunction> udfs,UserType udt){
+
+  if (!referencesUserType(udt.name))   return this;
+
+  return new UDAggregate(name,Lists.newArrayList(transform(argTypes,t -> t.withUpdatedUserType(udt))),returnType.withUpdatedUserType(udt),findFunction(name,udfs,stateFunction.name(),stateFunction.argTypes()),null == finalFunction ? null : findFunction(name,udfs,finalFunction.name(),finalFunction.argTypes()),initcond);
+
+}
+

@@ -1,0 +1,288 @@
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Compress using ByteBuffers
+
+ * @param input
+
+ * @param output
+
+ * @throws IOException
+
+ */
+
+@Override public void compress(ByteBuffer input,ByteBuffer output) throws IOException {
+
+  try {
+
+    Zstd.compress(output,input,compressionLevel,ENABLE_CHECKSUM_FLAG);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new IOException("Compression failed",e);
+
+  }
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Create a Zstd compressor with the given options
+
+ * @param options
+
+ * @return
+
+ */
+
+public static ZstdCompressor create(Map<String,String> options){
+
+  int level=getOrDefaultCompressionLevel(options);
+
+  if (!isValid(level))   throw new IllegalArgumentException(String.format("%s=%d is invalid",COMPRESSION_LEVEL_OPTION_NAME,level));
+
+  return getOrCreate(level);
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+@VisibleForTesting public int getCompressionLevel(){
+
+  return compressionLevel;
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Get a cached instance or return a new one
+
+ * @param level
+
+ * @return
+
+ */
+
+public static ZstdCompressor getOrCreate(int level){
+
+  return instances.computeIfAbsent(level,l -> new ZstdCompressor(level));
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Parse the compression options
+
+ * @param options
+
+ * @return
+
+ */
+
+private static int getOrDefaultCompressionLevel(Map<String,String> options){
+
+  if (options == null)   return DEFAULT_COMPRESSION_LEVEL;
+
+  String val=options.get(COMPRESSION_LEVEL_OPTION_NAME);
+
+  if (val == null)   return DEFAULT_COMPRESSION_LEVEL;
+
+  return Integer.valueOf(val);
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Get initial compressed buffer length
+
+ * @param chunkLength
+
+ * @return
+
+ */
+
+@Override public int initialCompressedBufferLength(int chunkLength){
+
+  return (int)Zstd.compressBound(chunkLength);
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Check if the given compression level is valid. This can be a negative value as well.
+
+ * @param level
+
+ * @return
+
+ */
+
+private static boolean isValid(int level){
+
+  return (level >= FAST_COMPRESSION_LEVEL && level <= BEST_COMPRESSION_LEVEL);
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+@Override public Set<Uses> recommendedUses(){
+
+  return recommendedUses;
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Lists the supported options by this compressor
+
+ * @return
+
+ */
+
+@Override public Set<String> supportedOptions(){
+
+  return new HashSet<>(Collections.singletonList(COMPRESSION_LEVEL_OPTION_NAME));
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Check whether the given BufferType is supported
+
+ * @param bufferType
+
+ * @return
+
+ */
+
+@Override public boolean supports(BufferType bufferType){
+
+  return bufferType == BufferType.OFF_HEAP;
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Decompress data via ByteBuffers
+
+ * @param input
+
+ * @param output
+
+ * @throws IOException
+
+ */
+
+@Override public void uncompress(ByteBuffer input,ByteBuffer output) throws IOException {
+
+  try {
+
+    Zstd.decompress(output,input);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new IOException("Decompression failed",e);
+
+  }
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Decompress data using arrays
+
+ * @param input
+
+ * @param inputOffset
+
+ * @param inputLength
+
+ * @param output
+
+ * @param outputOffset
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+@Override public int uncompress(byte[] input,int inputOffset,int inputLength,byte[] output,int outputOffset) throws IOException {
+
+  long dsz=Zstd.decompressByteArray(output,outputOffset,output.length - outputOffset,input,inputOffset,inputLength);
+
+  if (Zstd.isError(dsz))   throw new IOException(String.format("Decompression failed due to %s",Zstd.getErrorName(dsz)));
+
+  return (int)dsz;
+
+}
+
+Location: ZstdCompressor.java
+
+Content: 
+
+/** 
+
+ * Private constructor
+
+ * @param compressionLevel
+
+ */
+
+private ZstdCompressor(int compressionLevel){
+
+  this.compressionLevel=compressionLevel;
+
+  this.recommendedUses=ImmutableSet.of(Uses.GENERAL);
+
+  logger.trace("Creating Zstd Compressor with compression level={}",compressionLevel);
+
+}
+

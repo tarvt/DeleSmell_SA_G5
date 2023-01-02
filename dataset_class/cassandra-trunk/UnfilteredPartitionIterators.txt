@@ -1,0 +1,206 @@
+Location: UnfilteredPartitionIterators.java
+
+Content: 
+
+public static UnfilteredPartitionIterator concat(final List<UnfilteredPartitionIterator> iterators){
+
+  if (iterators.size() == 1)   return iterators.get(0);
+
+class Extend implements MorePartitions<UnfilteredPartitionIterator> {
+
+    int i=1;
+
+    public UnfilteredPartitionIterator moreContents(){
+
+      if (i >= iterators.size())       return null;
+
+      return iterators.get(i++);
+
+    }
+
+  }
+
+  return MorePartitions.extend(iterators.get(0),new Extend());
+
+}
+
+Location: UnfilteredPartitionIterators.java
+
+Content: 
+
+/** 
+
+ * Digests the the provided iterator. Caller must close the provided iterator.
+
+ * @param iterator the iterator to digest.
+
+ * @param digest the {@link Digest} to use.
+
+ * @param version the messaging protocol to use when producing the digest.
+
+ */
+
+public static void digest(UnfilteredPartitionIterator iterator,Digest digest,int version){
+
+  while (iterator.hasNext()) {
+
+    try (UnfilteredRowIterator partition=iterator.next()){
+
+      UnfilteredRowIterators.digest(partition,digest,version);
+
+    }
+
+   }
+
+}
+
+Location: UnfilteredPartitionIterators.java
+
+Content: 
+
+@SuppressWarnings("resource") public static UnfilteredRowIterator getOnlyElement(final UnfilteredPartitionIterator iter,SinglePartitionReadCommand command){
+
+  UnfilteredRowIterator toReturn=iter.hasNext() ? iter.next() : EmptyIterators.unfilteredRow(command.metadata(),command.partitionKey(),command.clusteringIndexFilter().isReversed());
+
+class Close extends Transformation {
+
+    public void onPartitionClose(){
+
+      boolean hadNext=iter.hasNext();
+
+      iter.close();
+
+      assert !hadNext;
+
+    }
+
+  }
+
+  return Transformation.apply(toReturn,new Close());
+
+}
+
+Location: UnfilteredPartitionIterators.java
+
+Content: 
+
+/** 
+
+ * Wraps the provided iterator so it logs the returned rows/RT for debugging purposes. <p> Note that this is only meant for debugging as this can log a very large amount of logging at INFO.
+
+ */
+
+public static UnfilteredPartitionIterator loggingIterator(UnfilteredPartitionIterator iterator,final String id,final boolean fullDetails){
+
+class Logging extends Transformation<UnfilteredRowIterator> {
+
+    public UnfilteredRowIterator applyToPartition(    UnfilteredRowIterator partition){
+
+      return UnfilteredRowIterators.loggingIterator(partition,id,fullDetails);
+
+    }
+
+  }
+
+  return Transformation.apply(iterator,new Logging());
+
+}
+
+Location: UnfilteredPartitionIterators.java
+
+Content: 
+
+@SuppressWarnings("resource") public static UnfilteredPartitionIterator mergeLazily(final List<? extends UnfilteredPartitionIterator> iterators){
+
+  assert !iterators.isEmpty();
+
+  if (iterators.size() == 1)   return iterators.get(0);
+
+  final TableMetadata metadata=iterators.get(0).metadata();
+
+  final MergeIterator<UnfilteredRowIterator,UnfilteredRowIterator> merged=MergeIterator.get(iterators,partitionComparator,new MergeIterator.Reducer<UnfilteredRowIterator,UnfilteredRowIterator>(){
+
+    private final List<UnfilteredRowIterator> toMerge=new ArrayList<>(iterators.size());
+
+    public void reduce(    int idx,    UnfilteredRowIterator current){
+
+      toMerge.add(current);
+
+    }
+
+    protected UnfilteredRowIterator getReduced(){
+
+      return new LazilyInitializedUnfilteredRowIterator(toMerge.get(0).partitionKey()){
+
+        protected UnfilteredRowIterator initializeIterator(){
+
+          return UnfilteredRowIterators.merge(toMerge);
+
+        }
+
+      }
+
+;
+
+    }
+
+    protected void onKeyChange(){
+
+      toMerge.clear();
+
+    }
+
+  }
+
+);
+
+  return new AbstractUnfilteredPartitionIterator(){
+
+    public TableMetadata metadata(){
+
+      return metadata;
+
+    }
+
+    public boolean hasNext(){
+
+      return merged.hasNext();
+
+    }
+
+    public UnfilteredRowIterator next(){
+
+      return merged.next();
+
+    }
+
+    @Override public void close(){
+
+      merged.close();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: UnfilteredPartitionIterators.java
+
+Content: 
+
+public static Serializer serializerForIntraNode(){
+
+  return serializer;
+
+}
+
+Location: UnfilteredPartitionIterators.java
+
+Content: 
+
+private UnfilteredPartitionIterators(){
+
+}
+

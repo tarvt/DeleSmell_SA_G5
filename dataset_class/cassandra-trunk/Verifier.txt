@@ -1,0 +1,170 @@
+Location: Verifier.java
+
+Content: 
+
+private void deserializeBloomFilter(SSTableReader sstable) throws IOException {
+
+  try (DataInputStream stream=new DataInputStream(new BufferedInputStream(Files.newInputStream(Paths.get(sstable.descriptor.filenameFor(Component.FILTER)))));IFilter bf=BloomFilterSerializer.deserialize(stream,sstable.descriptor.version.hasOldBfFormat())){
+
+  }
+
+ }
+
+Location: Verifier.java
+
+Content: 
+
+private void deserializeIndexSummary(SSTableReader sstable) throws IOException {
+
+  File file=new File(sstable.descriptor.filenameFor(Component.SUMMARY));
+
+  TableMetadata metadata=cfs.metadata();
+
+  try (DataInputStream iStream=new DataInputStream(Files.newInputStream(file.toPath()))){
+
+    try (IndexSummary indexSummary=IndexSummary.serializer.deserialize(iStream,cfs.getPartitioner(),metadata.params.minIndexInterval,metadata.params.maxIndexInterval)){
+
+      ByteBufferUtil.readWithLength(iStream);
+
+      ByteBufferUtil.readWithLength(iStream);
+
+    }
+
+   }
+
+ }
+
+Location: Verifier.java
+
+Content: 
+
+private void deserializeIndex(SSTableReader sstable) throws IOException {
+
+  try (RandomAccessReader primaryIndex=RandomAccessReader.open(new File(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX)))){
+
+    long indexSize=primaryIndex.length();
+
+    while ((primaryIndex.getFilePointer()) != indexSize) {
+
+      ByteBuffer key=ByteBufferUtil.readWithShortLength(primaryIndex);
+
+      RowIndexEntry.Serializer.skip(primaryIndex,sstable.descriptor.version);
+
+    }
+
+  }
+
+ }
+
+Location: Verifier.java
+
+Content: 
+
+public CompactionInfo.Holder getVerifyInfo(){
+
+  return verifyInfo;
+
+}
+
+Location: Verifier.java
+
+Content: 
+
+private void markAndThrow(){
+
+  markAndThrow(true);
+
+}
+
+Location: Verifier.java
+
+Content: 
+
+private void markAndThrow(boolean mutateRepaired){
+
+  if (mutateRepaired && options.mutateRepairStatus) {
+
+    try {
+
+      sstable.mutateRepairedAndReload(ActiveRepairService.UNREPAIRED_SSTABLE,sstable.getPendingRepair(),sstable.isTransient());
+
+      cfs.getTracker().notifySSTableRepairedStatusChanged(Collections.singleton(sstable));
+
+    }
+
+ catch (    IOException ioe) {
+
+      outputHandler.output("Error mutating repairedAt for SSTable " + sstable.getFilename() + ", as part of markAndThrow");
+
+    }
+
+  }
+
+  Exception e=new Exception(String.format("Invalid SSTable %s, please force %srepair",sstable.getFilename(),(mutateRepaired && options.mutateRepairStatus) ? "" : "a full "));
+
+  if (options.invokeDiskFailurePolicy)   throw new CorruptSSTableException(e,sstable.getFilename());
+
+ else   throw new RuntimeException(e);
+
+}
+
+Location: Verifier.java
+
+Content: 
+
+public static Options.Builder options(){
+
+  return new Options.Builder();
+
+}
+
+Location: Verifier.java
+
+Content: 
+
+private void throwIfFatal(Throwable th){
+
+  if (th instanceof Error && !(th instanceof AssertionError || th instanceof IOError))   throw (Error)th;
+
+}
+
+Location: Verifier.java
+
+Content: 
+
+public Verifier(ColumnFamilyStore cfs,SSTableReader sstable,boolean isOffline,Options options){
+
+  this(cfs,sstable,new OutputHandler.LogOutput(),isOffline,options);
+
+}
+
+Location: Verifier.java
+
+Content: 
+
+public Verifier(ColumnFamilyStore cfs,SSTableReader sstable,OutputHandler outputHandler,boolean isOffline,Options options){
+
+  this.cfs=cfs;
+
+  this.sstable=sstable;
+
+  this.outputHandler=outputHandler;
+
+  this.rowIndexEntrySerializer=sstable.descriptor.version.getSSTableFormat().getIndexSerializer(cfs.metadata(),sstable.descriptor.version,sstable.header);
+
+  this.controller=new VerifyController(cfs);
+
+  this.dataFile=isOffline ? sstable.openDataReader() : sstable.openDataReader(CompactionManager.instance.getRateLimiter());
+
+  this.indexFile=RandomAccessReader.open(new File(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX)));
+
+  this.verifyInfo=new VerifyInfo(dataFile,sstable);
+
+  this.options=options;
+
+  this.isOffline=isOffline;
+
+  this.tokenLookup=options.tokenLookup;
+
+}
+

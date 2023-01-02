@@ -1,0 +1,138 @@
+Location: ViewBuilderTask.java
+
+Content: 
+
+@SuppressWarnings("resource") private void buildKey(DecoratedKey key){
+
+  ReadQuery selectQuery=view.getReadQuery();
+
+  if (!selectQuery.selectsKey(key)) {
+
+    logger.trace("Skipping {}, view query filters",key);
+
+    return;
+
+  }
+
+  int nowInSec=FBUtilities.nowInSeconds();
+
+  SinglePartitionReadCommand command=view.getSelectStatement().internalReadForView(key,nowInSec);
+
+  UnfilteredRowIterator empty=UnfilteredRowIterators.noRowsIterator(baseCfs.metadata(),key,Rows.EMPTY_STATIC_ROW,DeletionTime.LIVE,false);
+
+  try (ReadExecutionController orderGroup=command.executionController();UnfilteredRowIterator data=UnfilteredPartitionIterators.getOnlyElement(command.executeLocally(orderGroup),command)){
+
+    Iterator<Collection<Mutation>> mutations=baseCfs.keyspace.viewManager.forTable(baseCfs.metadata.id).generateViewUpdates(Collections.singleton(view),data,empty,nowInSec,true);
+
+    AtomicLong noBase=new AtomicLong(Long.MAX_VALUE);
+
+    mutations.forEachRemaining(m -> StorageProxy.mutateMV(key.getKey(),m,true,noBase,System.nanoTime()));
+
+  }
+
+ }
+
+Location: ViewBuilderTask.java
+
+Content: 
+
+public Long call(){
+
+  String ksName=baseCfs.metadata.keyspace;
+
+  if (prevToken == null)   logger.debug("Starting new view build for range {}",range);
+
+ else   logger.debug("Resuming view build for range {} from token {} with {} covered keys",range,prevToken,keysBuilt);
+
+  boolean schemaConverged=Gossiper.instance.waitForSchemaAgreement(10,TimeUnit.SECONDS,() -> this.isStopped);
+
+  if (!schemaConverged)   logger.warn("Failed to get schema to converge before building view {}.{}",baseCfs.keyspace.getName(),view.name);
+
+  Function<org.apache.cassandra.db.lifecycle.View,Iterable<SSTableReader>> function;
+
+  function=org.apache.cassandra.db.lifecycle.View.select(SSTableSet.CANONICAL,s -> range.intersects(s.getBounds()));
+
+  try (ColumnFamilyStore.RefViewFragment viewFragment=baseCfs.selectAndReference(function);Refs<SSTableReader> sstables=viewFragment.refs;ReducingKeyIterator keyIter=new ReducingKeyIterator(sstables)){
+
+    PeekingIterator<DecoratedKey> iter=Iterators.peekingIterator(keyIter);
+
+    while (!isStopped && iter.hasNext()) {
+
+      DecoratedKey key=iter.next();
+
+      Token token=key.getToken();
+
+      if (range.contains(token) && (prevToken == null || token.compareTo(prevToken) > 0)) {
+
+        buildKey(key);
+
+        ++keysBuilt;
+
+        while (iter.hasNext() && iter.peek().getToken().equals(token)) {
+
+          key=iter.next();
+
+          buildKey(key);
+
+          ++keysBuilt;
+
+        }
+
+        if (keysBuilt % ROWS_BETWEEN_CHECKPOINTS == 1)         SystemKeyspace.updateViewBuildStatus(ksName,view.name,range,token,keysBuilt);
+
+        prevToken=token;
+
+      }
+
+    }
+
+  }
+
+   finish();
+
+  return keysBuilt;
+
+}
+
+Location: ViewBuilderTask.java
+
+Content: 
+
+long keysBuilt(){
+
+  return keysBuilt;
+
+}
+
+Location: ViewBuilderTask.java
+
+Content: 
+
+synchronized void stop(boolean isCompactionInterrupted){
+
+  isStopped=true;
+
+  this.isCompactionInterrupted=isCompactionInterrupted;
+
+}
+
+Location: ViewBuilderTask.java
+
+Content: 
+
+@VisibleForTesting public ViewBuilderTask(ColumnFamilyStore baseCfs,View view,Range<Token> range,Token lastToken,long keysBuilt){
+
+  this.baseCfs=baseCfs;
+
+  this.view=view;
+
+  this.range=range;
+
+  this.compactionId=UUIDGen.getTimeUUID();
+
+  this.prevToken=lastToken;
+
+  this.keysBuilt=keysBuilt;
+
+}
+

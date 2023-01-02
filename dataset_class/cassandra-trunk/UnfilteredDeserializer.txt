@@ -1,0 +1,176 @@
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+/** 
+
+ * Clears any state in this deserializer.
+
+ */
+
+public void clearState(){
+
+  isReady=false;
+
+  isDone=false;
+
+}
+
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+/** 
+
+ * Compare the provided bound to the next atom to read on disk. This will not read/deserialize the whole atom but only what is necessary for the comparison. Whenever we know what to do with this atom (read it or skip it), readNext or skipNext should be called.
+
+ */
+
+public int compareNextTo(ClusteringBound<?> bound) throws IOException {
+
+  if (!isReady)   prepareNext();
+
+  assert !isDone;
+
+  return clusteringDeserializer.compareNextTo(bound);
+
+}
+
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+public static UnfilteredDeserializer create(TableMetadata metadata,DataInputPlus in,SerializationHeader header,DeserializationHelper helper){
+
+  return new UnfilteredDeserializer(metadata,in,header,helper);
+
+}
+
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+/** 
+
+ * Returns whether the next atom is a row or not.
+
+ */
+
+public boolean nextIsRow() throws IOException {
+
+  if (!isReady)   prepareNext();
+
+  return UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.ROW;
+
+}
+
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+private void prepareNext() throws IOException {
+
+  if (isDone)   return;
+
+  nextFlags=in.readUnsignedByte();
+
+  if (UnfilteredSerializer.isEndOfPartition(nextFlags)) {
+
+    isDone=true;
+
+    isReady=false;
+
+    return;
+
+  }
+
+  nextExtendedFlags=UnfilteredSerializer.readExtendedFlags(in,nextFlags);
+
+  clusteringDeserializer.prepare(nextFlags,nextExtendedFlags);
+
+  isReady=true;
+
+}
+
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+/** 
+
+ * Returns the next atom.
+
+ */
+
+public Unfiltered readNext() throws IOException {
+
+  isReady=false;
+
+  if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER) {
+
+    ClusteringBoundOrBoundary<byte[]> bound=clusteringDeserializer.deserializeNextBound();
+
+    return UnfilteredSerializer.serializer.deserializeMarkerBody(in,header,bound);
+
+  }
+
+ else {
+
+    builder.newRow(clusteringDeserializer.deserializeNextClustering());
+
+    return UnfilteredSerializer.serializer.deserializeRowBody(in,header,helper,nextFlags,nextExtendedFlags,builder);
+
+  }
+
+}
+
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+/** 
+
+ * Skips the next atom.
+
+ */
+
+public void skipNext() throws IOException {
+
+  isReady=false;
+
+  clusteringDeserializer.skipNext();
+
+  if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER) {
+
+    UnfilteredSerializer.serializer.skipMarkerBody(in);
+
+  }
+
+ else {
+
+    UnfilteredSerializer.serializer.skipRowBody(in);
+
+  }
+
+}
+
+Location: UnfilteredDeserializer.java
+
+Content: 
+
+private UnfilteredDeserializer(TableMetadata metadata,DataInputPlus in,SerializationHeader header,DeserializationHelper helper){
+
+  this.metadata=metadata;
+
+  this.in=in;
+
+  this.helper=helper;
+
+  this.header=header;
+
+  this.clusteringDeserializer=new ClusteringPrefix.Deserializer(metadata.comparator,in,header);
+
+  this.builder=BTreeRow.sortedBuilder();
+
+}
+

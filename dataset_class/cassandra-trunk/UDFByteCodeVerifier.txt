@@ -1,0 +1,156 @@
+Location: UDFByteCodeVerifier.java
+
+Content: 
+
+public UDFByteCodeVerifier addDisallowedClass(String clazz){
+
+  disallowedClasses.add(clazz);
+
+  return this;
+
+}
+
+Location: UDFByteCodeVerifier.java
+
+Content: 
+
+public UDFByteCodeVerifier addDisallowedMethodCall(String clazz,String method){
+
+  disallowedMethodCalls.put(clazz,method);
+
+  return this;
+
+}
+
+Location: UDFByteCodeVerifier.java
+
+Content: 
+
+public UDFByteCodeVerifier addDisallowedPackage(String pkg){
+
+  disallowedPackages.add(pkg);
+
+  return this;
+
+}
+
+Location: UDFByteCodeVerifier.java
+
+Content: 
+
+public UDFByteCodeVerifier(){
+
+  addDisallowedMethodCall(OBJECT_NAME,"clone");
+
+  addDisallowedMethodCall(OBJECT_NAME,"finalize");
+
+  addDisallowedMethodCall(OBJECT_NAME,"notify");
+
+  addDisallowedMethodCall(OBJECT_NAME,"notifyAll");
+
+  addDisallowedMethodCall(OBJECT_NAME,"wait");
+
+}
+
+Location: UDFByteCodeVerifier.java
+
+Content: 
+
+public Set<String> verify(String clsName,byte[] bytes){
+
+  String clsNameSl=clsName.replace('.','/');
+
+  Set<String> errors=new TreeSet<>();
+
+  ClassVisitor classVisitor=new ClassVisitor(Opcodes.ASM7){
+
+    public FieldVisitor visitField(    int access,    String name,    String desc,    String signature,    Object value){
+
+      errors.add("field declared: " + name);
+
+      return null;
+
+    }
+
+    public MethodVisitor visitMethod(    int access,    String name,    String desc,    String signature,    String[] exceptions){
+
+      if ("<init>".equals(name) && CTOR_SIG.equals(desc)) {
+
+        if (Opcodes.ACC_PUBLIC != access)         errors.add("constructor not public");
+
+        return new ConstructorVisitor(errors);
+
+      }
+
+      if ("executeImpl".equals(name) && "(Lorg/apache/cassandra/transport/ProtocolVersion;Ljava/util/List;)Ljava/nio/ByteBuffer;".equals(desc)) {
+
+        if (Opcodes.ACC_PROTECTED != access)         errors.add("executeImpl not protected");
+
+        return new ExecuteImplVisitor(errors);
+
+      }
+
+      if ("executeAggregateImpl".equals(name) && "(Lorg/apache/cassandra/transport/ProtocolVersion;Ljava/lang/Object;Ljava/util/List;)Ljava/lang/Object;".equals(desc)) {
+
+        if (Opcodes.ACC_PROTECTED != access)         errors.add("executeAggregateImpl not protected");
+
+        return new ExecuteImplVisitor(errors);
+
+      }
+
+      if ("<clinit>".equals(name)) {
+
+        errors.add("static initializer declared");
+
+      }
+
+ else {
+
+        errors.add("not allowed method declared: " + name + desc);
+
+        return new ExecuteImplVisitor(errors);
+
+      }
+
+      return null;
+
+    }
+
+    public void visit(    int version,    int access,    String name,    String signature,    String superName,    String[] interfaces){
+
+      if (!JAVA_UDF_NAME.equals(superName)) {
+
+        errors.add("class does not extend " + JavaUDF.class.getName());
+
+      }
+
+      if (access != (Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_SUPER)) {
+
+        errors.add("class not public final");
+
+      }
+
+      super.visit(version,access,name,signature,superName,interfaces);
+
+    }
+
+    public void visitInnerClass(    String name,    String outerName,    String innerName,    int access){
+
+      if (clsNameSl.equals(outerName))       errors.add("class declared as inner class");
+
+      super.visitInnerClass(name,outerName,innerName,access);
+
+    }
+
+  }
+
+;
+
+  ClassReader classReader=new ClassReader(bytes);
+
+  classReader.accept(classVisitor,ClassReader.SKIP_DEBUG);
+
+  return errors;
+
+}
+

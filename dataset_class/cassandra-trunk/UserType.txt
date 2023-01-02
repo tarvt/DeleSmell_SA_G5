@@ -1,0 +1,376 @@
+Location: UserType.java
+
+Content: 
+
+public CellPath cellPathForField(FieldIdentifier fieldName){
+
+  return CellPath.create(ByteBufferUtil.bytes((short)fieldPosition(fieldName)));
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public Optional<Difference> compare(UserType other){
+
+  if (!equalsWithoutTypes(other))   return Optional.of(Difference.SHALLOW);
+
+  boolean differsDeeply=false;
+
+  for (int i=0; i < fieldTypes().size(); i++) {
+
+    AbstractType<?> thisType=fieldType(i);
+
+    AbstractType<?> thatType=other.fieldType(i);
+
+    if (!thisType.equals(thatType)) {
+
+      if (thisType.asCQL3Type().toString().equals(thatType.asCQL3Type().toString()))       differsDeeply=true;
+
+ else       return Optional.of(Difference.SHALLOW);
+
+    }
+
+  }
+
+  return differsDeeply ? Optional.of(Difference.DEEP) : Optional.empty();
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public UserType copy(boolean newFrozen){
+
+  if (newFrozen == frozen) {
+
+    return this;
+
+  }
+
+ else {
+
+    return new UserType(name,keyspace,typeName,newFrozen,protocolVersion,codecRegistry,byIdx,byName);
+
+  }
+
+}
+
+Location: UserType.java
+
+Content: 
+
+@Override public String elementKeyspace(){
+
+  return keyspace;
+
+}
+
+Location: UserType.java
+
+Content: 
+
+@Override public String elementName(){
+
+  return getNameAsString();
+
+}
+
+Location: UserType.java
+
+Content: 
+
+@Override public SchemaElementType elementType(){
+
+  return SchemaElementType.TYPE;
+
+}
+
+Location: UserType.java
+
+Content: 
+
+private boolean equalsWithoutTypes(UserType other){
+
+  return name.equals(other.name) && fieldNames.equals(other.fieldNames) && keyspace.equals(other.keyspace)&& isMultiCell == other.isMultiCell;
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public String fieldNameAsString(int i){
+
+  return stringFieldNames.get(i);
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public List<FieldIdentifier> fieldNames(){
+
+  return fieldNames;
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public FieldIdentifier fieldName(int i){
+
+  return fieldNames.get(i);
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public int fieldPosition(FieldIdentifier fieldName){
+
+  return fieldNames.indexOf(fieldName);
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public List<AbstractType<?>> fieldTypes(){
+
+  return types;
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public AbstractType<?> fieldType(int i){
+
+  return type(i);
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public String getCqlTypeName(){
+
+  return String.format("%s.%s",maybeQuote(keyspace),maybeQuote(getNameAsString()));
+
+}
+
+Location: UserType.java
+
+Content: 
+
+/** 
+
+ * Returns the type of a given field.
+
+ * @param name the name of the field. Note that {@code name} obey the usual CQL identifier rules:it should be quoted if it denotes a case sensitive identifier (you can use  {@link Metadata#quote} for the quoting).
+
+ * @return the type of field {@code name} if this UDT has a field of this name, {@code null}otherwise.
+
+ * @throws IllegalArgumentException if {@code name} is not a field of this UDT definition.
+
+ */
+
+DataType getFieldType(String name){
+
+  int[] idx=byName.get(Metadata.handleId(name));
+
+  if (idx == null)   throw new IllegalArgumentException(name + " is not a field defined in this definition");
+
+  return byIdx[idx[0]].getType();
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public String getNameAsString(){
+
+  return UTF8Type.instance.compose(name);
+
+}
+
+Location: UserType.java
+
+Content: 
+
+/** 
+
+ * The name of this user type.
+
+ * @return the name of this user type.
+
+ */
+
+public String getTypeName(){
+
+  return typeName;
+
+}
+
+Location: UserType.java
+
+Content: 
+
+private static ImmutableMap<String,int[]> mapByName(Collection<Field> fields){
+
+  ImmutableMap.Builder<String,int[]> builder=new ImmutableMap.Builder<>();
+
+  int i=0;
+
+  for (  Field field : fields) {
+
+    builder.put(field.getName(),new int[]{i});
+
+    i+=1;
+
+  }
+
+  return builder.build();
+
+}
+
+Location: UserType.java
+
+Content: 
+
+@Override public String toCqlString(boolean withInternals,boolean ifNotExists){
+
+  CqlBuilder builder=new CqlBuilder();
+
+  builder.append("CREATE TYPE ");
+
+  if (ifNotExists) {
+
+    builder.append("IF NOT EXISTS ");
+
+  }
+
+  builder.appendQuotingIfNeeded(keyspace).append('.').appendQuotingIfNeeded(getNameAsString()).append(" (").newLine().increaseIndent();
+
+  for (int i=0; i < size(); i++) {
+
+    if (i > 0)     builder.append(",").newLine();
+
+    builder.append(fieldNameAsString(i)).append(' ').append(fieldType(i));
+
+  }
+
+  builder.newLine().decreaseIndent().append(");");
+
+  return builder.toString();
+
+}
+
+Location: UserType.java
+
+Content: 
+
+private UserType(Name name,String keyspace,String typeName,boolean frozen,ProtocolVersion protocolVersion,CodecRegistry codecRegistry,Field[] byIdx,Map<String,int[]> byName){
+
+  super(name);
+
+  this.keyspace=keyspace;
+
+  this.typeName=typeName;
+
+  this.frozen=frozen;
+
+  this.protocolVersion=protocolVersion;
+
+  this.codecRegistry=codecRegistry;
+
+  this.byIdx=byIdx;
+
+  this.byName=byName;
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public UserType(String keyspace,ByteBuffer name,List<FieldIdentifier> fieldNames,List<AbstractType<?>> fieldTypes,boolean isMultiCell){
+
+  super(fieldTypes,false);
+
+  assert fieldNames.size() == fieldTypes.size();
+
+  this.keyspace=keyspace;
+
+  this.name=name;
+
+  this.fieldNames=fieldNames;
+
+  this.stringFieldNames=new ArrayList<>(fieldNames.size());
+
+  this.isMultiCell=isMultiCell;
+
+  LinkedHashMap<String,TypeSerializer<?>> fieldSerializers=new LinkedHashMap<>(fieldTypes.size());
+
+  for (int i=0, m=fieldNames.size(); i < m; i++) {
+
+    String stringFieldName=fieldNames.get(i).toString();
+
+    stringFieldNames.add(stringFieldName);
+
+    TypeSerializer<?> existing=fieldSerializers.put(stringFieldName,fieldTypes.get(i).getSerializer());
+
+    if (existing != null)     CONFLICT_BEHAVIOR.onConflict(keyspace,getNameAsString(),stringFieldName);
+
+  }
+
+  this.serializer=new UserTypeSerializer(fieldSerializers);
+
+}
+
+Location: UserType.java
+
+Content: 
+
+UserType(String keyspace,String typeName,boolean frozen,Collection<Field> fields,ProtocolVersion protocolVersion,CodecRegistry codecRegistry){
+
+  this(DataType.Name.UDT,keyspace,typeName,frozen,protocolVersion,codecRegistry,fields.toArray(new Field[fields.size()]),mapByName(fields));
+
+}
+
+Location: UserType.java
+
+Content: 
+
+public <V>void validateCell(Cell<V> cell) throws MarshalException {
+
+  if (isMultiCell) {
+
+    ByteBuffer path=cell.path().get(0);
+
+    nameComparator().validate(path);
+
+    Short fieldPosition=nameComparator().getSerializer().deserialize(path);
+
+    fieldType(fieldPosition).validate(cell.value(),cell.accessor());
+
+  }
+
+ else {
+
+    validate(cell.value(),cell.accessor());
+
+  }
+
+}
+
