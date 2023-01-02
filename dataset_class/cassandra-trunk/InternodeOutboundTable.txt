@@ -1,0 +1,36 @@
+Location: InternodeOutboundTable.java
+
+Content: 
+
+private void addRow(SimpleDataSet dataSet,InetAddressAndPort addressAndPort,OutboundConnections connections){
+
+  String dc=DatabaseDescriptor.getEndpointSnitch().getDatacenter(addressAndPort);
+
+  String rack=DatabaseDescriptor.getEndpointSnitch().getRack(addressAndPort);
+
+  long pendingBytes=sum(connections,OutboundConnection::pendingBytes);
+
+  dataSet.row(addressAndPort.address,addressAndPort.port,dc,rack).column(USING_BYTES,pendingBytes).column(USING_RESERVE_BYTES,connections.usingReserveBytes()).column(PENDING_COUNT,sum(connections,OutboundConnection::pendingCount)).column(PENDING_BYTES,pendingBytes).column(SENT_COUNT,sum(connections,OutboundConnection::sentCount)).column(SENT_BYTES,sum(connections,OutboundConnection::sentBytes)).column(EXPIRED_COUNT,sum(connections,OutboundConnection::expiredCount)).column(EXPIRED_BYTES,sum(connections,OutboundConnection::expiredBytes)).column(ERROR_COUNT,sum(connections,OutboundConnection::errorCount)).column(ERROR_BYTES,sum(connections,OutboundConnection::errorBytes)).column(OVERLOAD_COUNT,sum(connections,OutboundConnection::overloadedCount)).column(OVERLOAD_BYTES,sum(connections,OutboundConnection::overloadedBytes)).column(ACTIVE_CONNECTION_COUNT,sum(connections,c -> c.isConnected() ? 1 : 0)).column(CONNECTION_ATTEMPTS,sum(connections,OutboundConnection::connectionAttempts)).column(SUCCESSFUL_CONNECTION_ATTEMPTS,sum(connections,OutboundConnection::successfulConnections));
+
+}
+
+Location: InternodeOutboundTable.java
+
+Content: 
+
+InternodeOutboundTable(String keyspace){
+
+  super(TableMetadata.builder(keyspace,"internode_outbound").kind(TableMetadata.Kind.VIRTUAL).partitioner(new LocalPartitioner(CompositeType.getInstance(InetAddressType.instance,Int32Type.instance))).addPartitionKeyColumn(ADDRESS,InetAddressType.instance).addPartitionKeyColumn(PORT,Int32Type.instance).addClusteringColumn(DC,UTF8Type.instance).addClusteringColumn(RACK,UTF8Type.instance).addRegularColumn(USING_BYTES,LongType.instance).addRegularColumn(USING_RESERVE_BYTES,LongType.instance).addRegularColumn(PENDING_COUNT,LongType.instance).addRegularColumn(PENDING_BYTES,LongType.instance).addRegularColumn(SENT_COUNT,LongType.instance).addRegularColumn(SENT_BYTES,LongType.instance).addRegularColumn(EXPIRED_COUNT,LongType.instance).addRegularColumn(EXPIRED_BYTES,LongType.instance).addRegularColumn(ERROR_COUNT,LongType.instance).addRegularColumn(ERROR_BYTES,LongType.instance).addRegularColumn(OVERLOAD_COUNT,LongType.instance).addRegularColumn(OVERLOAD_BYTES,LongType.instance).addRegularColumn(ACTIVE_CONNECTION_COUNT,LongType.instance).addRegularColumn(CONNECTION_ATTEMPTS,LongType.instance).addRegularColumn(SUCCESSFUL_CONNECTION_ATTEMPTS,LongType.instance).build());
+
+}
+
+Location: InternodeOutboundTable.java
+
+Content: 
+
+private static long sum(OutboundConnections connections,ToLongFunction<OutboundConnection> f){
+
+  return f.applyAsLong(connections.small) + f.applyAsLong(connections.large) + f.applyAsLong(connections.urgent);
+
+}
+

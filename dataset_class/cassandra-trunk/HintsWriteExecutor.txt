@@ -1,0 +1,182 @@
+Location: HintsWriteExecutor.java
+
+Content: 
+
+Future<?> closeAllWriters(){
+
+  return executor.submit(() -> catalog.stores().forEach(HintsStore::closeWriter));
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+Future<?> closeWriter(HintsStore store){
+
+  return executor.submit(store::closeWriter);
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+/** 
+
+ * Flush the current buffer, but without clearing/recycling it.
+
+ */
+
+Future<?> flushBufferPool(HintsBufferPool bufferPool){
+
+  return executor.submit(new FlushBufferPoolTask(bufferPool));
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+/** 
+
+ * Flush the current buffer just for the specified hints stores. Without clearing/recycling it.
+
+ */
+
+Future<?> flushBufferPool(HintsBufferPool bufferPool,Iterable<HintsStore> stores){
+
+  return executor.submit(new PartiallyFlushBufferPoolTask(bufferPool,stores));
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+/** 
+
+ * Flush the provided buffer, recycle it and offer it back to the pool.
+
+ */
+
+Future<?> flushBuffer(HintsBuffer buffer,HintsBufferPool bufferPool){
+
+  return executor.submit(new FlushBufferTask(buffer,bufferPool));
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+@SuppressWarnings("resource") private void flushInternal(Iterator<ByteBuffer> iterator,HintsStore store){
+
+  long maxHintsFileSize=DatabaseDescriptor.getMaxHintsFileSize();
+
+  HintsWriter writer=store.getOrOpenWriter();
+
+  try (HintsWriter.Session session=writer.newSession(writeBuffer)){
+
+    while (iterator.hasNext()) {
+
+      session.append(iterator.next());
+
+      if (session.position() >= maxHintsFileSize)       break;
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,writer.descriptor().fileName());
+
+  }
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+private void flush(HintsBuffer buffer){
+
+  buffer.hostIds().forEach(hostId -> flush(buffer.consumingHintsIterator(hostId),catalog.get(hostId)));
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+private void flush(Iterator<ByteBuffer> iterator,HintsStore store){
+
+  while (true) {
+
+    if (iterator.hasNext())     flushInternal(iterator,store);
+
+    if (!iterator.hasNext())     break;
+
+    store.closeWriter();
+
+  }
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+void fsyncWritersBlockingly(Iterable<HintsStore> stores){
+
+  try {
+
+    executor.submit(new FsyncWritersTask(stores)).get();
+
+  }
+
+ catch (  InterruptedException|ExecutionException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+HintsWriteExecutor(HintsCatalog catalog){
+
+  this.catalog=catalog;
+
+  writeBuffer=ByteBuffer.allocateDirect(WRITE_BUFFER_SIZE);
+
+  executor=DebuggableThreadPoolExecutor.createWithFixedPoolSize("HintsWriteExecutor",1);
+
+}
+
+Location: HintsWriteExecutor.java
+
+Content: 
+
+void shutdownBlocking(){
+
+  executor.shutdown();
+
+  try {
+
+    executor.awaitTermination(1,TimeUnit.MINUTES);
+
+  }
+
+ catch (  InterruptedException e) {
+
+    throw new AssertionError(e);
+
+  }
+
+}
+

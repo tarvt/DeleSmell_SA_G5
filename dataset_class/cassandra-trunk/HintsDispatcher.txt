@@ -1,0 +1,204 @@
+Location: HintsDispatcher.java
+
+Content: 
+
+static HintsDispatcher create(File file,RateLimiter rateLimiter,InetAddressAndPort address,UUID hostId,BooleanSupplier abortRequested){
+
+  int messagingVersion=MessagingService.instance().versions.get(address);
+
+  HintsDispatcher dispatcher=new HintsDispatcher(HintsReader.open(file,rateLimiter),hostId,address,messagingVersion,abortRequested);
+
+  HintDiagnostics.dispatcherCreated(dispatcher);
+
+  return dispatcher;
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+/** 
+
+ * @return whether or not dispatch completed entirely and successfully
+
+ */
+
+boolean dispatch(){
+
+  for (  HintsReader.Page page : reader) {
+
+    currentPagePosition=page.position;
+
+    if (dispatch(page) != Action.CONTINUE)     return false;
+
+  }
+
+  return true;
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+/** 
+
+ * @return offset of the first non-delivered page
+
+ */
+
+InputPosition dispatchPosition(){
+
+  return currentPagePosition;
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+private Action dispatch(HintsReader.Page page){
+
+  HintDiagnostics.dispatchPage(this);
+
+  return sendHintsAndAwait(page);
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+private HintsDispatcher(HintsReader reader,UUID hostId,InetAddressAndPort address,int messagingVersion,BooleanSupplier abortRequested){
+
+  currentPagePosition=null;
+
+  this.reader=reader;
+
+  this.hostId=hostId;
+
+  this.address=address;
+
+  this.messagingVersion=messagingVersion;
+
+  this.abortRequested=abortRequested;
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+private Callback sendEncodedHint(ByteBuffer hint){
+
+  HintMessage.Encoded message=new HintMessage.Encoded(hostId,hint,messagingVersion);
+
+  Callback callback=new Callback(message.getHintCreationTime());
+
+  MessagingService.instance().sendWithCallback(Message.out(HINT_REQ,message),address,callback);
+
+  return callback;
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+private Action sendHintsAndAwait(HintsReader.Page page){
+
+  Collection<Callback> callbacks=new ArrayList<>();
+
+  Action action=reader.descriptor().messagingVersion() == messagingVersion ? sendHints(page.buffersIterator(),callbacks,this::sendEncodedHint) : sendHints(page.hintsIterator(),callbacks,this::sendHint);
+
+  if (action == Action.ABORT)   return action;
+
+  long success=0, failures=0, timeouts=0;
+
+  for (  Callback cb : callbacks) {
+
+    Callback.Outcome outcome=cb.await();
+
+    if (outcome == Callback.Outcome.SUCCESS)     success++;
+
+ else     if (outcome == Callback.Outcome.FAILURE)     failures++;
+
+ else     if (outcome == Callback.Outcome.TIMEOUT)     timeouts++;
+
+  }
+
+  updateMetrics(success,failures,timeouts);
+
+  if (failures > 0 || timeouts > 0) {
+
+    HintDiagnostics.pageFailureResult(this,success,failures,timeouts);
+
+    return Action.ABORT;
+
+  }
+
+ else {
+
+    HintDiagnostics.pageSuccessResult(this,success,failures,timeouts);
+
+    return Action.CONTINUE;
+
+  }
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+private <T>Action sendHints(Iterator<T> hints,Collection<Callback> callbacks,Function<T,Callback> sendFunction){
+
+  while (hints.hasNext()) {
+
+    if (abortRequested.getAsBoolean()) {
+
+      HintDiagnostics.abortRequested(this);
+
+      return Action.ABORT;
+
+    }
+
+    callbacks.add(sendFunction.apply(hints.next()));
+
+  }
+
+  return Action.CONTINUE;
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+private Callback sendHint(Hint hint){
+
+  Callback callback=new Callback(hint.creationTime);
+
+  Message<?> message=Message.out(HINT_REQ,new HintMessage(hostId,hint));
+
+  MessagingService.instance().sendWithCallback(message,address,callback);
+
+  return callback;
+
+}
+
+Location: HintsDispatcher.java
+
+Content: 
+
+private void updateMetrics(long success,long failures,long timeouts){
+
+  HintsServiceMetrics.hintsSucceeded.mark(success);
+
+  HintsServiceMetrics.hintsFailed.mark(failures);
+
+  HintsServiceMetrics.hintsTimedOut.mark(timeouts);
+
+}
+

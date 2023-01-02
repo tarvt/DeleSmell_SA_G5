@@ -1,0 +1,134 @@
+Location: InboundMessageHandler.java
+
+Content: 
+
+/** 
+
+ * Submit a  {@link ProcessMessage} task to the appropriate {@link Stage} for the {@link Verb}.
+
+ */
+
+private void dispatch(ProcessMessage task){
+
+  Header header=task.header();
+
+  TraceState state=Tracing.instance.initializeFromMessage(header);
+
+  if (state != null)   state.trace("{} message received from {}",header.verb,header.from);
+
+  callbacks.onDispatched(task.size(),header);
+
+  header.verb.stage.execute(task,ExecutorLocals.create(state));
+
+}
+
+Location: InboundMessageHandler.java
+
+Content: 
+
+@Override public void exceptionCaught(ChannelHandlerContext ctx,Throwable cause){
+
+  try {
+
+    fatalExceptionCaught(cause);
+
+  }
+
+ catch (  Throwable t) {
+
+    logger.error("Unexpected exception in {}.exceptionCaught",this.getClass().getSimpleName(),t);
+
+  }
+
+}
+
+Location: InboundMessageHandler.java
+
+Content: 
+
+InboundMessageHandler(FrameDecoder decoder,ConnectionType type,Channel channel,InetAddressAndPort self,InetAddressAndPort peer,int version,int largeThreshold,long queueCapacity,Limit endpointReserveCapacity,Limit globalReserveCapacity,WaitQueue endpointWaitQueue,WaitQueue globalWaitQueue,OnHandlerClosed onClosed,InboundMessageCallbacks callbacks,Consumer<Message<?>> consumer){
+
+  super(decoder,channel,largeThreshold,queueCapacity,endpointReserveCapacity,globalReserveCapacity,endpointWaitQueue,globalWaitQueue,onClosed);
+
+  this.type=type;
+
+  this.self=self;
+
+  this.peer=peer;
+
+  this.version=version;
+
+  this.callbacks=callbacks;
+
+  this.consumer=consumer;
+
+}
+
+Location: InboundMessageHandler.java
+
+Content: 
+
+private void processLargeMessage(ShareableBytes bytes,int size,Header header){
+
+  new LargeMessage(size,header,bytes.sliceAndConsume(size).share()).schedule();
+
+}
+
+Location: InboundMessageHandler.java
+
+Content: 
+
+private void processSmallMessage(ShareableBytes bytes,int size,Header header){
+
+  ByteBuffer buf=bytes.get();
+
+  final int begin=buf.position();
+
+  final int end=buf.limit();
+
+  buf.limit(begin + size);
+
+  Message<?> message=null;
+
+  try (DataInputBuffer in=new DataInputBuffer(buf,false)){
+
+    Message<?> m=serializer.deserialize(in,header,version);
+
+    if (in.available() > 0)     throw new InvalidSerializedSizeException(header.verb,size,size - in.available());
+
+    message=m;
+
+  }
+
+ catch (  IncompatibleSchemaException e) {
+
+    callbacks.onFailedDeserialize(size,header,e);
+
+    noSpamLogger.info("{} incompatible schema encountered while deserializing a message",this,e);
+
+  }
+
+catch (  Throwable t) {
+
+    JVMStabilityInspector.inspectThrowable(t);
+
+    callbacks.onFailedDeserialize(size,header,t);
+
+    logger.error("{} unexpected exception caught while deserializing a message",id(),t);
+
+  }
+
+ finally {
+
+    if (null == message)     releaseCapacity(size);
+
+    buf.position(begin + size);
+
+    buf.limit(end);
+
+  }
+
+  if (null != message)   dispatch(new ProcessSmallMessage(message,size));
+
+}
+

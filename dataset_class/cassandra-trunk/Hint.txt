@@ -1,0 +1,132 @@
+Location: Hint.java
+
+Content: 
+
+void apply(){
+
+  try {
+
+    applyFuture().get();
+
+  }
+
+ catch (  Exception e) {
+
+    throw Throwables.propagate(e.getCause());
+
+  }
+
+}
+
+Location: Hint.java
+
+Content: 
+
+/** 
+
+ * Applies the contained mutation unless it's expired, filtering out any updates for truncated tables
+
+ */
+
+CompletableFuture<?> applyFuture(){
+
+  if (isLive()) {
+
+    Mutation filtered=mutation;
+
+    for (    TableId id : mutation.getTableIds())     if (creationTime <= SystemKeyspace.getTruncatedAt(id))     filtered=filtered.without(id);
+
+    if (!filtered.isEmpty())     return filtered.applyFuture();
+
+  }
+
+  return CompletableFuture.completedFuture(null);
+
+}
+
+Location: Hint.java
+
+Content: 
+
+/** 
+
+ * @param mutation the hinted mutation
+
+ * @param creationTime time of this hint's creation (in milliseconds since epoch)
+
+ */
+
+public static Hint create(Mutation mutation,long creationTime){
+
+  return new Hint(mutation,creationTime,mutation.smallestGCGS());
+
+}
+
+Location: Hint.java
+
+Content: 
+
+public static Hint create(Mutation mutation,long creationTime,int gcgs){
+
+  return new Hint(mutation,creationTime,gcgs);
+
+}
+
+Location: Hint.java
+
+Content: 
+
+private Hint(Mutation mutation,long creationTime,int gcgs){
+
+  this.mutation=mutation;
+
+  this.creationTime=creationTime;
+
+  this.gcgs=gcgs;
+
+}
+
+Location: Hint.java
+
+Content: 
+
+/** 
+
+ * @return calculates whether or not it is safe to apply the hint without risking to resurrect any deleted data
+
+ */
+
+public boolean isLive(){
+
+  return isLive(creationTime,System.currentTimeMillis(),ttl());
+
+}
+
+Location: Hint.java
+
+Content: 
+
+static boolean isLive(long creationTime,long now,int hintTTL){
+
+  long expirationTime=creationTime + TimeUnit.SECONDS.toMillis(Math.min(hintTTL,maxHintTTL));
+
+  return expirationTime > now;
+
+}
+
+Location: Hint.java
+
+Content: 
+
+/** 
+
+ * @return the overall ttl of the hint - the minimum of all mutation's tables' gc gs now and at the time of creation
+
+ */
+
+int ttl(){
+
+  return Math.min(gcgs,mutation.smallestGCGS());
+
+}
+

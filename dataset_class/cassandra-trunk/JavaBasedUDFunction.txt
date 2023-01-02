@@ -1,0 +1,330 @@
+Location: JavaBasedUDFunction.java
+
+Content: 
+
+private static String composeMethod(TypeToken<?> type){
+
+  return (type.isPrimitive()) ? ("super.compose_" + type.getRawType().getName()) : "super.compose";
+
+}
+
+Location: JavaBasedUDFunction.java
+
+Content: 
+
+private static int countNewlines(StringBuilder javaSource){
+
+  int ln=0;
+
+  for (int i=0; i < javaSource.length(); i++)   if (javaSource.charAt(i) == '\n')   ln++;
+
+  return ln;
+
+}
+
+Location: JavaBasedUDFunction.java
+
+Content: 
+
+private static String generateArgumentList(TypeToken<?>[] paramTypes,List<ColumnIdentifier> argNames){
+
+  StringBuilder code=new StringBuilder(32 * paramTypes.length);
+
+  for (int i=0; i < paramTypes.length; i++) {
+
+    if (i > 0)     code.append(", ");
+
+    code.append(javaSourceName(paramTypes[i])).append(' ').append(argNames.get(i));
+
+  }
+
+  return code.toString();
+
+}
+
+Location: JavaBasedUDFunction.java
+
+Content: 
+
+/** 
+
+ * Generate Java source code snippet for the arguments part to call the UDF implementation function - i.e. the  {@code private #return_type# #execute_internal_name#(#argument_list#)} function(see  {@code JavaSourceUDF.txt} template file for details).<p> This method generates the arguments code snippet for both  {@code executeImpl} and{@code executeAggregateImpl}. General signature for both is the  {@code protocolVersion} andthen all UDF arguments. For aggregation UDF calls the first argument is always unserialized as that is the state variable. </p> <p> An example output for  {@code executeImpl}: {@code (double) super.compose_double(protocolVersion, 0, params.get(0)), (double) super.compose_double(protocolVersion, 1, params.get(1))}</p> <p> Similar output for  {@code executeAggregateImpl}: {@code firstParam, (double) super.compose_double(protocolVersion, 1, params.get(1))}</p>
+
+ */
+
+private static String generateArguments(TypeToken<?>[] paramTypes,List<ColumnIdentifier> argNames,boolean forAggregate){
+
+  StringBuilder code=new StringBuilder(64 * paramTypes.length);
+
+  for (int i=0; i < paramTypes.length; i++) {
+
+    if (i > 0)     code.append(",\n");
+
+    if (logger.isTraceEnabled())     code.append("            /* parameter '").append(argNames.get(i)).append("' */\n");
+
+    code.append("            (").append(javaSourceName(paramTypes[i])).append(") ");
+
+    if (forAggregate && i == 0)     code.append("firstParam");
+
+ else     code.append(composeMethod(paramTypes[i])).append("(protocolVersion, ").append(i).append(", params.get(").append(forAggregate ? i - 1 : i).append("))");
+
+  }
+
+  return code.toString();
+
+}
+
+Location: JavaBasedUDFunction.java
+
+Content: 
+
+private static String generateClassName(FunctionName name,char prefix){
+
+  String qualifiedName=name.toString();
+
+  StringBuilder sb=new StringBuilder(qualifiedName.length() + 10);
+
+  sb.append(prefix);
+
+  for (int i=0; i < qualifiedName.length(); i++) {
+
+    char c=qualifiedName.charAt(i);
+
+    if (Character.isJavaIdentifierPart(c))     sb.append(c);
+
+ else     sb.append(Integer.toHexString(((short)c) & 0xffff));
+
+  }
+
+  sb.append('_').append(ThreadLocalRandom.current().nextInt() & 0xffffff).append('_').append(classSequence.incrementAndGet());
+
+  return sb.toString();
+
+}
+
+Location: JavaBasedUDFunction.java
+
+Content: 
+
+JavaBasedUDFunction(FunctionName name,List<ColumnIdentifier> argNames,List<AbstractType<?>> argTypes,AbstractType<?> returnType,boolean calledOnNullInput,String body){
+
+  super(name,argNames,argTypes,UDHelper.driverTypes(argTypes),returnType,UDHelper.driverType(returnType),calledOnNullInput,"java",body);
+
+  TypeToken<?>[] javaParamTypes=UDHelper.typeTokens(argCodecs,calledOnNullInput);
+
+  TypeToken<?> javaReturnType=returnCodec.getJavaType();
+
+  String pkgName=BASE_PACKAGE + '.' + generateClassName(name,'p');
+
+  String clsName=generateClassName(name,'C');
+
+  String executeInternalName=generateClassName(name,'x');
+
+  StringBuilder javaSourceBuilder=new StringBuilder();
+
+  int lineOffset=1;
+
+  for (int i=0; i < javaSourceTemplate.length; i++) {
+
+    String s=javaSourceTemplate[i];
+
+    if ((i & 1) == 1) {
+
+switch (s) {
+
+case "package_name":
+
+        s=pkgName;
+
+      break;
+
+case "class_name":
+
+    s=clsName;
+
+  break;
+
+case "body":
+
+lineOffset=countNewlines(javaSourceBuilder);
+
+s=patternJavaDriver.matcher(body).replaceAll("org.apache.cassandra.cql3.functions.types.");
+
+break;
+
+case "arguments":
+
+s=generateArguments(javaParamTypes,argNames,false);
+
+break;
+
+case "arguments_aggregate":
+
+s=generateArguments(javaParamTypes,argNames,true);
+
+break;
+
+case "argument_list":
+
+s=generateArgumentList(javaParamTypes,argNames);
+
+break;
+
+case "return_type":
+
+s=javaSourceName(javaReturnType);
+
+break;
+
+case "execute_internal_name":
+
+s=executeInternalName;
+
+break;
+
+}
+
+}
+
+javaSourceBuilder.append(s);
+
+}
+
+String targetClassName=pkgName + '.' + clsName;
+
+String javaSource=javaSourceBuilder.toString();
+
+logger.trace("Compiling Java source UDF '{}' as class '{}' using source:\n{}",name,targetClassName,javaSource);
+
+try {
+
+EcjCompilationUnit compilationUnit=new EcjCompilationUnit(javaSource,targetClassName);
+
+Compiler compiler=new Compiler(compilationUnit,errorHandlingPolicy,compilerOptions,compilationUnit,problemFactory);
+
+compiler.compile(new ICompilationUnit[]{compilationUnit});
+
+if (compilationUnit.problemList != null && !compilationUnit.problemList.isEmpty()) {
+
+boolean fullSource=false;
+
+StringBuilder problems=new StringBuilder();
+
+for (IProblem problem : compilationUnit.problemList) {
+
+long ln=problem.getSourceLineNumber() - lineOffset;
+
+if (ln < 1L) {
+
+if (problem.isError()) {
+
+problems.append("GENERATED SOURCE ERROR: line ").append(problem.getSourceLineNumber()).append(" (in generated source): ").append(problem.getMessage()).append('\n');
+
+fullSource=true;
+
+}
+
+}
+
+ else {
+
+problems.append("Line ").append(Long.toString(ln)).append(": ").append(problem.getMessage()).append('\n');
+
+}
+
+}
+
+if (fullSource) throw new InvalidRequestException("Java source compilation failed:\n" + problems + "\n generated source:\n"+ javaSource);
+
+ else throw new InvalidRequestException("Java source compilation failed:\n" + problems);
+
+}
+
+Set<String> errors=udfByteCodeVerifier.verify(targetClassName,targetClassLoader.classData(targetClassName));
+
+String validDeclare="not allowed method declared: " + executeInternalName + '(';
+
+for (Iterator<String> i=errors.iterator(); i.hasNext(); ) {
+
+String error=i.next();
+
+if (error.startsWith(validDeclare)) i.remove();
+
+}
+
+if (!errors.isEmpty()) throw new InvalidRequestException("Java UDF validation failed: " + errors);
+
+Thread thread=Thread.currentThread();
+
+ClassLoader orig=thread.getContextClassLoader();
+
+try {
+
+thread.setContextClassLoader(UDFunction.udfClassLoader);
+
+Class cls=Class.forName(targetClassName,false,targetClassLoader);
+
+int nonSyntheticMethodCount=0;
+
+for (Method m : cls.getDeclaredMethods()) {
+
+if (!m.isSynthetic()) {
+
+nonSyntheticMethodCount+=1;
+
+}
+
+}
+
+if (nonSyntheticMethodCount != 3 || cls.getDeclaredConstructors().length != 1) throw new InvalidRequestException("Check your source to not define additional Java methods or constructors");
+
+MethodType methodType=MethodType.methodType(void.class).appendParameterTypes(TypeCodec.class,TypeCodec[].class,UDFContext.class);
+
+MethodHandle ctor=MethodHandles.lookup().findConstructor(cls,methodType);
+
+this.javaUDF=(JavaUDF)ctor.invokeWithArguments(returnCodec,argCodecs,udfContext);
+
+}
+
+  finally {
+
+thread.setContextClassLoader(orig);
+
+}
+
+}
+
+ catch (InvocationTargetException e) {
+
+throw new InvalidRequestException(String.format("Could not compile function '%s' from Java source: %s",name,e.getCause()));
+
+}
+
+catch (InvalidRequestException|VirtualMachineError e) {
+
+throw e;
+
+}
+
+catch (Throwable e) {
+
+logger.error(String.format("Could not compile function '%s' from Java source:%n%s",name,javaSource),e);
+
+throw new InvalidRequestException(String.format("Could not compile function '%s' from Java source: %s",name,e));
+
+}
+
+}
+
+Location: JavaBasedUDFunction.java
+
+Content: 
+
+@VisibleForTesting public static String javaSourceName(TypeToken<?> type){
+
+  String n=type.toString();
+
+  return JAVA_LANG_PREFIX.matcher(n).replaceAll("");
+
+}
+

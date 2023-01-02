@@ -1,0 +1,102 @@
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+void completeDispatchBlockingly(HintsStore store){
+
+  Future future=scheduledDispatches.get(store.hostId);
+
+  try {
+
+    if (future != null)     future.get();
+
+  }
+
+ catch (  ExecutionException|InterruptedException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+Future dispatch(HintsStore store){
+
+  return dispatch(store,store.hostId);
+
+}
+
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+Future dispatch(HintsStore store,UUID hostId){
+
+  return scheduledDispatches.computeIfAbsent(hostId,uuid -> executor.submit(new DispatchHintsTask(store,hostId)));
+
+}
+
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+public boolean hasScheduledDispatches(){
+
+  return !scheduledDispatches.isEmpty();
+
+}
+
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+HintsDispatchExecutor(File hintsDirectory,int maxThreads,AtomicBoolean isPaused,Predicate<InetAddressAndPort> isAlive){
+
+  this.hintsDirectory=hintsDirectory;
+
+  this.isPaused=isPaused;
+
+  this.isAlive=isAlive;
+
+  scheduledDispatches=new ConcurrentHashMap<>();
+
+  executor=new JMXEnabledThreadPoolExecutor(maxThreads,1,TimeUnit.MINUTES,new LinkedBlockingQueue<>(),new NamedThreadFactory("HintsDispatcher",Thread.MIN_PRIORITY),"internal");
+
+}
+
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+void interruptDispatch(UUID hostId){
+
+  Future future=scheduledDispatches.remove(hostId);
+
+  if (null != future)   future.cancel(true);
+
+}
+
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+public boolean isPaused(){
+
+  return isPaused.get();
+
+}
+
+Location: HintsDispatchExecutor.java
+
+Content: 
+
+Future transfer(HintsCatalog catalog,Supplier<UUID> hostIdSupplier){
+
+  return executor.submit(new TransferHintsTask(catalog,hostIdSupplier));
+
+}
+

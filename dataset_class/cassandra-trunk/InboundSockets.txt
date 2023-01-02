@@ -1,0 +1,146 @@
+Location: InboundSockets.java
+
+Content: 
+
+private static void addBindings(InboundConnectionSettings template,ImmutableList.Builder<InboundSocket> out){
+
+  InboundConnectionSettings settings=template.withDefaults();
+
+  InboundConnectionSettings legacySettings=template.withLegacySslStoragePortDefaults();
+
+  if (settings.encryption.enable_legacy_ssl_storage_port) {
+
+    out.add(new InboundSocket(legacySettings));
+
+    if (settings.bindAddress.equals(legacySettings.bindAddress))     return;
+
+  }
+
+  out.add(new InboundSocket(settings));
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+private static List<InboundSocket> bindings(List<InboundConnectionSettings> templates){
+
+  ImmutableList.Builder<InboundSocket> sockets=ImmutableList.builder();
+
+  for (  InboundConnectionSettings template : templates)   addBindings(template,sockets);
+
+  return sockets.build();
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+public Future<Void> close(Consumer<? super ExecutorService> shutdownExecutors){
+
+  List<Future<Void>> closing=new ArrayList<>();
+
+  for (  InboundSocket address : sockets)   closing.add(address.close(shutdownExecutors));
+
+  return new FutureCombiner(closing);
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+InboundSockets(InboundConnectionSettings template){
+
+  this(withDefaultBindAddresses(template));
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+InboundSockets(List<InboundConnectionSettings> templates){
+
+  this.sockets=bindings(templates);
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+public boolean isListening(){
+
+  for (  InboundSocket socket : sockets)   if (socket.isOpen())   return true;
+
+  return false;
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+public Future<Void> open(){
+
+  List<Future<Void>> opening=new ArrayList<>();
+
+  for (  InboundSocket socket : sockets)   opening.add(socket.open());
+
+  return new FutureCombiner(opening);
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+public Future<Void> open(Consumer<ChannelPipeline> pipelineInjector){
+
+  List<Future<Void>> opening=new ArrayList<>();
+
+  for (  InboundSocket socket : sockets)   opening.add(socket.open(pipelineInjector));
+
+  return new FutureCombiner(opening);
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+private static boolean shouldListenOnBroadcastAddress(){
+
+  return DatabaseDescriptor.shouldListenOnBroadcastAddress() && !FBUtilities.getLocalAddressAndPort().equals(FBUtilities.getBroadcastAddressAndPort());
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+@VisibleForTesting public List<InboundSocket> sockets(){
+
+  return sockets;
+
+}
+
+Location: InboundSockets.java
+
+Content: 
+
+private static List<InboundConnectionSettings> withDefaultBindAddresses(InboundConnectionSettings template){
+
+  ImmutableList.Builder<InboundConnectionSettings> templates=ImmutableList.builder();
+
+  templates.add(template.withBindAddress(FBUtilities.getLocalAddressAndPort()));
+
+  if (shouldListenOnBroadcastAddress())   templates.add(template.withBindAddress(FBUtilities.getBroadcastAddressAndPort()));
+
+  return templates.build();
+
+}
+

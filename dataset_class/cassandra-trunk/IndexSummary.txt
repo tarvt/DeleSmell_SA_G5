@@ -1,0 +1,290 @@
+Location: IndexSummary.java
+
+Content: 
+
+public int binarySearch(PartitionPosition key){
+
+  ByteBuffer hollow=MemoryUtil.getHollowDirectByteBuffer().order(ByteOrder.BIG_ENDIAN);
+
+  int low=0, mid=offsetCount, high=mid - 1, result=-1;
+
+  while (low <= high) {
+
+    mid=(low + high) >> 1;
+
+    fillTemporaryKey(mid,hollow);
+
+    result=-DecoratedKey.compareTo(partitioner,hollow,key);
+
+    if (result > 0) {
+
+      low=mid + 1;
+
+    }
+
+ else     if (result == 0) {
+
+      return mid;
+
+    }
+
+ else {
+
+      high=mid - 1;
+
+    }
+
+  }
+
+  return -mid - (result < 0 ? 1 : 2);
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+private long calculateEnd(int index){
+
+  return index == (offsetCount - 1) ? entriesLength : getPositionInSummary(index + 1);
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+private void fillTemporaryKey(int index,ByteBuffer buffer){
+
+  long start=getPositionInSummary(index);
+
+  int keySize=(int)(calculateEnd(index) - start - 8L);
+
+  entries.setByteBuffer(buffer,start,keySize);
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+/** 
+
+ * Returns the number of primary (on-disk) index entries between the index summary entry at `index` and the next index summary entry (assuming there is one).  Without any downsampling, this will always be equivalent to the index interval.
+
+ * @param index the index of an index summary entry (between zero and the index entry size)
+
+ * @return the number of partitions after `index` until the next partition with a summary entry
+
+ */
+
+public int getEffectiveIndexIntervalAfterIndex(int index){
+
+  return Downsampling.getEffectiveIndexIntervalAfterIndex(index,samplingLevel,minIndexInterval);
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+public long getEndInSummary(int index){
+
+  return calculateEnd(index);
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+Memory getEntries(){
+
+  return entries;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+/** 
+
+ * Returns the amount of off-heap memory used for the entries portion of this summary.
+
+ * @return size in bytes
+
+ */
+
+long getEntriesLength(){
+
+  return entriesLength;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+/** 
+
+ * Returns an estimate of the total number of keys in the SSTable.
+
+ */
+
+public long getEstimatedKeyCount(){
+
+  return ((long)getMaxNumberOfEntries() + 1) * minIndexInterval;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+public byte[] getKey(int index){
+
+  long start=getPositionInSummary(index);
+
+  int keySize=(int)(calculateEnd(index) - start - 8L);
+
+  byte[] key=new byte[keySize];
+
+  entries.getBytes(start,key,0,keySize);
+
+  return key;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+/** 
+
+ * Returns the number of entries this summary would have if it were at the full sampling level, which is equal to the number of entries in the primary on-disk index divided by the min index interval.
+
+ */
+
+public int getMaxNumberOfEntries(){
+
+  return sizeAtFullSampling;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+public long getOffHeapSize(){
+
+  return offsetCount * 4 + entriesLength;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+Memory getOffsets(){
+
+  return offsets;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+/** 
+
+ * Gets the position of the actual index summary entry in our Memory attribute, 'bytes'.
+
+ * @param index The index of the entry or key to get the position for
+
+ * @return an offset into our Memory attribute where the actual entry resides
+
+ */
+
+public int getPositionInSummary(int index){
+
+  return offsets.getInt(index << 2);
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+public long getPosition(int index){
+
+  return entries.getLong(calculateEnd(index) - 8);
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+public int getSamplingLevel(){
+
+  return samplingLevel;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+private IndexSummary(IndexSummary copy){
+
+  super(copy);
+
+  this.partitioner=copy.partitioner;
+
+  this.minIndexInterval=copy.minIndexInterval;
+
+  this.offsetCount=copy.offsetCount;
+
+  this.entriesLength=copy.entriesLength;
+
+  this.sizeAtFullSampling=copy.sizeAtFullSampling;
+
+  this.offsets=copy.offsets;
+
+  this.entries=copy.entries;
+
+  this.samplingLevel=copy.samplingLevel;
+
+}
+
+Location: IndexSummary.java
+
+Content: 
+
+public IndexSummary(IPartitioner partitioner,Memory offsets,int offsetCount,Memory entries,long entriesLength,int sizeAtFullSampling,int minIndexInterval,int samplingLevel){
+
+  super(new Memory[]{offsets,entries});
+
+  assert offsets.getInt(0) == 0;
+
+  this.partitioner=partitioner;
+
+  this.minIndexInterval=minIndexInterval;
+
+  this.offsetCount=offsetCount;
+
+  this.entriesLength=entriesLength;
+
+  this.sizeAtFullSampling=sizeAtFullSampling;
+
+  this.offsets=offsets;
+
+  this.entries=entries;
+
+  this.samplingLevel=samplingLevel;
+
+  assert samplingLevel > 0;
+
+}
+

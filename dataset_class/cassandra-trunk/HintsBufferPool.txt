@@ -1,0 +1,90 @@
+Location: HintsBufferPool.java
+
+Content: 
+
+HintsBufferPool(int bufferSize,FlushCallback flushCallback){
+
+  reserveBuffers=new LinkedBlockingQueue<>();
+
+  this.bufferSize=bufferSize;
+
+  this.flushCallback=flushCallback;
+
+}
+
+Location: HintsBufferPool.java
+
+Content: 
+
+private synchronized void initializeCurrentBuffer(){
+
+  if (currentBuffer == null)   currentBuffer=createBuffer();
+
+}
+
+Location: HintsBufferPool.java
+
+Content: 
+
+void offer(HintsBuffer buffer){
+
+  if (!reserveBuffers.offer(buffer))   throw new RuntimeException("Failed to store buffer");
+
+}
+
+Location: HintsBufferPool.java
+
+Content: 
+
+private synchronized boolean switchCurrentBuffer(HintsBuffer previous){
+
+  if (currentBuffer != previous)   return false;
+
+  HintsBuffer buffer=reserveBuffers.poll();
+
+  if (buffer == null && allocatedBuffers >= MAX_ALLOCATED_BUFFERS) {
+
+    try {
+
+      buffer=reserveBuffers.take();
+
+    }
+
+ catch (    InterruptedException e) {
+
+      throw new RuntimeException(e);
+
+    }
+
+  }
+
+  currentBuffer=buffer == null ? createBuffer() : buffer;
+
+  return true;
+
+}
+
+Location: HintsBufferPool.java
+
+Content: 
+
+/** 
+
+ * @param hostIds host ids of the hint's target nodes
+
+ * @param hint the hint to store
+
+ */
+
+void write(Iterable<UUID> hostIds,Hint hint){
+
+  int hintSize=(int)Hint.serializer.serializedSize(hint,MessagingService.current_version);
+
+  try (HintsBuffer.Allocation allocation=allocate(hintSize)){
+
+    allocation.write(hostIds,hint);
+
+  }
+
+ }
+

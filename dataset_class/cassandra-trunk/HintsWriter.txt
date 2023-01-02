@@ -1,0 +1,164 @@
+Location: HintsWriter.java
+
+Content: 
+
+@SuppressWarnings("resource") static HintsWriter create(File directory,HintsDescriptor descriptor) throws IOException {
+
+  File file=new File(directory,descriptor.fileName());
+
+  FileChannel channel=FileChannel.open(file.toPath(),StandardOpenOption.WRITE,StandardOpenOption.CREATE_NEW);
+
+  int fd=NativeLibrary.getfd(channel);
+
+  CRC32 crc=new CRC32();
+
+  try (DataOutputBuffer dob=DataOutputBuffer.scratchBuffer.get()){
+
+    descriptor.serialize(dob);
+
+    ByteBuffer descriptorBytes=dob.buffer();
+
+    updateChecksum(crc,descriptorBytes);
+
+    channel.write(descriptorBytes);
+
+    if (descriptor.isEncrypted())     return new EncryptedHintsWriter(directory,descriptor,file,channel,fd,crc);
+
+    if (descriptor.isCompressed())     return new CompressedHintsWriter(directory,descriptor,file,channel,fd,crc);
+
+    return new HintsWriter(directory,descriptor,file,channel,fd,crc);
+
+  }
+
+ catch (  Throwable e) {
+
+    channel.close();
+
+    throw e;
+
+  }
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+HintsDescriptor descriptor(){
+
+  return descriptor;
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+private void doFsync() throws IOException {
+
+  SyncUtil.force(channel,true);
+
+  lastSyncPosition=channel.position();
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+public void fsync(){
+
+  perform(file,Throwables.FileOpType.WRITE,this::doFsync);
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+@VisibleForTesting File getFile(){
+
+  return file;
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+protected HintsWriter(File directory,HintsDescriptor descriptor,File file,FileChannel channel,int fd,CRC32 globalCRC){
+
+  this.directory=directory;
+
+  this.descriptor=descriptor;
+
+  this.file=file;
+
+  this.channel=channel;
+
+  this.fd=fd;
+
+  this.globalCRC=globalCRC;
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+Session newSession(ByteBuffer buffer){
+
+  try {
+
+    return new Session(buffer,channel.size());
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,file);
+
+  }
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+/** 
+
+ * Writes byte buffer into the file channel. Buffer should be flipped before calling this
+
+ */
+
+protected void writeBuffer(ByteBuffer bb) throws IOException {
+
+  updateChecksum(globalCRC,bb);
+
+  channel.write(bb);
+
+}
+
+Location: HintsWriter.java
+
+Content: 
+
+private void writeChecksum(){
+
+  File checksumFile=new File(directory,descriptor.checksumFileName());
+
+  try (OutputStream out=Files.newOutputStream(checksumFile.toPath())){
+
+    out.write(Integer.toHexString((int)globalCRC.getValue()).getBytes(StandardCharsets.UTF_8));
+
+  }
+
+ catch (  IOException e) {
+
+    throw new FSWriteError(e,checksumFile);
+
+  }
+
+}
+

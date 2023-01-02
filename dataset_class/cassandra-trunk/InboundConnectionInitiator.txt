@@ -1,0 +1,88 @@
+Location: InboundConnectionInitiator.java
+
+Content: 
+
+public static ChannelFuture bind(InboundConnectionSettings settings,ChannelGroup channelGroup,Consumer<ChannelPipeline> pipelineInjector){
+
+  return bind(new Initializer(settings,channelGroup,pipelineInjector));
+
+}
+
+Location: InboundConnectionInitiator.java
+
+Content: 
+
+/** 
+
+ * Create a  {@link Channel} that listens on the {@code localAddr}. This method will block while trying to bind to the address, but it does not make a remote call.
+
+ */
+
+private static ChannelFuture bind(Initializer initializer) throws ConfigurationException {
+
+  logger.info("Listening on {}",initializer.settings);
+
+  ServerBootstrap bootstrap=initializer.settings.socketFactory.newServerBootstrap().option(ChannelOption.SO_BACKLOG,1 << 9).option(ChannelOption.ALLOCATOR,GlobalBufferPoolAllocator.instance).option(ChannelOption.SO_REUSEADDR,true).childHandler(initializer);
+
+  int socketReceiveBufferSizeInBytes=initializer.settings.socketReceiveBufferSizeInBytes;
+
+  if (socketReceiveBufferSizeInBytes > 0)   bootstrap.childOption(ChannelOption.SO_RCVBUF,socketReceiveBufferSizeInBytes);
+
+  InetAddressAndPort bind=initializer.settings.bindAddress;
+
+  ChannelFuture channelFuture=bootstrap.bind(new InetSocketAddress(bind.address,bind.port));
+
+  if (!channelFuture.awaitUninterruptibly().isSuccess()) {
+
+    if (channelFuture.channel().isOpen())     channelFuture.channel().close();
+
+    Throwable failedChannelCause=channelFuture.cause();
+
+    String causeString="";
+
+    if (failedChannelCause != null && failedChannelCause.getMessage() != null)     causeString=failedChannelCause.getMessage();
+
+    if (causeString.contains("in use")) {
+
+      throw new ConfigurationException(bind + " is in use by another process.  Change listen_address:storage_port " + "in cassandra.yaml to values that do not conflict with other services");
+
+    }
+
+ else     if (causeString.contains("annot assign requested address")) {
+
+      throw new ConfigurationException("Unable to bind to address " + bind + ". Set listen_address in cassandra.yaml to an interface you can bind to, e.g., your private IP address on EC2");
+
+    }
+
+ else {
+
+      throw new ConfigurationException("failed to bind to: " + bind,failedChannelCause);
+
+    }
+
+  }
+
+  return channelFuture;
+
+}
+
+Location: InboundConnectionInitiator.java
+
+Content: 
+
+private static SslHandler getSslHandler(String description,Channel channel,EncryptionOptions.ServerEncryptionOptions encryptionOptions) throws IOException {
+
+  final boolean buildTrustStore=true;
+
+  SslContext sslContext=SSLFactory.getOrCreateSslContext(encryptionOptions,buildTrustStore,SSLFactory.SocketType.SERVER);
+
+  InetSocketAddress peer=encryptionOptions.require_endpoint_verification ? (InetSocketAddress)channel.remoteAddress() : null;
+
+  SslHandler sslHandler=newSslHandler(channel,sslContext,peer);
+
+  logger.trace("{} inbound netty SslContext: context={}, engine={}",description,sslContext.getClass().getName(),sslHandler.engine().getClass().getName());
+
+  return sslHandler;
+
+}
+

@@ -1,0 +1,132 @@
+Location: InboundSink.java
+
+Content: 
+
+public void accept(Message<?> message){
+
+  try {
+
+    sink.accept(message);
+
+  }
+
+ catch (  Throwable t) {
+
+    fail(message.header,t);
+
+    if (t instanceof TombstoneOverwhelmingException || t instanceof IndexNotAvailableException)     noSpamLogger.error(t.getMessage());
+
+ else     if (t instanceof RuntimeException)     throw (RuntimeException)t;
+
+ else     throw new RuntimeException(t);
+
+  }
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+public void add(Predicate<Message<?>> allow){
+
+  sinkUpdater.updateAndGet(this,sink -> new Filtered(allow,sink));
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+private static boolean allows(ThrowingConsumer<Message<?>,IOException> sink,Message<?> message){
+
+  while (sink instanceof Filtered) {
+
+    Filtered filtered=(Filtered)sink;
+
+    if (!filtered.condition.test(message))     return false;
+
+    sink=filtered.next;
+
+  }
+
+  return true;
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+@Deprecated public boolean allow(Message<?> message){
+
+  return allows(sink,message);
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+private static ThrowingConsumer<Message<?>,IOException> clear(ThrowingConsumer<Message<?>,IOException> sink){
+
+  while (sink instanceof Filtered)   sink=((Filtered)sink).next;
+
+  return sink;
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+public void fail(Message.Header header,Throwable failure){
+
+  if (header.callBackOnFailure()) {
+
+    Message response=Message.failureResponse(header.id,header.expiresAtNanos,RequestFailureReason.forException(failure));
+
+    messaging.send(response,header.from);
+
+  }
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+InboundSink(MessagingService messaging){
+
+  this.messaging=messaging;
+
+  this.sink=message -> message.header.verb.handler().doVerb((Message<Object>)message);
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+public void remove(Predicate<Message<?>> allow){
+
+  sinkUpdater.updateAndGet(this,sink -> without(sink,allow));
+
+}
+
+Location: InboundSink.java
+
+Content: 
+
+private static ThrowingConsumer<Message<?>,IOException> without(ThrowingConsumer<Message<?>,IOException> sink,Predicate<Message<?>> condition){
+
+  if (!(sink instanceof Filtered))   return sink;
+
+  Filtered filtered=(Filtered)sink;
+
+  ThrowingConsumer<Message<?>,IOException> next=without(filtered.next,condition);
+
+  return condition.equals(filtered.condition) ? next : next == filtered.next ? sink : new Filtered(filtered.condition,next);
+
+}
+

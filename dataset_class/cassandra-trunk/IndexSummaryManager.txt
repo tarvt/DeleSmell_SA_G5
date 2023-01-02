@@ -1,0 +1,264 @@
+Location: IndexSummaryManager.java
+
+Content: 
+
+private List<SSTableReader> getAllSSTables(){
+
+  List<SSTableReader> result=new ArrayList<>();
+
+  for (  Keyspace ks : Keyspace.all()) {
+
+    for (    ColumnFamilyStore cfStore : ks.getColumnFamilyStores())     result.addAll(cfStore.getLiveSSTables());
+
+  }
+
+  return result;
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+public double getAverageIndexInterval(){
+
+  List<SSTableReader> sstables=getAllSSTables();
+
+  double total=0.0;
+
+  for (  SSTableReader sstable : sstables)   total+=sstable.getEffectiveIndexInterval();
+
+  return total / sstables.size();
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+public Map<String,Integer> getIndexIntervals(){
+
+  List<SSTableReader> sstables=getAllSSTables();
+
+  Map<String,Integer> intervals=new HashMap<>(sstables.size());
+
+  for (  SSTableReader sstable : sstables)   intervals.put(sstable.getFilename(),(int)Math.round(sstable.getEffectiveIndexInterval()));
+
+  return intervals;
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+public long getMemoryPoolCapacityInMB(){
+
+  return memoryPoolBytes / 1024L / 1024L;
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+/** 
+
+ * Returns the actual space consumed by index summaries for all sstables.
+
+ * @return space currently used in MB
+
+ */
+
+public double getMemoryPoolSizeInMB(){
+
+  long total=0;
+
+  for (  SSTableReader sstable : getAllSSTables())   total+=sstable.getIndexSummaryOffHeapSize();
+
+  return total / 1024.0 / 1024.0;
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+public int getResizeIntervalInMinutes(){
+
+  return resizeIntervalInMinutes;
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+/** 
+
+ * Marks the non-compacting sstables as compacting for index summary redistribution for all keyspaces/tables.
+
+ * @return Pair containing:left: total size of the off heap index summaries for the sstables we were unable to mark compacting (they were involved in other compactions) right: the transactions, keyed by table id.
+
+ */
+
+@SuppressWarnings("resource") private Pair<Long,Map<TableId,LifecycleTransaction>> getRestributionTransactions(){
+
+  List<SSTableReader> allCompacting=new ArrayList<>();
+
+  Map<TableId,LifecycleTransaction> allNonCompacting=new HashMap<>();
+
+  for (  Keyspace ks : Keyspace.all()) {
+
+    for (    ColumnFamilyStore cfStore : ks.getColumnFamilyStores()) {
+
+      Set<SSTableReader> nonCompacting, allSSTables;
+
+      LifecycleTransaction txn;
+
+      do {
+
+        View view=cfStore.getTracker().getView();
+
+        allSSTables=ImmutableSet.copyOf(view.select(SSTableSet.CANONICAL));
+
+        nonCompacting=ImmutableSet.copyOf(view.getUncompacting(allSSTables));
+
+      }
+
+ while (null == (txn=cfStore.getTracker().tryModify(nonCompacting,OperationType.INDEX_SUMMARY)));
+
+      allNonCompacting.put(cfStore.metadata.id,txn);
+
+      allCompacting.addAll(Sets.difference(allSSTables,nonCompacting));
+
+    }
+
+  }
+
+  long nonRedistributingOffHeapSize=allCompacting.stream().mapToLong(SSTableReader::getIndexSummaryOffHeapSize).sum();
+
+  return Pair.create(nonRedistributingOffHeapSize,allNonCompacting);
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+@VisibleForTesting Long getTimeToNextResize(TimeUnit timeUnit){
+
+  if (future == null)   return null;
+
+  return future.getDelay(timeUnit);
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+private IndexSummaryManager(){
+
+  executor=new DebuggableScheduledThreadPoolExecutor(1,"IndexSummaryManager",Thread.MIN_PRIORITY);
+
+  long indexSummarySizeInMB=DatabaseDescriptor.getIndexSummaryCapacityInMB();
+
+  int interval=DatabaseDescriptor.getIndexSummaryResizeIntervalInMinutes();
+
+  logger.info("Initializing index summary manager with a memory pool size of {} MB and a resize interval of {} minutes",indexSummarySizeInMB,interval);
+
+  setMemoryPoolCapacityInMB(DatabaseDescriptor.getIndexSummaryCapacityInMB());
+
+  setResizeIntervalInMinutes(DatabaseDescriptor.getIndexSummaryResizeIntervalInMinutes());
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+/** 
+
+ * Attempts to fairly distribute a fixed pool of memory for index summaries across a set of SSTables based on their recent read rates.
+
+ * @param redistribution encapsulating the transactions containing the sstables we are to redistribute thememory pool across and a size (in bytes) that the total index summary space usage should stay close to or under, if possible
+
+ * @return a list of new SSTableReader instances
+
+ */
+
+@VisibleForTesting public static List<SSTableReader> redistributeSummaries(IndexSummaryRedistribution redistribution) throws IOException {
+
+  return CompactionManager.instance.runIndexSummaryRedistribution(redistribution);
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+public void setMemoryPoolCapacityInMB(long memoryPoolCapacityInMB){
+
+  this.memoryPoolBytes=memoryPoolCapacityInMB * 1024L * 1024L;
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+public void setResizeIntervalInMinutes(int resizeIntervalInMinutes){
+
+  int oldInterval=this.resizeIntervalInMinutes;
+
+  this.resizeIntervalInMinutes=resizeIntervalInMinutes;
+
+  long initialDelay;
+
+  if (future != null) {
+
+    initialDelay=oldInterval < 0 ? resizeIntervalInMinutes : Math.max(0,resizeIntervalInMinutes - (oldInterval - future.getDelay(TimeUnit.MINUTES)));
+
+    future.cancel(false);
+
+  }
+
+ else {
+
+    initialDelay=resizeIntervalInMinutes;
+
+  }
+
+  if (this.resizeIntervalInMinutes < 0) {
+
+    future=null;
+
+    return;
+
+  }
+
+  future=executor.scheduleWithFixedDelay(new WrappedRunnable(){
+
+    protected void runMayThrow() throws Exception {
+
+      redistributeSummaries();
+
+    }
+
+  }
+
+,initialDelay,resizeIntervalInMinutes,TimeUnit.MINUTES);
+
+}
+
+Location: IndexSummaryManager.java
+
+Content: 
+
+@VisibleForTesting public void shutdownAndWait(long timeout,TimeUnit unit) throws InterruptedException, TimeoutException {
+
+  ExecutorUtils.shutdownAndWait(timeout,unit,executor);
+
+}
+

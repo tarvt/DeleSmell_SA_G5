@@ -1,0 +1,270 @@
+Location: KeyspaceMetrics.java
+
+Content: 
+
+protected Counter createKeyspaceCounter(String name){
+
+  allMetrics.add(() -> releaseMetric(name));
+
+  return Metrics.counter(factory.createMetricName(name));
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+/** 
+
+ * Creates a counter that will sum the current value of a metric for all column families in this keyspace
+
+ * @param name
+
+ * @param extractor
+
+ * @return Counter that computes sum of MetricValue.getValue()
+
+ */
+
+private Counter createKeyspaceCounter(String name,final ToLongFunction<TableMetrics> extractor){
+
+  allMetrics.add(() -> releaseMetric(name));
+
+  return Metrics.register(factory.createMetricName(name),new Counter(){
+
+    @Override public long getCount(){
+
+      long sum=0;
+
+      for (      ColumnFamilyStore cf : keyspace.getColumnFamilyStores()) {
+
+        sum+=extractor.applyAsLong(cf.metric);
+
+      }
+
+      return sum;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+/** 
+
+ * Creates a gauge that will sum the current value of a metric for all column families in this keyspace
+
+ * @param name
+
+ * @param extractor
+
+ * @return Gauge&gt;Long> that computes sum of MetricValue.getValue()
+
+ */
+
+private Gauge<Long> createKeyspaceGauge(String name,final ToLongFunction<TableMetrics> extractor){
+
+  allMetrics.add(() -> releaseMetric(name));
+
+  return Metrics.register(factory.createMetricName(name),new Gauge<Long>(){
+
+    public Long getValue(){
+
+      long sum=0;
+
+      for (      ColumnFamilyStore cf : keyspace.getColumnFamilyStores()) {
+
+        sum+=extractor.applyAsLong(cf.metric);
+
+      }
+
+      return sum;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+protected Histogram createKeyspaceHistogram(String name,boolean considerZeroes){
+
+  allMetrics.add(() -> releaseMetric(name));
+
+  return Metrics.histogram(factory.createMetricName(name),considerZeroes);
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+protected Meter createKeyspaceMeter(String name){
+
+  allMetrics.add(() -> releaseMetric(name));
+
+  return Metrics.meter(factory.createMetricName(name));
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+protected Timer createKeyspaceTimer(String name){
+
+  allMetrics.add(() -> releaseMetric(name));
+
+  return Metrics.timer(factory.createMetricName(name));
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+private LatencyMetrics createLatencyMetrics(String name){
+
+  LatencyMetrics metric=new LatencyMetrics(factory,name);
+
+  allMetrics.add(() -> metric.release());
+
+  return metric;
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+/** 
+
+ * Creates metrics for given  {@link ColumnFamilyStore}.
+
+ * @param ks Keyspace to measure metrics
+
+ */
+
+public KeyspaceMetrics(final Keyspace ks){
+
+  factory=new KeyspaceMetricNameFactory(ks);
+
+  keyspace=ks;
+
+  memtableColumnsCount=createKeyspaceGauge("MemtableColumnsCount",metric -> metric.memtableColumnsCount.getValue());
+
+  memtableLiveDataSize=createKeyspaceGauge("MemtableLiveDataSize",metric -> metric.memtableLiveDataSize.getValue());
+
+  memtableOnHeapDataSize=createKeyspaceGauge("MemtableOnHeapDataSize",metric -> metric.memtableOnHeapDataSize.getValue());
+
+  memtableOffHeapDataSize=createKeyspaceGauge("MemtableOffHeapDataSize",metric -> metric.memtableOffHeapDataSize.getValue());
+
+  allMemtablesLiveDataSize=createKeyspaceGauge("AllMemtablesLiveDataSize",metric -> metric.allMemtablesLiveDataSize.getValue());
+
+  allMemtablesOnHeapDataSize=createKeyspaceGauge("AllMemtablesOnHeapDataSize",metric -> metric.allMemtablesOnHeapDataSize.getValue());
+
+  allMemtablesOffHeapDataSize=createKeyspaceGauge("AllMemtablesOffHeapDataSize",metric -> metric.allMemtablesOffHeapDataSize.getValue());
+
+  memtableSwitchCount=createKeyspaceGauge("MemtableSwitchCount",metric -> metric.memtableSwitchCount.getCount());
+
+  pendingCompactions=createKeyspaceGauge("PendingCompactions",metric -> metric.pendingCompactions.getValue());
+
+  pendingFlushes=createKeyspaceGauge("PendingFlushes",metric -> metric.pendingFlushes.getCount());
+
+  liveDiskSpaceUsed=createKeyspaceGauge("LiveDiskSpaceUsed",metric -> metric.liveDiskSpaceUsed.getCount());
+
+  totalDiskSpaceUsed=createKeyspaceGauge("TotalDiskSpaceUsed",metric -> metric.totalDiskSpaceUsed.getCount());
+
+  bloomFilterDiskSpaceUsed=createKeyspaceGauge("BloomFilterDiskSpaceUsed",metric -> metric.bloomFilterDiskSpaceUsed.getValue());
+
+  bloomFilterOffHeapMemoryUsed=createKeyspaceGauge("BloomFilterOffHeapMemoryUsed",metric -> metric.bloomFilterOffHeapMemoryUsed.getValue());
+
+  indexSummaryOffHeapMemoryUsed=createKeyspaceGauge("IndexSummaryOffHeapMemoryUsed",metric -> metric.indexSummaryOffHeapMemoryUsed.getValue());
+
+  compressionMetadataOffHeapMemoryUsed=createKeyspaceGauge("CompressionMetadataOffHeapMemoryUsed",metric -> metric.compressionMetadataOffHeapMemoryUsed.getValue());
+
+  readLatency=createLatencyMetrics("Read");
+
+  writeLatency=createLatencyMetrics("Write");
+
+  rangeLatency=createLatencyMetrics("Range");
+
+  sstablesPerReadHistogram=createKeyspaceHistogram("SSTablesPerReadHistogram",true);
+
+  tombstoneScannedHistogram=createKeyspaceHistogram("TombstoneScannedHistogram",false);
+
+  liveScannedHistogram=createKeyspaceHistogram("LiveScannedHistogram",false);
+
+  colUpdateTimeDeltaHistogram=createKeyspaceHistogram("ColUpdateTimeDeltaHistogram",false);
+
+  viewLockAcquireTime=createKeyspaceTimer("ViewLockAcquireTime");
+
+  viewReadTime=createKeyspaceTimer("ViewReadTime");
+
+  casPrepare=createLatencyMetrics("CasPrepare");
+
+  casPropose=createLatencyMetrics("CasPropose");
+
+  casCommit=createLatencyMetrics("CasCommit");
+
+  writeFailedIdealCL=createKeyspaceCounter("WriteFailedIdealCL");
+
+  idealCLWriteLatency=createLatencyMetrics("IdealCLWrite");
+
+  speculativeRetries=createKeyspaceCounter("SpeculativeRetries",metric -> metric.speculativeRetries.getCount());
+
+  speculativeFailedRetries=createKeyspaceCounter("SpeculativeFailedRetries",metric -> metric.speculativeFailedRetries.getCount());
+
+  speculativeInsufficientReplicas=createKeyspaceCounter("SpeculativeInsufficientReplicas",metric -> metric.speculativeInsufficientReplicas.getCount());
+
+  additionalWrites=createKeyspaceCounter("AdditionalWrites",metric -> metric.additionalWrites.getCount());
+
+  repairsStarted=createKeyspaceCounter("RepairJobsStarted",metric -> metric.repairsStarted.getCount());
+
+  repairsCompleted=createKeyspaceCounter("RepairJobsCompleted",metric -> metric.repairsCompleted.getCount());
+
+  repairTime=createKeyspaceTimer("RepairTime");
+
+  repairPrepareTime=createKeyspaceTimer("RepairPrepareTime");
+
+  anticompactionTime=createKeyspaceTimer("AntiCompactionTime");
+
+  validationTime=createKeyspaceTimer("ValidationTime");
+
+  repairSyncTime=createKeyspaceTimer("RepairSyncTime");
+
+  partitionsValidated=createKeyspaceHistogram("PartitionsValidated",false);
+
+  bytesValidated=createKeyspaceHistogram("BytesValidated",false);
+
+  confirmedRepairedInconsistencies=createKeyspaceMeter("RepairedDataInconsistenciesConfirmed");
+
+  unconfirmedRepairedInconsistencies=createKeyspaceMeter("RepairedDataInconsistenciesUnconfirmed");
+
+  repairedDataTrackingOverreadRows=createKeyspaceHistogram("RepairedDataTrackingOverreadRows",false);
+
+  repairedDataTrackingOverreadTime=createKeyspaceTimer("RepairedDataTrackingOverreadTime");
+
+}
+
+Location: KeyspaceMetrics.java
+
+Content: 
+
+private void releaseMetric(String name){
+
+  Metrics.remove(factory.createMetricName(name));
+
+}
+

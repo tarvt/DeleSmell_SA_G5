@@ -1,0 +1,196 @@
+Location: HintsBuffer.java
+
+Content: 
+
+private int allocateBytes(int totalSize){
+
+  while (true) {
+
+    int prev=position.get();
+
+    int next=prev + totalSize;
+
+    if (prev == CLOSED)     return CLOSED;
+
+    if (next > slab.capacity()) {
+
+      position.set(CLOSED);
+
+      return CLOSED;
+
+    }
+
+    if (position.compareAndSet(prev,next))     return prev;
+
+  }
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+@SuppressWarnings("resource") Allocation allocate(int hintSize){
+
+  int totalSize=hintSize + ENTRY_OVERHEAD_SIZE;
+
+  if (totalSize > slab.capacity() / 2) {
+
+    throw new IllegalArgumentException(String.format("Hint of %s bytes is too large - the maximum size is %s",hintSize,slab.capacity() / 2));
+
+  }
+
+  OpOrder.Group opGroup=appendOrder.start();
+
+  try {
+
+    return allocate(totalSize,opGroup);
+
+  }
+
+ catch (  Throwable t) {
+
+    opGroup.close();
+
+    throw t;
+
+  }
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+private Allocation allocate(int totalSize,OpOrder.Group opGroup){
+
+  int offset=allocateBytes(totalSize);
+
+  if (offset < 0) {
+
+    opGroup.close();
+
+    return null;
+
+  }
+
+  return new Allocation(offset,totalSize,opGroup);
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+/** 
+
+ * Coverts the queue of offsets for the selected host id into an iterator of hints encoded as ByteBuffers.
+
+ */
+
+Iterator<ByteBuffer> consumingHintsIterator(UUID hostId){
+
+  final Queue<Integer> bufferOffsets=offsets.get(hostId);
+
+  if (bufferOffsets == null)   return Collections.emptyIterator();
+
+  return new AbstractIterator<ByteBuffer>(){
+
+    private final ByteBuffer flyweight=slab.duplicate();
+
+    protected ByteBuffer computeNext(){
+
+      Integer offset=bufferOffsets.poll();
+
+      if (offset == null)       return endOfData();
+
+      int totalSize=slab.getInt(offset) + ENTRY_OVERHEAD_SIZE;
+
+      return (ByteBuffer)flyweight.clear().position(offset).limit(offset + totalSize);
+
+    }
+
+  }
+
+;
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+static HintsBuffer create(int slabSize){
+
+  return new HintsBuffer(ByteBuffer.allocateDirect(slabSize));
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+private HintsBuffer(ByteBuffer slab){
+
+  this.slab=slab;
+
+  position=new AtomicInteger();
+
+  offsets=new ConcurrentHashMap<>();
+
+  appendOrder=new OpOrder();
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+Set<UUID> hostIds(){
+
+  return offsets.keySet();
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+private void put(UUID hostId,int offset){
+
+  Queue<Integer> queue=offsets.get(hostId);
+
+  if (queue == null)   queue=offsets.computeIfAbsent(hostId,(id) -> new ConcurrentLinkedQueue<>());
+
+  queue.offer(offset);
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+HintsBuffer recycle(){
+
+  slab.clear();
+
+  return new HintsBuffer(slab);
+
+}
+
+Location: HintsBuffer.java
+
+Content: 
+
+/** 
+
+ * Wait for any appends started before this method was called.
+
+ */
+
+void waitForModifications(){
+
+  appendOrder.awaitNewBarrier();
+
+}
+

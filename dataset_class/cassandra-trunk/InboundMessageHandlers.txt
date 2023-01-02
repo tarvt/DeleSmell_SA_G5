@@ -1,0 +1,348 @@
+Location: InboundMessageHandlers.java
+
+Content: 
+
+private void absorbCounters(InboundMessageHandler handler){
+
+  closedReceivedCountUpdater.addAndGet(this,handler.receivedCount);
+
+  closedReceivedBytesUpdater.addAndGet(this,handler.receivedBytes);
+
+  closedThrottledCountUpdater.addAndGet(this,handler.throttledCount);
+
+  closedThrottledNanosUpdater.addAndGet(this,handler.throttledNanos);
+
+  closedCorruptFramesRecoveredUpdater.addAndGet(this,handler.corruptFramesRecovered);
+
+  closedCorruptFramesUnrecoveredUpdater.addAndGet(this,handler.corruptFramesUnrecovered);
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+private InboundMessageCallbacks callbacksFor(ConnectionType type){
+
+switch (type) {
+
+case URGENT_MESSAGES:
+
+    return urgentCallbacks;
+
+case SMALL_MESSAGES:
+
+  return smallCallbacks;
+
+case LARGE_MESSAGES:
+
+return largeCallbacks;
+
+case LEGACY_MESSAGES:
+
+return legacyCallbacks;
+
+}
+
+throw new IllegalArgumentException();
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long corruptFramesRecovered(){
+
+  return sumHandlers(h -> h.corruptFramesRecovered) + closedCorruptFramesRecovered;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long corruptFramesUnrecovered(){
+
+  return sumHandlers(h -> h.corruptFramesUnrecovered) + closedCorruptFramesUnrecovered;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+InboundCounters countersFor(ConnectionType type){
+
+switch (type) {
+
+case URGENT_MESSAGES:
+
+    return urgentCounters;
+
+case SMALL_MESSAGES:
+
+  return smallCounters;
+
+case LARGE_MESSAGES:
+
+return largeCounters;
+
+case LEGACY_MESSAGES:
+
+return legacyCounters;
+
+}
+
+throw new IllegalArgumentException();
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+InboundMessageHandler createHandler(FrameDecoder frameDecoder,ConnectionType type,Channel channel,int version){
+
+  InboundMessageHandler handler=handlerProvider.provide(frameDecoder,type,channel,self,peer,version,OutboundConnections.LARGE_MESSAGE_THRESHOLD,queueCapacity,endpointReserveCapacity,globalReserveCapacity,endpointWaitQueue,globalWaitQueue,this::onHandlerClosed,callbacksFor(type),messageConsumer);
+
+  handlers.add(handler);
+
+  return handler;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public InboundMessageHandlers(InetAddressAndPort self,InetAddressAndPort peer,int queueCapacity,long endpointReserveCapacity,GlobalResourceLimits globalResourceLimits,GlobalMetricCallbacks globalMetricCallbacks,MessageConsumer messageConsumer){
+
+  this(self,peer,queueCapacity,endpointReserveCapacity,globalResourceLimits,globalMetricCallbacks,messageConsumer,InboundMessageHandler::new);
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public InboundMessageHandlers(InetAddressAndPort self,InetAddressAndPort peer,int queueCapacity,long endpointReserveCapacity,GlobalResourceLimits globalResourceLimits,GlobalMetricCallbacks globalMetricCallbacks,MessageConsumer messageConsumer,HandlerProvider handlerProvider){
+
+  this.self=self;
+
+  this.peer=peer;
+
+  this.queueCapacity=queueCapacity;
+
+  this.endpointReserveCapacity=new ResourceLimits.Concurrent(endpointReserveCapacity);
+
+  this.globalReserveCapacity=globalResourceLimits.reserveCapacity;
+
+  this.endpointWaitQueue=InboundMessageHandler.WaitQueue.endpoint(this.endpointReserveCapacity);
+
+  this.globalWaitQueue=globalResourceLimits.waitQueue;
+
+  this.messageConsumer=messageConsumer;
+
+  this.handlerProvider=handlerProvider;
+
+  urgentCallbacks=makeMessageCallbacks(peer,urgentCounters,globalMetricCallbacks,messageConsumer);
+
+  smallCallbacks=makeMessageCallbacks(peer,smallCounters,globalMetricCallbacks,messageConsumer);
+
+  largeCallbacks=makeMessageCallbacks(peer,largeCounters,globalMetricCallbacks,messageConsumer);
+
+  legacyCallbacks=makeMessageCallbacks(peer,legacyCounters,globalMetricCallbacks,messageConsumer);
+
+  metrics=new InternodeInboundMetrics(peer,this);
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+private static InboundMessageCallbacks makeMessageCallbacks(InetAddressAndPort peer,InboundCounters counters,GlobalMetricCallbacks globalMetrics,MessageConsumer messageConsumer){
+
+  LatencyConsumer internodeLatency=globalMetrics.internodeLatencyRecorder(peer);
+
+  return new InboundMessageCallbacks(){
+
+    @Override public void onHeaderArrived(    int messageSize,    Header header,    long timeElapsed,    TimeUnit unit){
+
+      if (timeElapsed > unit.convert(approxTime.error(),NANOSECONDS))       internodeLatency.accept(timeElapsed,unit);
+
+    }
+
+    @Override public void onArrived(    int messageSize,    Header header,    long timeElapsed,    TimeUnit unit){
+
+    }
+
+    @Override public void onArrivedExpired(    int messageSize,    Header header,    boolean wasCorrupt,    long timeElapsed,    TimeUnit unit){
+
+      counters.addExpired(messageSize);
+
+      globalMetrics.recordInternodeDroppedMessage(header.verb,timeElapsed,unit);
+
+    }
+
+    @Override public void onArrivedCorrupt(    int messageSize,    Header header,    long timeElapsed,    TimeUnit unit){
+
+      counters.addError(messageSize);
+
+      messageConsumer.fail(header,new Crc.InvalidCrc(0,0));
+
+    }
+
+    @Override public void onClosedBeforeArrival(    int messageSize,    Header header,    int bytesReceived,    boolean wasCorrupt,    boolean wasExpired){
+
+      counters.addError(messageSize);
+
+      messageConsumer.fail(header,new InvalidSerializedSizeException(header.verb,messageSize,bytesReceived));
+
+    }
+
+    @Override public void onExpired(    int messageSize,    Header header,    long timeElapsed,    TimeUnit unit){
+
+      counters.addExpired(messageSize);
+
+      globalMetrics.recordInternodeDroppedMessage(header.verb,timeElapsed,unit);
+
+    }
+
+    @Override public void onFailedDeserialize(    int messageSize,    Header header,    Throwable t){
+
+      counters.addError(messageSize);
+
+      messageConsumer.fail(header,t);
+
+    }
+
+    @Override public void onDispatched(    int messageSize,    Header header){
+
+      counters.addPending(messageSize);
+
+    }
+
+    @Override public void onExecuting(    int messageSize,    Header header,    long timeElapsed,    TimeUnit unit){
+
+      globalMetrics.recordInternalLatency(header.verb,timeElapsed,unit);
+
+    }
+
+    @Override public void onExecuted(    int messageSize,    Header header,    long timeElapsed,    TimeUnit unit){
+
+      counters.removePending(messageSize);
+
+    }
+
+    @Override public void onProcessed(    int messageSize,    Header header){
+
+      counters.addProcessed(messageSize);
+
+    }
+
+  }
+
+;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+private void onHandlerClosed(AbstractMessageHandler handler){
+
+  assert handler instanceof InboundMessageHandler;
+
+  handlers.remove(handler);
+
+  absorbCounters((InboundMessageHandler)handler);
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long receivedBytes(){
+
+  return sumHandlers(h -> h.receivedBytes) + closedReceivedBytes;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long receivedCount(){
+
+  return sumHandlers(h -> h.receivedCount) + closedReceivedCount;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+private long sumCounters(ToLongFunction<InboundCounters> mapping){
+
+  return mapping.applyAsLong(urgentCounters) + mapping.applyAsLong(smallCounters) + mapping.applyAsLong(largeCounters)+ mapping.applyAsLong(legacyCounters);
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+private long sumHandlers(ToLongFunction<InboundMessageHandler> counter){
+
+  long sum=0L;
+
+  for (  InboundMessageHandler h : handlers)   sum+=counter.applyAsLong(h);
+
+  return sum;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long throttledCount(){
+
+  return sumHandlers(h -> h.throttledCount) + closedThrottledCount;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long throttledNanos(){
+
+  return sumHandlers(h -> h.throttledNanos) + closedThrottledNanos;
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long usingCapacity(){
+
+  return sumHandlers(h -> h.queueSize);
+
+}
+
+Location: InboundMessageHandlers.java
+
+Content: 
+
+public long usingEndpointReserveCapacity(){
+
+  return endpointReserveCapacity.using();
+
+}
+
