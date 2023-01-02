@@ -1,0 +1,160 @@
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private void addLookupEntry(IResource resource,RoleResource role) throws RequestExecutionException {
+
+  process(String.format("INSERT INTO %s.%s (resource, role) VALUES ('%s','%s')",SchemaConstants.AUTH_KEYSPACE_NAME,AuthKeyspace.RESOURCE_ROLE_INDEX,escape(resource.getName()),escape(role.getRoleName())));
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private void addPermissionsForRole(Set<Permission> permissions,IResource resource,RoleResource role) throws RequestExecutionException, RequestValidationException {
+
+  QueryOptions options=QueryOptions.forInternalCalls(ConsistencyLevel.LOCAL_ONE,Lists.newArrayList(ByteBufferUtil.bytes(role.getRoleName()),ByteBufferUtil.bytes(resource.getName())));
+
+  ResultMessage.Rows rows=select(authorizeRoleStatement,options);
+
+  UntypedResultSet result=UntypedResultSet.create(rows.result);
+
+  if (!result.isEmpty() && result.one().has(PERMISSIONS)) {
+
+    for (    String perm : result.one().getSet(PERMISSIONS,UTF8Type.instance)) {
+
+      permissions.add(Permission.valueOf(perm));
+
+    }
+
+  }
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private String buildListQuery(IResource resource,RoleResource grantee){
+
+  List<String> vars=Lists.newArrayList(SchemaConstants.AUTH_KEYSPACE_NAME,AuthKeyspace.ROLE_PERMISSIONS);
+
+  List<String> conditions=new ArrayList<>();
+
+  if (resource != null) {
+
+    conditions.add("resource = '%s'");
+
+    vars.add(escape(resource.getName()));
+
+  }
+
+  if (grantee != null) {
+
+    conditions.add(ROLE + " = '%s'");
+
+    vars.add(escape(grantee.getRoleName()));
+
+  }
+
+  String query="SELECT " + ROLE + ", resource, permissions FROM %s.%s";
+
+  if (!conditions.isEmpty())   query+=" WHERE " + StringUtils.join(conditions," AND ");
+
+  if (resource != null && grantee == null)   query+=" ALLOW FILTERING";
+
+  return String.format(query,vars.toArray());
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+public CassandraAuthorizer(){
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private void executeLoggedBatch(List<CQLStatement> statements) throws RequestExecutionException, RequestValidationException {
+
+  BatchStatement batch=new BatchStatement(BatchStatement.Type.LOGGED,VariableSpecifications.empty(),Lists.newArrayList(Iterables.filter(statements,ModificationStatement.class)),Attributes.none());
+
+  processBatch(batch);
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private Set<PermissionDetails> listPermissionsForRole(Set<Permission> permissions,IResource resource,RoleResource role) throws RequestExecutionException {
+
+  Set<PermissionDetails> details=new HashSet<>();
+
+  for (  UntypedResultSet.Row row : process(buildListQuery(resource,role))) {
+
+    if (row.has(PERMISSIONS)) {
+
+      for (      String p : row.getSet(PERMISSIONS,UTF8Type.instance)) {
+
+        Permission permission=Permission.valueOf(p);
+
+        if (permissions.contains(permission))         details.add(new PermissionDetails(row.getString(ROLE),Resources.fromName(row.getString(RESOURCE)),permission));
+
+      }
+
+    }
+
+  }
+
+  return details;
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private void modifyRolePermissions(Set<Permission> permissions,IResource resource,RoleResource role,String op) throws RequestExecutionException {
+
+  process(String.format("UPDATE %s.%s SET permissions = permissions %s {%s} WHERE role = '%s' AND resource = '%s'",SchemaConstants.AUTH_KEYSPACE_NAME,AuthKeyspace.ROLE_PERMISSIONS,op,"'" + StringUtils.join(permissions,"','") + "'",escape(role.getRoleName()),escape(resource.getName())));
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private SelectStatement prepare(String entityname,String permissionsTable){
+
+  String query=String.format("SELECT permissions FROM %s.%s WHERE %s = ? AND resource = ?",SchemaConstants.AUTH_KEYSPACE_NAME,permissionsTable,entityname);
+
+  return (SelectStatement)QueryProcessor.getStatement(query,ClientState.forInternalCalls());
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+void processBatch(BatchStatement statement){
+
+  QueryProcessor.instance.processBatch(statement,QueryState.forInternalCalls(),BatchQueryOptions.withoutPerStatementVariables(QueryOptions.DEFAULT),System.nanoTime());
+
+}
+
+Location: CassandraAuthorizer.java
+
+Content: 
+
+private void removeLookupEntry(IResource resource,RoleResource role) throws RequestExecutionException {
+
+  process(String.format("DELETE FROM %s.%s WHERE resource = '%s' and role = '%s'",SchemaConstants.AUTH_KEYSPACE_NAME,AuthKeyspace.RESOURCE_ROLE_INDEX,escape(resource.getName()),escape(role.getRoleName())));
+
+}
+

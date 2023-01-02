@@ -1,0 +1,114 @@
+Location: ClusteringColumnRestrictions.java
+
+Content: 
+
+public NavigableSet<ClusteringBound<?>> boundsAsClustering(Bound bound,QueryOptions options) throws InvalidRequestException {
+
+  MultiCBuilder builder=MultiCBuilder.create(comparator,hasIN() || hasMultiColumnSlice());
+
+  int keyPosition=0;
+
+  for (  SingleRestriction r : restrictions) {
+
+    if (handleInFilter(r,keyPosition))     break;
+
+    if (r.isSlice()) {
+
+      r.appendBoundTo(builder,bound,options);
+
+      return builder.buildBoundForSlice(bound.isStart(),r.isInclusive(bound),r.isInclusive(bound.reverse()),r.getColumnDefs());
+
+    }
+
+    r.appendBoundTo(builder,bound,options);
+
+    if (builder.hasMissingElements())     return BTreeSet.empty(comparator);
+
+    keyPosition=r.getLastColumn().position() + 1;
+
+  }
+
+  return builder.buildBound(bound.isStart(),true);
+
+}
+
+Location: ClusteringColumnRestrictions.java
+
+Content: 
+
+private ClusteringColumnRestrictions(ClusteringComparator comparator,RestrictionSet restrictionSet,boolean allowFiltering){
+
+  super(restrictionSet);
+
+  this.comparator=comparator;
+
+  this.allowFiltering=allowFiltering;
+
+}
+
+Location: ClusteringColumnRestrictions.java
+
+Content: 
+
+public ClusteringColumnRestrictions(TableMetadata table){
+
+  this(table,false);
+
+}
+
+Location: ClusteringColumnRestrictions.java
+
+Content: 
+
+public ClusteringColumnRestrictions(TableMetadata table,boolean allowFiltering){
+
+  this(table.comparator,new RestrictionSet(),allowFiltering);
+
+}
+
+Location: ClusteringColumnRestrictions.java
+
+Content: 
+
+private boolean handleInFilter(SingleRestriction restriction,int index){
+
+  return restriction.isContains() || restriction.isLIKE() || index != restriction.getFirstColumn().position();
+
+}
+
+Location: ClusteringColumnRestrictions.java
+
+Content: 
+
+private boolean hasMultiColumnSlice(){
+
+  for (  SingleRestriction restriction : restrictions) {
+
+    if (restriction.isMultiColumn() && restriction.isSlice())     return true;
+
+  }
+
+  return false;
+
+}
+
+Location: ClusteringColumnRestrictions.java
+
+Content: 
+
+public NavigableSet<Clustering<?>> valuesAsClustering(QueryOptions options) throws InvalidRequestException {
+
+  MultiCBuilder builder=MultiCBuilder.create(comparator,hasIN());
+
+  for (  SingleRestriction r : restrictions) {
+
+    r.appendTo(builder,options);
+
+    if (builder.hasMissingElements())     break;
+
+  }
+
+  return builder.build();
+
+}
+

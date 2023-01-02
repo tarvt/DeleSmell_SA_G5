@@ -1,0 +1,214 @@
+Location: ClientMetrics.java
+
+Content: 
+
+public List<ConnectedClient> allConnectedClients(){
+
+  List<ConnectedClient> clients=new ArrayList<>();
+
+  for (  Server server : servers)   clients.addAll(server.getConnectedClients());
+
+  return clients;
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private ClientMetrics(){
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private List<Map<String,String>> connectedClients(){
+
+  List<Map<String,String>> clients=new ArrayList<>();
+
+  for (  Server server : servers)   for (  ConnectedClient client : server.getConnectedClients())   clients.add(client.asMap());
+
+  return clients;
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private int countConnectedClients(){
+
+  int count=0;
+
+  for (  Server server : servers)   count+=server.countConnectedClients();
+
+  return count;
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private Map<String,Integer> countConnectedClientsByUser(){
+
+  Map<String,Integer> counts=new HashMap<>();
+
+  for (  Server server : servers) {
+
+    server.countConnectedClientsByUser().forEach((username,count) -> counts.put(username,counts.getOrDefault(username,0) + count));
+
+  }
+
+  return counts;
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+public synchronized void init(Collection<Server> servers){
+
+  if (initialized)   return;
+
+  this.servers=servers;
+
+  registerGauge("ConnectedNativeClients","connectedNativeClients",this::countConnectedClients);
+
+  registerGauge("ConnectedNativeClientsByUser","connectedNativeClientsByUser",this::countConnectedClientsByUser);
+
+  registerGauge("Connections","connections",this::connectedClients);
+
+  registerGauge("ClientsByProtocolVersion","clientsByProtocolVersion",this::recentClientStats);
+
+  registerGauge("RequestsSize",ClientResourceLimits::getCurrentGlobalUsage);
+
+  Reservoir ipUsageReservoir=ClientResourceLimits.ipUsageReservoir();
+
+  Metrics.register(factory.createMetricName("RequestsSizeByIpDistribution"),new Histogram(ipUsageReservoir){
+
+    public long getCount(){
+
+      return ipUsageReservoir.size();
+
+    }
+
+  }
+
+);
+
+  authSuccess=registerMeter("AuthSuccess");
+
+  authFailure=registerMeter("AuthFailure");
+
+  pausedConnections=new AtomicInteger();
+
+  pausedConnectionsGauge=registerGauge("PausedConnections",pausedConnections::get);
+
+  requestDiscarded=registerMeter("RequestDiscarded");
+
+  initialized=true;
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+public void markAuthFailure(){
+
+  authFailure.mark();
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+public void markAuthSuccess(){
+
+  authSuccess.mark();
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+public void markRequestDiscarded(){
+
+  requestDiscarded.mark();
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+public void pauseConnection(){
+
+  pausedConnections.incrementAndGet();
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private List<Map<String,String>> recentClientStats(){
+
+  List<Map<String,String>> stats=new ArrayList<>();
+
+  for (  Server server : servers)   for (  ClientStat stat : server.recentClientStats())   stats.add(new HashMap<>(stat.asMap()));
+
+  stats.sort(Comparator.comparing(map -> map.get(ClientStat.PROTOCOL_VERSION)));
+
+  return stats;
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private <T>Gauge<T> registerGauge(String name,Gauge<T> gauge){
+
+  return Metrics.register(factory.createMetricName(name),gauge);
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private void registerGauge(String name,String deprecated,Gauge<?> gauge){
+
+  Gauge<?> registeredGauge=registerGauge(name,gauge);
+
+  Metrics.registerMBean(registeredGauge,factory.createMetricName(deprecated).getMBeanName());
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+private Meter registerMeter(String name){
+
+  return Metrics.meter(factory.createMetricName(name));
+
+}
+
+Location: ClientMetrics.java
+
+Content: 
+
+public void unpauseConnection(){
+
+  pausedConnections.decrementAndGet();
+
+}
+

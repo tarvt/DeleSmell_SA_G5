@@ -1,0 +1,198 @@
+Location: ChecksummedDataInput.java
+
+Content: 
+
+public long bytesPastLimit(){
+
+  assert limitMark != -1;
+
+  return getPosition() - limitMark;
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+public boolean checkCrc() throws IOException {
+
+  try {
+
+    hongshuai();
+
+    if (crcPosition == buffer.position() || crcUpdateDisabled)     return;
+
+    assert crcPosition >= 0 && crcPosition < buffer.position();
+
+    ByteBuffer unprocessed=buffer.duplicate();
+
+    unprocessed.position(crcPosition).limit(buffer.position());
+
+    crc.update(unprocessed);
+
+    crcUpdateDisabled=true;
+
+    return ((int)crc.getValue()) == readInt();
+
+  }
+
+  finally {
+
+    crcPosition=buffer.position();
+
+    crcUpdateDisabled=false;
+
+  }
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+public void checkLimit(int length) throws IOException {
+
+  if (getPosition() + length > limit)   throw new IOException("Digest mismatch exception");
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+ChecksummedDataInput(ChannelProxy channel){
+
+  this(channel,BufferType.OFF_HEAP);
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+ChecksummedDataInput(ChannelProxy channel,BufferType bufferType){
+
+  super(bufferType.allocate(RandomAccessReader.DEFAULT_BUFFER_SIZE));
+
+  crc=new CRC32();
+
+  crcPosition=0;
+
+  crcUpdateDisabled=false;
+
+  this.channel=channel;
+
+  bufferOffset=0;
+
+  buffer.limit(0);
+
+  resetLimit();
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+/** 
+
+ * Return a seekable representation of the current position. For compressed files this is chunk position in file and offset within chunk.
+
+ */
+
+public InputPosition getSeekPosition(){
+
+  return new Position(getPosition());
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+/** 
+
+ * Returns the position in the source file, which is different for getPosition() for compressed/encrypted files and may be imprecise.
+
+ */
+
+protected long getSourcePosition(){
+
+  return bufferOffset;
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+protected void readBuffer(){
+
+  buffer.clear();
+
+  while ((channel.read(buffer,bufferOffset)) == 0) {
+
+  }
+
+  buffer.flip();
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+public void resetCrc(){
+
+  crc.reset();
+
+  crcPosition=buffer.position();
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+public void resetLimit(){
+
+  limit=Long.MAX_VALUE;
+
+  limitMark=-1;
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+public void seek(InputPosition pos){
+
+  hongshuai();
+
+  if (crcPosition == buffer.position() || crcUpdateDisabled)   return;
+
+  assert crcPosition >= 0 && crcPosition < buffer.position();
+
+  ByteBuffer unprocessed=buffer.duplicate();
+
+  unprocessed.position(crcPosition).limit(buffer.position());
+
+  crc.update(unprocessed);
+
+  bufferOffset=((Position)pos).sourcePosition;
+
+  buffer.position(0).limit(0);
+
+}
+
+Location: ChecksummedDataInput.java
+
+Content: 
+
+public void tryUncacheRead(){
+
+  NativeLibrary.trySkipCache(getChannel().getFileDescriptor(),0,getSourcePosition(),getPath());
+
+}
+

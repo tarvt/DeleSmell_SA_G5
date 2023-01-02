@@ -1,0 +1,198 @@
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+public CassandraStreamReceiver(ColumnFamilyStore cfs,StreamSession session,int totalFiles){
+
+  this.cfs=cfs;
+
+  this.session=session;
+
+  this.txn=LifecycleTransaction.offline(OperationType.STREAM);
+
+  this.sstables=new ArrayList<>(totalFiles);
+
+  this.requiresWritePath=requiresWritePath(cfs);
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+/** 
+
+ * @return a LifecycleNewTracker whose operations are synchronised on this StreamReceiveTask.
+
+ */
+
+public synchronized LifecycleNewTracker createLifecycleNewTracker(){
+
+  return new LifecycleNewTracker(){
+
+    @Override public void trackNew(    SSTable table){
+
+synchronized (CassandraStreamReceiver.this) {
+
+        txn.trackNew(table);
+
+      }
+
+    }
+
+    @Override public void untrackNew(    SSTable table){
+
+synchronized (CassandraStreamReceiver.this) {
+
+        txn.untrackNew(table);
+
+      }
+
+    }
+
+    public OperationType opType(){
+
+      return txn.opType();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+@Override public void discardStream(IncomingStream stream){
+
+  CassandraIncomingFile file=getFile(stream);
+
+  Throwables.maybeFail(file.getSSTable().abort(null));
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+public synchronized void finishTransaction(){
+
+  txn.finish();
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+public static CassandraStreamReceiver fromReceiver(StreamReceiver receiver){
+
+  Preconditions.checkArgument(receiver instanceof CassandraStreamReceiver);
+
+  return (CassandraStreamReceiver)receiver;
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+private static CassandraIncomingFile getFile(IncomingStream stream){
+
+  Preconditions.checkArgument(stream instanceof CassandraIncomingFile,"Wrong stream type: {}",stream);
+
+  return (CassandraIncomingFile)stream;
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+private boolean hasCDC(ColumnFamilyStore cfs){
+
+  return cfs.metadata().params.cdc;
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+private boolean hasViews(ColumnFamilyStore cfs){
+
+  return !Iterables.isEmpty(View.findAll(cfs.metadata.keyspace,cfs.getTableName()));
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+@Override @SuppressWarnings("resource") public synchronized void received(IncomingStream stream){
+
+  CassandraIncomingFile file=getFile(stream);
+
+  Collection<SSTableReader> finished=null;
+
+  SSTableMultiWriter sstable=file.getSSTable();
+
+  try {
+
+    finished=sstable.finish(true);
+
+  }
+
+ catch (  Throwable t) {
+
+    Throwables.maybeFail(sstable.abort(t));
+
+  }
+
+  txn.update(finished,false);
+
+  sstables.addAll(finished);
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+private boolean requiresWritePath(ColumnFamilyStore cfs){
+
+  return hasCDC(cfs) || (session.streamOperation().requiresViewBuild() && hasViews(cfs));
+
+}
+
+Location: CassandraStreamReceiver.java
+
+Content: 
+
+private void sendThroughWritePath(ColumnFamilyStore cfs,Collection<SSTableReader> readers){
+
+  boolean hasCdc=hasCDC(cfs);
+
+  ColumnFilter filter=ColumnFilter.all(cfs.metadata());
+
+  for (  SSTableReader reader : readers) {
+
+    Keyspace ks=Keyspace.open(reader.getKeyspaceName());
+
+    try (ISSTableScanner scanner=reader.getScanner();CloseableIterator<UnfilteredRowIterator> throttledPartitions=ThrottledUnfilteredIterator.throttle(scanner,MAX_ROWS_PER_BATCH)){
+
+      while (throttledPartitions.hasNext()) {
+
+        ks.apply(new Mutation(PartitionUpdate.fromIterator(throttledPartitions.next(),filter)),hasCdc,true,false);
+
+      }
+
+    }
+
+   }
+
+}
+

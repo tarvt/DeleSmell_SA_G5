@@ -1,0 +1,80 @@
+Location: CassandraStreamReader.java
+
+Content: 
+
+public CassandraStreamReader(StreamMessageHeader header,CassandraStreamHeader streamHeader,StreamSession session){
+
+  if (session.getPendingRepair() != null) {
+
+    assert session.getPendingRepair().equals(header.pendingRepair);
+
+  }
+
+  this.session=session;
+
+  this.tableId=header.tableId;
+
+  this.estimatedKeys=streamHeader.estimatedKeys;
+
+  this.sections=streamHeader.sections;
+
+  this.inputVersion=streamHeader.version;
+
+  this.repairedAt=header.repairedAt;
+
+  this.pendingRepair=header.pendingRepair;
+
+  this.format=streamHeader.format;
+
+  this.sstableLevel=streamHeader.sstableLevel;
+
+  this.header=streamHeader.serializationHeader;
+
+  this.fileSeqNum=header.sequenceNumber;
+
+}
+
+Location: CassandraStreamReader.java
+
+Content: 
+
+@SuppressWarnings("resource") protected SSTableMultiWriter createWriter(ColumnFamilyStore cfs,long totalSize,long repairedAt,UUID pendingRepair,SSTableFormat.Type format) throws IOException {
+
+  Directories.DataDirectory localDir=cfs.getDirectories().getWriteableLocation(totalSize);
+
+  if (localDir == null)   throw new IOException(String.format("Insufficient disk space to store %s",FBUtilities.prettyPrintMemory(totalSize)));
+
+  StreamReceiver streamReceiver=session.getAggregator(tableId);
+
+  Preconditions.checkState(streamReceiver instanceof CassandraStreamReceiver);
+
+  LifecycleNewTracker lifecycleNewTracker=CassandraStreamReceiver.fromReceiver(session.getAggregator(tableId)).createLifecycleNewTracker();
+
+  RangeAwareSSTableWriter writer=new RangeAwareSSTableWriter(cfs,estimatedKeys,repairedAt,pendingRepair,false,format,sstableLevel,totalSize,lifecycleNewTracker,getHeader(cfs.metadata()));
+
+  return writer;
+
+}
+
+Location: CassandraStreamReader.java
+
+Content: 
+
+protected SerializationHeader getHeader(TableMetadata metadata) throws UnknownColumnException {
+
+  return header != null ? header.toHeader(metadata) : null;
+
+}
+
+Location: CassandraStreamReader.java
+
+Content: 
+
+protected void writePartition(StreamDeserializer deserializer,SSTableMultiWriter writer) throws IOException {
+
+  writer.append(deserializer.newPartition());
+
+  deserializer.checkForExceptions();
+
+}
+

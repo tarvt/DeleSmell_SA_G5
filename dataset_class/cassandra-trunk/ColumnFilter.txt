@@ -1,0 +1,350 @@
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Whether _fetched_ == _queried_ for this filter, and so if the  {@code isQueried()} methodscan return  {@code false} for some column/cell.
+
+ */
+
+public boolean allFetchedColumnsAreQueried(){
+
+  return !fetchAllRegulars || queried == null;
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@code ColumnFilter}} builder that fetches all regular columns (and queries the columns added to the builder, or everything if no column is added).
+
+ */
+
+public static Builder allRegularColumnsBuilder(TableMetadata metadata){
+
+  return new Builder(metadata);
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * A filter that includes all columns for the provided table.
+
+ */
+
+public static ColumnFilter all(TableMetadata metadata){
+
+  return new ColumnFilter(true,metadata,null,null);
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+private void appendColumnDef(StringBuilder sb,ColumnMetadata column){
+
+  if (subSelections == null) {
+
+    sb.append(column.name);
+
+    return;
+
+  }
+
+  SortedSet<ColumnSubselection> s=subSelections.get(column.name);
+
+  if (s.isEmpty()) {
+
+    sb.append(column.name);
+
+    return;
+
+  }
+
+  int i=0;
+
+  for (  ColumnSubselection subSel : s)   sb.append(i++ == 0 ? "" : ", ").append(column.name).append(subSel);
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Used on replica for deserialisation
+
+ */
+
+private ColumnFilter(boolean fetchAllRegulars,RegularAndStaticColumns fetched,RegularAndStaticColumns queried,SortedSetMultimap<ColumnIdentifier,ColumnSubselection> subSelections){
+
+  assert !fetchAllRegulars || fetched != null;
+
+  assert fetchAllRegulars || queried != null;
+
+  this.fetchAllRegulars=fetchAllRegulars;
+
+  this.fetched=fetchAllRegulars ? fetched : queried;
+
+  this.queried=queried;
+
+  this.subSelections=subSelections;
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+private ColumnFilter(boolean fetchAllRegulars,TableMetadata metadata,RegularAndStaticColumns queried,SortedSetMultimap<ColumnIdentifier,ColumnSubselection> subSelections){
+
+  assert !fetchAllRegulars || metadata != null;
+
+  assert fetchAllRegulars || queried != null;
+
+  this.fetchAllRegulars=fetchAllRegulars;
+
+  if (fetchAllRegulars) {
+
+    RegularAndStaticColumns all=metadata.regularAndStaticColumns();
+
+    this.fetched=(all.statics.isEmpty() || queried == null) ? all : new RegularAndStaticColumns(queried.statics,all.regulars);
+
+  }
+
+ else {
+
+    this.fetched=queried;
+
+  }
+
+  this.queried=queried;
+
+  this.subSelections=subSelections;
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Whether the provided complex cell (identified by its column and path), which is assumed to be _fetched_ by this filter, is also _queried_ by the user. !WARNING! please be sure to understand the difference between _fetched_ and _queried_ columns that this class made before using this method. If unsure, you probably want to use the  {@link #fetches} method.
+
+ */
+
+public boolean fetchedCellIsQueried(ColumnMetadata column,CellPath path){
+
+  assert path != null;
+
+  if (!fetchedColumnIsQueried(column))   return false;
+
+  if (subSelections == null)   return true;
+
+  SortedSet<ColumnSubselection> s=subSelections.get(column.name);
+
+  if (s.isEmpty())   return true;
+
+  for (  ColumnSubselection subSel : s)   if (subSel.compareInclusionOf(path) == 0)   return true;
+
+  return false;
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Whether the provided column, which is assumed to be _fetched_ by this filter (so the caller must guarantee that  {@code fetches(column) == true}, is also _queried_ by the user. !WARNING! please be sure to understand the difference between _fetched_ and _queried_ columns that this class made before using this method. If unsure, you probably want to use the  {@link #fetches} method.
+
+ */
+
+public boolean fetchedColumnIsQueried(ColumnMetadata column){
+
+  return !fetchAllRegulars || queried == null || queried.contains(column);
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * The columns that needs to be fetched internally for this filter.
+
+ * @return the columns to fetch for this filter.
+
+ */
+
+public RegularAndStaticColumns fetchedColumns(){
+
+  return fetched;
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Wether all the (regular or static) columns are fetched by this filter. <p> Note that this method is meant as an optimization but a negative return shouldn't be relied upon strongly: this can return  {@code false} butstill have all the columns fetches if those were manually selected by the user. The goal here is to cheaply avoid filtering things on wildcard queries, as those are common.
+
+ * @param isStatic whether to check for static columns or not. If {@code true}, the method returns if all static columns are fetched, otherwise it checks regular columns.
+
+ */
+
+public boolean fetchesAllColumns(boolean isStatic){
+
+  return isStatic ? queried == null : fetchAllRegulars;
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Whether the provided column is fetched by this filter.
+
+ */
+
+public boolean fetches(ColumnMetadata column){
+
+  if (column.isStatic())   return queried == null || queried.contains(column);
+
+  return fetchAllRegulars || queried.contains(column);
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Given an iterator on the cell of a complex column, returns an iterator that only include the cells selected by this filter.
+
+ * @param column the (complex) column for which the cells are.
+
+ * @param cells the cells to filter.
+
+ * @return a filtered iterator that only include the cells from {@code cells} that are included by this filter.
+
+ */
+
+public Iterator<Cell<?>> filterComplexCells(ColumnMetadata column,Iterator<Cell<?>> cells){
+
+  Tester tester=newTester(column);
+
+  if (tester == null)   return cells;
+
+  return Iterators.filter(cells,cell -> tester.fetchedCellIsQueried(cell.path()));
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Creates a new  {@code Tester} to efficiently test the inclusion of cells of complex column{@code column}.
+
+ * @param column for complex column for which to create a tester.
+
+ * @return the created tester or {@code null} if all the cells from the provided columnare queried.
+
+ */
+
+public Tester newTester(ColumnMetadata column){
+
+  if (subSelections == null || !column.isComplex())   return null;
+
+  SortedSet<ColumnSubselection> s=subSelections.get(column.name);
+
+  if (s.isEmpty())   return null;
+
+  return new Tester(!column.isStatic() && fetchAllRegulars,s.iterator());
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * The columns actually queried by the user. <p> Note that this is in general not all the columns that are fetched internally (see  {@link #fetchedColumns}).
+
+ */
+
+public RegularAndStaticColumns queriedColumns(){
+
+  return queried == null ? fetched : queried;
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@code ColumnFilter} builder that only fetches the columns/cells added to the builder.
+
+ */
+
+public static Builder selectionBuilder(){
+
+  return new Builder(null);
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * A filter that only fetches/queries the provided columns. <p> Note that this shouldn't be used for CQL queries in general as all columns should be queried to preserve CQL semantic (see class javadoc). This is ok for some internal queries however (and for #6588 if/when we implement it).
+
+ */
+
+public static ColumnFilter selection(RegularAndStaticColumns columns){
+
+  return new ColumnFilter(false,(TableMetadata)null,columns,null);
+
+}
+
+Location: ColumnFilter.java
+
+Content: 
+
+/** 
+
+ * A filter that fetches all columns for the provided table, but returns only the queried ones.
+
+ */
+
+public static ColumnFilter selection(TableMetadata metadata,RegularAndStaticColumns queried){
+
+  return new ColumnFilter(true,metadata,queried,null);
+
+}
+

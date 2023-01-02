@@ -1,0 +1,98 @@
+Location: ChunkCache.java
+
+Content: 
+
+private ChunkCache(BufferPool pool){
+
+  bufferPool=pool;
+
+  metrics=new ChunkCacheMetrics(this);
+
+  cache=Caffeine.newBuilder().maximumWeight(cacheSize).executor(MoreExecutors.directExecutor()).weigher((key,buffer) -> ((Buffer)buffer).buffer.capacity()).removalListener(this).recordStats(() -> metrics).build(this);
+
+}
+
+Location: ChunkCache.java
+
+Content: 
+
+@VisibleForTesting public void enable(boolean enabled){
+
+  ChunkCache.enabled=enabled;
+
+  cache.invalidateAll();
+
+  metrics.reset();
+
+}
+
+Location: ChunkCache.java
+
+Content: 
+
+public void invalidateFile(String fileName){
+
+  cache.invalidateAll(Iterables.filter(cache.asMap().keySet(),x -> x.path.equals(fileName)));
+
+}
+
+Location: ChunkCache.java
+
+Content: 
+
+public void invalidatePosition(FileHandle dfile,long position){
+
+  if (!(dfile.rebuffererFactory() instanceof CachingRebufferer))   return;
+
+  ((CachingRebufferer)dfile.rebuffererFactory()).invalidate(position);
+
+}
+
+Location: ChunkCache.java
+
+Content: 
+
+@Override public Buffer load(Key key){
+
+  ByteBuffer buffer=bufferPool.get(key.file.chunkSize(),key.file.preferredBufferType());
+
+  assert buffer != null;
+
+  key.file.readChunk(key.position,buffer);
+
+  return new Buffer(buffer,key.position);
+
+}
+
+Location: ChunkCache.java
+
+Content: 
+
+public static RebuffererFactory maybeWrap(ChunkReader file){
+
+  if (!enabled)   return file;
+
+  return instance.wrap(file);
+
+}
+
+Location: ChunkCache.java
+
+Content: 
+
+@Override public void onRemoval(Key key,Buffer buffer,RemovalCause cause){
+
+  buffer.release();
+
+}
+
+Location: ChunkCache.java
+
+Content: 
+
+private RebuffererFactory wrap(ChunkReader file){
+
+  return new CachingRebufferer(file);
+
+}
+

@@ -1,0 +1,276 @@
+Location: ClusteringComparator.java
+
+Content: 
+
+public ClusteringComparator(AbstractType<?>... clusteringTypes){
+
+  this(ImmutableList.copyOf(clusteringTypes));
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public ClusteringComparator(Iterable<AbstractType<?>> clusteringTypes){
+
+  this.clusteringTypes=ImmutableList.copyOf(clusteringTypes);
+
+  this.indexComparator=(o1,o2) -> ClusteringComparator.this.compare((ClusteringPrefix<?>)o1.lastName,(ClusteringPrefix<?>)o2.lastName);
+
+  this.indexReverseComparator=(o1,o2) -> ClusteringComparator.this.compare((ClusteringPrefix<?>)o1.firstName,(ClusteringPrefix<?>)o2.firstName);
+
+  this.reverseComparator=(c1,c2) -> ClusteringComparator.this.compare(c2,c1);
+
+  for (  AbstractType<?> type : clusteringTypes)   type.checkComparable();
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public <V1,V2>int compareComponent(int i,ClusteringPrefix<V1> v1,ClusteringPrefix<V2> v2){
+
+  return compareComponent(i,v1.get(i),v1.accessor(),v2.get(i),v2.accessor());
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public <V1,V2>int compareComponent(int i,V1 v1,ValueAccessor<V1> accessor1,V2 v2,ValueAccessor<V2> accessor2){
+
+  if (v1 == null)   return v2 == null ? 0 : -1;
+
+  if (v2 == null)   return 1;
+
+  return clusteringTypes.get(i).compare(v1,accessor1,v2,accessor2);
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public int compare(Clusterable c1,Clusterable c2){
+
+  return compare((ClusteringPrefix<?>)c1.clustering(),(ClusteringPrefix<?>)c2.clustering());
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public <V1,V2>int compare(Clustering<V1> c1,Clustering<V2> c2){
+
+  return compare(c1,c2,size());
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+/** 
+
+ * Compares the specified part of the specified clusterings.
+
+ * @param c1 the first clustering
+
+ * @param c2 the second clustering
+
+ * @param size the number of components to compare
+
+ * @return a negative integer, zero, or a positive integer as the first argument is less than,equal to, or greater than the second.
+
+ */
+
+public <V1,V2>int compare(Clustering<V1> c1,Clustering<V2> c2,int size){
+
+  for (int i=0; i < size; i++) {
+
+    int cmp=compareComponent(i,c1.get(i),c1.accessor(),c2.get(i),c2.accessor());
+
+    if (cmp != 0)     return cmp;
+
+  }
+
+  return 0;
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public <V1,V2>int compare(ClusteringPrefix<V1> c1,ClusteringPrefix<V2> c2){
+
+  int s1=c1.size();
+
+  int s2=c2.size();
+
+  int minSize=Math.min(s1,s2);
+
+  for (int i=0; i < minSize; i++) {
+
+    int cmp=compareComponent(i,c1.get(i),c1.accessor(),c2.get(i),c2.accessor());
+
+    if (cmp != 0)     return cmp;
+
+  }
+
+  if (s1 == s2)   return ClusteringPrefix.Kind.compare(c1.kind(),c2.kind());
+
+  return s1 < s2 ? c1.kind().comparedToClustering : -c2.kind().comparedToClustering;
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public Comparator<IndexInfo> indexComparator(boolean reversed){
+
+  return reversed ? indexReverseComparator : indexComparator;
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+/** 
+
+ * Returns whether this clustering comparator is compatible with the provided one, that is if the provided one can be safely replaced by this new one.
+
+ * @param previous the previous comparator that we want to replace and testcompatibility with.
+
+ * @return whether {@code previous} can be safely replaced by this comparator.
+
+ */
+
+public boolean isCompatibleWith(ClusteringComparator previous){
+
+  if (this == previous)   return true;
+
+  if (size() < previous.size())   return false;
+
+  for (int i=0; i < previous.size(); i++) {
+
+    AbstractType<?> tprev=previous.subtype(i);
+
+    AbstractType<?> tnew=subtype(i);
+
+    if (!tnew.isCompatibleWith(tprev))     return false;
+
+  }
+
+  return true;
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+/** 
+
+ * Creates a row clustering based on the clustering values. <p> Every argument can either be a  {@code ByteBuffer}, in which case it is used as-is, or a object corresponding to the type of the corresponding clustering column, in which case it will be converted to a byte buffer using the column type.
+
+ * @param values the values to use for the created clustering. There should be exactly {@code size()}values which must be either byte buffers or of the type the column expect.
+
+ * @return the newly created clustering.
+
+ */
+
+public Clustering<?> make(Object... values){
+
+  if (values.length != size())   throw new IllegalArgumentException(String.format("Invalid number of components, expecting %d but got %d",size(),values.length));
+
+  CBuilder builder=CBuilder.create(this);
+
+  for (  Object val : values) {
+
+    if (val instanceof ByteBuffer)     builder.add((ByteBuffer)val);
+
+ else     builder.add(val);
+
+  }
+
+  return builder.build();
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+public Comparator<Clusterable> reversed(){
+
+  return reverseComparator;
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+/** 
+
+ * A comparator for rows. A  {@code Row} is a {@code Clusterable} so {@code ClusteringComparator} can be usedto compare rows directly, but when we know we deal with rows (and not  {@code Clusterable} ingeneral), this is a little faster because by knowing we compare  {@code Clustering} objects,we know that 1) they all have the same size and 2) they all have the same kind.
+
+ */
+
+public Comparator<Row> rowComparator(){
+
+  return rowComparator;
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+/** 
+
+ * Returns the type of the ith clustering column of the table.
+
+ */
+
+public AbstractType<?> subtype(int i){
+
+  return clusteringTypes.get(i);
+
+}
+
+Location: ClusteringComparator.java
+
+Content: 
+
+/** 
+
+ * Validates the provided prefix for corrupted data.
+
+ * @param clustering the clustering prefix to validate.
+
+ * @throws MarshalException if {@code clustering} contains some invalid data.
+
+ */
+
+public <T>void validate(ClusteringPrefix<T> clustering){
+
+  ValueAccessor<T> accessor=clustering.accessor();
+
+  for (int i=0; i < clustering.size(); i++) {
+
+    T value=clustering.get(i);
+
+    if (value != null)     subtype(i).validate(value,accessor);
+
+  }
+
+}
+

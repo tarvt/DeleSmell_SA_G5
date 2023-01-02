@@ -1,0 +1,160 @@
+Location: CassandraStreamWriter.java
+
+Content: 
+
+public CassandraStreamWriter(SSTableReader sstable,CassandraStreamHeader header,StreamSession session){
+
+  this.session=session;
+
+  this.sstable=sstable;
+
+  this.sections=header.sections;
+
+  this.limiter=StreamManager.getRateLimiter(session.peer);
+
+  this.totalSize=header.size();
+
+}
+
+Location: CassandraStreamWriter.java
+
+Content: 
+
+protected long totalSize(){
+
+  return totalSize;
+
+}
+
+Location: CassandraStreamWriter.java
+
+Content: 
+
+/** 
+
+ * Sequentially read bytes from the file and write them to the output stream
+
+ * @param proxy The file reader to read from
+
+ * @param validator validator to verify data integrity
+
+ * @param start The readd offset from the beginning of the {@code proxy} file.
+
+ * @param transferOffset number of bytes to skip transfer, but include for validation.
+
+ * @param toTransfer The number of bytes to be transferred.
+
+ * @return Number of bytes transferred.
+
+ * @throws java.io.IOException on any I/O error
+
+ */
+
+protected long write(ChannelProxy proxy,ChecksumValidator validator,AsyncStreamingOutputPlus output,long start,int transferOffset,int toTransfer,int bufferSize) throws IOException {
+
+  int minReadable=(int)Math.min(bufferSize,proxy.size() - start);
+
+  ByteBuffer buffer=BufferPools.forNetworking().get(minReadable,BufferType.OFF_HEAP);
+
+  try {
+
+    int readCount=proxy.read(buffer,start);
+
+    assert readCount == minReadable : String.format("could not read required number of bytes from file to be streamed: read %d bytes, wanted %d bytes",readCount,minReadable);
+
+    buffer.flip();
+
+    if (validator != null) {
+
+      validator.validate(buffer);
+
+      buffer.flip();
+
+    }
+
+    buffer.position(transferOffset);
+
+    buffer.limit(transferOffset + (toTransfer - transferOffset));
+
+    output.writeToChannel(StreamCompressionSerializer.serialize(compressor,buffer,current_version),limiter);
+
+  }
+
+  finally {
+
+    BufferPools.forNetworking().put(buffer);
+
+  }
+
+  return toTransfer;
+
+}
+
+Location: CassandraStreamWriter.java
+
+Content: 
+
+/** 
+
+ * Stream file of specified sections to given channel. CassandraStreamWriter uses LZF compression on wire to decrease size to transfer.
+
+ * @param output where this writes data to
+
+ * @throws IOException on any I/O error
+
+ */
+
+public void write(DataOutputStreamPlus output) throws IOException {
+
+  long totalSize=totalSize();
+
+  logger.debug("[Stream #{}] Start streaming file {} to {}, repairedAt = {}, totalSize = {}",session.planId(),sstable.getFilename(),session.peer,sstable.getSSTableMetadata().repairedAt,totalSize);
+
+  AsyncStreamingOutputPlus out=(AsyncStreamingOutputPlus)output;
+
+  try (ChannelProxy proxy=sstable.getDataChannel().newChannel();ChecksumValidator validator=new File(sstable.descriptor.filenameFor(Component.CRC)).exists() ? DataIntegrityMetadata.checksumValidator(sstable.descriptor) : null){
+
+    int bufferSize=validator == null ? DEFAULT_CHUNK_SIZE : validator.chunkSize;
+
+    long progress=0L;
+
+    for (    SSTableReader.PartitionPositionBounds section : sections) {
+
+      long start=validator == null ? section.lowerPosition : validator.chunkStart(section.lowerPosition);
+
+      int transferOffset=(int)(section.lowerPosition - start);
+
+      if (validator != null)       validator.seek(start);
+
+      long length=section.upperPosition - start;
+
+      long bytesRead=0;
+
+      while (bytesRead < length) {
+
+        int toTransfer=(int)Math.min(bufferSize,length - bytesRead);
+
+        long lastBytesRead=write(proxy,validator,out,start,transferOffset,toTransfer,bufferSize);
+
+        start+=lastBytesRead;
+
+        bytesRead+=lastBytesRead;
+
+        progress+=(lastBytesRead - transferOffset);
+
+        session.progress(sstable.descriptor.filenameFor(Component.DATA),ProgressInfo.Direction.OUT,progress,totalSize);
+
+        transferOffset=0;
+
+      }
+
+      out.flush();
+
+    }
+
+    logger.debug("[Stream #{}] Finished streaming file {} to {}, bytesTransferred = {}, totalSize = {}",session.planId(),sstable.getFilename(),session.peer,FBUtilities.prettyPrintMemory(progress),FBUtilities.prettyPrintMemory(totalSize));
+
+  }
+
+ }
+

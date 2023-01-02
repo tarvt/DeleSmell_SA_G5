@@ -1,0 +1,64 @@
+Location: CassandraTableRepairManager.java
+
+Content: 
+
+public CassandraTableRepairManager(ColumnFamilyStore cfs){
+
+  this.cfs=cfs;
+
+}
+
+Location: CassandraTableRepairManager.java
+
+Content: 
+
+@Override public ValidationPartitionIterator getValidationIterator(Collection<Range<Token>> ranges,UUID parentId,UUID sessionID,boolean isIncremental,int nowInSec) throws IOException {
+
+  return new CassandraValidationIterator(cfs,ranges,parentId,sessionID,isIncremental,nowInSec);
+
+}
+
+Location: CassandraTableRepairManager.java
+
+Content: 
+
+@Override public void incrementalSessionCompleted(UUID sessionID){
+
+  CompactionManager.instance.submitBackground(cfs);
+
+}
+
+Location: CassandraTableRepairManager.java
+
+Content: 
+
+@Override public synchronized void snapshot(String name,Collection<Range<Token>> ranges,boolean force){
+
+  if (force || !cfs.snapshotExists(name)) {
+
+    cfs.snapshot(name,new Predicate<SSTableReader>(){
+
+      public boolean apply(      SSTableReader sstable){
+
+        return sstable != null && !sstable.metadata().isIndex() && new Bounds<>(sstable.first.getToken(),sstable.last.getToken()).intersects(ranges);
+
+      }
+
+    }
+
+,true,false);
+
+  }
+
+}
+
+Location: CassandraTableRepairManager.java
+
+Content: 
+
+@Override public Future<?> submitValidation(Callable<Object> validation){
+
+  return CompactionManager.instance.submitValidation(validation);
+
+}
+

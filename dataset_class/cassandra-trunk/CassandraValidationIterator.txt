@@ -1,0 +1,186 @@
+Location: CassandraValidationIterator.java
+
+Content: 
+
+public CassandraValidationIterator(ColumnFamilyStore cfs,Collection<Range<Token>> ranges,UUID parentId,UUID sessionID,boolean isIncremental,int nowInSec) throws IOException {
+
+  this.cfs=cfs;
+
+  isGlobalSnapshotValidation=cfs.snapshotExists(parentId.toString());
+
+  if (isGlobalSnapshotValidation)   snapshotName=parentId.toString();
+
+ else   snapshotName=sessionID.toString();
+
+  isSnapshotValidation=cfs.snapshotExists(snapshotName);
+
+  if (isSnapshotValidation) {
+
+    sstables=cfs.getSnapshotSSTableReaders(snapshotName);
+
+  }
+
+ else {
+
+    if (!isIncremental) {
+
+      StorageService.instance.forceKeyspaceFlush(cfs.keyspace.getName(),cfs.name);
+
+    }
+
+    sstables=getSSTablesToValidate(cfs,ranges,parentId,isIncremental);
+
+  }
+
+  Preconditions.checkArgument(sstables != null);
+
+  ActiveRepairService.ParentRepairSession prs=ActiveRepairService.instance.getParentRepairSession(parentId);
+
+  if (prs != null) {
+
+    logger.info("{}, parentSessionId={}: Performing validation compaction on {} sstables in {}.{}",prs.previewKind.logPrefix(sessionID),parentId,sstables.size(),cfs.keyspace.getName(),cfs.getTableName());
+
+  }
+
+  controller=new ValidationCompactionController(cfs,getDefaultGcBefore(cfs,nowInSec));
+
+  scanners=cfs.getCompactionStrategyManager().getScanners(sstables,ranges);
+
+  ci=new ValidationCompactionIterator(scanners.scanners,controller,nowInSec,CompactionManager.instance.active);
+
+  long allPartitions=0;
+
+  rangePartitionCounts=Maps.newHashMapWithExpectedSize(ranges.size());
+
+  for (  Range<Token> range : ranges) {
+
+    long numPartitions=0;
+
+    for (    SSTableReader sstable : sstables)     numPartitions+=sstable.estimatedKeysForRanges(Collections.singleton(range));
+
+    rangePartitionCounts.put(range,numPartitions);
+
+    allPartitions+=numPartitions;
+
+  }
+
+  estimatedPartitions=allPartitions;
+
+  long estimatedTotalBytes=0;
+
+  for (  SSTableReader sstable : sstables) {
+
+    for (    SSTableReader.PartitionPositionBounds positionsForRanges : sstable.getPositionsForRanges(ranges))     estimatedTotalBytes+=positionsForRanges.upperPosition - positionsForRanges.lowerPosition;
+
+  }
+
+  estimatedBytes=estimatedTotalBytes;
+
+}
+
+Location: CassandraValidationIterator.java
+
+Content: 
+
+@Override public long estimatedPartitions(){
+
+  return estimatedPartitions;
+
+}
+
+Location: CassandraValidationIterator.java
+
+Content: 
+
+public static int getDefaultGcBefore(ColumnFamilyStore cfs,int nowInSec){
+
+  return cfs.isIndex() ? nowInSec : cfs.gcBefore(nowInSec);
+
+}
+
+Location: CassandraValidationIterator.java
+
+Content: 
+
+@Override public long getEstimatedBytes(){
+
+  return estimatedBytes;
+
+}
+
+Location: CassandraValidationIterator.java
+
+Content: 
+
+@Override public Map<Range<Token>,Long> getRangePartitionCounts(){
+
+  return rangePartitionCounts;
+
+}
+
+Location: CassandraValidationIterator.java
+
+Content: 
+
+@VisibleForTesting static synchronized Refs<SSTableReader> getSSTablesToValidate(ColumnFamilyStore cfs,Collection<Range<Token>> ranges,UUID parentId,boolean isIncremental){
+
+  Refs<SSTableReader> sstables;
+
+  ActiveRepairService.ParentRepairSession prs=ActiveRepairService.instance.getParentRepairSession(parentId);
+
+  if (prs == null) {
+
+    return new Refs<>();
+
+  }
+
+  Set<SSTableReader> sstablesToValidate=new HashSet<>();
+
+  com.google.common.base.Predicate<SSTableReader> predicate;
+
+  if (prs.isPreview()) {
+
+    predicate=prs.previewKind.predicate();
+
+  }
+
+ else   if (isIncremental) {
+
+    predicate=s -> parentId.equals(s.getSSTableMetadata().pendingRepair);
+
+  }
+
+ else {
+
+    predicate=(s) -> !prs.isIncremental || !s.isRepaired();
+
+  }
+
+  try (ColumnFamilyStore.RefViewFragment sstableCandidates=cfs.selectAndReference(View.select(SSTableSet.CANONICAL,predicate))){
+
+    for (    SSTableReader sstable : sstableCandidates.sstables) {
+
+      if (new Bounds<>(sstable.first.getToken(),sstable.last.getToken()).intersects(ranges)) {
+
+        sstablesToValidate.add(sstable);
+
+      }
+
+    }
+
+    sstables=Refs.tryRef(sstablesToValidate);
+
+    if (sstables == null) {
+
+      logger.error("Could not reference sstables for {}",parentId);
+
+      throw new RuntimeException("Could not reference sstables");
+
+    }
+
+  }
+
+   return sstables;
+
+}
+

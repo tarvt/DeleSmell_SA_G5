@@ -1,0 +1,128 @@
+Location: CassandraStreamManager.java
+
+Content: 
+
+public CassandraStreamManager(ColumnFamilyStore cfs){
+
+  this.cfs=cfs;
+
+}
+
+Location: CassandraStreamManager.java
+
+Content: 
+
+@Override public Collection<OutgoingStream> createOutgoingStreams(StreamSession session,RangesAtEndpoint replicas,UUID pendingRepair,PreviewKind previewKind){
+
+  Refs<SSTableReader> refs=new Refs<>();
+
+  try {
+
+    final List<Range<PartitionPosition>> keyRanges=new ArrayList<>(replicas.size());
+
+    for (    Replica replica : replicas)     keyRanges.add(Range.makeRowRange(replica.range()));
+
+    refs.addAll(cfs.selectAndReference(view -> {
+
+      Set<SSTableReader> sstables=Sets.newHashSet();
+
+      SSTableIntervalTree intervalTree=SSTableIntervalTree.build(view.select(SSTableSet.CANONICAL));
+
+      Predicate<SSTableReader> predicate;
+
+      if (previewKind.isPreview()) {
+
+        predicate=previewKind.predicate();
+
+      }
+
+ else       if (pendingRepair == ActiveRepairService.NO_PENDING_REPAIR) {
+
+        predicate=Predicates.alwaysTrue();
+
+      }
+
+ else {
+
+        predicate=s -> s.isPendingRepair() && s.getSSTableMetadata().pendingRepair.equals(pendingRepair);
+
+      }
+
+      for (      Range<PartitionPosition> keyRange : keyRanges) {
+
+        for (        SSTableReader sstable : Iterables.filter(View.sstablesInBounds(keyRange.left,keyRange.right,intervalTree),predicate)) {
+
+          sstables.add(sstable);
+
+        }
+
+      }
+
+      if (logger.isDebugEnabled())       logger.debug("ViewFilter for {}/{} sstables",sstables.size(),Iterables.size(view.select(SSTableSet.CANONICAL)));
+
+      return sstables;
+
+    }
+
+).refs);
+
+    List<Range<Token>> normalizedFullRanges=Range.normalize(replicas.onlyFull().ranges());
+
+    List<Range<Token>> normalizedAllRanges=Range.normalize(replicas.ranges());
+
+    List<OutgoingStream> streams=new ArrayList<>(refs.size());
+
+    for (    SSTableReader sstable : refs) {
+
+      List<Range<Token>> ranges=sstable.isRepaired() ? normalizedFullRanges : normalizedAllRanges;
+
+      List<SSTableReader.PartitionPositionBounds> sections=sstable.getPositionsForRanges(ranges);
+
+      Ref<SSTableReader> ref=refs.get(sstable);
+
+      if (sections.isEmpty()) {
+
+        ref.release();
+
+        continue;
+
+      }
+
+      streams.add(new CassandraOutgoingFile(session.getStreamOperation(),ref,sections,ranges,sstable.estimatedKeysForRanges(ranges)));
+
+    }
+
+    return streams;
+
+  }
+
+ catch (  Throwable t) {
+
+    refs.release();
+
+    throw t;
+
+  }
+
+}
+
+Location: CassandraStreamManager.java
+
+Content: 
+
+@Override public StreamReceiver createStreamReceiver(StreamSession session,int totalStreams){
+
+  return new CassandraStreamReceiver(cfs,session,totalStreams);
+
+}
+
+Location: CassandraStreamManager.java
+
+Content: 
+
+@Override public IncomingStream prepareIncomingStream(StreamSession session,StreamMessageHeader header){
+
+  return new CassandraIncomingFile(cfs,session,header);
+
+}
+

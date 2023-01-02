@@ -1,0 +1,66 @@
+Location: CassandraIncomingFile.java
+
+Content: 
+
+public CassandraIncomingFile(ColumnFamilyStore cfs,StreamSession session,StreamMessageHeader header){
+
+  this.cfs=cfs;
+
+  this.session=session;
+
+  this.header=header;
+
+}
+
+Location: CassandraIncomingFile.java
+
+Content: 
+
+@Override public synchronized long getSize(){
+
+  Preconditions.checkState(size > 0,"Stream hasn't been read yet");
+
+  return size;
+
+}
+
+Location: CassandraIncomingFile.java
+
+Content: 
+
+@Override public synchronized void read(DataInputPlus in,int version) throws IOException {
+
+  CassandraStreamHeader streamHeader=CassandraStreamHeader.serializer.deserialize(in,version);
+
+  logger.debug("Incoming stream entireSSTable={} components={}",streamHeader.isEntireSSTable,streamHeader.componentManifest);
+
+  IStreamReader reader;
+
+  if (streamHeader.isEntireSSTable) {
+
+    reader=new CassandraEntireSSTableStreamReader(header,streamHeader,session);
+
+    numFiles=streamHeader.componentManifest.components().size();
+
+  }
+
+ else   if (streamHeader.isCompressed())   reader=new CassandraCompressedStreamReader(header,streamHeader,session);
+
+ else   reader=new CassandraStreamReader(header,streamHeader,session);
+
+  size=streamHeader.size();
+
+  sstable=reader.read(in);
+
+}
+
+Location: CassandraIncomingFile.java
+
+Content: 
+
+@Override public StreamSession session(){
+
+  return session;
+
+}
+

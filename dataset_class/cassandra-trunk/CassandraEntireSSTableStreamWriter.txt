@@ -1,0 +1,64 @@
+Location: CassandraEntireSSTableStreamWriter.java
+
+Content: 
+
+public CassandraEntireSSTableStreamWriter(SSTableReader sstable,StreamSession session,ComponentContext context){
+
+  this.session=session;
+
+  this.sstable=sstable;
+
+  this.context=context;
+
+  this.manifest=context.manifest();
+
+  this.limiter=StreamManager.getRateLimiter(session.peer);
+
+}
+
+Location: CassandraEntireSSTableStreamWriter.java
+
+Content: 
+
+/** 
+
+ * Stream the entire file to given channel. <p> TODO: this currently requires a companion thread, but could be performed entirely asynchronously
+
+ * @param out where this writes data to
+
+ * @throws IOException on any I/O error
+
+ */
+
+public void write(AsyncStreamingOutputPlus out) throws IOException {
+
+  long totalSize=manifest.totalSize();
+
+  logger.debug("[Stream #{}] Start streaming sstable {} to {}, repairedAt = {}, totalSize = {}",session.planId(),sstable.getFilename(),session.peer,sstable.getSSTableMetadata().repairedAt,prettyPrintMemory(totalSize));
+
+  long progress=0L;
+
+  for (  Component component : manifest.components()) {
+
+    long length=manifest.sizeOf(component);
+
+    logger.debug("[Stream #{}] Streaming {}.{} gen {} component {} size {}",session.planId(),sstable.getKeyspaceName(),sstable.getColumnFamilyName(),sstable.descriptor.generation,component,prettyPrintMemory(length));
+
+    @SuppressWarnings("resource") FileChannel channel=context.channel(sstable.descriptor,component,length);
+
+    long bytesWritten=out.writeFileToChannel(channel,limiter);
+
+    progress+=bytesWritten;
+
+    session.progress(sstable.descriptor.filenameFor(component),ProgressInfo.Direction.OUT,bytesWritten,length);
+
+    logger.debug("[Stream #{}] Finished streaming {}.{} gen {} component {} to {}, xfered = {}, length = {}, totalSize = {}",session.planId(),sstable.getKeyspaceName(),sstable.getColumnFamilyName(),sstable.descriptor.generation,component,session.peer,prettyPrintMemory(bytesWritten),prettyPrintMemory(length),prettyPrintMemory(totalSize));
+
+  }
+
+  out.flush();
+
+  logger.debug("[Stream #{}] Finished streaming sstable {} to {}, xfered = {}, totalSize = {}",session.planId(),sstable.getFilename(),session.peer,prettyPrintMemory(progress),prettyPrintMemory(totalSize));
+
+}
+

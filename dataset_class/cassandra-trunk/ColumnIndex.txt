@@ -1,0 +1,480 @@
+Location: ColumnIndex.java
+
+Content: 
+
+private void addIndexBlock() throws IOException {
+
+  IndexInfo cIndexInfo=new IndexInfo(firstClustering,lastClustering,startPosition,currentPosition() - startPosition,openMarker);
+
+  if (indexOffsets == null)   indexOffsets=new int[10];
+
+ else {
+
+    if (columnIndexCount >= indexOffsets.length)     indexOffsets=Arrays.copyOf(indexOffsets,indexOffsets.length + 10);
+
+    if (columnIndexCount == 0) {
+
+      indexOffsets[columnIndexCount]=0;
+
+    }
+
+ else {
+
+      indexOffsets[columnIndexCount]=buffer != null ? Ints.checkedCast(buffer.position()) : indexSamplesSerializedSize;
+
+    }
+
+  }
+
+  columnIndexCount++;
+
+  if (buffer == null) {
+
+    indexSamplesSerializedSize+=idxSerializer.serializedSize(cIndexInfo);
+
+    if (indexSamplesSerializedSize + columnIndexCount * TypeSizes.sizeof(0) > cacheSizeThreshold) {
+
+      buffer=reuseOrAllocateBuffer();
+
+      for (      IndexInfo indexSample : indexSamples) {
+
+        idxSerializer.serialize(indexSample,buffer);
+
+      }
+
+    }
+
+ else {
+
+      indexSamples.add(cIndexInfo);
+
+    }
+
+  }
+
+  if (buffer != null) {
+
+    idxSerializer.serialize(cIndexInfo,buffer);
+
+  }
+
+  firstClustering=null;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+private void add(Unfiltered unfiltered) throws IOException {
+
+  long pos=currentPosition();
+
+  if (firstClustering == null) {
+
+    firstClustering=unfiltered.clustering();
+
+    startPosition=pos;
+
+  }
+
+  UnfilteredSerializer.serializer.serialize(unfiltered,helper,writer,pos - previousRowStart,version);
+
+  if (!observers.isEmpty())   observers.forEach((o) -> o.nextUnfilteredCluster(unfiltered));
+
+  lastClustering=unfiltered.clustering();
+
+  previousRowStart=pos;
+
+  ++written;
+
+  if (unfiltered.kind() == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER) {
+
+    RangeTombstoneMarker marker=(RangeTombstoneMarker)unfiltered;
+
+    openMarker=marker.isOpen(false) ? marker.openDeletionTime(false) : null;
+
+  }
+
+  if (currentPosition() - startPosition >= DatabaseDescriptor.getColumnIndexSize())   addIndexBlock();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public void buildRowIndex(UnfilteredRowIterator iterator) throws IOException {
+
+  writePartitionHeader(iterator);
+
+  this.headerLength=writer.position() - initialPosition;
+
+  while (iterator.hasNext())   add(iterator.next());
+
+  finish();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public ColumnIndex(AbstractType<?> keyValidator,ColumnMetadata column,IndexMetadata metadata){
+
+  this.keyValidator=keyValidator;
+
+  this.column=column;
+
+  this.config=metadata == null ? Optional.empty() : Optional.of(metadata);
+
+  this.mode=IndexMode.getMode(column,config);
+
+  this.memtable=new AtomicReference<>(new IndexMemtable(this));
+
+  this.tracker=new DataTracker(keyValidator,this);
+
+  this.component=new Component(Component.Type.SECONDARY_INDEX,String.format(FILE_NAME_FORMAT,getIndexName()));
+
+  this.isTokenized=getAnalyzer().isTokenizing();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public ColumnIndex(SerializationHeader header,SequentialWriter writer,Version version,Collection<SSTableFlushObserver> observers,ISerializer<IndexInfo> indexInfoSerializer){
+
+  this.helper=new SerializationHelper(header);
+
+  this.header=header;
+
+  this.writer=writer;
+
+  this.version=version.correspondingMessagingVersion();
+
+  this.observers=observers;
+
+  this.idxSerializer=indexInfoSerializer;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+private long currentPosition(){
+
+  return writer.position() - initialPosition;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public void discardMemtable(Memtable parent){
+
+  pendingFlush.remove(parent);
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public AbstractAnalyzer getAnalyzer(){
+
+  AbstractAnalyzer analyzer=mode.getAnalyzer(getValidator());
+
+  analyzer.init(config.isPresent() ? config.get().options : Collections.emptyMap(),column.cellValueType());
+
+  return analyzer;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public String getColumnName(){
+
+  return column.name.toString();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public Component getComponent(){
+
+  return component;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+@VisibleForTesting public IndexMemtable getCurrentMemtable(){
+
+  return memtable.get();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public ColumnMetadata getDefinition(){
+
+  return column;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public String getIndexName(){
+
+  return config.isPresent() ? config.get().name : "undefined";
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+@VisibleForTesting public Collection<IndexMemtable> getPendingMemtables(){
+
+  return pendingFlush.values();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public AbstractType<?> getValidator(){
+
+  return column.cellValueType();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public static ByteBuffer getValueOf(ColumnMetadata column,Row row,int nowInSecs){
+
+  if (row == null)   return null;
+
+switch (column.kind) {
+
+case CLUSTERING:
+
+    if (row.isStatic())     return null;
+
+  return row.clustering().bufferAt(column.position());
+
+case STATIC:
+
+if (!row.isStatic()) return null;
+
+case REGULAR:
+
+Cell<?> cell=row.getCell(column);
+
+return cell == null || !cell.isLive(nowInSecs) ? null : cell.buffer();
+
+default :
+
+return null;
+
+}
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public int indexInfoSerializedSize(){
+
+  return buffer != null ? buffer.buffer().limit() : indexSamplesSerializedSize + columnIndexCount * TypeSizes.sizeof(0);
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public List<IndexInfo> indexSamples(){
+
+  if (indexSamplesSerializedSize + columnIndexCount * TypeSizes.sizeof(0) <= cacheSizeThreshold) {
+
+    return indexSamples;
+
+  }
+
+  return null;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public long index(DecoratedKey key,Row row){
+
+  return getCurrentMemtable().index(key,getValueOf(column,row,FBUtilities.nowInSeconds()));
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+/** 
+
+ * Initialize this column index with specific set of SSTables.
+
+ * @param sstables The sstables to be used by index initially.
+
+ * @return A collection of sstables which don't have this specific index attached to them.
+
+ */
+
+public Iterable<SSTableReader> init(Set<SSTableReader> sstables){
+
+  return tracker.update(Collections.emptySet(),sstables);
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public boolean isLiteral(){
+
+  AbstractType<?> validator=getValidator();
+
+  return isIndexed() ? mode.isLiteral : (validator instanceof UTF8Type || validator instanceof AsciiType);
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public AbstractType<?> keyValidator(){
+
+  return keyValidator;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public int[] offsets(){
+
+  return indexOffsets != null ? Arrays.copyOf(indexOffsets,columnIndexCount) : null;
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+private DataOutputBuffer reuseOrAllocateBuffer(){
+
+  if (reusableBuffer != null) {
+
+    DataOutputBuffer buffer=reusableBuffer;
+
+    buffer.clear();
+
+    return buffer;
+
+  }
+
+  return new DataOutputBuffer(cacheSizeThreshold * 2);
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public RangeIterator<Long,Token> searchMemtable(Expression e){
+
+  RangeIterator.Builder<Long,Token> builder=new RangeUnionIterator.Builder<>();
+
+  builder.add(getCurrentMemtable().search(e));
+
+  for (  IndexMemtable memtable : getPendingMemtables())   builder.add(memtable.search(e));
+
+  return builder.build();
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public boolean supports(Operator op){
+
+  if (op == Operator.LIKE)   return isLiteral();
+
+  Op operator=Op.valueOf(op);
+
+  return !(isTokenized && operator == Op.EQ) && !(isTokenized && mode.mode == OnDiskIndexBuilder.Mode.CONTAINS && operator == Op.PREFIX) && !(isLiteral() && operator == Op.RANGE)&& mode.supports(operator);
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public void switchMemtable(){
+
+  memtable.set(new IndexMemtable(this));
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+public void switchMemtable(Memtable parent){
+
+  pendingFlush.putIfAbsent(parent,memtable.getAndSet(new IndexMemtable(this)));
+
+}
+
+Location: ColumnIndex.java
+
+Content: 
+
+private void writePartitionHeader(UnfilteredRowIterator iterator) throws IOException {
+
+  ByteBufferUtil.writeWithShortLength(iterator.partitionKey().getKey(),writer);
+
+  DeletionTime.serializer.serialize(iterator.partitionLevelDeletion(),writer);
+
+  if (header.hasStatic()) {
+
+    Row staticRow=iterator.staticRow();
+
+    UnfilteredSerializer.serializer.serializeStaticRow(staticRow,helper,writer,version);
+
+    if (!observers.isEmpty())     observers.forEach((o) -> o.nextUnfilteredCluster(staticRow));
+
+  }
+
+}
+

@@ -1,0 +1,574 @@
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link TypeCodec codec} that accepts the given {@link DataType CQL type}. <p>This method returns the first matching codec, regardless of its accepted Java type. It should be reserved for situations where the Java type is not available or unknown. In the Java driver, this happens mainly when deserializing a value using the  {@link GettableByIndexData#getObject(int) getObject} method.<p>Codecs returned by this method are cached (see the  {@link CodecRegistry top-leveldocumentation} of this class for more explanations about caching).
+
+ * @param cqlType The {@link DataType CQL type} the codec should accept; must not be {@code null}.
+
+ * @return A suitable codec.
+
+ * @throws CodecNotFoundException if a suitable codec cannot be found.
+
+ */
+
+public <T>TypeCodec<T> codecFor(DataType cqlType) throws CodecNotFoundException {
+
+  return lookupCodec(cqlType,null);
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link TypeCodec codec} that accepts the given {@link DataType CQL type} and thegiven Java class. <p>This method can only handle raw (non-parameterized) Java types. For parameterized types, use {@link #codecFor(DataType,TypeToken)} instead.<p>Codecs returned by this method are cached (see the  {@link CodecRegistry top-leveldocumentation} of this class for more explanations about caching).
+
+ * @param cqlType  The {@link DataType CQL type} the codec should accept; must not be {@code null}.
+
+ * @param javaType The Java type the codec should accept; can be {@code null}.
+
+ * @return A suitable codec.
+
+ * @throws CodecNotFoundException if a suitable codec cannot be found.
+
+ */
+
+public <T>TypeCodec<T> codecFor(DataType cqlType,Class<T> javaType) throws CodecNotFoundException {
+
+  return codecFor(cqlType,TypeToken.of(javaType));
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link TypeCodec codec} that accepts the given {@link DataType CQL type} and thegiven value. <p>This method takes an arbitrary Java object and tries to locate a suitable codec for it. Codecs must perform a  {@link TypeCodec#accepts(Object) runtime inspection} of the object todetermine if they can accept it or not, which, depending on the implementations, can be expensive; besides, the resulting codec cannot be cached. Therefore there might be a performance penalty when using this method. <p>Codecs returned by this method are <em>NOT</em> cached (see the  {@link CodecRegistry top-level documentation} of this class for more explanations about caching).
+
+ * @param cqlType The {@link DataType CQL type} the codec should accept; can be {@code null}.
+
+ * @param value   The value the codec should accept; must not be {@code null}.
+
+ * @return A suitable codec.
+
+ * @throws CodecNotFoundException if a suitable codec cannot be found.
+
+ */
+
+public <T>TypeCodec<T> codecFor(DataType cqlType,T value){
+
+  return findCodec(cqlType,value);
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link TypeCodec codec} that accepts the given {@link DataType CQL type} and thegiven Java type. <p>This method handles parameterized types thanks to Guava's  {@link TypeToken} API.<p>Codecs returned by this method are cached (see the  {@link CodecRegistry top-leveldocumentation} of this class for more explanations about caching).
+
+ * @param cqlType  The {@link DataType CQL type} the codec should accept; must not be {@code null}.
+
+ * @param javaType The {@link TypeToken Java type} the codec should accept; can be {@code null}.
+
+ * @return A suitable codec.
+
+ * @throws CodecNotFoundException if a suitable codec cannot be found.
+
+ */
+
+public <T>TypeCodec<T> codecFor(DataType cqlType,TypeToken<T> javaType) throws CodecNotFoundException {
+
+  return lookupCodec(cqlType,javaType);
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link TypeCodec codec} that accepts the given value.<p>This method takes an arbitrary Java object and tries to locate a suitable codec for it. Codecs must perform a  {@link TypeCodec#accepts(Object) runtime inspection} of the object todetermine if they can accept it or not, which, depending on the implementations, can be expensive; besides, the resulting codec cannot be cached. Therefore there might be a performance penalty when using this method. <p>Furthermore, this method returns the first matching codec, regardless of its accepted CQL type. It should be reserved for situations where the target CQL type is not available or unknown. In the Java driver, this happens mainly when serializing a value in a  {@code SimpleStatement#SimpleStatement(String, Object...) SimpleStatement} or in the {@code querybuilder.QueryBuilder}, where no CQL type information is available. <p>Codecs returned by this method are <em>NOT</em> cached (see the  {@link CodecRegistry top-level documentation} of this class for more explanations about caching).
+
+ * @param value The value the codec should accept; must not be {@code null}.
+
+ * @return A suitable codec.
+
+ * @throws CodecNotFoundException if a suitable codec cannot be found.
+
+ */
+
+public <T>TypeCodec<T> codecFor(T value){
+
+  return findCodec(null,value);
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance initialized with built-in codecs for all the base CQL types.
+
+ */
+
+public CodecRegistry(){
+
+  this.codecs=new CopyOnWriteArrayList<>();
+
+  this.cache=defaultCacheBuilder().build(new TypeCodecCacheLoader());
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+private <T>TypeCodec<T> createCodec(DataType cqlType,T value){
+
+  TypeCodec<T> codec=maybeCreateCodec(cqlType,value);
+
+  if (codec == null)   throw notFound(cqlType,TypeToken.of(value.getClass()));
+
+  if ((cqlType != null && !codec.accepts(cqlType)) || !codec.accepts(value))   throw notFound(cqlType,TypeToken.of(value.getClass()));
+
+  logger.trace("Codec created: {}",codec);
+
+  return codec;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+private <T>TypeCodec<T> createCodec(DataType cqlType,TypeToken<T> javaType){
+
+  TypeCodec<T> codec=maybeCreateCodec(cqlType,javaType);
+
+  if (codec == null)   throw notFound(cqlType,javaType);
+
+  if (!codec.accepts(cqlType) || (javaType != null && !codec.accepts(javaType)))   throw notFound(cqlType,javaType);
+
+  logger.trace("Codec created: {}",codec);
+
+  return codec;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+private CacheBuilder<CacheKey,TypeCodec<?>> defaultCacheBuilder(){
+
+  CacheBuilder<CacheKey,TypeCodec<?>> builder=CacheBuilder.newBuilder().initialCapacity(100).maximumWeight(1000).weigher(new TypeCodecWeigher());
+
+  if (logger.isTraceEnabled())   builder=builder.removalListener(new TypeCodecRemovalListener());
+
+  return builder;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <T>TypeCodec<T> findCodec(DataType cqlType,T value){
+
+  checkNotNull(value,"Parameter value cannot be null");
+
+  if (logger.isTraceEnabled())   logger.trace("Looking for codec [{} <-> {}]",toString(cqlType),value.getClass());
+
+  for (  TypeCodec<?> codec : BUILT_IN_CODECS) {
+
+    if ((cqlType == null || codec.accepts(cqlType)) && codec.accepts(value)) {
+
+      logger.trace("Built-in codec found: {}",codec);
+
+      return (TypeCodec<T>)codec;
+
+    }
+
+  }
+
+  for (  TypeCodec<?> codec : codecs) {
+
+    if ((cqlType == null || codec.accepts(cqlType)) && codec.accepts(value)) {
+
+      logger.trace("Already registered codec found: {}",codec);
+
+      return (TypeCodec<T>)codec;
+
+    }
+
+  }
+
+  return createCodec(cqlType,value);
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <T>TypeCodec<T> findCodec(DataType cqlType,TypeToken<T> javaType){
+
+  checkNotNull(cqlType,"Parameter cqlType cannot be null");
+
+  if (logger.isTraceEnabled())   logger.trace("Looking for codec [{} <-> {}]",toString(cqlType),toString(javaType));
+
+  for (  TypeCodec<?> codec : BUILT_IN_CODECS) {
+
+    if (codec.accepts(cqlType) && (javaType == null || codec.accepts(javaType))) {
+
+      logger.trace("Built-in codec found: {}",codec);
+
+      return (TypeCodec<T>)codec;
+
+    }
+
+  }
+
+  for (  TypeCodec<?> codec : codecs) {
+
+    if (codec.accepts(cqlType) && (javaType == null || codec.accepts(javaType))) {
+
+      logger.trace("Already registered codec found: {}",codec);
+
+      return (TypeCodec<T>)codec;
+
+    }
+
+  }
+
+  return createCodec(cqlType,javaType);
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <T>TypeCodec<T> lookupCodec(DataType cqlType,TypeToken<T> javaType){
+
+  checkNotNull(cqlType,"Parameter cqlType cannot be null");
+
+  TypeCodec<?> codec=BUILT_IN_CODECS_MAP.get(cqlType.getName());
+
+  if (codec != null && (javaType == null || codec.accepts(javaType))) {
+
+    logger.trace("Returning built-in codec {}",codec);
+
+    return (TypeCodec<T>)codec;
+
+  }
+
+  if (logger.isTraceEnabled())   logger.trace("Querying cache for codec [{} <-> {}]",toString(cqlType),toString(javaType));
+
+  try {
+
+    CacheKey cacheKey=new CacheKey(cqlType,javaType);
+
+    codec=cache.get(cacheKey);
+
+  }
+
+ catch (  UncheckedExecutionException e) {
+
+    if (e.getCause() instanceof CodecNotFoundException) {
+
+      throw (CodecNotFoundException)e.getCause();
+
+    }
+
+    throw new CodecNotFoundException(e.getCause());
+
+  }
+
+catch (  RuntimeException|ExecutionException e) {
+
+    throw new CodecNotFoundException(e.getCause());
+
+  }
+
+  logger.trace("Returning cached codec {}",codec);
+
+  return (TypeCodec<T>)codec;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+@SuppressWarnings({"unchecked","rawtypes"}) private <T>TypeCodec<T> maybeCreateCodec(DataType cqlType,T value){
+
+  checkNotNull(value);
+
+  if ((cqlType == null || cqlType.getName() == LIST) && value instanceof List) {
+
+    List list=(List)value;
+
+    if (list.isEmpty()) {
+
+      DataType elementType=(cqlType == null || cqlType.getTypeArguments().isEmpty()) ? DataType.blob() : cqlType.getTypeArguments().get(0);
+
+      return (TypeCodec<T>)TypeCodec.list(findCodec(elementType,(TypeToken)null));
+
+    }
+
+ else {
+
+      DataType elementType=(cqlType == null || cqlType.getTypeArguments().isEmpty()) ? null : cqlType.getTypeArguments().get(0);
+
+      return (TypeCodec<T>)TypeCodec.list(findCodec(elementType,list.iterator().next()));
+
+    }
+
+  }
+
+  if ((cqlType == null || cqlType.getName() == SET) && value instanceof Set) {
+
+    Set set=(Set)value;
+
+    if (set.isEmpty()) {
+
+      DataType elementType=(cqlType == null || cqlType.getTypeArguments().isEmpty()) ? DataType.blob() : cqlType.getTypeArguments().get(0);
+
+      return (TypeCodec<T>)TypeCodec.set(findCodec(elementType,(TypeToken)null));
+
+    }
+
+ else {
+
+      DataType elementType=(cqlType == null || cqlType.getTypeArguments().isEmpty()) ? null : cqlType.getTypeArguments().get(0);
+
+      return (TypeCodec<T>)TypeCodec.set(findCodec(elementType,set.iterator().next()));
+
+    }
+
+  }
+
+  if ((cqlType == null || cqlType.getName() == MAP) && value instanceof Map) {
+
+    Map map=(Map)value;
+
+    if (map.isEmpty()) {
+
+      DataType keyType=(cqlType == null || cqlType.getTypeArguments().size() < 1) ? DataType.blob() : cqlType.getTypeArguments().get(0);
+
+      DataType valueType=(cqlType == null || cqlType.getTypeArguments().size() < 2) ? DataType.blob() : cqlType.getTypeArguments().get(1);
+
+      return (TypeCodec<T>)TypeCodec.map(findCodec(keyType,(TypeToken)null),findCodec(valueType,(TypeToken)null));
+
+    }
+
+ else {
+
+      DataType keyType=(cqlType == null || cqlType.getTypeArguments().size() < 1) ? null : cqlType.getTypeArguments().get(0);
+
+      DataType valueType=(cqlType == null || cqlType.getTypeArguments().size() < 2) ? null : cqlType.getTypeArguments().get(1);
+
+      Map.Entry entry=(Map.Entry)map.entrySet().iterator().next();
+
+      return (TypeCodec<T>)TypeCodec.map(findCodec(keyType,entry.getKey()),findCodec(valueType,entry.getValue()));
+
+    }
+
+  }
+
+  if ((cqlType == null || cqlType.getName() == DataType.Name.TUPLE) && value instanceof TupleValue) {
+
+    return (TypeCodec<T>)TypeCodec.tuple(cqlType == null ? ((TupleValue)value).getType() : (TupleType)cqlType);
+
+  }
+
+  if ((cqlType == null || cqlType.getName() == DataType.Name.UDT) && value instanceof UDTValue) {
+
+    return (TypeCodec<T>)TypeCodec.userType(cqlType == null ? ((UDTValue)value).getType() : (UserType)cqlType);
+
+  }
+
+  if ((cqlType instanceof DataType.CustomType) && value instanceof ByteBuffer) {
+
+    return (TypeCodec<T>)TypeCodec.custom((DataType.CustomType)cqlType);
+
+  }
+
+  return null;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <T>TypeCodec<T> maybeCreateCodec(DataType cqlType,TypeToken<T> javaType){
+
+  checkNotNull(cqlType);
+
+  if (cqlType.getName() == LIST && (javaType == null || List.class.isAssignableFrom(javaType.getRawType()))) {
+
+    TypeToken<?> elementType=null;
+
+    if (javaType != null && javaType.getType() instanceof ParameterizedType) {
+
+      Type[] typeArguments=((ParameterizedType)javaType.getType()).getActualTypeArguments();
+
+      elementType=TypeToken.of(typeArguments[0]);
+
+    }
+
+    TypeCodec<?> eltCodec=findCodec(cqlType.getTypeArguments().get(0),elementType);
+
+    return (TypeCodec<T>)TypeCodec.list(eltCodec);
+
+  }
+
+  if (cqlType.getName() == SET && (javaType == null || Set.class.isAssignableFrom(javaType.getRawType()))) {
+
+    TypeToken<?> elementType=null;
+
+    if (javaType != null && javaType.getType() instanceof ParameterizedType) {
+
+      Type[] typeArguments=((ParameterizedType)javaType.getType()).getActualTypeArguments();
+
+      elementType=TypeToken.of(typeArguments[0]);
+
+    }
+
+    TypeCodec<?> eltCodec=findCodec(cqlType.getTypeArguments().get(0),elementType);
+
+    return (TypeCodec<T>)TypeCodec.set(eltCodec);
+
+  }
+
+  if (cqlType.getName() == MAP && (javaType == null || Map.class.isAssignableFrom(javaType.getRawType()))) {
+
+    TypeToken<?> keyType=null;
+
+    TypeToken<?> valueType=null;
+
+    if (javaType != null && javaType.getType() instanceof ParameterizedType) {
+
+      Type[] typeArguments=((ParameterizedType)javaType.getType()).getActualTypeArguments();
+
+      keyType=TypeToken.of(typeArguments[0]);
+
+      valueType=TypeToken.of(typeArguments[1]);
+
+    }
+
+    TypeCodec<?> keyCodec=findCodec(cqlType.getTypeArguments().get(0),keyType);
+
+    TypeCodec<?> valueCodec=findCodec(cqlType.getTypeArguments().get(1),valueType);
+
+    return (TypeCodec<T>)TypeCodec.map(keyCodec,valueCodec);
+
+  }
+
+  if (cqlType instanceof TupleType && (javaType == null || TupleValue.class.isAssignableFrom(javaType.getRawType()))) {
+
+    return (TypeCodec<T>)TypeCodec.tuple((TupleType)cqlType);
+
+  }
+
+  if (cqlType instanceof UserType && (javaType == null || UDTValue.class.isAssignableFrom(javaType.getRawType()))) {
+
+    return (TypeCodec<T>)TypeCodec.userType((UserType)cqlType);
+
+  }
+
+  if (cqlType instanceof DataType.CustomType && (javaType == null || ByteBuffer.class.isAssignableFrom(javaType.getRawType()))) {
+
+    return (TypeCodec<T>)TypeCodec.custom((DataType.CustomType)cqlType);
+
+  }
+
+  return null;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+private static CodecNotFoundException notFound(DataType cqlType,TypeToken<?> javaType){
+
+  String msg=String.format("Codec not found for requested operation: [%s <-> %s]",toString(cqlType),toString(javaType));
+
+  return new CodecNotFoundException(msg);
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Register the given codecs with this registry.
+
+ * @param codecs The codecs to add to the registry.
+
+ * @return this CodecRegistry (for method chaining).
+
+ * @see #register(TypeCodec)
+
+ */
+
+public CodecRegistry register(Iterable<? extends TypeCodec<?>> codecs){
+
+  for (  TypeCodec<?> codec : codecs)   register(codec);
+
+  return this;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+/** 
+
+ * Register the given codecs with this registry.
+
+ * @param codecs The codecs to add to the registry.
+
+ * @return this CodecRegistry (for method chaining).
+
+ * @see #register(TypeCodec)
+
+ */
+
+public CodecRegistry register(TypeCodec<?>... codecs){
+
+  for (  TypeCodec<?> codec : codecs)   register(codec);
+
+  return this;
+
+}
+
+Location: CodecRegistry.java
+
+Content: 
+
+private static String toString(Object value){
+
+  return value == null ? "ANY" : value.toString();
+
+}
+
