@@ -1,0 +1,194 @@
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new instance for the given File.
+
+ * @param file The file to stream.
+
+ * @throws IOException If an I/O error occurs
+
+ */
+
+public BufferedFileChannelInputStream(final File file) throws IOException {
+
+  this(file,IOUtils.DEFAULT_BUFFER_SIZE);
+
+}
+
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new instance for the given File and buffer size.
+
+ * @param file The file to stream.
+
+ * @param bufferSizeInBytes buffer size.
+
+ * @throws IOException If an I/O error occurs
+
+ */
+
+public BufferedFileChannelInputStream(final File file,final int bufferSizeInBytes) throws IOException {
+
+  this(file.toPath(),bufferSizeInBytes);
+
+}
+
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new instance for the given Path.
+
+ * @param path The path to stream.
+
+ * @throws IOException If an I/O error occurs
+
+ */
+
+public BufferedFileChannelInputStream(final Path path) throws IOException {
+
+  this(path,IOUtils.DEFAULT_BUFFER_SIZE);
+
+}
+
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new instance for the given Path and buffer size.
+
+ * @param path The path to stream.
+
+ * @param bufferSizeInBytes buffer size.
+
+ * @throws IOException If an I/O error occurs
+
+ */
+
+public BufferedFileChannelInputStream(final Path path,final int bufferSizeInBytes) throws IOException {
+
+  Objects.requireNonNull(path,"path");
+
+  fileChannel=FileChannel.open(path,StandardOpenOption.READ);
+
+  byteBuffer=ByteBuffer.allocateDirect(bufferSizeInBytes);
+
+  byteBuffer.flip();
+
+}
+
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+/** 
+
+ * In Java 8, the type of  {@code sun.nio.ch.DirectBuffer.cleaner()} was {@code sun.misc.Cleaner}, and it was possible to access the method  {@code sun.misc.Cleaner.clean()} to invoke it. The type changed to {@code jdk.internal.ref.Cleaner}in later JDKs, and the  {@code clean()} method is not accessible even with reflection. However {@code sun.misc.Unsafe}added an  {@code invokeCleaner()} method in JDK 9+ and this is still accessible with reflection.
+
+ * @param buffer the buffer to clean. must be a DirectBuffer.
+
+ */
+
+private void cleanDirectBuffer(final ByteBuffer buffer){
+
+  if (ByteBufferCleaner.isSupported()) {
+
+    ByteBufferCleaner.clean(buffer);
+
+  }
+
+}
+
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+/** 
+
+ * Attempts to clean up a ByteBuffer if it is direct or memory-mapped. This uses an *unsafe* Sun API that will cause errors if one attempts to read from the disposed buffer. However, neither the bytes allocated to direct buffers nor file descriptors opened for memory-mapped buffers put pressure on the garbage collector. Waiting for garbage collection may lead to the depletion of off-heap memory or huge numbers of open files. There's unfortunately no standard API to manually dispose of these kinds of buffers.
+
+ * @param buffer the buffer to clean.
+
+ */
+
+private void clean(final ByteBuffer buffer){
+
+  if (buffer.isDirect()) {
+
+    cleanDirectBuffer(buffer);
+
+  }
+
+}
+
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+/** 
+
+ * Checks whether data is left to be read from the input stream.
+
+ * @return true if data is left, false otherwise
+
+ */
+
+private boolean refill() throws IOException {
+
+  if (!byteBuffer.hasRemaining()) {
+
+    byteBuffer.clear();
+
+    int nRead=0;
+
+    while (nRead == 0) {
+
+      nRead=fileChannel.read(byteBuffer);
+
+    }
+
+    byteBuffer.flip();
+
+    return nRead >= 0;
+
+  }
+
+  return true;
+
+}
+
+Location: BufferedFileChannelInputStream.java
+
+Content: 
+
+private long skipFromFileChannel(final long n) throws IOException {
+
+  final long currentFilePosition=fileChannel.position();
+
+  final long size=fileChannel.size();
+
+  if (n > size - currentFilePosition) {
+
+    fileChannel.position(size);
+
+    return size - currentFilePosition;
+
+  }
+
+  fileChannel.position(currentFilePosition + n);
+
+  return n;
+
+}
+

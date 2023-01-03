@@ -1,0 +1,310 @@
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new BOM InputStream that excludes a  {@link ByteOrderMark#UTF_8} BOM.
+
+ * @param delegate the InputStream to delegate to
+
+ */
+
+public BOMInputStream(final InputStream delegate){
+
+  this(delegate,false,ByteOrderMark.UTF_8);
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new BOM InputStream that detects a a  {@link ByteOrderMark#UTF_8} and optionally includes it.
+
+ * @param delegate the InputStream to delegate to
+
+ * @param include true to include the UTF-8 BOM or false to exclude it
+
+ */
+
+public BOMInputStream(final InputStream delegate,final boolean include){
+
+  this(delegate,include,ByteOrderMark.UTF_8);
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new BOM InputStream that detects the specified BOMs and optionally includes them.
+
+ * @param delegate the InputStream to delegate to
+
+ * @param include true to include the specified BOMs or false to exclude them
+
+ * @param boms The BOMs to detect and optionally exclude
+
+ */
+
+public BOMInputStream(final InputStream delegate,final boolean include,final ByteOrderMark... boms){
+
+  super(delegate);
+
+  if (IOUtils.length(boms) == 0) {
+
+    throw new IllegalArgumentException("No BOMs specified");
+
+  }
+
+  this.include=include;
+
+  final List<ByteOrderMark> list=Arrays.asList(boms);
+
+  list.sort(ByteOrderMarkLengthComparator);
+
+  this.boms=list;
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Constructs a new BOM InputStream that excludes the specified BOMs.
+
+ * @param delegate the InputStream to delegate to
+
+ * @param boms The BOMs to detect and exclude
+
+ */
+
+public BOMInputStream(final InputStream delegate,final ByteOrderMark... boms){
+
+  this(delegate,false,boms);
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Find a BOM with the specified bytes.
+
+ * @return The matched BOM or null if none matched
+
+ */
+
+private ByteOrderMark find(){
+
+  for (  final ByteOrderMark bom : boms) {
+
+    if (matches(bom)) {
+
+      return bom;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Return the BOM (Byte Order Mark).
+
+ * @return The BOM or null if none
+
+ * @throws IOException if an error reading the first bytes of the stream occurs
+
+ */
+
+public ByteOrderMark getBOM() throws IOException {
+
+  if (firstBytes == null) {
+
+    fbLength=0;
+
+    final int maxBomSize=boms.get(0).length();
+
+    firstBytes=new int[maxBomSize];
+
+    for (int i=0; i < firstBytes.length; i++) {
+
+      firstBytes[i]=in.read();
+
+      fbLength++;
+
+      if (firstBytes[i] < 0) {
+
+        break;
+
+      }
+
+    }
+
+    byteOrderMark=find();
+
+    if ((byteOrderMark != null) && !include) {
+
+      if (byteOrderMark.length() < firstBytes.length) {
+
+        fbIndex=byteOrderMark.length();
+
+      }
+
+ else {
+
+        fbLength=0;
+
+      }
+
+    }
+
+  }
+
+  return byteOrderMark;
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Return the BOM charset Name -  {@link ByteOrderMark#getCharsetName()}.
+
+ * @return The BOM charset Name or null if no BOM found
+
+ * @throws IOException if an error reading the first bytes of the stream occurs
+
+ */
+
+public String getBOMCharsetName() throws IOException {
+
+  getBOM();
+
+  return byteOrderMark == null ? null : byteOrderMark.getCharsetName();
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Indicates whether the stream contains one of the specified BOMs.
+
+ * @return true if the stream has one of the specified BOMs, otherwise false if it does not
+
+ * @throws IOException if an error reading the first bytes of the stream occurs
+
+ */
+
+public boolean hasBOM() throws IOException {
+
+  return getBOM() != null;
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Indicates whether the stream contains the specified BOM.
+
+ * @param bom The BOM to check for
+
+ * @return true if the stream has the specified BOM, otherwise false if it does not
+
+ * @throws IllegalArgumentException if the BOM is not one the stream is configured to detect
+
+ * @throws IOException if an error reading the first bytes of the stream occurs
+
+ */
+
+public boolean hasBOM(final ByteOrderMark bom) throws IOException {
+
+  if (!boms.contains(bom)) {
+
+    throw new IllegalArgumentException("Stream not configure to detect " + bom);
+
+  }
+
+  getBOM();
+
+  return byteOrderMark != null && byteOrderMark.equals(bom);
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * Check if the bytes match a BOM.
+
+ * @param bom The BOM
+
+ * @return true if the bytes match the bom, otherwise false
+
+ */
+
+private boolean matches(final ByteOrderMark bom){
+
+  for (int i=0; i < bom.length(); i++) {
+
+    if (bom.get(i) != firstBytes[i]) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: BOMInputStream.java
+
+Content: 
+
+/** 
+
+ * This method reads and either preserves or skips the first bytes in the stream. It behaves like the single-byte {@code read()} method, either returning a valid byte or -1 to indicate that the initial bytes have beenprocessed already.
+
+ * @return the byte read (excluding BOM) or -1 if the end of stream
+
+ * @throws IOException if an I/O error occurs
+
+ */
+
+private int readFirstBytes() throws IOException {
+
+  getBOM();
+
+  return fbIndex < fbLength ? firstBytes[fbIndex++] : EOF;
+
+}
+

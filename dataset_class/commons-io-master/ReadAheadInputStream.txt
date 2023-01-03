@@ -1,0 +1,310 @@
+Location: ReadAheadInputStream.java
+
+Content: 
+
+private void checkReadException() throws IOException {
+
+  if (readAborted) {
+
+    if (readException instanceof IOException) {
+
+      throw (IOException)readException;
+
+    }
+
+    throw new IOException(readException);
+
+  }
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+private void closeUnderlyingInputStreamIfNecessary(){
+
+  boolean needToCloseUnderlyingInputStream=false;
+
+  stateChangeLock.lock();
+
+  try {
+
+    isReading=false;
+
+    if (isClosed && !isUnderlyingInputStreamBeingClosed) {
+
+      needToCloseUnderlyingInputStream=true;
+
+    }
+
+  }
+
+  finally {
+
+    stateChangeLock.unlock();
+
+  }
+
+  if (needToCloseUnderlyingInputStream) {
+
+    try {
+
+      underlyingInputStream.close();
+
+    }
+
+ catch (    final IOException e) {
+
+    }
+
+  }
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+private boolean isEndOfStream(){
+
+  return !activeBuffer.hasRemaining() && !readAheadBuffer.hasRemaining() && endOfStream;
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+/** 
+
+ * Creates a new daemon executor service.
+
+ * @return a new daemon executor service.
+
+ */
+
+private static ExecutorService newExecutorService(){
+
+  return Executors.newSingleThreadExecutor(ReadAheadInputStream::newThread);
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+/** 
+
+ * Creates a new daemon thread.
+
+ * @param r the thread's runnable.
+
+ * @return a new daemon thread.
+
+ */
+
+private static Thread newThread(final Runnable r){
+
+  final Thread thread=new Thread(r,"commons-io-read-ahead");
+
+  thread.setDaemon(true);
+
+  return thread;
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+/** 
+
+ * Creates an instance with the specified buffer size and read-ahead threshold
+
+ * @param inputStream The underlying input stream.
+
+ * @param bufferSizeInBytes The buffer size.
+
+ */
+
+public ReadAheadInputStream(final InputStream inputStream,final int bufferSizeInBytes){
+
+  this(inputStream,bufferSizeInBytes,newExecutorService(),true);
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+/** 
+
+ * Creates an instance with the specified buffer size and read-ahead threshold
+
+ * @param inputStream The underlying input stream.
+
+ * @param bufferSizeInBytes The buffer size.
+
+ * @param executorService An executor service for the read-ahead thread.
+
+ */
+
+public ReadAheadInputStream(final InputStream inputStream,final int bufferSizeInBytes,final ExecutorService executorService){
+
+  this(inputStream,bufferSizeInBytes,executorService,false);
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+/** 
+
+ * Creates an instance with the specified buffer size and read-ahead threshold
+
+ * @param inputStream The underlying input stream.
+
+ * @param bufferSizeInBytes The buffer size.
+
+ * @param executorService An executor service for the read-ahead thread.
+
+ * @param shutdownExecutorService Whether or not to shutdown the given ExecutorService on close.
+
+ */
+
+private ReadAheadInputStream(final InputStream inputStream,final int bufferSizeInBytes,final ExecutorService executorService,final boolean shutdownExecutorService){
+
+  if (bufferSizeInBytes <= 0) {
+
+    throw new IllegalArgumentException("bufferSizeInBytes should be greater than 0, but the value is " + bufferSizeInBytes);
+
+  }
+
+  this.executorService=Objects.requireNonNull(executorService,"executorService");
+
+  this.underlyingInputStream=Objects.requireNonNull(inputStream,"inputStream");
+
+  this.shutdownExecutorService=shutdownExecutorService;
+
+  this.activeBuffer=ByteBuffer.allocate(bufferSizeInBytes);
+
+  this.readAheadBuffer=ByteBuffer.allocate(bufferSizeInBytes);
+
+  this.activeBuffer.flip();
+
+  this.readAheadBuffer.flip();
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+private void signalAsyncReadComplete(){
+
+  stateChangeLock.lock();
+
+  try {
+
+    asyncReadComplete.signalAll();
+
+  }
+
+  finally {
+
+    stateChangeLock.unlock();
+
+  }
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+/** 
+
+ * Internal skip function which should be called only from skip(). The assumption is that the stateChangeLock is already acquired in the caller before calling this function.
+
+ * @param n the number of bytes to be skipped.
+
+ * @return the actual number of bytes skipped.
+
+ */
+
+private long skipInternal(final long n) throws IOException {
+
+  assert stateChangeLock.isLocked();
+
+  waitForAsyncReadComplete();
+
+  if (isEndOfStream()) {
+
+    return 0;
+
+  }
+
+  if (available() >= n) {
+
+    int toSkip=(int)n;
+
+    toSkip-=activeBuffer.remaining();
+
+    assert toSkip > 0;
+
+    activeBuffer.position(0);
+
+    activeBuffer.flip();
+
+    readAheadBuffer.position(toSkip + readAheadBuffer.position());
+
+    swapBuffers();
+
+    readAsync();
+
+    return n;
+
+  }
+
+  final int skippedBytes=available();
+
+  final long toSkip=n - skippedBytes;
+
+  activeBuffer.position(0);
+
+  activeBuffer.flip();
+
+  readAheadBuffer.position(0);
+
+  readAheadBuffer.flip();
+
+  final long skippedFromInputStream=underlyingInputStream.skip(toSkip);
+
+  readAsync();
+
+  return skippedBytes + skippedFromInputStream;
+
+}
+
+Location: ReadAheadInputStream.java
+
+Content: 
+
+/** 
+
+ * Flips the active and read ahead buffer
+
+ */
+
+private void swapBuffers(){
+
+  final ByteBuffer temp=activeBuffer;
+
+  activeBuffer=readAheadBuffer;
+
+  readAheadBuffer=temp;
+
+}
+
