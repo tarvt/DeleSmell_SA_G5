@@ -1,0 +1,1328 @@
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructor only used in deserialization, do not use otherwise.
+
+ */
+
+protected AbstractHashedMap(){
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructs a new, empty map with the specified initial capacity and default load factor.
+
+ * @param initialCapacity  the initial capacity
+
+ * @throws IllegalArgumentException if the initial capacity is negative
+
+ */
+
+protected AbstractHashedMap(final int initialCapacity){
+
+  this(initialCapacity,DEFAULT_LOAD_FACTOR);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructs a new, empty map with the specified initial capacity and load factor.
+
+ * @param initialCapacity  the initial capacity
+
+ * @param loadFactor  the load factor
+
+ * @throws IllegalArgumentException if the initial capacity is negative
+
+ * @throws IllegalArgumentException if the load factor is less than or equal to zero
+
+ */
+
+@SuppressWarnings("unchecked") protected AbstractHashedMap(int initialCapacity,final float loadFactor){
+
+  if (initialCapacity < 0) {
+
+    throw new IllegalArgumentException("Initial capacity must be a non negative number");
+
+  }
+
+  if (loadFactor <= 0.0f || Float.isNaN(loadFactor)) {
+
+    throw new IllegalArgumentException("Load factor must be greater than 0");
+
+  }
+
+  this.loadFactor=loadFactor;
+
+  initialCapacity=calculateNewCapacity(initialCapacity);
+
+  this.threshold=calculateThreshold(initialCapacity,loadFactor);
+
+  this.data=new HashEntry[initialCapacity];
+
+  init();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructor which performs no validation on the passed in parameters.
+
+ * @param initialCapacity  the initial capacity, must be a power of two
+
+ * @param loadFactor  the load factor, must be &gt; 0.0f and generally &lt; 1.0f
+
+ * @param threshold  the threshold, must be sensible
+
+ */
+
+@SuppressWarnings("unchecked") protected AbstractHashedMap(final int initialCapacity,final float loadFactor,final int threshold){
+
+  this.loadFactor=loadFactor;
+
+  this.data=new HashEntry[initialCapacity];
+
+  this.threshold=threshold;
+
+  init();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructor copying elements from another map.
+
+ * @param map  the map to copy
+
+ * @throws NullPointerException if the map is null
+
+ */
+
+protected AbstractHashedMap(final Map<? extends K,? extends V> map){
+
+  this(Math.max(2 * map.size(),DEFAULT_CAPACITY),DEFAULT_LOAD_FACTOR);
+
+  _putAll(map);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Adds an entry into this map. <p> This implementation adds the entry to the data storage table. Subclasses could override to handle changes to the map.
+
+ * @param entry  the entry to add
+
+ * @param hashIndex  the index into the data array to store at
+
+ */
+
+protected void addEntry(final HashEntry<K,V> entry,final int hashIndex){
+
+  data[hashIndex]=entry;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Calculates the new capacity of the map. This implementation normalizes the capacity to a power of two.
+
+ * @param proposedCapacity  the proposed capacity
+
+ * @return the normalized new capacity
+
+ */
+
+protected int calculateNewCapacity(final int proposedCapacity){
+
+  int newCapacity=1;
+
+  if (proposedCapacity > MAXIMUM_CAPACITY) {
+
+    newCapacity=MAXIMUM_CAPACITY;
+
+  }
+
+ else {
+
+    while (newCapacity < proposedCapacity) {
+
+      newCapacity<<=1;
+
+    }
+
+    if (newCapacity > MAXIMUM_CAPACITY) {
+
+      newCapacity=MAXIMUM_CAPACITY;
+
+    }
+
+  }
+
+  return newCapacity;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Calculates the new threshold of the map, where it will be resized. This implementation uses the load factor.
+
+ * @param newCapacity  the new capacity
+
+ * @param factor  the load factor
+
+ * @return the new resize threshold
+
+ */
+
+protected int calculateThreshold(final int newCapacity,final float factor){
+
+  return (int)(newCapacity * factor);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Checks the capacity of the map and enlarges it if necessary. <p> This implementation uses the threshold to check if the map needs enlarging
+
+ */
+
+protected void checkCapacity(){
+
+  if (size >= threshold) {
+
+    final int newCapacity=data.length * 2;
+
+    if (newCapacity <= MAXIMUM_CAPACITY) {
+
+      ensureCapacity(newCapacity);
+
+    }
+
+  }
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Converts input keys to another object for storage in the map. This implementation masks nulls. Subclasses can override this to perform alternate key conversions. <p> The reverse conversion can be changed, if required, by overriding the getKey() method in the hash entry.
+
+ * @param key  the key convert
+
+ * @return the converted key
+
+ */
+
+protected Object convertKey(final Object key){
+
+  return key == null ? NULL : key;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Creates a key set iterator. Subclasses can override this to return iterators with different properties.
+
+ * @return the keySet iterator
+
+ */
+
+protected Iterator<K> createKeySetIterator(){
+
+  if (isEmpty()) {
+
+    return EmptyIterator.<K>emptyIterator();
+
+  }
+
+  return new KeySetIterator<>(this);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Creates a values iterator. Subclasses can override this to return iterators with different properties.
+
+ * @return the values iterator
+
+ */
+
+protected Iterator<V> createValuesIterator(){
+
+  if (isEmpty()) {
+
+    return EmptyIterator.<V>emptyIterator();
+
+  }
+
+  return new ValuesIterator<>(this);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Kills an entry ready for the garbage collector. <p> This implementation prepares the HashEntry for garbage collection. Subclasses can override this to implement caching (override clear as well).
+
+ * @param entry  the entry to destroy
+
+ */
+
+protected void destroyEntry(final HashEntry<K,V> entry){
+
+  entry.next=null;
+
+  entry.key=null;
+
+  entry.value=null;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Changes the size of the data structure to the capacity proposed.
+
+ * @param newCapacity  the new capacity of the array (a power of two, less or equal to max)
+
+ */
+
+@SuppressWarnings("unchecked") protected void ensureCapacity(final int newCapacity){
+
+  final int oldCapacity=data.length;
+
+  if (newCapacity <= oldCapacity) {
+
+    return;
+
+  }
+
+  if (size == 0) {
+
+    threshold=calculateThreshold(newCapacity,loadFactor);
+
+    data=new HashEntry[newCapacity];
+
+  }
+
+ else {
+
+    final HashEntry<K,V> oldEntries[]=data;
+
+    final HashEntry<K,V> newEntries[]=new HashEntry[newCapacity];
+
+    modCount++;
+
+    for (int i=oldCapacity - 1; i >= 0; i--) {
+
+      HashEntry<K,V> entry=oldEntries[i];
+
+      if (entry != null) {
+
+        oldEntries[i]=null;
+
+        do {
+
+          final HashEntry<K,V> next=entry.next;
+
+          final int index=hashIndex(entry.hashCode,newCapacity);
+
+          entry.next=newEntries[index];
+
+          newEntries[index]=entry;
+
+          entry=next;
+
+        }
+
+ while (entry != null);
+
+      }
+
+    }
+
+    threshold=calculateThreshold(newCapacity,loadFactor);
+
+    data=newEntries;
+
+  }
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code hashCode} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code hashCode} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected int entryHashCode(final HashEntry<K,V> entry){
+
+  return entry.hashCode;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code key} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code key} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected K entryKey(final HashEntry<K,V> entry){
+
+  return entry.getKey();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code next} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code next} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected HashEntry<K,V> entryNext(final HashEntry<K,V> entry){
+
+  return entry.next;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code value} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code value} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected V entryValue(final HashEntry<K,V> entry){
+
+  return entry.getValue();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the index into the data storage for the hashCode specified. This implementation uses the least significant bits of the hashCode. Subclasses can override this to return alternate bucketing.
+
+ * @param hashCode  the hash code to use
+
+ * @param dataSize  the size of the data to pick a bucket from
+
+ * @return the bucket index
+
+ */
+
+protected int hashIndex(final int hashCode,final int dataSize){
+
+  return hashCode & dataSize - 1;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Initialize subclasses during construction, cloning or deserialization.
+
+ */
+
+protected void init(){
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Removes an entry from the chain stored in a particular index. <p> This implementation removes the entry from the data storage table. The size is not updated. Subclasses could override to handle changes to the map.
+
+ * @param entry  the entry to remove
+
+ * @param hashIndex  the index into the data structure
+
+ * @param previous  the previous entry in the chain
+
+ */
+
+protected void removeEntry(final HashEntry<K,V> entry,final int hashIndex,final HashEntry<K,V> previous){
+
+  if (previous == null) {
+
+    data[hashIndex]=entry.next;
+
+  }
+
+ else {
+
+    previous.next=entry.next;
+
+  }
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Removes a mapping from the map. <p> This implementation calls  {@code removeEntry()} and {@code destroyEntry()}. It also handles changes to  {@code modCount} and {@code size}. Subclasses could override to fully control removals from the map.
+
+ * @param entry  the entry to remove
+
+ * @param hashIndex  the index into the data structure
+
+ * @param previous  the previous entry in the chain
+
+ */
+
+protected void removeMapping(final HashEntry<K,V> entry,final int hashIndex,final HashEntry<K,V> previous){
+
+  modCount++;
+
+  removeEntry(entry,hashIndex,previous);
+
+  size--;
+
+  destroyEntry(entry);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Reuses an existing key-value mapping, storing completely new data. <p> This implementation sets all the data fields on the entry. Subclasses could populate additional entry fields.
+
+ * @param entry  the entry to update, not null
+
+ * @param hashIndex  the index in the data array
+
+ * @param hashCode  the hash code of the key to add
+
+ * @param key  the key to add
+
+ * @param value  the value to add
+
+ */
+
+protected void reuseEntry(final HashEntry<K,V> entry,final int hashIndex,final int hashCode,final K key,final V value){
+
+  entry.next=data[hashIndex];
+
+  entry.hashCode=hashCode;
+
+  entry.key=key;
+
+  entry.value=value;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Puts all the values from the specified map into this map. <p> This implementation iterates around the specified map and uses  {@link #put(Object,Object)}. <p> It is private to allow the constructor to still call it even when putAll is overridden.
+
+ * @param map  the map to add
+
+ * @throws NullPointerException if the map is null
+
+ */
+
+private void _putAll(final Map<? extends K,? extends V> map){
+
+  final int mapSize=map.size();
+
+  if (mapSize == 0) {
+
+    return;
+
+  }
+
+  final int newSize=(int)((size + mapSize) / loadFactor + 1);
+
+  ensureCapacity(calculateNewCapacity(newSize));
+
+  for (  final Map.Entry<? extends K,? extends V> entry : map.entrySet()) {
+
+    put(entry.getKey(),entry.getValue());
+
+  }
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructor only used in deserialization, do not use otherwise.
+
+ */
+
+protected AbstractHashedMap(){
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructs a new, empty map with the specified initial capacity and default load factor.
+
+ * @param initialCapacity  the initial capacity
+
+ * @throws IllegalArgumentException if the initial capacity is negative
+
+ */
+
+protected AbstractHashedMap(final int initialCapacity){
+
+  this(initialCapacity,DEFAULT_LOAD_FACTOR);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructs a new, empty map with the specified initial capacity and load factor.
+
+ * @param initialCapacity  the initial capacity
+
+ * @param loadFactor  the load factor
+
+ * @throws IllegalArgumentException if the initial capacity is negative
+
+ * @throws IllegalArgumentException if the load factor is less than or equal to zero
+
+ */
+
+@SuppressWarnings("unchecked") protected AbstractHashedMap(int initialCapacity,final float loadFactor){
+
+  if (initialCapacity < 0) {
+
+    throw new IllegalArgumentException("Initial capacity must be a non negative number");
+
+  }
+
+  if (loadFactor <= 0.0f || Float.isNaN(loadFactor)) {
+
+    throw new IllegalArgumentException("Load factor must be greater than 0");
+
+  }
+
+  this.loadFactor=loadFactor;
+
+  initialCapacity=calculateNewCapacity(initialCapacity);
+
+  this.threshold=calculateThreshold(initialCapacity,loadFactor);
+
+  this.data=new HashEntry[initialCapacity];
+
+  init();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructor which performs no validation on the passed in parameters.
+
+ * @param initialCapacity  the initial capacity, must be a power of two
+
+ * @param loadFactor  the load factor, must be &gt; 0.0f and generally &lt; 1.0f
+
+ * @param threshold  the threshold, must be sensible
+
+ */
+
+@SuppressWarnings("unchecked") protected AbstractHashedMap(final int initialCapacity,final float loadFactor,final int threshold){
+
+  this.loadFactor=loadFactor;
+
+  this.data=new HashEntry[initialCapacity];
+
+  this.threshold=threshold;
+
+  init();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Constructor copying elements from another map.
+
+ * @param map  the map to copy
+
+ * @throws NullPointerException if the map is null
+
+ */
+
+protected AbstractHashedMap(final Map<? extends K,? extends V> map){
+
+  this(Math.max(2 * map.size(),DEFAULT_CAPACITY),DEFAULT_LOAD_FACTOR);
+
+  _putAll(map);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Adds an entry into this map. <p> This implementation adds the entry to the data storage table. Subclasses could override to handle changes to the map.
+
+ * @param entry  the entry to add
+
+ * @param hashIndex  the index into the data array to store at
+
+ */
+
+protected void addEntry(final HashEntry<K,V> entry,final int hashIndex){
+
+  data[hashIndex]=entry;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Calculates the new capacity of the map. This implementation normalizes the capacity to a power of two.
+
+ * @param proposedCapacity  the proposed capacity
+
+ * @return the normalized new capacity
+
+ */
+
+protected int calculateNewCapacity(final int proposedCapacity){
+
+  int newCapacity=1;
+
+  if (proposedCapacity > MAXIMUM_CAPACITY) {
+
+    newCapacity=MAXIMUM_CAPACITY;
+
+  }
+
+ else {
+
+    while (newCapacity < proposedCapacity) {
+
+      newCapacity<<=1;
+
+    }
+
+    if (newCapacity > MAXIMUM_CAPACITY) {
+
+      newCapacity=MAXIMUM_CAPACITY;
+
+    }
+
+  }
+
+  return newCapacity;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Calculates the new threshold of the map, where it will be resized. This implementation uses the load factor.
+
+ * @param newCapacity  the new capacity
+
+ * @param factor  the load factor
+
+ * @return the new resize threshold
+
+ */
+
+protected int calculateThreshold(final int newCapacity,final float factor){
+
+  return (int)(newCapacity * factor);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Checks the capacity of the map and enlarges it if necessary. <p> This implementation uses the threshold to check if the map needs enlarging
+
+ */
+
+protected void checkCapacity(){
+
+  if (size >= threshold) {
+
+    final int newCapacity=data.length * 2;
+
+    if (newCapacity <= MAXIMUM_CAPACITY) {
+
+      ensureCapacity(newCapacity);
+
+    }
+
+  }
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Converts input keys to another object for storage in the map. This implementation masks nulls. Subclasses can override this to perform alternate key conversions. <p> The reverse conversion can be changed, if required, by overriding the getKey() method in the hash entry.
+
+ * @param key  the key convert
+
+ * @return the converted key
+
+ */
+
+protected Object convertKey(final Object key){
+
+  return key == null ? NULL : key;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Creates a key set iterator. Subclasses can override this to return iterators with different properties.
+
+ * @return the keySet iterator
+
+ */
+
+protected Iterator<K> createKeySetIterator(){
+
+  if (isEmpty()) {
+
+    return EmptyIterator.<K>emptyIterator();
+
+  }
+
+  return new KeySetIterator<>(this);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Creates a values iterator. Subclasses can override this to return iterators with different properties.
+
+ * @return the values iterator
+
+ */
+
+protected Iterator<V> createValuesIterator(){
+
+  if (isEmpty()) {
+
+    return EmptyIterator.<V>emptyIterator();
+
+  }
+
+  return new ValuesIterator<>(this);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Kills an entry ready for the garbage collector. <p> This implementation prepares the HashEntry for garbage collection. Subclasses can override this to implement caching (override clear as well).
+
+ * @param entry  the entry to destroy
+
+ */
+
+protected void destroyEntry(final HashEntry<K,V> entry){
+
+  entry.next=null;
+
+  entry.key=null;
+
+  entry.value=null;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Changes the size of the data structure to the capacity proposed.
+
+ * @param newCapacity  the new capacity of the array (a power of two, less or equal to max)
+
+ */
+
+@SuppressWarnings("unchecked") protected void ensureCapacity(final int newCapacity){
+
+  final int oldCapacity=data.length;
+
+  if (newCapacity <= oldCapacity) {
+
+    return;
+
+  }
+
+  if (size == 0) {
+
+    threshold=calculateThreshold(newCapacity,loadFactor);
+
+    data=new HashEntry[newCapacity];
+
+  }
+
+ else {
+
+    final HashEntry<K,V> oldEntries[]=data;
+
+    final HashEntry<K,V> newEntries[]=new HashEntry[newCapacity];
+
+    modCount++;
+
+    for (int i=oldCapacity - 1; i >= 0; i--) {
+
+      HashEntry<K,V> entry=oldEntries[i];
+
+      if (entry != null) {
+
+        oldEntries[i]=null;
+
+        do {
+
+          final HashEntry<K,V> next=entry.next;
+
+          final int index=hashIndex(entry.hashCode,newCapacity);
+
+          entry.next=newEntries[index];
+
+          newEntries[index]=entry;
+
+          entry=next;
+
+        }
+
+ while (entry != null);
+
+      }
+
+    }
+
+    threshold=calculateThreshold(newCapacity,loadFactor);
+
+    data=newEntries;
+
+  }
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code hashCode} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code hashCode} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected int entryHashCode(final HashEntry<K,V> entry){
+
+  return entry.hashCode;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code key} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code key} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected K entryKey(final HashEntry<K,V> entry){
+
+  return entry.getKey();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code next} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code next} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected HashEntry<K,V> entryNext(final HashEntry<K,V> entry){
+
+  return entry.next;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the  {@code value} field from a {@code HashEntry}. Used in subclasses that have no visibility of the field.
+
+ * @param entry  the entry to query, must not be null
+
+ * @return the {@code value} field of the entry
+
+ * @throws NullPointerException if the entry is null
+
+ * @since 3.1
+
+ */
+
+protected V entryValue(final HashEntry<K,V> entry){
+
+  return entry.getValue();
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Gets the index into the data storage for the hashCode specified. This implementation uses the least significant bits of the hashCode. Subclasses can override this to return alternate bucketing.
+
+ * @param hashCode  the hash code to use
+
+ * @param dataSize  the size of the data to pick a bucket from
+
+ * @return the bucket index
+
+ */
+
+protected int hashIndex(final int hashCode,final int dataSize){
+
+  return hashCode & dataSize - 1;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Initialize subclasses during construction, cloning or deserialization.
+
+ */
+
+protected void init(){
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Removes an entry from the chain stored in a particular index. <p> This implementation removes the entry from the data storage table. The size is not updated. Subclasses could override to handle changes to the map.
+
+ * @param entry  the entry to remove
+
+ * @param hashIndex  the index into the data structure
+
+ * @param previous  the previous entry in the chain
+
+ */
+
+protected void removeEntry(final HashEntry<K,V> entry,final int hashIndex,final HashEntry<K,V> previous){
+
+  if (previous == null) {
+
+    data[hashIndex]=entry.next;
+
+  }
+
+ else {
+
+    previous.next=entry.next;
+
+  }
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Removes a mapping from the map. <p> This implementation calls  {@code removeEntry()} and {@code destroyEntry()}. It also handles changes to  {@code modCount} and {@code size}. Subclasses could override to fully control removals from the map.
+
+ * @param entry  the entry to remove
+
+ * @param hashIndex  the index into the data structure
+
+ * @param previous  the previous entry in the chain
+
+ */
+
+protected void removeMapping(final HashEntry<K,V> entry,final int hashIndex,final HashEntry<K,V> previous){
+
+  modCount++;
+
+  removeEntry(entry,hashIndex,previous);
+
+  size--;
+
+  destroyEntry(entry);
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Reuses an existing key-value mapping, storing completely new data. <p> This implementation sets all the data fields on the entry. Subclasses could populate additional entry fields.
+
+ * @param entry  the entry to update, not null
+
+ * @param hashIndex  the index in the data array
+
+ * @param hashCode  the hash code of the key to add
+
+ * @param key  the key to add
+
+ * @param value  the value to add
+
+ */
+
+protected void reuseEntry(final HashEntry<K,V> entry,final int hashIndex,final int hashCode,final K key,final V value){
+
+  entry.next=data[hashIndex];
+
+  entry.hashCode=hashCode;
+
+  entry.key=key;
+
+  entry.value=value;
+
+}
+
+Location: AbstractHashedMap.java
+
+Content: 
+
+/** 
+
+ * Puts all the values from the specified map into this map. <p> This implementation iterates around the specified map and uses  {@link #put(Object,Object)}. <p> It is private to allow the constructor to still call it even when putAll is overridden.
+
+ * @param map  the map to add
+
+ * @throws NullPointerException if the map is null
+
+ */
+
+private void _putAll(final Map<? extends K,? extends V> map){
+
+  final int mapSize=map.size();
+
+  if (mapSize == 0) {
+
+    return;
+
+  }
+
+  final int newSize=(int)((size + mapSize) / loadFactor + 1);
+
+  ensureCapacity(calculateNewCapacity(newSize));
+
+  for (  final Map.Entry<? extends K,? extends V> entry : map.entrySet()) {
+
+    put(entry.getKey(),entry.getValue());
+
+  }
+
+}
+

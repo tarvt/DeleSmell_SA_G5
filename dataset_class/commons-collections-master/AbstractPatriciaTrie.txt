@@ -1,0 +1,3416 @@
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+protected AbstractPatriciaTrie(final KeyAnalyzer<? super K> keyAnalyzer){
+
+  super(keyAnalyzer);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Constructs a new  {@link org.apache.commons.collections4.Trie}using the given  {@link KeyAnalyzer} and initializes the {@link org.apache.commons.collections4.Trie}with the values from the provided  {@link Map}.
+
+ */
+
+protected AbstractPatriciaTrie(final KeyAnalyzer<? super K> keyAnalyzer,final Map<? extends K,? extends V> map){
+
+  super(keyAnalyzer);
+
+  putAll(map);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Adds the given  {@link TrieEntry} to the {@link org.apache.commons.collections4.Trie}.
+
+ */
+
+TrieEntry<K,V> addEntry(final TrieEntry<K,V> entry,final int lengthInBits){
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex >= entry.bitIndex || current.bitIndex <= path.bitIndex) {
+
+      entry.predecessor=entry;
+
+      if (!isBitSet(entry.key,entry.bitIndex,lengthInBits)) {
+
+        entry.left=entry;
+
+        entry.right=current;
+
+      }
+
+ else {
+
+        entry.left=current;
+
+        entry.right=entry;
+
+      }
+
+      entry.parent=path;
+
+      if (current.bitIndex >= entry.bitIndex) {
+
+        current.parent=entry;
+
+      }
+
+      if (current.bitIndex <= path.bitIndex) {
+
+        current.predecessor=entry;
+
+      }
+
+      if (path == root || !isBitSet(entry.key,path.bitIndex,lengthInBits)) {
+
+        path.left=entry;
+
+      }
+
+ else {
+
+        path.right=entry;
+
+      }
+
+      return entry;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(entry.key,current.bitIndex,lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a key-value mapping associated with the least key greater than or equal to the given key, or null if there is no such key.
+
+ */
+
+TrieEntry<K,V> ceilingEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return firstEntry();
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return found;
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> ceil=nextEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return ceil;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return firstEntry();
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return found;
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public void clear(){
+
+  root.key=null;
+
+  root.bitIndex=-1;
+
+  root.value=null;
+
+  root.parent=null;
+
+  root.left=root;
+
+  root.right=null;
+
+  root.predecessor=root;
+
+  size=0;
+
+  incrementModCount();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Comparator<? super K> comparator(){
+
+  return getKeyAnalyzer();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public boolean containsKey(final Object k){
+
+  if (k == null) {
+
+    return false;
+
+  }
+
+  final K key=castKey(k);
+
+  final int lengthInBits=lengthInBits(key);
+
+  final TrieEntry<K,V> entry=getNearestEntryForKey(key,lengthInBits);
+
+  return !entry.isEmpty() && compareKeys(key,entry.key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * A helper method to decrement the  {@link org.apache.commons.collections4.Trie} size and increment the modification counter.
+
+ */
+
+void decrementSize(){
+
+  size--;
+
+  incrementModCount();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Set<Map.Entry<K,V>> entrySet(){
+
+  if (entrySet == null) {
+
+    entrySet=new EntrySet();
+
+  }
+
+  return entrySet;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the first entry the  {@link org.apache.commons.collections4.Trie} is storing.<p> This is implemented by going always to the left until we encounter a valid uplink. That uplink is the first key.
+
+ */
+
+TrieEntry<K,V> firstEntry(){
+
+  if (isEmpty()) {
+
+    return null;
+
+  }
+
+  return followLeft(root);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K firstKey(){
+
+  if (isEmpty()) {
+
+    throw new NoSuchElementException();
+
+  }
+
+  return firstEntry().getKey();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a key-value mapping associated with the greatest key less than or equal to the given key, or null if there is no such key.
+
+ */
+
+TrieEntry<K,V> floorEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return null;
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return found;
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> floor=previousEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return floor;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return null;
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return found;
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Goes left through the tree until it finds a valid node.
+
+ */
+
+TrieEntry<K,V> followLeft(TrieEntry<K,V> node){
+
+  while (true) {
+
+    TrieEntry<K,V> child=node.left;
+
+    if (child.isEmpty()) {
+
+      child=node.right;
+
+    }
+
+    if (child.bitIndex <= node.bitIndex) {
+
+      return child;
+
+    }
+
+    node=child;
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Traverses down the right path until it finds an uplink.
+
+ */
+
+TrieEntry<K,V> followRight(TrieEntry<K,V> node){
+
+  if (node.right == null) {
+
+    return null;
+
+  }
+
+  while (node.right.bitIndex > node.bitIndex) {
+
+    node=node.right;
+
+  }
+
+  return node.right;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the entry associated with the specified key in the PatriciaTrieBase.  Returns null if the map contains no mapping for this key. <p> This may throw ClassCastException if the object is not of type K.
+
+ */
+
+TrieEntry<K,V> getEntry(final Object k){
+
+  final K key=castKey(k);
+
+  if (key == null) {
+
+    return null;
+
+  }
+
+  final int lengthInBits=lengthInBits(key);
+
+  final TrieEntry<K,V> entry=getNearestEntryForKey(key,lengthInBits);
+
+  return !entry.isEmpty() && compareKeys(key,entry.key) ? entry : null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the nearest entry for a given key.  This is useful for finding knowing if a given key exists (and finding the value for it), or for inserting the key. The actual get implementation. This is very similar to selectR but with the exception that it might return the root Entry even if it's empty.
+
+ */
+
+TrieEntry<K,V> getNearestEntryForKey(final K key,final int lengthInBits){
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex <= path.bitIndex) {
+
+      return current;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(key,current.bitIndex,lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a view of this  {@link org.apache.commons.collections4.Trie} of all elements that are prefixedby the number of bits in the given Key. <p> The view that this returns is optimized to have a very efficient {@link Iterator}. The  {@link SortedMap#firstKey()}, {@link SortedMap#lastKey()} &amp; {@link Map#size()} methods mustiterate over all possible values in order to determine the results. This information is cached until the PATRICIA  {@link org.apache.commons.collections4.Trie} changes.All other methods (except  {@link Iterator}) must compare the given key to the prefix to ensure that it is within the range of the view. The  {@link Iterator}'s remove method must also relocate the subtree that contains the prefixes if the entry holding the subtree is removed or changes. Changing the subtree takes O(K) time.
+
+ * @param key  the key to use in the search
+
+ * @param offsetInBits  the prefix offset
+
+ * @param lengthInBits  the number of significant prefix bits
+
+ * @return a {@link SortedMap} view of this {@link org.apache.commons.collections4.Trie} with all elements whosekey is prefixed by the search key
+
+ */
+
+private SortedMap<K,V> getPrefixMapByBits(final K key,final int offsetInBits,final int lengthInBits){
+
+  final int offsetLength=offsetInBits + lengthInBits;
+
+  if (offsetLength > lengthInBits(key)) {
+
+    throw new IllegalArgumentException(offsetInBits + " + " + lengthInBits+ " > "+ lengthInBits(key));
+
+  }
+
+  if (offsetLength == 0) {
+
+    return this;
+
+  }
+
+  return new PrefixRangeMap(key,offsetInBits,lengthInBits);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public V get(final Object k){
+
+  final TrieEntry<K,V> entry=getEntry(k);
+
+  return entry != null ? entry.getValue() : null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> headMap(final K toKey){
+
+  return new RangeEntryMap(null,toKey);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns an entry strictly higher than the given key, or null if no such entry exists.
+
+ */
+
+TrieEntry<K,V> higherEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (!root.isEmpty()) {
+
+      if (size() > 1) {
+
+        return nextEntry(root);
+
+      }
+
+      return null;
+
+    }
+
+    return firstEntry();
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return nextEntry(found);
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> ceil=nextEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return ceil;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    if (!root.isEmpty()) {
+
+      return firstEntry();
+
+    }
+
+    if (size() > 1) {
+
+      return nextEntry(firstEntry());
+
+    }
+
+    return null;
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return nextEntry(found);
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * A helper method to increment the modification counter.
+
+ */
+
+private void incrementModCount(){
+
+  ++modCount;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * A helper method to increment the  {@link org.apache.commons.collections4.Trie} size and the modification counter.
+
+ */
+
+void incrementSize(){
+
+  size++;
+
+  incrementModCount();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns true if 'next' is a valid uplink coming from 'from'.
+
+ */
+
+static boolean isValidUplink(final TrieEntry<?,?> next,final TrieEntry<?,?> from){
+
+  return next != null && next.bitIndex <= from.bitIndex && !next.isEmpty();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Set<K> keySet(){
+
+  if (keySet == null) {
+
+    keySet=new KeySet();
+
+  }
+
+  return keySet;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the last entry the  {@link org.apache.commons.collections4.Trie} is storing.<p>This is implemented by going always to the right until we encounter a valid uplink. That uplink is the last key.
+
+ */
+
+TrieEntry<K,V> lastEntry(){
+
+  return followRight(root.left);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K lastKey(){
+
+  final TrieEntry<K,V> entry=lastEntry();
+
+  if (entry != null) {
+
+    return entry.getKey();
+
+  }
+
+  throw new NoSuchElementException();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a key-value mapping associated with the greatest key strictly less than the given key, or null if there is no such key.
+
+ */
+
+TrieEntry<K,V> lowerEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    return null;
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return previousEntry(found);
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> prior=previousEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return prior;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    return null;
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return previousEntry(found);
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public OrderedMapIterator<K,V> mapIterator(){
+
+  return new TrieMapIterator();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Scans for the next node, starting at the specified point, and using 'previous' as a hint that the last node we returned was 'previous' (so we know not to return it again).  If 'tree' is non-null, this will limit the search to the given tree. The basic premise is that each iteration can follow the following steps: 1) Scan all the way to the left. a) If we already started from this node last time, proceed to Step 2. b) If a valid uplink is found, use it. c) If the result is an empty node (root not set), break the scan. d) If we already returned the left node, break the scan. 2) Check the right. a) If we already returned the right node, proceed to Step 3. b) If it is a valid uplink, use it. c) Do Step 1 from the right node. 3) Back up through the parents until we encounter find a parent that we're not the right child of. 4) If there's no right child of that parent, the iteration is finished. Otherwise continue to Step 5. 5) Check to see if the right child is a valid uplink. a) If we already returned that child, proceed to Step 6. Otherwise, use it. 6) If the right child of the parent is the parent itself, we've already found &amp; returned the end of the Trie, so exit. 7) Do Step 1 on the parent's right child.
+
+ */
+
+TrieEntry<K,V> nextEntryImpl(final TrieEntry<K,V> start,final TrieEntry<K,V> previous,final TrieEntry<K,V> tree){
+
+  TrieEntry<K,V> current=start;
+
+  if (previous == null || start != previous.predecessor) {
+
+    while (!current.left.isEmpty()) {
+
+      if (previous == current.left) {
+
+        break;
+
+      }
+
+      if (isValidUplink(current.left,current)) {
+
+        return current.left;
+
+      }
+
+      current=current.left;
+
+    }
+
+  }
+
+  if (current.isEmpty()) {
+
+    return null;
+
+  }
+
+  if (current.right == null) {
+
+    return null;
+
+  }
+
+  if (previous != current.right) {
+
+    if (isValidUplink(current.right,current)) {
+
+      return current.right;
+
+    }
+
+    return nextEntryImpl(current.right,previous,tree);
+
+  }
+
+  while (current == current.parent.right) {
+
+    if (current == tree) {
+
+      return null;
+
+    }
+
+    current=current.parent;
+
+  }
+
+  if (current == tree) {
+
+    return null;
+
+  }
+
+  if (current.parent.right == null) {
+
+    return null;
+
+  }
+
+  if (previous != current.parent.right && isValidUplink(current.parent.right,current.parent)) {
+
+    return current.parent.right;
+
+  }
+
+  if (current.parent.right == current.parent) {
+
+    return null;
+
+  }
+
+  return nextEntryImpl(current.parent.right,previous,tree);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the entry lexicographically after the given entry. If the given entry is null, returns the first node. This will traverse only within the subtree.  If the given node is not within the subtree, this will have undefined results.
+
+ */
+
+TrieEntry<K,V> nextEntryInSubtree(final TrieEntry<K,V> node,final TrieEntry<K,V> parentOfSubtree){
+
+  if (node == null) {
+
+    return firstEntry();
+
+  }
+
+  return nextEntryImpl(node.predecessor,node,parentOfSubtree);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the entry lexicographically after the given entry. If the given entry is null, returns the first node.
+
+ */
+
+TrieEntry<K,V> nextEntry(final TrieEntry<K,V> node){
+
+  if (node == null) {
+
+    return firstEntry();
+
+  }
+
+  return nextEntryImpl(node.predecessor,node,null);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K nextKey(final K key){
+
+  Objects.requireNonNull(key,"key");
+
+  final TrieEntry<K,V> entry=getEntry(key);
+
+  if (entry != null) {
+
+    final TrieEntry<K,V> nextEntry=nextEntry(entry);
+
+    return nextEntry != null ? nextEntry.getKey() : null;
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> prefixMap(final K key){
+
+  return getPrefixMapByBits(key,0,lengthInBits(key));
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the node lexicographically before the given node (or null if none). This follows four simple branches: - If the uplink that returned us was a right uplink: - If predecessor's left is a valid uplink from predecessor, return it. - Else, follow the right path from the predecessor's left. - If the uplink that returned us was a left uplink: - Loop back through parents until we encounter a node where node != node.parent.left. - If node.parent.left is uplink from node.parent: - If node.parent.left is not root, return it. - If it is root &amp; root isEmpty, return null. - If it is root &amp; root !isEmpty, return root. - If node.parent.left is not uplink from node.parent: - Follow right path for first right child from node.parent.left
+
+ * @param start  the start entry
+
+ */
+
+TrieEntry<K,V> previousEntry(final TrieEntry<K,V> start){
+
+  if (start.predecessor == null) {
+
+    throw new IllegalArgumentException("must have come from somewhere!");
+
+  }
+
+  if (start.predecessor.right == start) {
+
+    if (isValidUplink(start.predecessor.left,start.predecessor)) {
+
+      return start.predecessor.left;
+
+    }
+
+    return followRight(start.predecessor.left);
+
+  }
+
+  TrieEntry<K,V> node=start.predecessor;
+
+  while (node.parent != null && node == node.parent.left) {
+
+    node=node.parent;
+
+  }
+
+  if (node.parent == null) {
+
+    return null;
+
+  }
+
+  if (isValidUplink(node.parent.left,node.parent)) {
+
+    if (node.parent.left == root) {
+
+      if (root.isEmpty()) {
+
+        return null;
+
+      }
+
+      return root;
+
+    }
+
+    return node.parent.left;
+
+  }
+
+  return followRight(node.parent.left);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K previousKey(final K key){
+
+  Objects.requireNonNull(key,"key");
+
+  final TrieEntry<K,V> entry=getEntry(key);
+
+  if (entry != null) {
+
+    final TrieEntry<K,V> prevEntry=previousEntry(entry);
+
+    return prevEntry != null ? prevEntry.getKey() : null;
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public V put(final K key,final V value){
+
+  Objects.requireNonNull(key,"key");
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (root.isEmpty()) {
+
+      incrementSize();
+
+    }
+
+ else {
+
+      incrementModCount();
+
+    }
+
+    return root.setKeyValue(key,value);
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    if (found.isEmpty()) {
+
+      incrementSize();
+
+    }
+
+ else {
+
+      incrementModCount();
+
+    }
+
+    return found.setKeyValue(key,value);
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (!KeyAnalyzer.isOutOfBoundsIndex(bitIndex)) {
+
+    if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+      final TrieEntry<K,V> t=new TrieEntry<>(key,value,bitIndex);
+
+      addEntry(t,lengthInBits);
+
+      incrementSize();
+
+      return null;
+
+    }
+
+    if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+      if (root.isEmpty()) {
+
+        incrementSize();
+
+      }
+
+ else {
+
+        incrementModCount();
+
+      }
+
+      return root.setKeyValue(key,value);
+
+    }
+
+    if (KeyAnalyzer.isEqualBitKey(bitIndex) && found != root) {
+
+      incrementModCount();
+
+      return found.setKeyValue(key,value);
+
+    }
+
+  }
+
+  throw new IllegalArgumentException("Failed to put: " + key + " -> "+ value+ ", "+ bitIndex);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Removes a single entry from the  {@link org.apache.commons.collections4.Trie}. If we found a Key (Entry h) then figure out if it's an internal (hard to remove) or external Entry (easy to remove)
+
+ */
+
+V removeEntry(final TrieEntry<K,V> h){
+
+  if (h != root) {
+
+    if (h.isInternalNode()) {
+
+      removeInternalEntry(h);
+
+    }
+
+ else {
+
+      removeExternalEntry(h);
+
+    }
+
+  }
+
+  decrementSize();
+
+  return h.setKeyValue(null,null);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Removes an external entry from the  {@link org.apache.commons.collections4.Trie}. If it's an external Entry then just remove it. This is very easy and straight forward.
+
+ */
+
+private void removeExternalEntry(final TrieEntry<K,V> h){
+
+  if (h == root) {
+
+    throw new IllegalArgumentException("Cannot delete root Entry!");
+
+  }
+
+  if (!h.isExternalNode()) {
+
+    throw new IllegalArgumentException(h + " is not an external Entry!");
+
+  }
+
+  final TrieEntry<K,V> parent=h.parent;
+
+  final TrieEntry<K,V> child=h.left == h ? h.right : h.left;
+
+  if (parent.left == h) {
+
+    parent.left=child;
+
+  }
+
+ else {
+
+    parent.right=child;
+
+  }
+
+  if (child.bitIndex > parent.bitIndex) {
+
+    child.parent=parent;
+
+  }
+
+ else {
+
+    child.predecessor=parent;
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Removes an internal entry from the  {@link org.apache.commons.collections4.Trie}. If it's an internal Entry then "good luck" with understanding this code. The Idea is essentially that Entry p takes Entry h's place in the trie which requires some re-wiring.
+
+ */
+
+private void removeInternalEntry(final TrieEntry<K,V> h){
+
+  if (h == root) {
+
+    throw new IllegalArgumentException("Cannot delete root Entry!");
+
+  }
+
+  if (!h.isInternalNode()) {
+
+    throw new IllegalArgumentException(h + " is not an internal Entry!");
+
+  }
+
+  final TrieEntry<K,V> p=h.predecessor;
+
+  p.bitIndex=h.bitIndex;
+
+{
+
+    final TrieEntry<K,V> parent=p.parent;
+
+    final TrieEntry<K,V> child=p.left == h ? p.right : p.left;
+
+    if (p.predecessor == p && p.parent != h) {
+
+      p.predecessor=p.parent;
+
+    }
+
+    if (parent.left == p) {
+
+      parent.left=child;
+
+    }
+
+ else {
+
+      parent.right=child;
+
+    }
+
+    if (child.bitIndex > parent.bitIndex) {
+
+      child.parent=parent;
+
+    }
+
+  }
+
+{
+
+    if (h.left.parent == h) {
+
+      h.left.parent=p;
+
+    }
+
+    if (h.right.parent == h) {
+
+      h.right.parent=p;
+
+    }
+
+    if (h.parent.left == h) {
+
+      h.parent.left=p;
+
+    }
+
+ else {
+
+      h.parent.right=p;
+
+    }
+
+  }
+
+  p.parent=h.parent;
+
+  p.left=h.left;
+
+  p.right=h.right;
+
+  if (isValidUplink(p.left,p)) {
+
+    p.left.predecessor=p;
+
+  }
+
+  if (isValidUplink(p.right,p)) {
+
+    p.right.predecessor=p;
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ * @throws ClassCastException if provided key is of an incompatible type
+
+ */
+
+@Override public V remove(final Object k){
+
+  if (k == null) {
+
+    return null;
+
+  }
+
+  final K key=castKey(k);
+
+  final int lengthInBits=lengthInBits(key);
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex <= path.bitIndex) {
+
+      if (!current.isEmpty() && compareKeys(key,current.key)) {
+
+        return removeEntry(current);
+
+      }
+
+      return null;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(key,current.bitIndex,lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the key that is closest in a bitwise XOR metric to the provided key. This is NOT lexicographic closeness! For example, given the keys: <ol> <li>D = 1000100 <li>H = 1001000 <li>L = 1001100 </ol> If the  {@link org.apache.commons.collections4.Trie} contained 'H' and 'L', a lookup of 'D' wouldreturn 'L', because the XOR distance between D &amp; L is smaller than the XOR distance between D &amp; H.
+
+ * @param key  the key to use in the search
+
+ * @return the key that is closest in a bitwise XOR metric to the provided key
+
+ */
+
+public K selectKey(final K key){
+
+  final Map.Entry<K,V> entry=select(key);
+
+  if (entry == null) {
+
+    return null;
+
+  }
+
+  return entry.getKey();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+private boolean selectR(final TrieEntry<K,V> h,final int bitIndex,final K key,final int lengthInBits,final Reference<Map.Entry<K,V>> reference){
+
+  if (h.bitIndex <= bitIndex) {
+
+    if (!h.isEmpty()) {
+
+      reference.set(h);
+
+      return false;
+
+    }
+
+    return true;
+
+  }
+
+  if (!isBitSet(key,h.bitIndex,lengthInBits)) {
+
+    if (selectR(h.left,h.bitIndex,key,lengthInBits,reference)) {
+
+      return selectR(h.right,h.bitIndex,key,lengthInBits,reference);
+
+    }
+
+  }
+
+ else {
+
+    if (selectR(h.right,h.bitIndex,key,lengthInBits,reference)) {
+
+      return selectR(h.left,h.bitIndex,key,lengthInBits,reference);
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the value whose key is closest in a bitwise XOR metric to the provided key. This is NOT lexicographic closeness! For example, given the keys: <ol> <li>D = 1000100 <li>H = 1001000 <li>L = 1001100 </ol> If the  {@link org.apache.commons.collections4.Trie} contained 'H' and 'L', a lookup of 'D' wouldreturn 'L', because the XOR distance between D &amp; L is smaller than the XOR distance between D &amp; H.
+
+ * @param key  the key to use in the search
+
+ * @return the value whose key is closest in a bitwise XOR metricto the provided key
+
+ */
+
+public V selectValue(final K key){
+
+  final Map.Entry<K,V> entry=select(key);
+
+  if (entry == null) {
+
+    return null;
+
+  }
+
+  return entry.getValue();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the  {@link java.util.Map.Entry} whose key is closest in a bitwise XORmetric to the given key. This is NOT lexicographic closeness. For example, given the keys: <ol> <li>D = 1000100 <li>H = 1001000 <li>L = 1001100 </ol> If the  {@link org.apache.commons.collections4.Trie} contained 'H' and 'L', a lookup of 'D' wouldreturn 'L', because the XOR distance between D &amp; L is smaller than the XOR distance between D &amp; H.
+
+ * @param key  the key to use in the search
+
+ * @return the {@link java.util.Map.Entry} whose key is closest in a bitwise XOR metricto the provided key
+
+ */
+
+public Map.Entry<K,V> select(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  final Reference<Map.Entry<K,V>> reference=new Reference<>();
+
+  if (!selectR(root.left,-1,key,lengthInBits,reference)) {
+
+    return reference.get();
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> subMap(final K fromKey,final K toKey){
+
+  return new RangeEntryMap(fromKey,toKey);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Finds the subtree that contains the prefix. This is very similar to getR but with the difference that we stop the lookup if h.bitIndex > lengthInBits.
+
+ */
+
+TrieEntry<K,V> subtree(final K prefix,final int offsetInBits,final int lengthInBits){
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex <= path.bitIndex || lengthInBits <= current.bitIndex) {
+
+      break;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(prefix,offsetInBits + current.bitIndex,offsetInBits + lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+  final TrieEntry<K,V> entry=current.isEmpty() ? path : current;
+
+  if (entry.isEmpty()) {
+
+    return null;
+
+  }
+
+  final int endIndexInBits=offsetInBits + lengthInBits;
+
+  if (entry == root && lengthInBits(entry.getKey()) < endIndexInBits) {
+
+    return null;
+
+  }
+
+  if (isBitSet(prefix,endIndexInBits - 1,endIndexInBits) != isBitSet(entry.key,lengthInBits - 1,lengthInBits(entry.key))) {
+
+    return null;
+
+  }
+
+  final int bitIndex=getKeyAnalyzer().bitIndex(prefix,offsetInBits,lengthInBits,entry.key,0,lengthInBits(entry.getKey()));
+
+  if (bitIndex >= 0 && bitIndex < lengthInBits) {
+
+    return null;
+
+  }
+
+  return entry;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> tailMap(final K fromKey){
+
+  return new RangeEntryMap(fromKey,null);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Collection<V> values(){
+
+  if (values == null) {
+
+    values=new Values();
+
+  }
+
+  return values;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+protected AbstractPatriciaTrie(final KeyAnalyzer<? super K> keyAnalyzer){
+
+  super(keyAnalyzer);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Constructs a new  {@link org.apache.commons.collections4.Trie}using the given  {@link KeyAnalyzer} and initializes the {@link org.apache.commons.collections4.Trie}with the values from the provided  {@link Map}.
+
+ */
+
+protected AbstractPatriciaTrie(final KeyAnalyzer<? super K> keyAnalyzer,final Map<? extends K,? extends V> map){
+
+  super(keyAnalyzer);
+
+  putAll(map);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Adds the given  {@link TrieEntry} to the {@link org.apache.commons.collections4.Trie}.
+
+ */
+
+TrieEntry<K,V> addEntry(final TrieEntry<K,V> entry,final int lengthInBits){
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex >= entry.bitIndex || current.bitIndex <= path.bitIndex) {
+
+      entry.predecessor=entry;
+
+      if (!isBitSet(entry.key,entry.bitIndex,lengthInBits)) {
+
+        entry.left=entry;
+
+        entry.right=current;
+
+      }
+
+ else {
+
+        entry.left=current;
+
+        entry.right=entry;
+
+      }
+
+      entry.parent=path;
+
+      if (current.bitIndex >= entry.bitIndex) {
+
+        current.parent=entry;
+
+      }
+
+      if (current.bitIndex <= path.bitIndex) {
+
+        current.predecessor=entry;
+
+      }
+
+      if (path == root || !isBitSet(entry.key,path.bitIndex,lengthInBits)) {
+
+        path.left=entry;
+
+      }
+
+ else {
+
+        path.right=entry;
+
+      }
+
+      return entry;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(entry.key,current.bitIndex,lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a key-value mapping associated with the least key greater than or equal to the given key, or null if there is no such key.
+
+ */
+
+TrieEntry<K,V> ceilingEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return firstEntry();
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return found;
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> ceil=nextEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return ceil;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return firstEntry();
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return found;
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public void clear(){
+
+  root.key=null;
+
+  root.bitIndex=-1;
+
+  root.value=null;
+
+  root.parent=null;
+
+  root.left=root;
+
+  root.right=null;
+
+  root.predecessor=root;
+
+  size=0;
+
+  incrementModCount();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Comparator<? super K> comparator(){
+
+  return getKeyAnalyzer();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public boolean containsKey(final Object k){
+
+  if (k == null) {
+
+    return false;
+
+  }
+
+  final K key=castKey(k);
+
+  final int lengthInBits=lengthInBits(key);
+
+  final TrieEntry<K,V> entry=getNearestEntryForKey(key,lengthInBits);
+
+  return !entry.isEmpty() && compareKeys(key,entry.key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * A helper method to decrement the  {@link org.apache.commons.collections4.Trie} size and increment the modification counter.
+
+ */
+
+void decrementSize(){
+
+  size--;
+
+  incrementModCount();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Set<Map.Entry<K,V>> entrySet(){
+
+  if (entrySet == null) {
+
+    entrySet=new EntrySet();
+
+  }
+
+  return entrySet;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the first entry the  {@link org.apache.commons.collections4.Trie} is storing.<p> This is implemented by going always to the left until we encounter a valid uplink. That uplink is the first key.
+
+ */
+
+TrieEntry<K,V> firstEntry(){
+
+  if (isEmpty()) {
+
+    return null;
+
+  }
+
+  return followLeft(root);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K firstKey(){
+
+  if (isEmpty()) {
+
+    throw new NoSuchElementException();
+
+  }
+
+  return firstEntry().getKey();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a key-value mapping associated with the greatest key less than or equal to the given key, or null if there is no such key.
+
+ */
+
+TrieEntry<K,V> floorEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return null;
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return found;
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> floor=previousEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return floor;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    if (!root.isEmpty()) {
+
+      return root;
+
+    }
+
+    return null;
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return found;
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Goes left through the tree until it finds a valid node.
+
+ */
+
+TrieEntry<K,V> followLeft(TrieEntry<K,V> node){
+
+  while (true) {
+
+    TrieEntry<K,V> child=node.left;
+
+    if (child.isEmpty()) {
+
+      child=node.right;
+
+    }
+
+    if (child.bitIndex <= node.bitIndex) {
+
+      return child;
+
+    }
+
+    node=child;
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Traverses down the right path until it finds an uplink.
+
+ */
+
+TrieEntry<K,V> followRight(TrieEntry<K,V> node){
+
+  if (node.right == null) {
+
+    return null;
+
+  }
+
+  while (node.right.bitIndex > node.bitIndex) {
+
+    node=node.right;
+
+  }
+
+  return node.right;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the entry associated with the specified key in the PatriciaTrieBase.  Returns null if the map contains no mapping for this key. <p> This may throw ClassCastException if the object is not of type K.
+
+ */
+
+TrieEntry<K,V> getEntry(final Object k){
+
+  final K key=castKey(k);
+
+  if (key == null) {
+
+    return null;
+
+  }
+
+  final int lengthInBits=lengthInBits(key);
+
+  final TrieEntry<K,V> entry=getNearestEntryForKey(key,lengthInBits);
+
+  return !entry.isEmpty() && compareKeys(key,entry.key) ? entry : null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the nearest entry for a given key.  This is useful for finding knowing if a given key exists (and finding the value for it), or for inserting the key. The actual get implementation. This is very similar to selectR but with the exception that it might return the root Entry even if it's empty.
+
+ */
+
+TrieEntry<K,V> getNearestEntryForKey(final K key,final int lengthInBits){
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex <= path.bitIndex) {
+
+      return current;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(key,current.bitIndex,lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a view of this  {@link org.apache.commons.collections4.Trie} of all elements that are prefixedby the number of bits in the given Key. <p> The view that this returns is optimized to have a very efficient {@link Iterator}. The  {@link SortedMap#firstKey()}, {@link SortedMap#lastKey()} &amp; {@link Map#size()} methods mustiterate over all possible values in order to determine the results. This information is cached until the PATRICIA  {@link org.apache.commons.collections4.Trie} changes.All other methods (except  {@link Iterator}) must compare the given key to the prefix to ensure that it is within the range of the view. The  {@link Iterator}'s remove method must also relocate the subtree that contains the prefixes if the entry holding the subtree is removed or changes. Changing the subtree takes O(K) time.
+
+ * @param key  the key to use in the search
+
+ * @param offsetInBits  the prefix offset
+
+ * @param lengthInBits  the number of significant prefix bits
+
+ * @return a {@link SortedMap} view of this {@link org.apache.commons.collections4.Trie} with all elements whosekey is prefixed by the search key
+
+ */
+
+private SortedMap<K,V> getPrefixMapByBits(final K key,final int offsetInBits,final int lengthInBits){
+
+  final int offsetLength=offsetInBits + lengthInBits;
+
+  if (offsetLength > lengthInBits(key)) {
+
+    throw new IllegalArgumentException(offsetInBits + " + " + lengthInBits+ " > "+ lengthInBits(key));
+
+  }
+
+  if (offsetLength == 0) {
+
+    return this;
+
+  }
+
+  return new PrefixRangeMap(key,offsetInBits,lengthInBits);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public V get(final Object k){
+
+  final TrieEntry<K,V> entry=getEntry(k);
+
+  return entry != null ? entry.getValue() : null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> headMap(final K toKey){
+
+  return new RangeEntryMap(null,toKey);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns an entry strictly higher than the given key, or null if no such entry exists.
+
+ */
+
+TrieEntry<K,V> higherEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (!root.isEmpty()) {
+
+      if (size() > 1) {
+
+        return nextEntry(root);
+
+      }
+
+      return null;
+
+    }
+
+    return firstEntry();
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return nextEntry(found);
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> ceil=nextEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return ceil;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    if (!root.isEmpty()) {
+
+      return firstEntry();
+
+    }
+
+    if (size() > 1) {
+
+      return nextEntry(firstEntry());
+
+    }
+
+    return null;
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return nextEntry(found);
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * A helper method to increment the modification counter.
+
+ */
+
+private void incrementModCount(){
+
+  ++modCount;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * A helper method to increment the  {@link org.apache.commons.collections4.Trie} size and the modification counter.
+
+ */
+
+void incrementSize(){
+
+  size++;
+
+  incrementModCount();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns true if 'next' is a valid uplink coming from 'from'.
+
+ */
+
+static boolean isValidUplink(final TrieEntry<?,?> next,final TrieEntry<?,?> from){
+
+  return next != null && next.bitIndex <= from.bitIndex && !next.isEmpty();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Set<K> keySet(){
+
+  if (keySet == null) {
+
+    keySet=new KeySet();
+
+  }
+
+  return keySet;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the last entry the  {@link org.apache.commons.collections4.Trie} is storing.<p>This is implemented by going always to the right until we encounter a valid uplink. That uplink is the last key.
+
+ */
+
+TrieEntry<K,V> lastEntry(){
+
+  return followRight(root.left);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K lastKey(){
+
+  final TrieEntry<K,V> entry=lastEntry();
+
+  if (entry != null) {
+
+    return entry.getKey();
+
+  }
+
+  throw new NoSuchElementException();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns a key-value mapping associated with the greatest key strictly less than the given key, or null if there is no such key.
+
+ */
+
+TrieEntry<K,V> lowerEntry(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    return null;
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    return previousEntry(found);
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+    final TrieEntry<K,V> added=new TrieEntry<>(key,null,bitIndex);
+
+    addEntry(added,lengthInBits);
+
+    incrementSize();
+
+    final TrieEntry<K,V> prior=previousEntry(added);
+
+    removeEntry(added);
+
+    modCount-=2;
+
+    return prior;
+
+  }
+
+  if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+    return null;
+
+  }
+
+  if (KeyAnalyzer.isEqualBitKey(bitIndex)) {
+
+    return previousEntry(found);
+
+  }
+
+  throw new IllegalStateException("invalid lookup: " + key);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public OrderedMapIterator<K,V> mapIterator(){
+
+  return new TrieMapIterator();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Scans for the next node, starting at the specified point, and using 'previous' as a hint that the last node we returned was 'previous' (so we know not to return it again).  If 'tree' is non-null, this will limit the search to the given tree. The basic premise is that each iteration can follow the following steps: 1) Scan all the way to the left. a) If we already started from this node last time, proceed to Step 2. b) If a valid uplink is found, use it. c) If the result is an empty node (root not set), break the scan. d) If we already returned the left node, break the scan. 2) Check the right. a) If we already returned the right node, proceed to Step 3. b) If it is a valid uplink, use it. c) Do Step 1 from the right node. 3) Back up through the parents until we encounter find a parent that we're not the right child of. 4) If there's no right child of that parent, the iteration is finished. Otherwise continue to Step 5. 5) Check to see if the right child is a valid uplink. a) If we already returned that child, proceed to Step 6. Otherwise, use it. 6) If the right child of the parent is the parent itself, we've already found &amp; returned the end of the Trie, so exit. 7) Do Step 1 on the parent's right child.
+
+ */
+
+TrieEntry<K,V> nextEntryImpl(final TrieEntry<K,V> start,final TrieEntry<K,V> previous,final TrieEntry<K,V> tree){
+
+  TrieEntry<K,V> current=start;
+
+  if (previous == null || start != previous.predecessor) {
+
+    while (!current.left.isEmpty()) {
+
+      if (previous == current.left) {
+
+        break;
+
+      }
+
+      if (isValidUplink(current.left,current)) {
+
+        return current.left;
+
+      }
+
+      current=current.left;
+
+    }
+
+  }
+
+  if (current.isEmpty()) {
+
+    return null;
+
+  }
+
+  if (current.right == null) {
+
+    return null;
+
+  }
+
+  if (previous != current.right) {
+
+    if (isValidUplink(current.right,current)) {
+
+      return current.right;
+
+    }
+
+    return nextEntryImpl(current.right,previous,tree);
+
+  }
+
+  while (current == current.parent.right) {
+
+    if (current == tree) {
+
+      return null;
+
+    }
+
+    current=current.parent;
+
+  }
+
+  if (current == tree) {
+
+    return null;
+
+  }
+
+  if (current.parent.right == null) {
+
+    return null;
+
+  }
+
+  if (previous != current.parent.right && isValidUplink(current.parent.right,current.parent)) {
+
+    return current.parent.right;
+
+  }
+
+  if (current.parent.right == current.parent) {
+
+    return null;
+
+  }
+
+  return nextEntryImpl(current.parent.right,previous,tree);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the entry lexicographically after the given entry. If the given entry is null, returns the first node. This will traverse only within the subtree.  If the given node is not within the subtree, this will have undefined results.
+
+ */
+
+TrieEntry<K,V> nextEntryInSubtree(final TrieEntry<K,V> node,final TrieEntry<K,V> parentOfSubtree){
+
+  if (node == null) {
+
+    return firstEntry();
+
+  }
+
+  return nextEntryImpl(node.predecessor,node,parentOfSubtree);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the entry lexicographically after the given entry. If the given entry is null, returns the first node.
+
+ */
+
+TrieEntry<K,V> nextEntry(final TrieEntry<K,V> node){
+
+  if (node == null) {
+
+    return firstEntry();
+
+  }
+
+  return nextEntryImpl(node.predecessor,node,null);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K nextKey(final K key){
+
+  Objects.requireNonNull(key,"key");
+
+  final TrieEntry<K,V> entry=getEntry(key);
+
+  if (entry != null) {
+
+    final TrieEntry<K,V> nextEntry=nextEntry(entry);
+
+    return nextEntry != null ? nextEntry.getKey() : null;
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> prefixMap(final K key){
+
+  return getPrefixMapByBits(key,0,lengthInBits(key));
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the node lexicographically before the given node (or null if none). This follows four simple branches: - If the uplink that returned us was a right uplink: - If predecessor's left is a valid uplink from predecessor, return it. - Else, follow the right path from the predecessor's left. - If the uplink that returned us was a left uplink: - Loop back through parents until we encounter a node where node != node.parent.left. - If node.parent.left is uplink from node.parent: - If node.parent.left is not root, return it. - If it is root &amp; root isEmpty, return null. - If it is root &amp; root !isEmpty, return root. - If node.parent.left is not uplink from node.parent: - Follow right path for first right child from node.parent.left
+
+ * @param start  the start entry
+
+ */
+
+TrieEntry<K,V> previousEntry(final TrieEntry<K,V> start){
+
+  if (start.predecessor == null) {
+
+    throw new IllegalArgumentException("must have come from somewhere!");
+
+  }
+
+  if (start.predecessor.right == start) {
+
+    if (isValidUplink(start.predecessor.left,start.predecessor)) {
+
+      return start.predecessor.left;
+
+    }
+
+    return followRight(start.predecessor.left);
+
+  }
+
+  TrieEntry<K,V> node=start.predecessor;
+
+  while (node.parent != null && node == node.parent.left) {
+
+    node=node.parent;
+
+  }
+
+  if (node.parent == null) {
+
+    return null;
+
+  }
+
+  if (isValidUplink(node.parent.left,node.parent)) {
+
+    if (node.parent.left == root) {
+
+      if (root.isEmpty()) {
+
+        return null;
+
+      }
+
+      return root;
+
+    }
+
+    return node.parent.left;
+
+  }
+
+  return followRight(node.parent.left);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public K previousKey(final K key){
+
+  Objects.requireNonNull(key,"key");
+
+  final TrieEntry<K,V> entry=getEntry(key);
+
+  if (entry != null) {
+
+    final TrieEntry<K,V> prevEntry=previousEntry(entry);
+
+    return prevEntry != null ? prevEntry.getKey() : null;
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public V put(final K key,final V value){
+
+  Objects.requireNonNull(key,"key");
+
+  final int lengthInBits=lengthInBits(key);
+
+  if (lengthInBits == 0) {
+
+    if (root.isEmpty()) {
+
+      incrementSize();
+
+    }
+
+ else {
+
+      incrementModCount();
+
+    }
+
+    return root.setKeyValue(key,value);
+
+  }
+
+  final TrieEntry<K,V> found=getNearestEntryForKey(key,lengthInBits);
+
+  if (compareKeys(key,found.key)) {
+
+    if (found.isEmpty()) {
+
+      incrementSize();
+
+    }
+
+ else {
+
+      incrementModCount();
+
+    }
+
+    return found.setKeyValue(key,value);
+
+  }
+
+  final int bitIndex=bitIndex(key,found.key);
+
+  if (!KeyAnalyzer.isOutOfBoundsIndex(bitIndex)) {
+
+    if (KeyAnalyzer.isValidBitIndex(bitIndex)) {
+
+      final TrieEntry<K,V> t=new TrieEntry<>(key,value,bitIndex);
+
+      addEntry(t,lengthInBits);
+
+      incrementSize();
+
+      return null;
+
+    }
+
+    if (KeyAnalyzer.isNullBitKey(bitIndex)) {
+
+      if (root.isEmpty()) {
+
+        incrementSize();
+
+      }
+
+ else {
+
+        incrementModCount();
+
+      }
+
+      return root.setKeyValue(key,value);
+
+    }
+
+    if (KeyAnalyzer.isEqualBitKey(bitIndex) && found != root) {
+
+      incrementModCount();
+
+      return found.setKeyValue(key,value);
+
+    }
+
+  }
+
+  throw new IllegalArgumentException("Failed to put: " + key + " -> "+ value+ ", "+ bitIndex);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Removes a single entry from the  {@link org.apache.commons.collections4.Trie}. If we found a Key (Entry h) then figure out if it's an internal (hard to remove) or external Entry (easy to remove)
+
+ */
+
+V removeEntry(final TrieEntry<K,V> h){
+
+  if (h != root) {
+
+    if (h.isInternalNode()) {
+
+      removeInternalEntry(h);
+
+    }
+
+ else {
+
+      removeExternalEntry(h);
+
+    }
+
+  }
+
+  decrementSize();
+
+  return h.setKeyValue(null,null);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Removes an external entry from the  {@link org.apache.commons.collections4.Trie}. If it's an external Entry then just remove it. This is very easy and straight forward.
+
+ */
+
+private void removeExternalEntry(final TrieEntry<K,V> h){
+
+  if (h == root) {
+
+    throw new IllegalArgumentException("Cannot delete root Entry!");
+
+  }
+
+  if (!h.isExternalNode()) {
+
+    throw new IllegalArgumentException(h + " is not an external Entry!");
+
+  }
+
+  final TrieEntry<K,V> parent=h.parent;
+
+  final TrieEntry<K,V> child=h.left == h ? h.right : h.left;
+
+  if (parent.left == h) {
+
+    parent.left=child;
+
+  }
+
+ else {
+
+    parent.right=child;
+
+  }
+
+  if (child.bitIndex > parent.bitIndex) {
+
+    child.parent=parent;
+
+  }
+
+ else {
+
+    child.predecessor=parent;
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Removes an internal entry from the  {@link org.apache.commons.collections4.Trie}. If it's an internal Entry then "good luck" with understanding this code. The Idea is essentially that Entry p takes Entry h's place in the trie which requires some re-wiring.
+
+ */
+
+private void removeInternalEntry(final TrieEntry<K,V> h){
+
+  if (h == root) {
+
+    throw new IllegalArgumentException("Cannot delete root Entry!");
+
+  }
+
+  if (!h.isInternalNode()) {
+
+    throw new IllegalArgumentException(h + " is not an internal Entry!");
+
+  }
+
+  final TrieEntry<K,V> p=h.predecessor;
+
+  p.bitIndex=h.bitIndex;
+
+{
+
+    final TrieEntry<K,V> parent=p.parent;
+
+    final TrieEntry<K,V> child=p.left == h ? p.right : p.left;
+
+    if (p.predecessor == p && p.parent != h) {
+
+      p.predecessor=p.parent;
+
+    }
+
+    if (parent.left == p) {
+
+      parent.left=child;
+
+    }
+
+ else {
+
+      parent.right=child;
+
+    }
+
+    if (child.bitIndex > parent.bitIndex) {
+
+      child.parent=parent;
+
+    }
+
+  }
+
+{
+
+    if (h.left.parent == h) {
+
+      h.left.parent=p;
+
+    }
+
+    if (h.right.parent == h) {
+
+      h.right.parent=p;
+
+    }
+
+    if (h.parent.left == h) {
+
+      h.parent.left=p;
+
+    }
+
+ else {
+
+      h.parent.right=p;
+
+    }
+
+  }
+
+  p.parent=h.parent;
+
+  p.left=h.left;
+
+  p.right=h.right;
+
+  if (isValidUplink(p.left,p)) {
+
+    p.left.predecessor=p;
+
+  }
+
+  if (isValidUplink(p.right,p)) {
+
+    p.right.predecessor=p;
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ * @throws ClassCastException if provided key is of an incompatible type
+
+ */
+
+@Override public V remove(final Object k){
+
+  if (k == null) {
+
+    return null;
+
+  }
+
+  final K key=castKey(k);
+
+  final int lengthInBits=lengthInBits(key);
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex <= path.bitIndex) {
+
+      if (!current.isEmpty() && compareKeys(key,current.key)) {
+
+        return removeEntry(current);
+
+      }
+
+      return null;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(key,current.bitIndex,lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the key that is closest in a bitwise XOR metric to the provided key. This is NOT lexicographic closeness! For example, given the keys: <ol> <li>D = 1000100 <li>H = 1001000 <li>L = 1001100 </ol> If the  {@link org.apache.commons.collections4.Trie} contained 'H' and 'L', a lookup of 'D' wouldreturn 'L', because the XOR distance between D &amp; L is smaller than the XOR distance between D &amp; H.
+
+ * @param key  the key to use in the search
+
+ * @return the key that is closest in a bitwise XOR metric to the provided key
+
+ */
+
+public K selectKey(final K key){
+
+  final Map.Entry<K,V> entry=select(key);
+
+  if (entry == null) {
+
+    return null;
+
+  }
+
+  return entry.getKey();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+private boolean selectR(final TrieEntry<K,V> h,final int bitIndex,final K key,final int lengthInBits,final Reference<Map.Entry<K,V>> reference){
+
+  if (h.bitIndex <= bitIndex) {
+
+    if (!h.isEmpty()) {
+
+      reference.set(h);
+
+      return false;
+
+    }
+
+    return true;
+
+  }
+
+  if (!isBitSet(key,h.bitIndex,lengthInBits)) {
+
+    if (selectR(h.left,h.bitIndex,key,lengthInBits,reference)) {
+
+      return selectR(h.right,h.bitIndex,key,lengthInBits,reference);
+
+    }
+
+  }
+
+ else {
+
+    if (selectR(h.right,h.bitIndex,key,lengthInBits,reference)) {
+
+      return selectR(h.left,h.bitIndex,key,lengthInBits,reference);
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the value whose key is closest in a bitwise XOR metric to the provided key. This is NOT lexicographic closeness! For example, given the keys: <ol> <li>D = 1000100 <li>H = 1001000 <li>L = 1001100 </ol> If the  {@link org.apache.commons.collections4.Trie} contained 'H' and 'L', a lookup of 'D' wouldreturn 'L', because the XOR distance between D &amp; L is smaller than the XOR distance between D &amp; H.
+
+ * @param key  the key to use in the search
+
+ * @return the value whose key is closest in a bitwise XOR metricto the provided key
+
+ */
+
+public V selectValue(final K key){
+
+  final Map.Entry<K,V> entry=select(key);
+
+  if (entry == null) {
+
+    return null;
+
+  }
+
+  return entry.getValue();
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Returns the  {@link java.util.Map.Entry} whose key is closest in a bitwise XORmetric to the given key. This is NOT lexicographic closeness. For example, given the keys: <ol> <li>D = 1000100 <li>H = 1001000 <li>L = 1001100 </ol> If the  {@link org.apache.commons.collections4.Trie} contained 'H' and 'L', a lookup of 'D' wouldreturn 'L', because the XOR distance between D &amp; L is smaller than the XOR distance between D &amp; H.
+
+ * @param key  the key to use in the search
+
+ * @return the {@link java.util.Map.Entry} whose key is closest in a bitwise XOR metricto the provided key
+
+ */
+
+public Map.Entry<K,V> select(final K key){
+
+  final int lengthInBits=lengthInBits(key);
+
+  final Reference<Map.Entry<K,V>> reference=new Reference<>();
+
+  if (!selectR(root.left,-1,key,lengthInBits,reference)) {
+
+    return reference.get();
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> subMap(final K fromKey,final K toKey){
+
+  return new RangeEntryMap(fromKey,toKey);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+/** 
+
+ * Finds the subtree that contains the prefix. This is very similar to getR but with the difference that we stop the lookup if h.bitIndex > lengthInBits.
+
+ */
+
+TrieEntry<K,V> subtree(final K prefix,final int offsetInBits,final int lengthInBits){
+
+  TrieEntry<K,V> current=root.left;
+
+  TrieEntry<K,V> path=root;
+
+  while (true) {
+
+    if (current.bitIndex <= path.bitIndex || lengthInBits <= current.bitIndex) {
+
+      break;
+
+    }
+
+    path=current;
+
+    if (!isBitSet(prefix,offsetInBits + current.bitIndex,offsetInBits + lengthInBits)) {
+
+      current=current.left;
+
+    }
+
+ else {
+
+      current=current.right;
+
+    }
+
+  }
+
+  final TrieEntry<K,V> entry=current.isEmpty() ? path : current;
+
+  if (entry.isEmpty()) {
+
+    return null;
+
+  }
+
+  final int endIndexInBits=offsetInBits + lengthInBits;
+
+  if (entry == root && lengthInBits(entry.getKey()) < endIndexInBits) {
+
+    return null;
+
+  }
+
+  if (isBitSet(prefix,endIndexInBits - 1,endIndexInBits) != isBitSet(entry.key,lengthInBits - 1,lengthInBits(entry.key))) {
+
+    return null;
+
+  }
+
+  final int bitIndex=getKeyAnalyzer().bitIndex(prefix,offsetInBits,lengthInBits,entry.key,0,lengthInBits(entry.getKey()));
+
+  if (bitIndex >= 0 && bitIndex < lengthInBits) {
+
+    return null;
+
+  }
+
+  return entry;
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public SortedMap<K,V> tailMap(final K fromKey){
+
+  return new RangeEntryMap(fromKey,null);
+
+}
+
+Location: AbstractPatriciaTrie.java
+
+Content: 
+
+@Override public Collection<V> values(){
+
+  if (values == null) {
+
+    values=new Values();
+
+  }
+
+  return values;
+
+}
+
