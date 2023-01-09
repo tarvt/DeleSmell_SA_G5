@@ -1,0 +1,450 @@
+Location: SASL.java
+
+Content: 
+
+private void cleanup(){
+
+  sasl_context.values().forEach(SaslContext::dispose);
+
+  sasl_context.clear();
+
+}
+
+Location: SASL.java
+
+Content: 
+
+private void disposeContext(Address address){
+
+  SaslContext context=sasl_context.remove(address);
+
+  if (context != null) {
+
+    context.dispose();
+
+  }
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public CallbackHandler getClientCallbackHandler(){
+
+  return client_callback_handler;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public String getClientCallbackHandlerClass(){
+
+  return client_callback_handler != null ? client_callback_handler.getClass().getName() : null;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public Subject getClientSubject(){
+
+  return client_subject;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public String getLoginModulename(){
+
+  return login_module_name;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public String getMech(){
+
+  return mech;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public Map<String,String> getSaslProps(){
+
+  return sasl_props;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public CallbackHandler getServerCallbackHandler(){
+
+  return server_callback_handler;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public String getServerCallbackHandlerClass(){
+
+  return server_callback_handler != null ? server_callback_handler.getClass().getName() : null;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public String getServerName(){
+
+  return this.server_name;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public Subject getServerSubject(){
+
+  return server_subject;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+private boolean isSelf(Address remoteAddress){
+
+  return remoteAddress.equals(local_addr);
+
+}
+
+Location: SASL.java
+
+Content: 
+
+private boolean needsAuthentication(GmsHeader hdr,Address remoteAddress){
+
+  if (hdr != null) {
+
+switch (hdr.getType()) {
+
+case GMS.GmsHeader.JOIN_REQ:
+
+case GMS.GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER:
+
+      return true;
+
+case GMS.GmsHeader.MERGE_REQ:
+
+    return !isSelf(remoteAddress);
+
+case GMS.GmsHeader.JOIN_RSP:
+
+case GMS.GmsHeader.MERGE_RSP:
+
+  return false;
+
+default :
+
+return false;
+
+}
+
+}
+
+ else {
+
+return false;
+
+}
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public SASL(){
+
+}
+
+Location: SASL.java
+
+Content: 
+
+protected void sendJoinRejectionMessage(Address dest,String error_msg){
+
+  if (dest == null)   return;
+
+  JoinRsp joinRes=new JoinRsp(error_msg);
+
+  Message msg=new Message(dest).putHeader(GMS_ID,new GmsHeader(GmsHeader.JOIN_RSP)).setBuffer(GMS.marshal(joinRes));
+
+  down_prot.down(msg);
+
+}
+
+Location: SASL.java
+
+Content: 
+
+protected void sendMergeRejectionMessage(Address dest){
+
+  Message msg=new Message(dest).setFlag(Message.Flag.OOB);
+
+  GmsHeader hdr=new GmsHeader(GmsHeader.MERGE_RSP);
+
+  hdr.setMergeRejected(true);
+
+  msg.putHeader(GMS_ID,hdr);
+
+  if (log.isDebugEnabled())   log.debug("merge response=" + hdr);
+
+  down_prot.down(msg);
+
+}
+
+Location: SASL.java
+
+Content: 
+
+protected void sendRejectionMessage(byte type,Address dest,String error_msg){
+
+switch (type) {
+
+case GmsHeader.JOIN_REQ:
+
+case GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER:
+
+    sendJoinRejectionMessage(dest,error_msg);
+
+  break;
+
+case GmsHeader.MERGE_REQ:
+
+sendMergeRejectionMessage(dest);
+
+break;
+
+default :
+
+log.error("type " + type + " unknown");
+
+break;
+
+}
+
+}
+
+Location: SASL.java
+
+Content: 
+
+protected boolean serverChallenge(GmsHeader gmsHeader,SaslHeader saslHeader,Message msg){
+
+switch (gmsHeader.getType()) {
+
+case GmsHeader.JOIN_REQ:
+
+case GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER:
+
+case GmsHeader.MERGE_REQ:
+
+    Address remoteAddress=msg.getSrc();
+
+  SaslServerContext ctx=null;
+
+try {
+
+  ctx=new SaslServerContext(saslServerFactory,mech,server_name != null ? server_name : local_addr.toString(),server_callback_handler,sasl_props,server_subject);
+
+  sasl_context.put(remoteAddress,ctx);
+
+  this.getDownProtocol().down(ctx.nextMessage(remoteAddress,saslHeader));
+
+  ctx.awaitCompletion(timeout);
+
+  if (ctx.isSuccessful()) {
+
+    if (log.isDebugEnabled()) {
+
+      log.debug("Authentication successful for %s",ctx.getAuthorizationID());
+
+    }
+
+    return true;
+
+  }
+
+ else {
+
+    log.warn("failed to validate SaslHeader from %s, header: %s",msg.getSrc(),saslHeader);
+
+    sendRejectionMessage(gmsHeader.getType(),msg.getSrc(),"authentication failed");
+
+    return false;
+
+  }
+
+}
+
+ catch (SaslException e) {
+
+  log.warn("failed to validate SaslHeader from %s, header: %s",msg.getSrc(),saslHeader);
+
+  sendRejectionMessage(gmsHeader.getType(),msg.getSrc(),"authentication failed");
+
+}
+
+catch (InterruptedException e) {
+
+  return false;
+
+}
+
+ finally {
+
+  if (ctx != null && !ctx.needsWrapping()) {
+
+    disposeContext(remoteAddress);
+
+  }
+
+}
+
+default :
+
+return true;
+
+}
+
+}
+
+Location: SASL.java
+
+Content: 
+
+@Property(name="client_callback_handler_class") public void setClientCallbackHandlerClass(String handlerClass) throws Exception {
+
+  client_callback_handler=Class.forName(handlerClass).asSubclass(CallbackHandler.class).getDeclaredConstructor().newInstance();
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setClientCallbackHandler(CallbackHandler client_callback_handler){
+
+  this.client_callback_handler=client_callback_handler;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setClientSubject(Subject client_subject){
+
+  this.client_subject=client_subject;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setLoginModuleName(String login_module_name){
+
+  this.login_module_name=login_module_name;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setMech(String mech){
+
+  this.mech=mech;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setSaslPropsMap(Map<String,String> sasl_props){
+
+  this.sasl_props=sasl_props;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+@Property(name="sasl_props",description="Properties specific to the chosen mech") public void setSaslProps(String sasl_props){
+
+  this.sasl_props=Util.parseCommaDelimitedProps(sasl_props);
+
+}
+
+Location: SASL.java
+
+Content: 
+
+@Property(name="server_callback_handler_class") public void setServerCallbackHandlerClass(String handlerClass) throws Exception {
+
+  server_callback_handler=Class.forName(handlerClass).asSubclass(CallbackHandler.class).getDeclaredConstructor().newInstance();
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setServerCallbackHandler(CallbackHandler server_callback_handler){
+
+  this.server_callback_handler=server_callback_handler;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setServerName(String server_name){
+
+  this.server_name=server_name;
+
+}
+
+Location: SASL.java
+
+Content: 
+
+public void setServerSubject(Subject server_subject){
+
+  this.server_subject=server_subject;
+
+}
+

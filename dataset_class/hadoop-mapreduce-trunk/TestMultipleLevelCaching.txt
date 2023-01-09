@@ -1,0 +1,228 @@
+Location: TestMultipleLevelCaching.java
+
+Content: 
+
+/** 
+
+ * Returns a string representing a rack with level + 1 nodes in the topology for the rack. For id = 2, level = 2 we get /a/b2/c2 id = 1, level = 3 we get /a/b1/c1/d1 NOTE There should always be one shared node i.e /a 
+
+ * @param id Unique Id for the rack
+
+ * @param level The level in the topology where the separation starts
+
+ */
+
+private static String getRack(int id,int level){
+
+  StringBuilder rack=new StringBuilder();
+
+  char alpha='a';
+
+  int length=level + 1;
+
+  while (length > level) {
+
+    rack.append("/");
+
+    rack.append(alpha);
+
+    ++alpha;
+
+    --length;
+
+  }
+
+  while (length > 0) {
+
+    rack.append("/");
+
+    rack.append(alpha);
+
+    rack.append(id);
+
+    ++alpha;
+
+    --length;
+
+  }
+
+  return rack.toString();
+
+}
+
+Location: TestMultipleLevelCaching.java
+
+Content: 
+
+/** 
+
+ * Launches a MR job and tests the job counters against the expected values.
+
+ * @param testName The name for the job
+
+ * @param mr The MR cluster
+
+ * @param fileSys The FileSystem
+
+ * @param in Input path
+
+ * @param out Output path
+
+ * @param numMaps Number of maps
+
+ * @param otherLocalMaps Expected value of other local maps
+
+ * @param datalocalMaps Expected value of data(node) local maps
+
+ * @param racklocalMaps Expected value of rack local maps
+
+ */
+
+static void launchJobAndTestCounters(String jobName,MiniMRCluster mr,FileSystem fileSys,Path in,Path out,int numMaps,int otherLocalMaps,int dataLocalMaps,int rackLocalMaps) throws IOException {
+
+  JobConf jobConf=mr.createJobConf();
+
+  if (fileSys.exists(out)) {
+
+    fileSys.delete(out,true);
+
+  }
+
+  RunningJob job=launchJob(jobConf,in,out,numMaps,jobName);
+
+  Counters counters=job.getCounters();
+
+  assertEquals("Number of local maps",counters.getCounter(JobCounter.OTHER_LOCAL_MAPS),otherLocalMaps);
+
+  assertEquals("Number of Data-local maps",counters.getCounter(JobCounter.DATA_LOCAL_MAPS),dataLocalMaps);
+
+  assertEquals("Number of Rack-local maps",counters.getCounter(JobCounter.RACK_LOCAL_MAPS),rackLocalMaps);
+
+  mr.waitUntilIdle();
+
+  mr.shutdown();
+
+}
+
+Location: TestMultipleLevelCaching.java
+
+Content: 
+
+static RunningJob launchJob(JobConf jobConf,Path inDir,Path outputPath,int numMaps,String jobName) throws IOException {
+
+  jobConf.setJobName(jobName);
+
+  jobConf.setInputFormat(NonSplitableSequenceFileInputFormat.class);
+
+  jobConf.setOutputFormat(SequenceFileOutputFormat.class);
+
+  FileInputFormat.setInputPaths(jobConf,inDir);
+
+  FileOutputFormat.setOutputPath(jobConf,outputPath);
+
+  jobConf.setMapperClass(IdentityMapper.class);
+
+  jobConf.setReducerClass(IdentityReducer.class);
+
+  jobConf.setOutputKeyClass(BytesWritable.class);
+
+  jobConf.setOutputValueClass(BytesWritable.class);
+
+  jobConf.setNumMapTasks(numMaps);
+
+  jobConf.setNumReduceTasks(0);
+
+  jobConf.setJar("build/test/mapred/testjar/testjob.jar");
+
+  return JobClient.runJob(jobConf);
+
+}
+
+Location: TestMultipleLevelCaching.java
+
+Content: 
+
+private void testCachingAtLevel(int level) throws IOException {
+
+  String namenode=null;
+
+  MiniDFSCluster dfs=null;
+
+  MiniMRCluster mr=null;
+
+  FileSystem fileSys=null;
+
+  String testName="TestMultiLevelCaching";
+
+  try {
+
+    final int taskTrackers=1;
+
+    String rack1=getRack(0,level);
+
+    String rack2=getRack(1,level);
+
+    Configuration conf=new Configuration();
+
+    dfs=new MiniDFSCluster(conf,1,true,new String[]{rack1},new String[]{"host1.com"});
+
+    dfs.waitActive();
+
+    fileSys=dfs.getFileSystem();
+
+    if (!fileSys.mkdirs(inDir)) {
+
+      throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+    }
+
+    UtilsForTests.writeFile(dfs.getNameNode(),conf,new Path(inDir + "/file"),(short)1);
+
+    namenode=(dfs.getFileSystem()).getUri().getHost() + ":" + (dfs.getFileSystem()).getUri().getPort();
+
+    JobConf jc=new JobConf();
+
+    jc.setInt(JTConfig.JT_TASKCACHE_LEVELS,level + 2);
+
+    mr=new MiniMRCluster(taskTrackers,namenode,1,new String[]{rack2},new String[]{"host2.com"},jc);
+
+    launchJobAndTestCounters(testName,mr,fileSys,inDir,outputPath,1,1,0,0);
+
+    mr.shutdown();
+
+  }
+
+  finally {
+
+    if (null != fileSys) {
+
+      fileSys.delete(inDir,true);
+
+      fileSys.delete(outputPath,true);
+
+    }
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestMultipleLevelCaching.java
+
+Content: 
+
+public void testMultiLevelCaching() throws IOException {
+
+  for (int i=1; i <= MAX_LEVEL; ++i) {
+
+    testCachingAtLevel(i);
+
+  }
+
+}
+

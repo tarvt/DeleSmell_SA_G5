@@ -1,0 +1,692 @@
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * Obtain the excluded nodes for the current block that is being written
+
+ */
+
+void addExcludedNodes(String file,FileType type,HashMap<Node,Node> excluded) throws IOException {
+
+  Collection<LocatedBlock> blocks=getCompanionBlocks(file,type,null);
+
+  if (blocks == null) {
+
+    return;
+
+  }
+
+  for (  LocatedBlock b : blocks) {
+
+    for (    Node n : b.getLocations()) {
+
+      excluded.put(n,n);
+
+    }
+
+  }
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+private DatanodeDescriptor chooseReplicaToDelete(Collection<LocatedBlock> companionBlocks,Collection<DatanodeDescriptor> dataNodes) throws IOException {
+
+  if (dataNodes.isEmpty()) {
+
+    return null;
+
+  }
+
+  final Map<String,Integer> nodeCompanionBlockCount=countCompanionBlocks(companionBlocks,false);
+
+  final Map<String,Integer> rackCompanionBlockCount=countCompanionBlocks(companionBlocks,true);
+
+  NodeComparator comparator=new NodeComparator(nodeCompanionBlockCount,rackCompanionBlockCount);
+
+  return Collections.max(dataNodes,comparator);
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override public DatanodeDescriptor chooseReplicaToDelete(FSInodeInfo inode,Block block,short replicationFactor,Collection<DatanodeDescriptor> first,Collection<DatanodeDescriptor> second){
+
+  DatanodeDescriptor chosenNode=null;
+
+  try {
+
+    String path=cachedFullPathNames.get(inode);
+
+    FileType type=getFileType(path);
+
+    if (type == FileType.NOT_RAID) {
+
+      return defaultPolicy.chooseReplicaToDelete(inode,block,replicationFactor,first,second);
+
+    }
+
+    List<LocatedBlock> companionBlocks=getCompanionBlocks(path,type,block);
+
+    if (companionBlocks == null || companionBlocks.size() == 0) {
+
+      return defaultPolicy.chooseReplicaToDelete(inode,block,replicationFactor,first,second);
+
+    }
+
+    Collection<DatanodeDescriptor> all=new HashSet<DatanodeDescriptor>();
+
+    all.addAll(first);
+
+    all.addAll(second);
+
+    chosenNode=chooseReplicaToDelete(companionBlocks,all);
+
+    if (chosenNode != null) {
+
+      return chosenNode;
+
+    }
+
+    return defaultPolicy.chooseReplicaToDelete(inode,block,replicationFactor,first,second);
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.debug("Error happend when choosing replica to delete" + StringUtils.stringifyException(e));
+
+    return defaultPolicy.chooseReplicaToDelete(inode,block,replicationFactor,first,second);
+
+  }
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+@Override DatanodeDescriptor[] chooseTarget(String srcPath,int numOfReplicas,DatanodeDescriptor writer,List<DatanodeDescriptor> chosenNodes,boolean returnChosenNodes,HashMap<Node,Node> excludedNodes,long blocksize){
+
+  try {
+
+    FileType type=getFileType(srcPath);
+
+    if (type == FileType.NOT_RAID) {
+
+      return defaultPolicy.chooseTarget(srcPath,numOfReplicas,writer,chosenNodes,blocksize);
+
+    }
+
+    if (excludedNodes == null) {
+
+      excludedNodes=new HashMap<Node,Node>();
+
+    }
+
+    addExcludedNodes(srcPath,type,excludedNodes);
+
+    DatanodeDescriptor[] result=defaultPolicy.chooseTarget(numOfReplicas,writer,chosenNodes,returnChosenNodes,excludedNodes,blocksize);
+
+    cachedLocatedBlocks.get(srcPath).add(new LocatedBlock(new ExtendedBlock(),result));
+
+    return result;
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.debug("Error happend when choosing datanode to write:" + StringUtils.stringifyException(e));
+
+    return defaultPolicy.chooseTarget(srcPath,numOfReplicas,writer,chosenNodes,blocksize);
+
+  }
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+@Override DatanodeDescriptor[] chooseTarget(String srcPath,int numOfReplicas,DatanodeDescriptor writer,List<DatanodeDescriptor> chosenNodes,long blocksize){
+
+  return chooseTarget(srcPath,numOfReplicas,writer,chosenNodes,null,blocksize);
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * Count how many companion blocks are on each datanode or the each rack
+
+ * @param companionBlocks a collection of all the companion blocks
+
+ * @param doRackCount count the companion blocks on the racks of datanodes
+
+ * @param result the map from node name to the number of companion blocks
+
+ */
+
+static Map<String,Integer> countCompanionBlocks(Collection<LocatedBlock> companionBlocks,boolean doRackCount){
+
+  Map<String,Integer> result=new HashMap<String,Integer>();
+
+  for (  LocatedBlock block : companionBlocks) {
+
+    for (    DatanodeInfo d : block.getLocations()) {
+
+      String name=doRackCount ? d.getParent().getName() : d.getName();
+
+      if (result.containsKey(name)) {
+
+        int count=result.get(name) + 1;
+
+        result.put(name,count);
+
+      }
+
+ else {
+
+        result.put(name,1);
+
+      }
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+private int getBlockIndex(String file,Block block) throws IOException {
+
+  List<LocatedBlock> blocks=cachedLocatedBlocks.get(file);
+
+synchronized (blocks) {
+
+    if (block == null) {
+
+      return blocks.size();
+
+    }
+
+    for (int i=0; i < blocks.size(); i++) {
+
+      if (blocks.get(i).getBlock().getLocalBlock().equals(block)) {
+
+        return i;
+
+      }
+
+    }
+
+  }
+
+  throw new IOException("Cannot locate " + block + " in file "+ file);
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+private List<LocatedBlock> getCompanionBlocksForHarParityBlock(String parity,int parityLength,Block block) throws IOException {
+
+  int blockIndex=getBlockIndex(parity,block);
+
+  List<LocatedBlock> parityBlocks=cachedLocatedBlocks.get(parity);
+
+  List<LocatedBlock> result=new ArrayList<LocatedBlock>();
+
+synchronized (parityBlocks) {
+
+    int start=Math.max(0,blockIndex - parityLength + 1);
+
+    int end=Math.min(parityBlocks.size(),blockIndex + parityLength);
+
+    result.addAll(parityBlocks.subList(start,end));
+
+  }
+
+  return result;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+private List<LocatedBlock> getCompanionBlocksForParityBlock(String src,String parity,int parityLength,Block block) throws IOException {
+
+  int blockIndex=getBlockIndex(parity,block);
+
+  List<LocatedBlock> result=new ArrayList<LocatedBlock>();
+
+  List<LocatedBlock> parityBlocks=cachedLocatedBlocks.get(parity);
+
+  int stripeIndex=blockIndex / parityLength;
+
+synchronized (parityBlocks) {
+
+    int parityStart=stripeIndex * parityLength;
+
+    int parityEnd=Math.min(parityStart + parityLength,parityBlocks.size());
+
+    if (parityStart < parityBlocks.size()) {
+
+      result.addAll(parityBlocks.subList(parityStart,parityEnd));
+
+    }
+
+  }
+
+  if (src == null) {
+
+    return result;
+
+  }
+
+  List<LocatedBlock> sourceBlocks=cachedLocatedBlocks.get(src);
+
+synchronized (sourceBlocks) {
+
+    int sourceStart=stripeIndex * stripeLength;
+
+    int sourceEnd=Math.min(sourceStart + stripeLength,sourceBlocks.size());
+
+    if (sourceStart < sourceBlocks.size()) {
+
+      result.addAll(sourceBlocks.subList(sourceStart,sourceEnd));
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+private List<LocatedBlock> getCompanionBlocksForSourceBlock(String src,String parity,int parityLength,Block block) throws IOException {
+
+  int blockIndex=getBlockIndex(src,block);
+
+  List<LocatedBlock> result=new ArrayList<LocatedBlock>();
+
+  List<LocatedBlock> sourceBlocks=cachedLocatedBlocks.get(src);
+
+  int stripeIndex=blockIndex / stripeLength;
+
+synchronized (sourceBlocks) {
+
+    int sourceStart=stripeIndex * stripeLength;
+
+    int sourceEnd=Math.min(sourceStart + stripeLength,sourceBlocks.size());
+
+    if (sourceStart < sourceBlocks.size()) {
+
+      result.addAll(sourceBlocks.subList(sourceStart,sourceEnd));
+
+    }
+
+  }
+
+  if (parity == null) {
+
+    return result;
+
+  }
+
+  List<LocatedBlock> parityBlocks=cachedLocatedBlocks.get(parity);
+
+synchronized (parityBlocks) {
+
+    int parityStart=stripeIndex * parityLength;
+
+    int parityEnd=Math.min(parityStart + parityLength,parityBlocks.size());
+
+    if (parityStart < parityBlocks.size()) {
+
+      result.addAll(parityBlocks.subList(parityStart,parityEnd));
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * Obtain the companion blocks of the give block Companion blocks are defined as the blocks that can help recover each others by using raid decoder.
+
+ * @param path The path of the file contains the block
+
+ * @param type The type of this file
+
+ * @param block The given blocknull if it is the block which is currently being written to
+
+ * @return the block locations of companion blocks
+
+ */
+
+List<LocatedBlock> getCompanionBlocks(String path,FileType type,Block block) throws IOException {
+
+switch (type) {
+
+case NOT_RAID:
+
+    return new ArrayList<LocatedBlock>();
+
+case XOR_HAR_TEMP_PARITY:
+
+  return getCompanionBlocksForHarParityBlock(path,xorParityLength,block);
+
+case RS_HAR_TEMP_PARITY:
+
+return getCompanionBlocksForHarParityBlock(path,rsParityLength,block);
+
+case XOR_TEMP_PARITY:
+
+return getCompanionBlocksForParityBlock(getSourceFile(path,raidTempPrefix),path,xorParityLength,block);
+
+case RS_TEMP_PARITY:
+
+return getCompanionBlocksForParityBlock(getSourceFile(path,raidrsTempPrefix),path,rsParityLength,block);
+
+case XOR_PARITY:
+
+return getCompanionBlocksForParityBlock(getSourceFile(path,xorPrefix),path,xorParityLength,block);
+
+case RS_PARITY:
+
+return getCompanionBlocksForParityBlock(getSourceFile(path,rsPrefix),path,rsParityLength,block);
+
+case XOR_SOURCE:
+
+return getCompanionBlocksForSourceBlock(path,getParityFile(path),xorParityLength,block);
+
+case RS_SOURCE:
+
+return getCompanionBlocksForSourceBlock(path,getParityFile(path),xorParityLength,block);
+
+}
+
+return new ArrayList<LocatedBlock>();
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+FileType getFileType(String path) throws IOException {
+
+  if (path.startsWith(raidHarTempPrefix + Path.SEPARATOR)) {
+
+    return FileType.XOR_HAR_TEMP_PARITY;
+
+  }
+
+  if (path.startsWith(raidrsHarTempPrefix + Path.SEPARATOR)) {
+
+    return FileType.RS_HAR_TEMP_PARITY;
+
+  }
+
+  if (path.startsWith(raidTempPrefix + Path.SEPARATOR)) {
+
+    return FileType.XOR_TEMP_PARITY;
+
+  }
+
+  if (path.startsWith(raidrsTempPrefix + Path.SEPARATOR)) {
+
+    return FileType.RS_TEMP_PARITY;
+
+  }
+
+  if (path.startsWith(xorPrefix + Path.SEPARATOR)) {
+
+    return FileType.XOR_PARITY;
+
+  }
+
+  if (path.startsWith(rsPrefix + Path.SEPARATOR)) {
+
+    return FileType.RS_PARITY;
+
+  }
+
+  String parity=getParityFile(path);
+
+  if (parity == null) {
+
+    return FileType.NOT_RAID;
+
+  }
+
+  if (parity.startsWith(xorPrefix + Path.SEPARATOR)) {
+
+    return FileType.XOR_SOURCE;
+
+  }
+
+  if (parity.startsWith(rsPrefix + Path.SEPARATOR)) {
+
+    return FileType.RS_SOURCE;
+
+  }
+
+  return FileType.NOT_RAID;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * Get path for the corresponding parity file for a source file. Returns null if it does not exists
+
+ * @param src the toUri path of the source file
+
+ * @return the toUri path of the parity file
+
+ */
+
+String getParityFile(String src) throws IOException {
+
+  String xorParity=getParityFile(xorPrefix,src);
+
+  if (xorParity != null) {
+
+    return xorParity;
+
+  }
+
+  String rsParity=getParityFile(rsPrefix,src);
+
+  if (rsParity != null) {
+
+    return rsParity;
+
+  }
+
+  return null;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * Get path for the parity file. Returns null if it does not exists
+
+ * @param parityPrefix usuall "/raid/" or "/raidrs/"
+
+ * @return the toUri path of the parity file
+
+ */
+
+private String getParityFile(String parityPrefix,String src) throws IOException {
+
+  String parity=parityPrefix + src;
+
+  if (namesystem.dir.getFileInfo(parity,true) == null) {
+
+    return null;
+
+  }
+
+  return parity;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * Get path for the corresponding source file for a valid parity file. Returns null if it does not exists
+
+ * @param parity the toUri path of the parity file
+
+ * @return the toUri path of the source file
+
+ */
+
+String getSourceFile(String parity,String prefix) throws IOException {
+
+  if (isHarFile(parity)) {
+
+    return null;
+
+  }
+
+  String src=parity.substring(prefix.length());
+
+  if (namesystem.dir.getFileInfo(src,true) == null) {
+
+    return null;
+
+  }
+
+  return src;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override public void initialize(Configuration conf,FSClusterStats stats,NetworkTopology clusterMap){
+
+  this.conf=conf;
+
+  this.stripeLength=RaidNode.getStripeLength(conf);
+
+  this.rsParityLength=RaidNode.rsParityLength(conf);
+
+  this.xorParityLength=1;
+
+  try {
+
+    this.xorPrefix=RaidNode.xorDestinationPath(conf).toUri().getPath();
+
+    this.rsPrefix=RaidNode.rsDestinationPath(conf).toUri().getPath();
+
+  }
+
+ catch (  IOException e) {
+
+  }
+
+  if (this.xorPrefix == null) {
+
+    this.xorPrefix=RaidNode.DEFAULT_RAID_LOCATION;
+
+  }
+
+  if (this.rsPrefix == null) {
+
+    this.rsPrefix=RaidNode.DEFAULT_RAIDRS_LOCATION;
+
+  }
+
+  this.namesystem=(FSNamesystem)stats;
+
+  this.cachedLocatedBlocks=new CachedLocatedBlocks(namesystem);
+
+  this.cachedFullPathNames=new CachedFullPathNames(namesystem);
+
+  this.raidTempPrefix=RaidNode.xorTempPrefix(conf);
+
+  this.raidrsTempPrefix=RaidNode.rsTempPrefix(conf);
+
+  this.raidHarTempPrefix=RaidNode.xorHarTempPrefix(conf);
+
+  this.raidrsHarTempPrefix=RaidNode.rsHarTempPrefix(conf);
+
+  defaultPolicy=new BlockPlacementPolicyDefault(conf,stats,clusterMap);
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+private boolean isHarFile(String path){
+
+  return path.lastIndexOf(RaidNode.HAR_SUFFIX) != -1;
+
+}
+
+Location: BlockPlacementPolicyRaid.java
+
+Content: 
+
+@Override public int verifyBlockPlacement(String srcPath,LocatedBlock lBlk,int minRacks){
+
+  return defaultPolicy.verifyBlockPlacement(srcPath,lBlk,minRacks);
+
+}
+

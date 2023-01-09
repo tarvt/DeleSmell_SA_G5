@@ -1,0 +1,224 @@
+Location: PDFResourcesTestCase.java
+
+Content: 
+
+private PDFColorSpace createColorSpace(){
+
+  PDFFunction tintFunction=createPDFFunction();
+
+  return new PDFSeparationColorSpace("cs1",tintFunction);
+
+}
+
+Location: PDFResourcesTestCase.java
+
+Content: 
+
+private PDFFunction createPDFFunction(){
+
+  final Double zero=0d;
+
+  final Double one=1d;
+
+  List<Double> domain=Arrays.asList(new Double[]{zero,one});
+
+  List<Double> range=Arrays.asList(new Double[]{zero,one,zero,one,zero,one});
+
+  float[] cZero=new float[]{1f,1f,1f};
+
+  float[] cOne={0f,0f,0f};
+
+  PDFFunction tintFunction=new PDFFunction(domain,range,cZero,cOne,1.0d);
+
+  tintFunction.setObjectNumber(objectNummerCount.incrementAndGet());
+
+  return tintFunction;
+
+}
+
+Location: PDFResourcesTestCase.java
+
+Content: 
+
+private PDFPattern createPDFPattern(PDFResources res,PDFDocument pdfDoc){
+
+  List<Double> bbox=new ArrayList<Double>();
+
+  bbox.add(1d);
+
+  bbox.add(1d);
+
+  bbox.add(1d);
+
+  bbox.add(1d);
+
+  List<Double> theMatrix=new ArrayList<Double>();
+
+  for (int i=0; i < 6; i++) {
+
+    theMatrix.add(1d);
+
+  }
+
+  PDFPattern pattern=new PDFPattern(res,1,1,1,bbox,1,1,theMatrix,null,new StringBuffer());
+
+  pattern.setObjectNumber(objectNummerCount.incrementAndGet());
+
+  pattern.setDocument(pdfDoc);
+
+  pattern.setName("Pa" + patternCount.incrementAndGet());
+
+  return pattern;
+
+}
+
+Location: PDFResourcesTestCase.java
+
+Content: 
+
+private PDFShading createPDFShading(PDFResources res,PDFDocument pdfDoc){
+
+  List<Double> coords=new ArrayList<Double>(4);
+
+  coords.add(1d);
+
+  coords.add(1d);
+
+  coords.add(1d);
+
+  coords.add(1d);
+
+  PDFFunction pdfFunction=createPDFFunction();
+
+  PDFDeviceColorSpace deviceColorspace=new PDFDeviceColorSpace(PDFDeviceColorSpace.DEVICE_RGB);
+
+  PDFShading shading=new PDFShading(2,deviceColorspace,coords,pdfFunction);
+
+  shading.setObjectNumber(objectNummerCount.incrementAndGet());
+
+  shading.setDocument(pdfDoc);
+
+  shading.setName("Sh" + patternCount.incrementAndGet());
+
+  return shading;
+
+}
+
+Location: PDFResourcesTestCase.java
+
+Content: 
+
+/** 
+
+ * Test PDF resources output with color space, pattern and shading, if the PDF resource object has a parent resource object.
+
+ * @throws IOException
+
+ */
+
+@Test public void testOutputWithParent() throws IOException {
+
+  PDFDocument pdfDoc=new PDFDocument(null);
+
+  PDFResources res=new PDFResources(pdfDoc);
+
+  PDFResources resParent=new PDFResources(pdfDoc);
+
+  res.setParentResources(resParent);
+
+  resParent.addColorSpace(this.createColorSpace());
+
+  PDFResourceContext context=new PDFResourceContext(resParent);
+
+  context.addPattern(this.createPDFPattern(resParent,pdfDoc));
+
+  context.addShading(this.createPDFShading(resParent,pdfDoc));
+
+  ByteArrayOutputStream baos=new ByteArrayOutputStream();
+
+  res.output(baos);
+
+  String expectedShading="/Shading << /Sh2 4 0 R >>";
+
+  String expectedPattern="/Pattern << /Pa1 2 0 R >>\n";
+
+  String expectedColorspace="/ColorSpace << /cs1 [/Separation /cs1 /DeviceRGB 1 0 R] >>\n";
+
+  String outputString=baos.toString();
+
+  assertTrue(outputString.contains(expectedShading));
+
+  assertTrue(outputString.contains(expectedPattern));
+
+  assertTrue(outputString.contains(expectedColorspace));
+
+}
+
+Location: PDFResourcesTestCase.java
+
+Content: 
+
+/** 
+
+ * Test PDF resources output with color space, pattern and shading, if the PDF resource object has a parent resource object, that also has color spaces, patterns and shadings.
+
+ * @throws IOException
+
+ */
+
+@Test public void testOutputWithParent2() throws IOException {
+
+  PDFDocument pdfDoc=new PDFDocument(null);
+
+  PDFResources res=new PDFResources(pdfDoc);
+
+  PDFDictionary shadingDict=new PDFDictionary();
+
+  shadingDict.put("Sh1-1718006973",new PDFReference("9 0 R"));
+
+  res.put("Shading",shadingDict);
+
+  PDFDictionary patternDict=new PDFDictionary();
+
+  patternDict.put("Pa1-1718006973",new PDFReference("10 0 R"));
+
+  res.put("Pattern",patternDict);
+
+  PDFDictionary colorSpaceDict=new PDFDictionary();
+
+  colorSpaceDict.put("DefaultRGB",new PDFReference("11 0 R"));
+
+  res.put("ColorSpace",colorSpaceDict);
+
+  PDFResources resParent=new PDFResources(pdfDoc);
+
+  res.setParentResources(resParent);
+
+  resParent.addColorSpace(this.createColorSpace());
+
+  PDFResourceContext context=new PDFResourceContext(resParent);
+
+  context.addPattern(this.createPDFPattern(resParent,pdfDoc));
+
+  context.addShading(this.createPDFShading(resParent,pdfDoc));
+
+  ByteArrayOutputStream baos=new ByteArrayOutputStream();
+
+  res.output(baos);
+
+  String outputString=baos.toString();
+
+  String expectedShading="/Shading << /Sh1-1718006973 9 0 R /Sh2 4 0 R >>";
+
+  String expectedPattern="/Shading << /Sh1-1718006973 9 0 R /Sh2 4 0 R >>";
+
+  String expectedColorspace="/ColorSpace << /DefaultRGB 11 0 R" + " /cs1 [/Separation /cs1 /DeviceRGB 1 0 R] >>";
+
+  assertTrue(outputString.contains(expectedShading));
+
+  assertTrue(outputString.contains(expectedPattern));
+
+  assertTrue(outputString.contains(expectedColorspace));
+
+}
+

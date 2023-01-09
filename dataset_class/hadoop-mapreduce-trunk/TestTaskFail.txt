@@ -1,0 +1,134 @@
+Location: TestTaskFail.java
+
+Content: 
+
+public RunningJob launchJob(JobConf conf,Path inDir,Path outDir,String input) throws IOException {
+
+  FileSystem inFs=inDir.getFileSystem(conf);
+
+  FileSystem outFs=outDir.getFileSystem(conf);
+
+  outFs.delete(outDir,true);
+
+  if (!inFs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+{
+
+    DataOutputStream file=inFs.create(new Path(inDir,"part-0"));
+
+    file.writeBytes(input);
+
+    file.close();
+
+  }
+
+  conf.setMapperClass(MapperClass.class);
+
+  conf.setReducerClass(IdentityReducer.class);
+
+  conf.setNumReduceTasks(0);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  conf.setSpeculativeExecution(false);
+
+  String TEST_ROOT_DIR=new Path(System.getProperty("test.build.data","/tmp")).toString().replace(' ','+');
+
+  conf.set("test.build.data",TEST_ROOT_DIR);
+
+  return new JobClient(conf).submitJob(conf);
+
+}
+
+Location: TestTaskFail.java
+
+Content: 
+
+private void validateAttempt(TaskInProgress tip,TaskAttemptID attemptId,TaskStatus ts,boolean isCleanup,boolean containsCleanupLog,JobTracker jt) throws IOException {
+
+  assertEquals(isCleanup,tip.isCleanupAttempt(attemptId));
+
+  assertTrue(ts != null);
+
+  assertEquals(TaskStatus.State.FAILED,ts.getRunState());
+
+  String log=MapReduceTestUtil.readTaskLog(TaskLog.LogName.STDERR,attemptId,false);
+
+  assertTrue(log.contains(taskLog));
+
+  TaskTrackerStatus ttStatus=jt.getTaskTracker(tip.machineWhereTaskRan(attemptId)).getStatus();
+
+  String tasklogUrl=TaskLogServlet.getTaskLogUrl("localhost",String.valueOf(ttStatus.getHttpPort()),attemptId.toString()) + "&filter=STDERR";
+
+  assertEquals(HttpURLConnection.HTTP_OK,TestWebUIAuthorization.getHttpStatusCode(tasklogUrl,tip.getUser(),"GET"));
+
+  if (containsCleanupLog) {
+
+    assertTrue(log.contains(cleanupLog));
+
+  }
+
+  if (isCleanup) {
+
+    log=MapReduceTestUtil.readTaskLog(TaskLog.LogName.STDERR,attemptId,true);
+
+    assertTrue(log.contains(cleanupLog));
+
+    ttStatus=jt.getTaskTracker(tip.machineWhereCleanupRan(attemptId)).getStatus();
+
+    String cleanupTasklogUrl=TaskLogServlet.getTaskLogUrl("localhost",String.valueOf(ttStatus.getHttpPort()),attemptId.toString()) + "&filter=STDERR&cleanup=true";
+
+    assertEquals(HttpURLConnection.HTTP_OK,TestWebUIAuthorization.getHttpStatusCode(cleanupTasklogUrl,tip.getUser(),"GET"));
+
+    if (jt.taskTrackers().size() >= 2) {
+
+      String trackerRanTask=tip.machineWhereTaskRan(attemptId);
+
+      String trackerRanCleanupTask=tip.machineWhereCleanupRan(attemptId);
+
+      assertFalse(trackerRanTask.equals(trackerRanCleanupTask));
+
+    }
+
+  }
+
+}
+
+Location: TestTaskFail.java
+
+Content: 
+
+private void validateJob(RunningJob job,JobTracker jt,boolean cleanupNeeded) throws IOException {
+
+  assertEquals(JobStatus.SUCCEEDED,job.getJobState());
+
+  JobID jobId=job.getID();
+
+  TaskAttemptID attemptId=new TaskAttemptID(new TaskID(jobId,TaskType.MAP,0),0);
+
+  TaskInProgress tip=jt.getTip(attemptId.getTaskID());
+
+  TaskStatus ts=jt.getTaskStatus(attemptId);
+
+  validateAttempt(tip,attemptId,ts,false,true,jt);
+
+  attemptId=new TaskAttemptID(new TaskID(jobId,TaskType.MAP,0),1);
+
+  ts=jt.getTaskStatus(attemptId);
+
+  validateAttempt(tip,attemptId,ts,cleanupNeeded,false,jt);
+
+  attemptId=new TaskAttemptID(new TaskID(jobId,TaskType.MAP,0),2);
+
+  ts=jt.getTaskStatus(attemptId);
+
+  validateAttempt(tip,attemptId,ts,cleanupNeeded,false,jt);
+
+}
+

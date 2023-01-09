@@ -1,0 +1,246 @@
+Location: SortedRanges.java
+
+Content: 
+
+private void add(long start,long end){
+
+  if (end > start) {
+
+    Range recRange=new Range(start,end - start);
+
+    ranges.add(recRange);
+
+    indicesCount+=recRange.getLength();
+
+    LOG.debug("added " + recRange);
+
+  }
+
+}
+
+Location: SortedRanges.java
+
+Content: 
+
+/** 
+
+ * Add the range indices. It is ensured that the added range  doesn't overlap the existing ranges. If it overlaps, the  existing overlapping ranges are removed and a single range  having the superset of all the removed ranges and this range  is added.  If the range is of 0 length, doesn't do anything.
+
+ * @param range Range to be added.
+
+ */
+
+synchronized void add(Range range){
+
+  if (range.isEmpty()) {
+
+    return;
+
+  }
+
+  long startIndex=range.getStartIndex();
+
+  long endIndex=range.getEndIndex();
+
+  SortedSet<Range> headSet=ranges.headSet(range);
+
+  if (headSet.size() > 0) {
+
+    Range previousRange=headSet.last();
+
+    LOG.debug("previousRange " + previousRange);
+
+    if (startIndex < previousRange.getEndIndex()) {
+
+      if (ranges.remove(previousRange)) {
+
+        indicesCount-=previousRange.getLength();
+
+      }
+
+      startIndex=previousRange.getStartIndex();
+
+      endIndex=endIndex >= previousRange.getEndIndex() ? endIndex : previousRange.getEndIndex();
+
+    }
+
+  }
+
+  Iterator<Range> tailSetIt=ranges.tailSet(range).iterator();
+
+  while (tailSetIt.hasNext()) {
+
+    Range nextRange=tailSetIt.next();
+
+    LOG.debug("nextRange " + nextRange + "   startIndex:"+ startIndex+ "  endIndex:"+ endIndex);
+
+    if (endIndex >= nextRange.getStartIndex()) {
+
+      tailSetIt.remove();
+
+      indicesCount-=nextRange.getLength();
+
+      if (endIndex < nextRange.getEndIndex()) {
+
+        endIndex=nextRange.getEndIndex();
+
+        break;
+
+      }
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+  add(startIndex,endIndex);
+
+}
+
+Location: SortedRanges.java
+
+Content: 
+
+/** 
+
+ * Get the no of indices stored in the ranges.
+
+ * @return indices count
+
+ */
+
+synchronized long getIndicesCount(){
+
+  return indicesCount;
+
+}
+
+Location: SortedRanges.java
+
+Content: 
+
+/** 
+
+ * Get the sorted set of ranges.
+
+ * @return ranges
+
+ */
+
+synchronized SortedSet<Range> getRanges(){
+
+  return ranges;
+
+}
+
+Location: SortedRanges.java
+
+Content: 
+
+/** 
+
+ * Remove the range indices. If this range is   found in existing ranges, the existing ranges  are shrunk. If range is of 0 length, doesn't do anything.
+
+ * @param range Range to be removed.
+
+ */
+
+synchronized void remove(Range range){
+
+  if (range.isEmpty()) {
+
+    return;
+
+  }
+
+  long startIndex=range.getStartIndex();
+
+  long endIndex=range.getEndIndex();
+
+  SortedSet<Range> headSet=ranges.headSet(range);
+
+  if (headSet.size() > 0) {
+
+    Range previousRange=headSet.last();
+
+    LOG.debug("previousRange " + previousRange);
+
+    if (startIndex < previousRange.getEndIndex()) {
+
+      if (ranges.remove(previousRange)) {
+
+        indicesCount-=previousRange.getLength();
+
+        LOG.debug("removed previousRange " + previousRange);
+
+      }
+
+      add(previousRange.getStartIndex(),startIndex);
+
+      if (endIndex <= previousRange.getEndIndex()) {
+
+        add(endIndex,previousRange.getEndIndex());
+
+      }
+
+    }
+
+  }
+
+  Iterator<Range> tailSetIt=ranges.tailSet(range).iterator();
+
+  while (tailSetIt.hasNext()) {
+
+    Range nextRange=tailSetIt.next();
+
+    LOG.debug("nextRange " + nextRange + "   startIndex:"+ startIndex+ "  endIndex:"+ endIndex);
+
+    if (endIndex > nextRange.getStartIndex()) {
+
+      tailSetIt.remove();
+
+      indicesCount-=nextRange.getLength();
+
+      if (endIndex < nextRange.getEndIndex()) {
+
+        add(endIndex,nextRange.getEndIndex());
+
+        break;
+
+      }
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+}
+
+Location: SortedRanges.java
+
+Content: 
+
+/** 
+
+ * Get Iterator which skips the stored ranges. The Iterator.next() call return the index starting from 0.
+
+ * @return SkipRangeIterator
+
+ */
+
+synchronized SkipRangeIterator skipRangeIterator(){
+
+  return new SkipRangeIterator(ranges.iterator());
+
+}
+

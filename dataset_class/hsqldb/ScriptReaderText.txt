@@ -1,0 +1,204 @@
+Location: ScriptReaderText.java
+
+Content: 
+
+HsqlException getError(Throwable t,long lineCount){
+
+  if (t instanceof HsqlException) {
+
+    HsqlException e=((HsqlException)t);
+
+    if (e.getErrorCode() == -ErrorCode.ERROR_IN_SCRIPT_FILE) {
+
+      return e;
+
+    }
+
+  }
+
+  return Error.error(t,ErrorCode.ERROR_IN_SCRIPT_FILE,ErrorCode.M_DatabaseScriptReader_read,new Object[]{Long.valueOf(lineCount),t.toString()});
+
+}
+
+Location: ScriptReaderText.java
+
+Content: 
+
+private void handleError(HsqlException e){
+
+  database.logger.logSevereEvent("bad line in script file " + lineCount,e);
+
+  if (database.recoveryMode == 0) {
+
+    throw e;
+
+  }
+
+  openScriptWriter();
+
+  try {
+
+    scrwriter.writeLogStatement(null,rawStatement);
+
+  }
+
+ catch (  Throwable t) {
+
+  }
+
+}
+
+Location: ScriptReaderText.java
+
+Content: 
+
+private void openScriptWriter(){
+
+  if (scrwriter == null) {
+
+    String timestamp=database.logger.fileDateFormat.format(new java.util.Date());
+
+    String name=fileNamePath + "." + timestamp+ ".reject";
+
+    scrwriter=new ScriptWriterText(database,name,false,false,true);
+
+  }
+
+}
+
+Location: ScriptReaderText.java
+
+Content: 
+
+void processStatement(Session session){
+
+  if (statement.startsWith("/*C")) {
+
+    int endid=statement.indexOf('*',4);
+
+    sessionNumber=Integer.parseInt(statement.substring(3,endid));
+
+    statement=statement.substring(endid + 2);
+
+    sessionChanged=true;
+
+    statementType=SESSION_ID;
+
+    return;
+
+  }
+
+  sessionChanged=false;
+
+  rowIn.setSource(session,statement);
+
+  statementType=rowIn.getStatementType();
+
+  if (statementType == ANY_STATEMENT) {
+
+    rowData=null;
+
+    currentTable=null;
+
+    return;
+
+  }
+
+ else   if (statementType == COMMIT_STATEMENT) {
+
+    rowData=null;
+
+    currentTable=null;
+
+    return;
+
+  }
+
+ else   if (statementType == SET_SCHEMA_STATEMENT) {
+
+    rowData=null;
+
+    currentTable=null;
+
+    currentSchema=rowIn.getSchemaName();
+
+    return;
+
+  }
+
+  String name=rowIn.getTableName();
+
+  String schema=session.getCurrentSchemaHsqlName().name;
+
+  currentTable=database.schemaManager.getUserTable(name,schema);
+
+  currentStore=database.persistentStoreCollection.getStore(currentTable);
+
+  Type[] colTypes;
+
+  if (statementType == INSERT_STATEMENT) {
+
+    colTypes=currentTable.getColumnTypes();
+
+  }
+
+ else   if (currentTable.hasPrimaryKey()) {
+
+    colTypes=currentTable.getPrimaryKeyTypes();
+
+  }
+
+ else {
+
+    colTypes=currentTable.getColumnTypes();
+
+  }
+
+  rowData=rowIn.readData(colTypes);
+
+}
+
+Location: ScriptReaderText.java
+
+Content: 
+
+ScriptReaderText(Database db,String fileName){
+
+  super(db,fileName);
+
+}
+
+Location: ScriptReaderText.java
+
+Content: 
+
+public ScriptReaderText(Database db,String fileName,boolean compressed) throws IOException {
+
+  super(db,fileName);
+
+  inputStream=database.logger.getFileAccess().openInputStreamElement(fileName);
+
+  bufferedStream=new BufferedInputStream(inputStream);
+
+  InputStream tempStream;
+
+  if (compressed) {
+
+    gzipStream=new GZIPInputStream(bufferedStream);
+
+    tempStream=gzipStream;
+
+  }
+
+ else {
+
+    tempStream=bufferedStream;
+
+  }
+
+  dataStreamIn=new LineReader(tempStream,ScriptWriterText.ISO_8859_1);
+
+  rowIn=new RowInputTextLog(db.databaseProperties.isVersion18());
+
+}
+

@@ -1,0 +1,118 @@
+Location: SimpleTCP.java
+
+Content: 
+
+protected Connection getConnection(SocketAddress dest) throws Exception {
+
+  Connection conn=connections.get(dest);
+
+  if (conn != null)   return conn;
+
+  Socket dest_sock=new Socket();
+
+  dest_sock.setSendBufferSize(send_buf_size);
+
+  dest_sock.setReceiveBufferSize(recv_buf_size);
+
+  dest_sock.connect(dest);
+
+  Connection c=connections.putIfAbsent(dest,conn=new Connection(dest_sock).start());
+
+  if (c != null) {
+
+    Util.close(conn);
+
+    return c;
+
+  }
+
+  return conn;
+
+}
+
+Location: SimpleTCP.java
+
+Content: 
+
+@ManagedOperation(description="dumps the address table") public String printAddressTable(){
+
+  return addr_table.entrySet().stream().collect(StringBuilder::new,(sb,e) -> sb.append(e.getKey()).append(": ").append(e.getValue()).append("\n"),(l,r) -> {
+
+  }
+
+).toString();
+
+}
+
+Location: SimpleTCP.java
+
+Content: 
+
+protected void sendTo(Address dest,byte[] buffer,int offset,int length) throws Exception {
+
+  SocketAddress physical_dest=null;
+
+  if (dest instanceof IpAddress) {
+
+    IpAddress ip_addr=(IpAddress)dest;
+
+    physical_dest=new InetSocketAddress(ip_addr.getIpAddress(),ip_addr.getPort());
+
+  }
+
+ else   physical_dest=addr_table.get(dest);
+
+  if (physical_dest == null)   throw new Exception(String.format("physical address for %s not found",dest));
+
+  Connection conn=getConnection(physical_dest);
+
+  conn.send(buffer,offset,length);
+
+}
+
+Location: SimpleTCP.java
+
+Content: 
+
+protected Object _down(Message msg) throws Exception {
+
+  Address dest=msg.dest();
+
+  setSourceAddress(msg);
+
+  int size=(int)msg.size();
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(size + Global.INT_SIZE);
+
+  out.writeInt(size);
+
+  msg.writeTo(out);
+
+  if (dest != null)   sendTo(dest,out.buffer(),0,out.position());
+
+ else {
+
+    Collection<Address> dests=view != null ? view.getMembers() : addr_table.keySet();
+
+    for (    Address dst : dests) {
+
+      try {
+
+        sendTo(dst,out.buffer(),0,out.position());
+
+      }
+
+ catch (      Throwable t) {
+
+        log.error("failed sending multicast message to " + dst,t);
+
+      }
+
+    }
+
+  }
+
+  return null;
+
+}
+

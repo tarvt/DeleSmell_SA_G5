@@ -1,0 +1,162 @@
+Location: StatementInsert.java
+
+Content: 
+
+RowSetNavigator getInsertSelectNavigator(Session session){
+
+  Type[] colTypes=baseTable.getColumnTypes();
+
+  int[] columnMap=insertColumnMap;
+
+  Result result=queryExpression.getResult(session,0);
+
+  RowSetNavigator nav=result.initialiseNavigator();
+
+  Type[] sourceTypes=result.metaData.columnTypes;
+
+  RowSetNavigatorClient newData=new RowSetNavigatorClient(nav.getSize());
+
+  while (nav.next()) {
+
+    Object[] data=baseTable.getNewRowData(session);
+
+    Object[] sourceData=nav.getCurrent();
+
+    for (int i=0; i < columnMap.length; i++) {
+
+      int j=columnMap[i];
+
+      if (j == this.overrideUserValue) {
+
+        continue;
+
+      }
+
+      Type sourceType=sourceTypes[i];
+
+      data[j]=colTypes[j].convertToType(session,sourceData[i],sourceType);
+
+    }
+
+    newData.add(data);
+
+  }
+
+  return newData;
+
+}
+
+Location: StatementInsert.java
+
+Content: 
+
+RowSetNavigator getInsertValuesNavigator(Session session){
+
+  Type[] colTypes=baseTable.getColumnTypes();
+
+  Expression[] list=insertExpression.nodes;
+
+  RowSetNavigatorClient newData=new RowSetNavigatorClient(list.length);
+
+  for (int j=0; j < list.length; j++) {
+
+    Expression[] rowArgs=list[j].nodes;
+
+    Object[] data=getInsertData(session,colTypes,rowArgs);
+
+    newData.add(data);
+
+  }
+
+  return newData;
+
+}
+
+Location: StatementInsert.java
+
+Content: 
+
+/** 
+
+ * Instantiate this as an INSERT_SELECT statement.
+
+ */
+
+StatementInsert(Session session,Table targetTable,int[] insertColumnMap,boolean[] insertCheckColumns,QueryExpression queryExpression,Expression[] updateExpressions,boolean[] updateCheckColumns,int[] updateColumnMap,Expression[] targets,int specialAction,int override,CompileContext compileContext){
+
+  super(StatementTypes.INSERT,StatementTypes.X_SQL_DATA_CHANGE,session.getCurrentSchemaHsqlName());
+
+  this.targetTable=targetTable;
+
+  this.baseTable=targetTable.isTriggerInsertable() ? targetTable : targetTable.getBaseTable();
+
+  this.insertColumnMap=insertColumnMap;
+
+  this.insertCheckColumns=insertCheckColumns;
+
+  this.queryExpression=queryExpression;
+
+  this.overrideUserValue=override;
+
+  this.updateCheckColumns=updateCheckColumns;
+
+  this.updateExpressions=updateExpressions;
+
+  this.updateColumnMap=updateColumnMap;
+
+  this.targets=targets;
+
+  this.specialAction=specialAction;
+
+  setupChecks();
+
+  setDatabaseObjects(session,compileContext);
+
+  checkAccessRights(session);
+
+}
+
+Location: StatementInsert.java
+
+Content: 
+
+/** 
+
+ * Instantiate this as an INSERT_VALUES statement.
+
+ */
+
+StatementInsert(Session session,Table targetTable,int[] insertColumnMap,Expression insertExpression,boolean[] insertCheckColumns,Expression[] updateExpressions,boolean[] updateCheckColumns,int[] updateColumnMap,Expression[] targets,int specialAction,CompileContext compileContext){
+
+  super(StatementTypes.INSERT,StatementTypes.X_SQL_DATA_CHANGE,session.getCurrentSchemaHsqlName());
+
+  this.targetTable=targetTable;
+
+  this.baseTable=targetTable.isTriggerInsertable() ? targetTable : targetTable.getBaseTable();
+
+  this.insertColumnMap=insertColumnMap;
+
+  this.insertCheckColumns=insertCheckColumns;
+
+  this.insertExpression=insertExpression;
+
+  this.updateCheckColumns=updateCheckColumns;
+
+  this.updateExpressions=updateExpressions;
+
+  this.updateColumnMap=updateColumnMap;
+
+  this.targets=targets;
+
+  this.specialAction=specialAction;
+
+  setupChecks();
+
+  setDatabaseObjects(session,compileContext);
+
+  checkAccessRights(session);
+
+  isSimpleInsert=insertExpression != null && insertExpression.nodes.length == 1 && updatableTableCheck == null && specialAction == isNone;
+
+}
+

@@ -1,0 +1,382 @@
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Changes the state of this circuit breaker and also initializes a new {@code CheckIntervalData} object.
+
+ * @param newState the new state to be set
+
+ */
+
+private void changeStateAndStartNewCheckInterval(final State newState){
+
+  changeState(newState);
+
+  checkIntervalData.set(new CheckIntervalData(0,nanoTime()));
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Creates the map with strategy objects. It allows access for a strategy for a given state.
+
+ * @return the strategy map
+
+ */
+
+private static Map<State,StateStrategy> createStrategyMap(){
+
+  final Map<State,StateStrategy> map=new EnumMap<>(State.class);
+
+  map.put(State.CLOSED,new StateStrategyClosed());
+
+  map.put(State.OPEN,new StateStrategyOpen());
+
+  return map;
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance of  {@code EventCountCircuitBreaker} which uses the same parameters foropening and closing checks.
+
+ * @param threshold the threshold for changing the status of the circuit breaker; ifthe number of events received in a check interval is greater than this value, the circuit breaker is opened; if it is lower than this value, it is closed again
+
+ * @param checkInterval the check interval for opening or closing the circuit breaker
+
+ * @param checkUnit the {@code TimeUnit} defining the check interval
+
+ */
+
+public EventCountCircuitBreaker(final int threshold,final long checkInterval,final TimeUnit checkUnit){
+
+  this(threshold,checkInterval,checkUnit,threshold);
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance of  {@code EventCountCircuitBreaker} with the same interval for openingand closing checks.
+
+ * @param openingThreshold the threshold for opening the circuit breaker; if thisnumber of events is received in the time span determined by the check interval, the circuit breaker is opened
+
+ * @param checkInterval the check interval for opening or closing the circuit breaker
+
+ * @param checkUnit the {@code TimeUnit} defining the check interval
+
+ * @param closingThreshold the threshold for closing the circuit breaker; if thenumber of events received in the time span determined by the check interval goes below this threshold, the circuit breaker is closed again
+
+ */
+
+public EventCountCircuitBreaker(final int openingThreshold,final long checkInterval,final TimeUnit checkUnit,final int closingThreshold){
+
+  this(openingThreshold,checkInterval,checkUnit,closingThreshold,checkInterval,checkUnit);
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance of  {@code EventCountCircuitBreaker} and initializes all properties foropening and closing it based on threshold values for events occurring in specific intervals.
+
+ * @param openingThreshold the threshold for opening the circuit breaker; if thisnumber of events is received in the time span determined by the opening interval, the circuit breaker is opened
+
+ * @param openingInterval the interval for opening the circuit breaker
+
+ * @param openingUnit the {@code TimeUnit} defining the opening interval
+
+ * @param closingThreshold the threshold for closing the circuit breaker; if thenumber of events received in the time span determined by the closing interval goes below this threshold, the circuit breaker is closed again
+
+ * @param closingInterval the interval for closing the circuit breaker
+
+ * @param closingUnit the {@code TimeUnit} defining the closing interval
+
+ */
+
+public EventCountCircuitBreaker(final int openingThreshold,final long openingInterval,final TimeUnit openingUnit,final int closingThreshold,final long closingInterval,final TimeUnit closingUnit){
+
+  checkIntervalData=new AtomicReference<>(new CheckIntervalData(0,0));
+
+  this.openingThreshold=openingThreshold;
+
+  this.openingInterval=openingUnit.toNanos(openingInterval);
+
+  this.closingThreshold=closingThreshold;
+
+  this.closingInterval=closingUnit.toNanos(closingInterval);
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Returns the interval (in nanoseconds) for checking for the closing threshold.
+
+ * @return the opening check interval
+
+ */
+
+public long getClosingInterval(){
+
+  return closingInterval;
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Returns the threshold value for closing the circuit breaker. If the number of events received in the time span determined by the closing interval goes below this threshold, the circuit breaker is closed again.
+
+ * @return the closing threshold
+
+ */
+
+public int getClosingThreshold(){
+
+  return closingThreshold;
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Returns the interval (in nanoseconds) for checking for the opening threshold.
+
+ * @return the opening check interval
+
+ */
+
+public long getOpeningInterval(){
+
+  return openingInterval;
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Returns the threshold value for opening the circuit breaker. If this number of events is received in the time span determined by the opening interval, the circuit breaker is opened.
+
+ * @return the opening threshold
+
+ */
+
+public int getOpeningThreshold(){
+
+  return openingThreshold;
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Increments the monitored value by <strong>1</strong> and performs a check of the current state of this circuit breaker. This method works like  {@link #checkState()}, but the monitored value is incremented before the state check is performed.
+
+ * @return <strong>true</strong> if the circuit breaker is now closed;<strong>false</strong> otherwise
+
+ */
+
+public boolean incrementAndCheckState(){
+
+  return incrementAndCheckState(1);
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ */
+
+@Override public boolean incrementAndCheckState(final Integer increment){
+
+  return performStateCheck(increment);
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Returns the current time in nanoseconds. This method is used to obtain the current time. This is needed to calculate the check intervals correctly.
+
+ * @return the current time in nanoseconds
+
+ */
+
+long nanoTime(){
+
+  return System.nanoTime();
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Calculates the next  {@code CheckIntervalData} object based on the current data andthe current state. The next data object takes the counter increment and the current time into account.
+
+ * @param increment the increment for the internal counter
+
+ * @param currentData the current check data object
+
+ * @param currentState the current state of the circuit breaker
+
+ * @param time the current time
+
+ * @return the updated {@code CheckIntervalData} object
+
+ */
+
+private CheckIntervalData nextCheckIntervalData(final int increment,final CheckIntervalData currentData,final State currentState,final long time){
+
+  final CheckIntervalData nextData;
+
+  if (stateStrategy(currentState).isCheckIntervalFinished(this,currentData,time)) {
+
+    nextData=new CheckIntervalData(increment,time);
+
+  }
+
+ else {
+
+    nextData=currentData.increment(increment);
+
+  }
+
+  return nextData;
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Actually checks the state of this circuit breaker and executes a state transition if necessary.
+
+ * @param increment the increment for the internal counter
+
+ * @return a flag whether the circuit breaker is now closed
+
+ */
+
+private boolean performStateCheck(final int increment){
+
+  CheckIntervalData currentData;
+
+  CheckIntervalData nextData;
+
+  State currentState;
+
+  do {
+
+    final long time=nanoTime();
+
+    currentState=state.get();
+
+    currentData=checkIntervalData.get();
+
+    nextData=nextCheckIntervalData(increment,currentData,currentState,time);
+
+  }
+
+ while (!updateCheckIntervalData(currentData,nextData));
+
+  if (stateStrategy(currentState).isStateTransition(this,currentData,nextData)) {
+
+    currentState=currentState.oppositeState();
+
+    changeStateAndStartNewCheckInterval(currentState);
+
+  }
+
+  return !isOpen(currentState);
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Returns the  {@code StateStrategy} object responsible for the given state.
+
+ * @param state the state
+
+ * @return the corresponding {@code StateStrategy}
+
+ * @throws CircuitBreakingException if the strategy cannot be resolved
+
+ */
+
+private static StateStrategy stateStrategy(final State state){
+
+  return STRATEGY_MAP.get(state);
+
+}
+
+Location: EventCountCircuitBreaker.java
+
+Content: 
+
+/** 
+
+ * Updates the  {@code CheckIntervalData} object. The current data object is replacedby the one modified by the last check. The return value indicates whether this was successful. If it is <strong>false</strong>, another thread interfered, and the whole operation has to be redone.
+
+ * @param currentData the current check data object
+
+ * @param nextData the replacing check data object
+
+ * @return a flag whether the update was successful
+
+ */
+
+private boolean updateCheckIntervalData(final CheckIntervalData currentData,final CheckIntervalData nextData){
+
+  return currentData == nextData || checkIntervalData.compareAndSet(currentData,nextData);
+
+}
+

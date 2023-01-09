@@ -1,0 +1,214 @@
+Location: NativeTextHandler.java
+
+Content: 
+
+private Font createFont(java.awt.Font f){
+
+  return fontInfo.getFontInstanceForAWTFont(f);
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+/** 
+
+ * Draw a string to the PostScript document. The text is painted using text operations. {@inheritDoc}
+
+ */
+
+public void drawString(Graphics2D g,String s,float x,float y) throws IOException {
+
+  PSGraphics2D g2d=(PSGraphics2D)g;
+
+  g2d.preparePainting();
+
+  if (this.overrideFont == null) {
+
+    java.awt.Font awtFont=g2d.getFont();
+
+    this.font=createFont(awtFont);
+
+  }
+
+ else {
+
+    this.font=this.overrideFont;
+
+    this.overrideFont=null;
+
+  }
+
+  g2d.establishColor(g2d.getColor());
+
+  establishCurrentFont();
+
+  PSGenerator gen=getPSGenerator();
+
+  gen.saveGraphicsState();
+
+  Shape imclip=g2d.getClip();
+
+  g2d.writeClip(imclip);
+
+  AffineTransform trans=g2d.getTransform();
+
+  gen.concatMatrix(trans);
+
+  gen.writeln(gen.formatDouble(x) + " " + gen.formatDouble(y)+ " moveto ");
+
+  gen.writeln("1 -1 scale");
+
+  StringBuffer sb=new StringBuffer("(");
+
+  escapeText(s,sb);
+
+  sb.append(") t ");
+
+  gen.writeln(sb.toString());
+
+  gen.restoreGraphicsState();
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+private void escapeText(final String text,StringBuffer target){
+
+  final int l=text.length();
+
+  for (int i=0; i < l; i++) {
+
+    final char ch=text.charAt(i);
+
+    final char mch=font.mapChar(ch);
+
+    PSGenerator.escapeChar(mch,target);
+
+  }
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+private void establishCurrentFont() throws IOException {
+
+  if (!currentFontName.equals(font.getFontName()) || (currentFontSize != font.getFontSize())) {
+
+    PSGenerator gen=getPSGenerator();
+
+    gen.writeln("/" + font.getFontTriplet().getName() + " "+ gen.formatDouble(font.getFontSize() / 1000f)+ " F");
+
+    currentFontName=font.getFontName();
+
+    currentFontSize=font.getFontSize();
+
+  }
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+private PSGenerator getPSGenerator(){
+
+  return this.rootG2D.getPSGenerator();
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+/** 
+
+ * Main constructor.
+
+ * @param g2d the PSGraphics2D instance this instances is used by
+
+ * @param fontInfo the FontInfo object with all available fonts
+
+ */
+
+public NativeTextHandler(PSGraphics2D g2d,FontInfo fontInfo){
+
+  this.rootG2D=g2d;
+
+  if (fontInfo != null) {
+
+    this.fontInfo=fontInfo;
+
+  }
+
+ else {
+
+    hongshuai();
+
+    fontInfo=new FontInfo();
+
+    boolean base14Kerning=false;
+
+    FontSetup.setup(fontInfo,base14Kerning);
+
+  }
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+/** 
+
+ * Sets the overriding font.
+
+ * @param override Overriding Font to set
+
+ */
+
+public void setOverrideFont(Font override){
+
+  this.overrideFont=override;
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void writePageSetup() throws IOException {
+
+}
+
+Location: NativeTextHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void writeSetup() throws IOException {
+
+  if (fontInfo != null) {
+
+    PSFontUtils.writeFontDict(getPSGenerator(),fontInfo);
+
+  }
+
+}
+

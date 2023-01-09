@@ -1,0 +1,174 @@
+Location: LinkDbReader.java
+
+Content: 
+
+public String[] getAnchors(Text url) throws IOException {
+
+  Inlinks inlinks=getInlinks(url);
+
+  if (inlinks == null)   return null;
+
+  return inlinks.getAnchors();
+
+}
+
+Location: LinkDbReader.java
+
+Content: 
+
+public Inlinks getInlinks(Text url) throws IOException {
+
+  hongshuai();
+
+  Path linkDbPath=new Path(directory,LinkDb.CURRENT_NAME);
+
+  FileStatus stat=linkDbPath.getFileSystem(getConf()).getFileStatus(directory);
+
+  long lastModified=stat.getModificationTime();
+
+  return (Inlinks)MapFileOutputFormat.getEntry(readers,PARTITIONER,url,new Inlinks());
+
+}
+
+Location: LinkDbReader.java
+
+Content: 
+
+public void init(Path directory) throws Exception {
+
+  this.directory=directory;
+
+}
+
+Location: LinkDbReader.java
+
+Content: 
+
+public LinkDbReader(){
+
+}
+
+Location: LinkDbReader.java
+
+Content: 
+
+public LinkDbReader(Configuration conf,Path directory) throws Exception {
+
+  setConf(conf);
+
+  init(directory);
+
+}
+
+Location: LinkDbReader.java
+
+Content: 
+
+public void openReaders() throws IOException {
+
+  Path linkDbPath=new Path(directory,LinkDb.CURRENT_NAME);
+
+  FileStatus stat=linkDbPath.getFileSystem(getConf()).getFileStatus(directory);
+
+  long lastModified=stat.getModificationTime();
+
+synchronized (this) {
+
+    if (readers != null) {
+
+      if (this.lastModified == lastModified) {
+
+        return;
+
+      }
+
+ else {
+
+        close();
+
+      }
+
+    }
+
+    this.lastModified=lastModified;
+
+    readers=MapFileOutputFormat.getReaders(linkDbPath,getConf());
+
+  }
+
+}
+
+Location: LinkDbReader.java
+
+Content: 
+
+public void processDumpJob(String linkdb,String output,String regex) throws IOException, InterruptedException, ClassNotFoundException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("LinkDb dump: starting at {}",sdf.format(start));
+
+  LOG.info("LinkDb dump: db: {}",linkdb);
+
+  Path outFolder=new Path(output);
+
+  Job job=NutchJob.getInstance(getConf());
+
+  job.setJobName("read " + linkdb);
+
+  job.setJarByClass(LinkDbReader.class);
+
+  Configuration conf=job.getConfiguration();
+
+  if (regex != null) {
+
+    conf.set("linkdb.regex",regex);
+
+    job.setMapperClass(LinkDBDumpMapper.class);
+
+  }
+
+  FileInputFormat.addInputPath(job,new Path(linkdb,LinkDb.CURRENT_NAME));
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  FileOutputFormat.setOutputPath(job,outFolder);
+
+  job.setOutputFormatClass(TextOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Inlinks.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="LinkDbRead job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("LinkDb dump: finished at {}, elapsed: {}",sdf.format(end),TimingUtil.elapsedTime(start,end));
+
+}
+

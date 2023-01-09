@@ -1,0 +1,514 @@
+Location: Collation.java
+
+Content: 
+
+private Collation(boolean simple){
+
+  String nameString=simple ? defaultCollationName : defaultIgnoreCaseCollationName;
+
+  locale=Locale.ENGLISH;
+
+  name=HsqlNameManager.newInfoSchemaObjectName(nameString,false,SchemaObject.COLLATION);
+
+  isUnicodeSimple=simple;
+
+  isFinal=true;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public Collation(HsqlName name,Collation source,Charset charset,Boolean padSpace){
+
+  this.name=name;
+
+  this.locale=source.locale;
+
+  this.collator=source.collator;
+
+  this.isUnicodeSimple=source.isUnicodeSimple;
+
+  this.isFinal=true;
+
+  this.charset=charset;
+
+  this.sourceName=source.name;
+
+  if (padSpace != null) {
+
+    this.padSpace=padSpace.booleanValue();
+
+  }
+
+}
+
+Location: Collation.java
+
+Content: 
+
+private Collation(String name,String language,String country,int strength,int decomposition,boolean ucc){
+
+  locale=new Locale(language,country);
+
+  collator=Collator.getInstance(locale);
+
+  if (strength >= 0) {
+
+    collator.setStrength(strength);
+
+  }
+
+  if (decomposition >= 0) {
+
+    collator.setDecomposition(decomposition);
+
+  }
+
+  strength=collator.getStrength();
+
+  isUnicodeSimple=false;
+
+  this.name=HsqlNameManager.newInfoSchemaObjectName(name,true,SchemaObject.COLLATION);
+
+  charset=Charset.SQL_TEXT;
+
+  isUpperCaseCompare=ucc;
+
+  isFinal=true;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+/** 
+
+ * returns -1, 0 or +1
+
+ */
+
+public int compare(String a,String b){
+
+  int i;
+
+  if (collator == null) {
+
+    if (isUnicodeSimple) {
+
+      i=a.compareTo(b);
+
+    }
+
+ else {
+
+      i=a.compareToIgnoreCase(b);
+
+    }
+
+  }
+
+ else {
+
+    if (isUpperCaseCompare) {
+
+      i=collator.compare(toUpperCase(a),toUpperCase(b));
+
+    }
+
+ else {
+
+      i=collator.compare(a,b);
+
+    }
+
+  }
+
+  return (i == 0) ? 0 : (i < 0 ? -1 : 1);
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public String getCollateSQL(){
+
+  StringBuffer sb=new StringBuffer();
+
+  sb.append(Tokens.T_COLLATE).append(' ');
+
+  sb.append(getName().statementName);
+
+  return sb.toString();
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public static Iterator getCollationsIterator(){
+
+  return nameToJavaName.keySet().iterator();
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public synchronized static Collation getCollation(String name){
+
+  Collation collation=(Collation)dbNameToCollation.get(name);
+
+  if (collation != null) {
+
+    return collation;
+
+  }
+
+  collation=getNewCollation(name);
+
+  dbNameToCollation.put(name,collation);
+
+  return collation;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public String getDatabaseCollationSQL(){
+
+  StringBuffer sb=new StringBuffer();
+
+  sb.append(Tokens.T_SET).append(' ');
+
+  sb.append(Tokens.T_DATABASE).append(' ');
+
+  sb.append(Tokens.T_COLLATION).append(' ');
+
+  sb.append(getName().statementName);
+
+  sb.append(' ');
+
+  if (!padSpace) {
+
+    sb.append(Tokens.T_NO).append(' ').append(Tokens.T_PAD);
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public static Collation getDefaultIgnoreCaseInstance(){
+
+  return defaultIgnoreCaseCollation;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public static Iterator getLocalesIterator(){
+
+  return nameToJavaName.values().iterator();
+
+}
+
+Location: Collation.java
+
+Content: 
+
+private static Collation getNewCollation(String name){
+
+  int strength=-1;
+
+  int decomposition=-1;
+
+  boolean ucc=false;
+
+  String[] parts=StringUtil.split(name," ");
+
+  String dbName=parts[0];
+
+  int index=1;
+
+  int limit=parts.length;
+
+  if (parts.length > index && "UCC".equals(parts[limit - 1])) {
+
+    ucc=true;
+
+    limit--;
+
+  }
+
+  if (index < limit) {
+
+    strength=Integer.parseInt(parts[index]);
+
+    index++;
+
+  }
+
+  if (index < limit) {
+
+    decomposition=Integer.parseInt(parts[index]);
+
+    index++;
+
+  }
+
+  if (index < limit) {
+
+    throw Error.error(ErrorCode.X_42501,name);
+
+  }
+
+  String javaName=(String)dbNameToJavaName.get(dbName);
+
+  if (javaName == null) {
+
+    javaName=(String)nameToJavaName.get(dbName);
+
+    if (javaName == null) {
+
+      throw Error.error(ErrorCode.X_42501,dbName);
+
+    }
+
+  }
+
+  parts=StringUtil.split(javaName,"-");
+
+  String language=parts[0];
+
+  String country=parts.length == 2 ? parts[1] : "";
+
+  return new Collation(name,language,country,strength,decomposition,ucc);
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public synchronized static Collation getUpperCaseCompareCollation(Collation source){
+
+  if (defaultCollationName.equals(source.name.name) || defaultIgnoreCaseCollationName.equals(source.name.name)) {
+
+    return defaultIgnoreCaseCollation;
+
+  }
+
+  if (source.isUpperCaseCompare) {
+
+    return source;
+
+  }
+
+  String name=source.getName().name;
+
+  if (name.contains(" UCC")) {
+
+    return source;
+
+  }
+
+  name=name + " UCC";
+
+  return getCollation(name);
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public boolean isCaseSensitive(){
+
+  if (collator == null) {
+
+    return isUnicodeSimple;
+
+  }
+
+ else {
+
+    return !isUpperCaseCompare;
+
+  }
+
+}
+
+Location: Collation.java
+
+Content: 
+
+/** 
+
+ * the SQL_TEXT collation
+
+ */
+
+public boolean isDefaultCollation(){
+
+  return collator == null && isUnicodeSimple & padSpace;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+/** 
+
+ * collation for individual object
+
+ */
+
+public boolean isObjectCollation(){
+
+  return isFinal;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public boolean isPadSpace(){
+
+  return padSpace;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public boolean isUnicodeSimple(){
+
+  return isUnicodeSimple;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public boolean isUpperCaseCompare(){
+
+  return isUpperCaseCompare;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public static Collation newDatabaseInstance(){
+
+  Collation collation=new Collation(true);
+
+  collation.isFinal=false;
+
+  return collation;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public void setCollationAsLocale(){
+
+  Locale locale=Locale.getDefault();
+
+  String language=locale.getDisplayLanguage(Locale.ENGLISH);
+
+  try {
+
+    setCollation(language,false);
+
+  }
+
+ catch (  HsqlException e) {
+
+  }
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public void setCollation(String newName,boolean padSpace){
+
+  if (isFinal) {
+
+    throw Error.error(ErrorCode.X_42503,newName);
+
+  }
+
+  Collation newCollation=Collation.getCollation(newName);
+
+  this.name.rename(newCollation.name.name,true);
+
+  this.locale=newCollation.locale;
+
+  this.collator=newCollation.collator;
+
+  this.isUnicodeSimple=newCollation.isUnicodeSimple;
+
+  this.padSpace=padSpace;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public void setPadding(boolean padSpace){
+
+  if (isFinal) {
+
+    throw Error.error(ErrorCode.X_42503);
+
+  }
+
+  this.padSpace=padSpace;
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public String toLowerCase(String s){
+
+  return s.toLowerCase(locale);
+
+}
+
+Location: Collation.java
+
+Content: 
+
+public String toUpperCase(String s){
+
+  return s.toUpperCase(locale);
+
+}
+

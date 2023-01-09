@@ -1,0 +1,180 @@
+Location: TestMRSequenceFileInputFilter.java
+
+Content: 
+
+private int countRecords(int numSplits) throws IOException, InterruptedException {
+
+  InputFormat<Text,BytesWritable> format=new SequenceFileInputFilter<Text,BytesWritable>();
+
+  if (numSplits == 0) {
+
+    numSplits=random.nextInt(MAX_LENGTH / (SequenceFile.SYNC_INTERVAL / 20)) + 1;
+
+  }
+
+  FileInputFormat.setMaxInputSplitSize(job,fs.getFileStatus(inFile).getLen() / numSplits);
+
+  TaskAttemptContext context=MapReduceTestUtil.createDummyMapTaskAttemptContext(job.getConfiguration());
+
+  int count=0;
+
+  for (  InputSplit split : format.getSplits(job)) {
+
+    RecordReader<Text,BytesWritable> reader=format.createRecordReader(split,context);
+
+    MapContext<Text,BytesWritable,Text,BytesWritable> mcontext=new MapContextImpl<Text,BytesWritable,Text,BytesWritable>(job.getConfiguration(),context.getTaskAttemptID(),reader,null,null,MapReduceTestUtil.createDummyReporter(),split);
+
+    reader.initialize(split,mcontext);
+
+    try {
+
+      while (reader.nextKeyValue()) {
+
+        LOG.info("Accept record " + reader.getCurrentKey().toString());
+
+        count++;
+
+      }
+
+    }
+
+  finally {
+
+      reader.close();
+
+    }
+
+  }
+
+  return count;
+
+}
+
+Location: TestMRSequenceFileInputFilter.java
+
+Content: 
+
+private static void createSequenceFile(int numRecords) throws Exception {
+
+  SequenceFile.Writer writer=SequenceFile.createWriter(fs,conf,inFile,Text.class,BytesWritable.class);
+
+  try {
+
+    for (int i=1; i <= numRecords; i++) {
+
+      Text key=new Text(Integer.toString(i));
+
+      byte[] data=new byte[random.nextInt(10)];
+
+      random.nextBytes(data);
+
+      BytesWritable value=new BytesWritable(data);
+
+      writer.append(key,value);
+
+    }
+
+  }
+
+  finally {
+
+    writer.close();
+
+  }
+
+}
+
+Location: TestMRSequenceFileInputFilter.java
+
+Content: 
+
+public void testMD5Filter() throws Exception {
+
+  LOG.info("Testing MD5 Filter with frequency: 1000");
+
+  SequenceFileInputFilter.setFilterClass(job,SequenceFileInputFilter.MD5Filter.class);
+
+  SequenceFileInputFilter.MD5Filter.setFrequency(job.getConfiguration(),1000);
+
+  fs.delete(inDir,true);
+
+  for (int length=0; length < MAX_LENGTH; length+=random.nextInt(MAX_LENGTH / 10) + 1) {
+
+    LOG.info("******Number of records: " + length);
+
+    createSequenceFile(length);
+
+    LOG.info("Accepted " + countRecords(0) + " records");
+
+  }
+
+  fs.delete(inDir,true);
+
+}
+
+Location: TestMRSequenceFileInputFilter.java
+
+Content: 
+
+public void testPercentFilter() throws Exception {
+
+  LOG.info("Testing Percent Filter with frequency: 1000");
+
+  SequenceFileInputFilter.setFilterClass(job,SequenceFileInputFilter.PercentFilter.class);
+
+  SequenceFileInputFilter.PercentFilter.setFrequency(job.getConfiguration(),1000);
+
+  fs.delete(inDir,true);
+
+  for (int length=0; length < MAX_LENGTH; length+=random.nextInt(MAX_LENGTH / 10) + 1) {
+
+    LOG.info("******Number of records: " + length);
+
+    createSequenceFile(length);
+
+    int count=countRecords(1);
+
+    LOG.info("Accepted " + count + " records");
+
+    int expectedCount=length / 1000;
+
+    if (expectedCount * 1000 != length)     expectedCount++;
+
+    assertEquals(count,expectedCount);
+
+  }
+
+  fs.delete(inDir,true);
+
+}
+
+Location: TestMRSequenceFileInputFilter.java
+
+Content: 
+
+public void testRegexFilter() throws Exception {
+
+  LOG.info("Testing Regex Filter with patter: \\A10*");
+
+  SequenceFileInputFilter.setFilterClass(job,SequenceFileInputFilter.RegexFilter.class);
+
+  SequenceFileInputFilter.RegexFilter.setPattern(job.getConfiguration(),"\\A10*");
+
+  fs.delete(inDir,true);
+
+  for (int length=1; length < MAX_LENGTH; length+=random.nextInt(MAX_LENGTH / 10) + 1) {
+
+    LOG.info("******Number of records: " + length);
+
+    createSequenceFile(length);
+
+    int count=countRecords(0);
+
+    assertEquals(count,length == 0 ? 0 : (int)Math.log10(length) + 1);
+
+  }
+
+  fs.delete(inDir,true);
+
+}
+

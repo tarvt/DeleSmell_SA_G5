@@ -1,0 +1,104 @@
+Location: FilePool.java
+
+Content: 
+
+/** 
+
+ * Initialize a filepool under the path provided, but do not populate the cache.
+
+ */
+
+public FilePool(Configuration conf,Path input) throws IOException {
+
+  root=null;
+
+  this.conf=conf;
+
+  this.path=input;
+
+  this.fs=path.getFileSystem(conf);
+
+  updateLock=new ReentrantReadWriteLock();
+
+}
+
+Location: FilePool.java
+
+Content: 
+
+/** 
+
+ * Gather a collection of files at least as large as minSize.
+
+ * @return The total size of files returned.
+
+ */
+
+public long getInputFiles(long minSize,Collection<FileStatus> files) throws IOException {
+
+  updateLock.readLock().lock();
+
+  try {
+
+    return root.selectFiles(minSize,files);
+
+  }
+
+  finally {
+
+    updateLock.readLock().unlock();
+
+  }
+
+}
+
+Location: FilePool.java
+
+Content: 
+
+/** 
+
+ * Get a set of locations for the given file.
+
+ */
+
+public BlockLocation[] locationsFor(FileStatus stat,long start,long len) throws IOException {
+
+  return fs.getFileBlockLocations(stat,start,len);
+
+}
+
+Location: FilePool.java
+
+Content: 
+
+/** 
+
+ * (Re)generate cache of input FileStatus objects.
+
+ */
+
+public void refresh() throws IOException {
+
+  updateLock.writeLock().lock();
+
+  try {
+
+    root=new InnerDesc(fs,fs.getFileStatus(path),new MinFileFilter(conf.getLong(GRIDMIX_MIN_FILE,128 * 1024 * 1024),conf.getLong(GRIDMIX_MAX_TOTAL,100L * (1L << 40))));
+
+    if (0 == root.getSize()) {
+
+      throw new IOException("Found no satisfactory file in " + path);
+
+    }
+
+  }
+
+  finally {
+
+    updateLock.writeLock().unlock();
+
+  }
+
+}
+

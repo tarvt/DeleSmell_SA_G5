@@ -1,0 +1,476 @@
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+private void checkAccessToKill(JobTracker tracker,final JobConf mrConf,UserGroupInformation killer) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Job job=submitSleepJob(1,1,100,100,false,"u1,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+  JobID jobID=job.getStatus().getJobID();
+
+  JobInProgress jip=tracker.getJob(org.apache.hadoop.mapred.JobID.downgrade(jobID));
+
+  tracker.initJob(jip);
+
+  Cluster cluster=killer.doAs(new PrivilegedExceptionAction<Cluster>(){
+
+    public Cluster run() throws IOException {
+
+      return new Cluster(mrConf);
+
+    }
+
+  }
+
+);
+
+  cluster.getJob(jobID).killJob();
+
+  assertEquals("job not killed by " + killer,cluster.getJob(jobID).getStatus().getState(),(State.KILLED));
+
+}
+
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+private void refreshDocument(Document doc){
+
+  Element queues=createQueuesNode(doc);
+
+  Element q1=createQueue(doc,"q1");
+
+  Properties props=new Properties();
+
+  props.setProperty("capacity","10");
+
+  props.setProperty("maxCapacity","35");
+
+  q1.appendChild(createProperties(doc,props));
+
+  queues.appendChild(q1);
+
+  Element p1=createQueue(doc,"p1");
+
+  Element p11=createQueue(doc,"p11");
+
+  p11.appendChild(createAcls(doc,QueueConfigurationParser.ACL_SUBMIT_JOB_TAG," "));
+
+  p11.appendChild(createAcls(doc,QueueConfigurationParser.ACL_ADMINISTER_JOB_TAG,"u2"));
+
+  p1.appendChild(p11);
+
+  Element p12=createQueue(doc,"p12");
+
+  p12.appendChild(createState(doc,QueueState.RUNNING.getStateName()));
+
+  p12.appendChild(createAcls(doc,QueueConfigurationParser.ACL_SUBMIT_JOB_TAG,"*"));
+
+  p12.appendChild(createAcls(doc,QueueConfigurationParser.ACL_ADMINISTER_JOB_TAG,"*"));
+
+  p1.appendChild(p12);
+
+  Element p13=createQueue(doc,"p13");
+
+  p13.appendChild(createState(doc,QueueState.RUNNING.getStateName()));
+
+  p1.appendChild(p13);
+
+  Element p14=createQueue(doc,"p14");
+
+  p14.appendChild(createState(doc,QueueState.STOPPED.getStateName()));
+
+  p1.appendChild(p14);
+
+  queues.appendChild(p1);
+
+}
+
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+/** 
+
+ * Tests the accessibility to kill a job
+
+ * @throws Exception
+
+ */
+
+@Test public void testAccessToKillJob() throws Exception {
+
+  startCluster(true);
+
+  Job job=submitSleepJob(1,1,100,100,false,"u1,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+  final JobConf jobConf=miniMRCluster.createJobConf();
+
+  Cluster cluster=null;
+
+  JobID jobID=job.getStatus().getJobID();
+
+  JobTracker tracker=miniMRCluster.getJobTrackerRunner().getJobTracker();
+
+  JobInProgress jip=tracker.getJob(org.apache.hadoop.mapred.JobID.downgrade(jobID));
+
+  tracker.initJob(jip);
+
+  try {
+
+    final Configuration userConf=new Configuration(miniMRCluster.createJobConf());
+
+    UserGroupInformation ugi=UserGroupInformation.createUserForTesting("someRandomUser",new String[]{"someRandomGroup"});
+
+    cluster=ugi.doAs(new PrivilegedExceptionAction<Cluster>(){
+
+      public Cluster run() throws IOException {
+
+        return new Cluster(userConf);
+
+      }
+
+    }
+
+);
+
+    cluster.getJob(jobID).killJob();
+
+    fail("user 'someRandomeUser' is neither u1 nor in the administer group list");
+
+  }
+
+ catch (  Exception e) {
+
+    final Configuration userConf=new Configuration(miniMRCluster.createJobConf());
+
+    UserGroupInformation ugi=UserGroupInformation.createUserForTesting("u1",new String[]{"g1"});
+
+    cluster=ugi.doAs(new PrivilegedExceptionAction<Cluster>(){
+
+      public Cluster run() throws IOException {
+
+        return new Cluster(userConf);
+
+      }
+
+    }
+
+);
+
+    cluster.getJob(jobID).killJob();
+
+    assertEquals("job submitted for u1 and queue p1:p11 is not killed.",cluster.getJob(jobID).getStatus().getState(),(State.KILLED));
+
+  }
+
+  job=submitSleepJob(1,1,100,100,false,"u1,g1","p1" + NAME_SEPARATOR + "p12",conf);
+
+  jobID=job.getStatus().getJobID();
+
+  jip=tracker.getJob(org.apache.hadoop.mapred.JobID.downgrade(jobID));
+
+  tracker.initJob(jip);
+
+  tracker.killJob(job.getJobID());
+
+  assertEquals("job submitted for u1 and queue p1:p11 is not killed.",cluster.getJob(jobID).getStatus().getState(),(State.KILLED));
+
+  final Configuration userConf=new Configuration(miniMRCluster.createJobConf());
+
+  UserGroupInformation ugi=UserGroupInformation.createUserForTesting("u1",new String[]{"g1"});
+
+  cluster=ugi.doAs(new PrivilegedExceptionAction<Cluster>(){
+
+    public Cluster run() throws IOException {
+
+      return new Cluster(userConf);
+
+    }
+
+  }
+
+);
+
+  job=submitSleepJob(1,1,10,10,false,"u1,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+  jobID=job.getStatus().getJobID();
+
+  jip=tracker.getJob(org.apache.hadoop.mapred.JobID.downgrade(jobID));
+
+  tracker.initJob(jip);
+
+  ugi=UserGroupInformation.createUserForTesting("u3",new String[]{"g3"});
+
+  cluster=ugi.doAs(new PrivilegedExceptionAction<Cluster>(){
+
+    public Cluster run() throws IOException {
+
+      return new Cluster(jobConf);
+
+    }
+
+  }
+
+);
+
+  try {
+
+    cluster.getJob(jobID).killJob();
+
+    fail("u3 not in administer list");
+
+  }
+
+ catch (  Exception e) {
+
+    ugi=UserGroupInformation.createUserForTesting("u1",new String[]{"g1"});
+
+    cluster=ugi.doAs(new PrivilegedExceptionAction<Cluster>(){
+
+      public Cluster run() throws IOException {
+
+        return new Cluster(jobConf);
+
+      }
+
+    }
+
+);
+
+    assertFalse(cluster.getJob(jobID).isComplete());
+
+    cluster.getJob(jobID).killJob();
+
+    assertEquals("job submitted for u1 and queue p1:p11 is not killed.",cluster.getJob(jobID).getStatus().getState(),(State.KILLED));
+
+  }
+
+  ugi=UserGroupInformation.createUserForTesting("adminUser",new String[]{"g3"});
+
+  checkAccessToKill(tracker,jobConf,ugi);
+
+  ugi=UserGroupInformation.createUserForTesting("u3",new String[]{adminGroup});
+
+  checkAccessToKill(tracker,jobConf,ugi);
+
+  ugi=UserGroupInformation.createUserForTesting("u3",new String[]{deprecatedSuperGroup});
+
+  checkAccessToKill(tracker,jobConf,ugi);
+
+}
+
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+/** 
+
+ * Tests job submission when acls are disabled
+
+ * @throws Exception
+
+ */
+
+@Test public void testAclsDisabled() throws Exception {
+
+  startCluster(false);
+
+  Job job=submitSleepJob(0,0,0,0,true,"u2,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+  assertTrue("Job submitted for u2 in queue p1:p11 is not successful.",job.isSuccessful());
+
+  job=submitSleepJob(0,0,0,0,true,"u1,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+  assertTrue("Job submitted for u2 in queue p1:p11 is not successful.",job.isSuccessful());
+
+  job=submitSleepJob(1,1,0,0,false,"u1,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+  final JobConf jobConf=miniMRCluster.createJobConf();
+
+  UserGroupInformation ugi=UserGroupInformation.createUserForTesting("u3",new String[]{"g3"});
+
+  Cluster cluster=ugi.doAs(new PrivilegedExceptionAction<Cluster>(){
+
+    public Cluster run() throws IOException {
+
+      return new Cluster(jobConf);
+
+    }
+
+  }
+
+);
+
+  JobID jobID=job.getStatus().getJobID();
+
+  JobInProgress jip=miniMRCluster.getJobTrackerRunner().getJobTracker().getJob(org.apache.hadoop.mapred.JobID.downgrade(jobID));
+
+  miniMRCluster.getJobTrackerRunner().getJobTracker().initJob(jip);
+
+  cluster.getJob(jobID).killJob();
+
+  assertEquals("job submitted for u1 and queue p1:p11 is not killed.",cluster.getJob(jobID).getStatus().getState(),(State.KILLED));
+
+}
+
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+/** 
+
+ * Tests the submission of job with specified acls
+
+ * @throws Exception
+
+ */
+
+@Test public void testAclsForSubmitJob() throws Exception {
+
+  startCluster(true);
+
+  Job job;
+
+  try {
+
+    job=submitSleepJob(0,0,0,0,true,"u1,g1","p1" + NAME_SEPARATOR + "p13",conf);
+
+    fail("user u1 cannot submit jobs to queue p1:p13");
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  job=submitSleepJob(0,0,0,0,true,adminUser + ",g1","p1" + NAME_SEPARATOR + "p13",conf);
+
+  assertTrue("Admin user cannot submit jobs to queue p1:p13",job.isSuccessful());
+
+  job=submitSleepJob(0,0,0,0,true,"u1," + adminGroup,"p1" + NAME_SEPARATOR + "p13",conf);
+
+  assertTrue("Admin group member cannot submit jobs to queue p1:p13",job.isSuccessful());
+
+  job=submitSleepJob(0,0,0,0,true,"u1," + deprecatedSuperGroup,"p1" + NAME_SEPARATOR + "p13",conf);
+
+  assertTrue("Deprecated super group member cannot submit jobs to queue" + " p1:p13",job.isSuccessful());
+
+  try {
+
+    job=submitSleepJob(0,0,0,0,false,"u2,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+    fail("user u2 cannot submit jobs to queue p1:p11");
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  job=submitSleepJob(0,0,0,0,true,"u1,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+  assertTrue("Job submission for u1 failed in queue : p1:p11.",job.isSuccessful());
+
+  job=submitSleepJob(0,0,0,0,true,"u2,g1","p1" + NAME_SEPARATOR + "p12",conf);
+
+  assertTrue("Job submission for u2 failed in queue : p1:p12.",job.isSuccessful());
+
+}
+
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+/** 
+
+ * Test to check that jobs cannot be submitted to a container queue
+
+ * @throws Exception
+
+ */
+
+@Test(expected=IOException.class) public void testSubmitJobForContainerQueue() throws Exception {
+
+  startCluster(true);
+
+  submitSleepJob(10,10,100,100,false,null,"p1",conf);
+
+  fail("queue p1 is a container queue and cannot have jobs");
+
+}
+
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+/** 
+
+ * Test to check that jobs cannot be submitted to a queue in STOPPED state
+
+ * @throws Exception
+
+ */
+
+@Test(expected=IOException.class) public void testSubmitJobForStoppedQueue() throws Exception {
+
+  startCluster(true);
+
+  submitSleepJob(10,10,100,100,false,null,"p1" + NAME_SEPARATOR + "p14",conf);
+
+  fail("queue p1:p14 is in stopped state and should not accept jobs");
+
+}
+
+Location: TestQueueManagerWithJobTracker.java
+
+Content: 
+
+/** 
+
+ * Tests job submission after refresh
+
+ * @throws Exception
+
+ */
+
+@Test public void testSubmitJobsAfterRefresh() throws Exception {
+
+  startCluster(true);
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  refreshDocument(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  MRAdmin admin=new MRAdmin(miniMRCluster.createJobConf());
+
+  admin.run(new String[]{"-refreshQueues"});
+
+  try {
+
+    submitSleepJob(10,10,100,100,false,"u1,g1","p1" + NAME_SEPARATOR + "p11",conf);
+
+    fail("user u1 is not in the submit jobs' list");
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  deleteQueuesConfigFile();
+
+  doc=createDocument();
+
+  createSimpleDocumentWithAcls(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  admin.run(new String[]{"-refreshQueues"});
+
+}
+

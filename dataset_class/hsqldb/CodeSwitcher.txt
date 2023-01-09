@@ -1,0 +1,482 @@
+Location: CodeSwitcher.java
+
+Content: 
+
+void addDir(File f){
+
+  if (f.isFile() && f.getName().endsWith(".java")) {
+
+    vList.addElement(f.getPath());
+
+  }
+
+ else   if (f.isDirectory()) {
+
+    File[] list=f.listFiles();
+
+    if (list == null) {
+
+      return;
+
+    }
+
+    for (int i=0; i < list.length; i++) {
+
+      addDir(list[i]);
+
+    }
+
+  }
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+/** 
+
+ * Wrapper
+
+ * @param path
+
+ */
+
+void addDir(String path){
+
+  addDir(new File(path));
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+/** 
+
+ * Constructor declaration
+
+ */
+
+CodeSwitcher(){
+
+  vList=new Vector();
+
+  vSwitchOn=new Vector();
+
+  vSwitchOff=new Vector();
+
+  vSwitches=new Vector();
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+static Vector getFileLines(File f) throws IOException {
+
+  LineNumberReader read=new LineNumberReader(new FileReader(f));
+
+  Vector v=new Vector();
+
+  for (; ; ) {
+
+    String line=read.readLine();
+
+    if (line == null) {
+
+      break;
+
+    }
+
+    v.addElement(line);
+
+  }
+
+  read.close();
+
+  return v;
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ * @param error
+
+ */
+
+static void printError(String error){
+
+  System.out.println("");
+
+  System.out.println("ERROR: " + error);
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ */
+
+void printSwitches(){
+
+  System.out.println("Used labels:");
+
+  for (int i=0; i < vSwitches.size(); i++) {
+
+    System.out.println((String)(vSwitches.elementAt(i)));
+
+  }
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ */
+
+void process(){
+
+  int len=vList.size();
+
+  for (int i=0; i < len; i++) {
+
+    System.out.print(".");
+
+    String file=(String)vList.elementAt(i);
+
+    if (!processFile(file)) {
+
+      System.out.println("in file " + file + " !");
+
+    }
+
+  }
+
+  System.out.println("");
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ * @param name
+
+ */
+
+boolean processFile(String name){
+
+  File f=new File(name);
+
+  File fnew=new File(name + ".new");
+
+  int state=0;
+
+  boolean switchoff=false;
+
+  boolean working=false;
+
+  try {
+
+    Vector v=getFileLines(f);
+
+    Vector v1=new Vector(v.size());
+
+    for (int i=0; i < v.size(); i++) {
+
+      v1.addElement(v.elementAt(i));
+
+    }
+
+    for (int i=0; i < v.size(); i++) {
+
+      String line=(String)v.elementAt(i);
+
+      if (line == null) {
+
+        break;
+
+      }
+
+      if (working) {
+
+        if (line.equals("/*") || line.equals("*/")) {
+
+          v.removeElementAt(i--);
+
+          continue;
+
+        }
+
+      }
+
+      if (line.startsWith("//#")) {
+
+        if (line.startsWith("//#ifdef ")) {
+
+          if (state != 0) {
+
+            printError("'#ifdef' not allowed inside '#ifdef'");
+
+            return false;
+
+          }
+
+          state=1;
+
+          String s=line.substring(9);
+
+          if (vSwitchOn.indexOf(s) != -1) {
+
+            working=true;
+
+            switchoff=false;
+
+          }
+
+ else           if (vSwitchOff.indexOf(s) != -1) {
+
+            working=true;
+
+            v.insertElementAt("/*",++i);
+
+            switchoff=true;
+
+          }
+
+          if (vSwitches.indexOf(s) == -1) {
+
+            vSwitches.addElement(s);
+
+          }
+
+        }
+
+ else         if (line.startsWith("//#ifndef ")) {
+
+          if (state != 0) {
+
+            printError("'#ifndef' not allowed inside '#ifdef'");
+
+            return false;
+
+          }
+
+          state=1;
+
+          String s=line.substring(10);
+
+          if (vSwitchOff.indexOf(s) != -1) {
+
+            working=true;
+
+            switchoff=false;
+
+          }
+
+ else           if (vSwitchOn.indexOf(s) != -1) {
+
+            working=true;
+
+            v.insertElementAt("/*",++i);
+
+            switchoff=true;
+
+          }
+
+          if (vSwitches.indexOf(s) == -1) {
+
+            vSwitches.addElement(s);
+
+          }
+
+        }
+
+ else         if (line.startsWith("//#else")) {
+
+          if (state != 1) {
+
+            printError("'#else' without '#ifdef'");
+
+            return false;
+
+          }
+
+          state=2;
+
+          if (!working) {
+
+          }
+
+ else           if (switchoff) {
+
+            if (v.elementAt(i - 1).equals("")) {
+
+              v.insertElementAt("*/",i - 1);
+
+              i++;
+
+            }
+
+ else {
+
+              v.insertElementAt("*/",i++);
+
+            }
+
+            switchoff=false;
+
+          }
+
+ else {
+
+            v.insertElementAt("/*",++i);
+
+            switchoff=true;
+
+          }
+
+        }
+
+ else         if (line.startsWith("//#endif")) {
+
+          if (state == 0) {
+
+            printError("'#endif' without '#ifdef'");
+
+            return false;
+
+          }
+
+          state=0;
+
+          if (working && switchoff) {
+
+            if (v.elementAt(i - 1).equals("")) {
+
+              v.insertElementAt("*/",i - 1);
+
+              i++;
+
+            }
+
+ else {
+
+              v.insertElementAt("*/",i++);
+
+            }
+
+          }
+
+          working=false;
+
+        }
+
+ else {
+
+        }
+
+      }
+
+    }
+
+    if (state != 0) {
+
+      printError("'#endif' missing");
+
+      return false;
+
+    }
+
+    boolean filechanged=false;
+
+    for (int i=0; i < v.size(); i++) {
+
+      if (!v1.elementAt(i).equals(v.elementAt(i))) {
+
+        filechanged=true;
+
+        break;
+
+      }
+
+    }
+
+    if (!filechanged) {
+
+      return true;
+
+    }
+
+    writeFileLines(v,fnew);
+
+    File fbak=new File(name + ".bak");
+
+    fbak.delete();
+
+    f.renameTo(fbak);
+
+    File fcopy=new File(name);
+
+    fnew.renameTo(fcopy);
+
+    fbak.delete();
+
+    return true;
+
+  }
+
+ catch (  Exception e) {
+
+    printError(e.toString());
+
+    return false;
+
+  }
+
+}
+
+Location: CodeSwitcher.java
+
+Content: 
+
+static void writeFileLines(Vector v,File f) throws IOException {
+
+  FileWriter write=new FileWriter(f);
+
+  for (int i=0; i < v.size(); i++) {
+
+    write.write((String)v.elementAt(i));
+
+    write.write(ls);
+
+  }
+
+  write.flush();
+
+  write.close();
+
+}
+

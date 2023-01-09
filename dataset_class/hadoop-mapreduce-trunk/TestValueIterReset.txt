@@ -1,0 +1,720 @@
+Location: TestValueIterReset.java
+
+Content: 
+
+public void createInput() throws Exception {
+
+  for (int i=0; i < NUM_MAPS; i++) {
+
+    Path file=new Path(TEST_ROOT_DIR + "/in","test" + i + ".txt");
+
+    localFs.delete(file,false);
+
+    OutputStream os=localFs.create(file);
+
+    Writer wr=new OutputStreamWriter(os);
+
+    wr.write("dummy");
+
+    wr.close();
+
+  }
+
+}
+
+Location: TestValueIterReset.java
+
+Content: 
+
+/** 
+
+ * Test the most common use case. Mark before start of the iteration and reset at the end to go over the entire list
+
+ * @param key
+
+ * @param values
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+private static int test0(IntWritable key,MarkableIterator<IntWritable> values) throws IOException {
+
+  int errors=0;
+
+  IntWritable i;
+
+  ArrayList<IntWritable> expectedValues=new ArrayList<IntWritable>();
+
+  LOG.info("Executing TEST:0 for Key:" + key.toString());
+
+  values.mark();
+
+  LOG.info("TEST:0. Marking");
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    expectedValues.add(i);
+
+    LOG.info(key + ":" + i);
+
+  }
+
+  values.reset();
+
+  LOG.info("TEST:0. Reset");
+
+  int count=0;
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (i != expectedValues.get(count)) {
+
+      LOG.info("TEST:0. Check:1 Expected: " + expectedValues.get(count) + ", Got: "+ i);
+
+      errors++;
+
+      return errors;
+
+    }
+
+    count++;
+
+  }
+
+  LOG.info("TEST:0 Done");
+
+  return errors;
+
+}
+
+Location: TestValueIterReset.java
+
+Content: 
+
+/** 
+
+ * Test the case where we do a mark outside of a reset. Test for both file and memory caches
+
+ * @param key
+
+ * @param values
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+private static int test1(IntWritable key,MarkableIterator<IntWritable> values) throws IOException {
+
+  IntWritable i;
+
+  int errors=0;
+
+  int count=0;
+
+  ArrayList<IntWritable> expectedValues=new ArrayList<IntWritable>();
+
+  ArrayList<IntWritable> expectedValues1=new ArrayList<IntWritable>();
+
+  LOG.info("Executing TEST:1 for Key:" + key);
+
+  values.mark();
+
+  LOG.info("TEST:1. Marking");
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    expectedValues.add(i);
+
+    if (count == 2) {
+
+      break;
+
+    }
+
+    count++;
+
+  }
+
+  values.reset();
+
+  LOG.info("TEST:1. Reset");
+
+  count=0;
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (count < expectedValues.size()) {
+
+      if (i != expectedValues.get(count)) {
+
+        errors++;
+
+        LOG.info("TEST:1. Check:1 Expected: " + expectedValues.get(count) + ", Got: "+ i);
+
+        return errors;
+
+      }
+
+    }
+
+    if (count == 3) {
+
+      values.mark();
+
+      LOG.info("TEST:1. Marking -- " + key + ": "+ i);
+
+    }
+
+    if (count >= 3) {
+
+      expectedValues1.add(i);
+
+    }
+
+    if (count == 5) {
+
+      break;
+
+    }
+
+    count++;
+
+  }
+
+  if (count < expectedValues.size()) {
+
+    LOG.info(("TEST:1 Check:2. Iterator returned lesser values"));
+
+    errors++;
+
+    return errors;
+
+  }
+
+  values.reset();
+
+  count=0;
+
+  LOG.info("TEST:1. Reset");
+
+  expectedValues.clear();
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (count < expectedValues1.size()) {
+
+      if (i != expectedValues1.get(count)) {
+
+        errors++;
+
+        LOG.info("TEST:1. Check:3 Expected: " + expectedValues1.get(count) + ", Got: "+ i);
+
+        return errors;
+
+      }
+
+    }
+
+    if (count == 25) {
+
+      values.mark();
+
+      LOG.info("TEST:1. Marking -- " + key + ":"+ i);
+
+    }
+
+    if (count >= 25) {
+
+      expectedValues.add(i);
+
+    }
+
+    count++;
+
+  }
+
+  if (count < expectedValues1.size()) {
+
+    LOG.info(("TEST:1 Check:4. Iterator returned fewer values"));
+
+    errors++;
+
+    return errors;
+
+  }
+
+  values.reset();
+
+  LOG.info("TEST:1. Reset");
+
+  count=0;
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (i != expectedValues.get(count)) {
+
+      errors++;
+
+      LOG.info("TEST:1. Check:5 Expected: " + expectedValues.get(count) + ", Got: "+ i);
+
+      return errors;
+
+    }
+
+  }
+
+  LOG.info("TEST:1 Done");
+
+  return errors;
+
+}
+
+Location: TestValueIterReset.java
+
+Content: 
+
+/** 
+
+ * Test the case where we do a mark inside a reset. Test for both file and memory
+
+ * @param key
+
+ * @param values
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+private static int test2(IntWritable key,MarkableIterator<IntWritable> values) throws IOException {
+
+  IntWritable i;
+
+  int errors=0;
+
+  int count=0;
+
+  ArrayList<IntWritable> expectedValues=new ArrayList<IntWritable>();
+
+  ArrayList<IntWritable> expectedValues1=new ArrayList<IntWritable>();
+
+  LOG.info("Executing TEST:2 for Key:" + key);
+
+  values.mark();
+
+  LOG.info("TEST:2 Marking");
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    expectedValues.add(i);
+
+    if (count == 8) {
+
+      break;
+
+    }
+
+    count++;
+
+  }
+
+  values.reset();
+
+  count=0;
+
+  LOG.info("TEST:2 reset");
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (count < expectedValues.size()) {
+
+      if (i != expectedValues.get(count)) {
+
+        errors++;
+
+        LOG.info("TEST:2. Check:1 Expected: " + expectedValues.get(count) + ", Got: "+ i);
+
+        return errors;
+
+      }
+
+    }
+
+    if (count == 3) {
+
+      values.mark();
+
+      LOG.info("TEST:2. Marking -- " + key + ":"+ i);
+
+    }
+
+    if (count >= 3) {
+
+      expectedValues1.add(i);
+
+    }
+
+    count++;
+
+  }
+
+  values.reset();
+
+  LOG.info("TEST:2. Reset");
+
+  expectedValues.clear();
+
+  count=0;
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (count < expectedValues1.size()) {
+
+      if (i != expectedValues1.get(count)) {
+
+        errors++;
+
+        LOG.info("TEST:2. Check:2 Expected: " + expectedValues1.get(count) + ", Got: "+ i);
+
+        return errors;
+
+      }
+
+    }
+
+    if (count == 20) {
+
+      values.mark();
+
+      LOG.info("TEST:2. Marking -- " + key + ":"+ i);
+
+    }
+
+    if (count >= 20) {
+
+      expectedValues.add(i);
+
+    }
+
+    count++;
+
+  }
+
+  values.reset();
+
+  count=0;
+
+  LOG.info("TEST:2. Reset");
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (i != expectedValues.get(count)) {
+
+      errors++;
+
+      LOG.info("TEST:2. Check:1 Expected: " + expectedValues.get(count) + ", Got: "+ i);
+
+      return errors;
+
+    }
+
+  }
+
+  LOG.info("TEST:2 Done");
+
+  return errors;
+
+}
+
+Location: TestValueIterReset.java
+
+Content: 
+
+/** 
+
+ * Test "clearMark"
+
+ * @param key
+
+ * @param values
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+private static int test3(IntWritable key,MarkableIterator<IntWritable> values) throws IOException {
+
+  int errors=0;
+
+  IntWritable i;
+
+  ArrayList<IntWritable> expectedValues=new ArrayList<IntWritable>();
+
+  LOG.info("Executing TEST:3 for Key:" + key);
+
+  values.mark();
+
+  LOG.info("TEST:3. Marking");
+
+  int count=0;
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    ;
+
+    LOG.info(key + ":" + i);
+
+    if (count == 5) {
+
+      LOG.info("TEST:3. Clearing Mark");
+
+      values.clearMark();
+
+    }
+
+    if (count == 8) {
+
+      LOG.info("TEST:3. Marking -- " + key + ":"+ i);
+
+      values.mark();
+
+    }
+
+    if (count >= 8) {
+
+      expectedValues.add(i);
+
+    }
+
+    count++;
+
+  }
+
+  values.reset();
+
+  LOG.info("TEST:3. After reset");
+
+  if (!values.hasNext()) {
+
+    errors++;
+
+    LOG.info("TEST:3, Check:1. HasNext returned false");
+
+    return errors;
+
+  }
+
+  count=0;
+
+  while (values.hasNext()) {
+
+    i=values.next();
+
+    LOG.info(key + ":" + i);
+
+    if (count < expectedValues.size()) {
+
+      if (i != expectedValues.get(count)) {
+
+        errors++;
+
+        LOG.info("TEST:2. Check:1 Expected: " + expectedValues.get(count) + ", Got: "+ i);
+
+        return errors;
+
+      }
+
+    }
+
+    if (count == 10) {
+
+      values.clearMark();
+
+      LOG.info("TEST:3. After clear mark");
+
+    }
+
+    count++;
+
+  }
+
+  boolean successfulClearMark=false;
+
+  try {
+
+    LOG.info("TEST:3. Before Reset");
+
+    values.reset();
+
+  }
+
+ catch (  IOException e) {
+
+    successfulClearMark=true;
+
+  }
+
+  if (!successfulClearMark) {
+
+    LOG.info("TEST:3 Check:4 reset was successfule even after clearMark");
+
+    errors++;
+
+    return errors;
+
+  }
+
+  LOG.info("TEST:3 Done.");
+
+  return errors;
+
+}
+
+Location: TestValueIterReset.java
+
+Content: 
+
+public void testValueIterReset(){
+
+  try {
+
+    Configuration conf=new Configuration();
+
+    Job job=Job.getInstance(conf,"TestValueIterReset");
+
+    job.setJarByClass(TestValueIterReset.class);
+
+    job.setMapperClass(TestMapper.class);
+
+    job.setReducerClass(TestReducer.class);
+
+    job.setNumReduceTasks(NUM_TESTS);
+
+    job.setMapOutputKeyClass(IntWritable.class);
+
+    job.setMapOutputValueClass(IntWritable.class);
+
+    job.setOutputKeyClass(IntWritable.class);
+
+    job.setOutputValueClass(IntWritable.class);
+
+    job.getConfiguration().setInt(MRJobConfig.REDUCE_MARKRESET_BUFFER_SIZE,128);
+
+    job.setInputFormatClass(TextInputFormat.class);
+
+    job.setOutputFormatClass(TextOutputFormat.class);
+
+    FileInputFormat.addInputPath(job,new Path(TEST_ROOT_DIR + "/in"));
+
+    Path output=new Path(TEST_ROOT_DIR + "/out");
+
+    localFs.delete(output,true);
+
+    FileOutputFormat.setOutputPath(job,output);
+
+    createInput();
+
+    assertTrue(job.waitForCompletion(true));
+
+    validateOutput();
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+    assertTrue(false);
+
+  }
+
+}
+
+Location: TestValueIterReset.java
+
+Content: 
+
+private void validateOutput() throws IOException {
+
+  Path[] outputFiles=FileUtil.stat2Paths(localFs.listStatus(new Path(TEST_ROOT_DIR + "/out"),new Utils.OutputFileUtils.OutputFilesFilter()));
+
+  if (outputFiles.length > 0) {
+
+    InputStream is=localFs.open(outputFiles[0]);
+
+    BufferedReader reader=new BufferedReader(new InputStreamReader(is));
+
+    String line=reader.readLine();
+
+    while (line != null) {
+
+      StringTokenizer tokeniz=new StringTokenizer(line,"\t");
+
+      String key=tokeniz.nextToken();
+
+      String value=tokeniz.nextToken();
+
+      LOG.info("Output: key: " + key + " value: "+ value);
+
+      int errors=Integer.parseInt(value);
+
+      assertTrue(errors == 0);
+
+      line=reader.readLine();
+
+    }
+
+    reader.close();
+
+  }
+
+}
+

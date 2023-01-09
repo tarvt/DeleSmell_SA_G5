@@ -1,0 +1,70 @@
+Location: PSImageHandlerGraphics2D.java
+
+Content: 
+
+private FormGenerator buildFormGenerator(int psLanguageLevel,final PSImageFormResource form,final ImageInfo info,final ImageGraphics2D imageG2D,final FontInfo fontInfo){
+
+  String imageDescription=info.getMimeType() + " " + info.getOriginalURI();
+
+  final Dimension2D dimensionsPt=info.getSize().getDimensionPt();
+
+  final Dimension2D dimensionsMpt=info.getSize().getDimensionMpt();
+
+  FormGenerator formGen;
+
+  if (psLanguageLevel <= 2) {
+
+    formGen=new EPSFormGenerator(form.getName(),imageDescription,dimensionsPt){
+
+      @Override void doGeneratePaintProc(      PSGenerator gen) throws IOException {
+
+        paintImageG2D(imageG2D,dimensionsMpt,gen,fontInfo);
+
+      }
+
+    }
+
+;
+
+  }
+
+ else {
+
+    formGen=new EPSFormGenerator(form.getName(),imageDescription,dimensionsPt){
+
+      @Override protected void generateAdditionalDataStream(      PSGenerator gen) throws IOException {
+
+        gen.writeln("/" + form.getName() + ":Data currentfile <<");
+
+        gen.writeln("  /Filter /SubFileDecode");
+
+        gen.writeln("  /DecodeParms << /EODCount 0 /EODString (%FOPEndOfData) >>");
+
+        gen.writeln(">> /ReusableStreamDecode filter");
+
+        paintImageG2D(imageG2D,dimensionsMpt,gen,fontInfo);
+
+        gen.writeln("%FOPEndOfData");
+
+        gen.writeln("def");
+
+      }
+
+      @Override void doGeneratePaintProc(      PSGenerator gen) throws IOException {
+
+        gen.writeln(form.getName() + ":Data 0 setfileposition");
+
+        gen.writeln(form.getName() + ":Data cvx exec");
+
+      }
+
+    }
+
+;
+
+  }
+
+  return formGen;
+
+}
+

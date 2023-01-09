@@ -1,0 +1,144 @@
+Location: DH_KEY_EXCHANGE.java
+
+Content: 
+
+protected void handleSecretKeyRequest(PublicKey dh_public_key,Address sender) throws Exception {
+
+  KeyPair kp=key_pair_gen.generateKeyPair();
+
+  PrivateKey private_key=kp.getPrivate();
+
+  PublicKey public_key_rsp=kp.getPublic();
+
+  byte[] version;
+
+  byte[] encrypted_secret_key;
+
+  log.debug("%s: received public key %s.. from %s",local_addr,print16(dh_public_key),sender);
+
+synchronized (this) {
+
+    key_agreement.init(private_key);
+
+    key_agreement.doPhase(dh_public_key,true);
+
+    byte[] secret_session_key=key_agreement.generateSecret();
+
+    SecretKey hashed_session_key=hash(secret_session_key);
+
+    Cipher encrypter=Cipher.getInstance(secret_key_algorithm);
+
+    encrypter.init(Cipher.ENCRYPT_MODE,hashed_session_key);
+
+    Tuple<SecretKey,byte[]> tuple=(Tuple<SecretKey,byte[]>)up_prot.up(new Event(Event.GET_SECRET_KEY));
+
+    SecretKey secret_key=tuple.getVal1();
+
+    version=tuple.getVal2();
+
+    encrypted_secret_key=encrypter.doFinal(secret_key.getEncoded());
+
+  }
+
+  log.debug("%s: sending public key rsp %s.. to %s",local_addr,print16(public_key_rsp),sender);
+
+  Message rsp=new Message(sender).putHeader(id,DhHeader.createSecretKeyResponse(public_key_rsp.getEncoded(),encrypted_secret_key,version));
+
+  down_prot.down(rsp);
+
+}
+
+Location: DH_KEY_EXCHANGE.java
+
+Content: 
+
+protected void handleSecretKeyResponse(PublicKey dh_public_key,byte[] encrypted_secret_key,byte[] version,Address sender) throws Exception {
+
+  Tuple<SecretKey,byte[]> tuple=null;
+
+  log.debug("%s: received public key rsp %s.. from %s",local_addr,print16(dh_public_key),sender);
+
+synchronized (this) {
+
+    key_agreement.doPhase(dh_public_key,true);
+
+    byte[] secret_session_key=key_agreement.generateSecret();
+
+    SecretKey hashed_session_key=hash(secret_session_key);
+
+    Cipher encrypter=Cipher.getInstance(secret_key_algorithm);
+
+    encrypter.init(Cipher.DECRYPT_MODE,hashed_session_key);
+
+    byte[] secret_key=encrypter.doFinal(encrypted_secret_key);
+
+    SecretKey sk=new SecretKeySpec(secret_key,secret_key_algorithm);
+
+    tuple=new Tuple<>(sk,version);
+
+    dh_key=null;
+
+  }
+
+  log.debug("%s: sending up secret key (version: %s)",local_addr,Util.byteArrayToHexString(version));
+
+  up_prot.up(new Event(Event.SET_SECRET_KEY,tuple));
+
+}
+
+Location: DH_KEY_EXCHANGE.java
+
+Content: 
+
+protected void handle(DhHeader hdr,Address sender){
+
+  try {
+
+    PublicKey pub_key=dh_key_factory.generatePublic(new X509EncodedKeySpec(hdr.dh_key));
+
+switch (hdr.type) {
+
+case SECRET_KEY_REQ:
+
+      handleSecretKeyRequest(pub_key,sender);
+
+    break;
+
+case SECRET_KEY_RSP:
+
+  handleSecretKeyResponse(pub_key,hdr.encrypted_secret_key,hdr.secret_key_version,sender);
+
+break;
+
+default :
+
+log.warn("unknown header type %d",hdr.type);
+
+}
+
+}
+
+ catch (Throwable t) {
+
+log.error(String.format("failed handling request %s",hdr),t);
+
+}
+
+}
+
+Location: DH_KEY_EXCHANGE.java
+
+Content: 
+
+protected SecretKey hash(byte[] key) throws Exception {
+
+  MessageDigest digest=MessageDigest.getInstance("SHA-256");
+
+  digest.update(key);
+
+  byte[] hashed_key=digest.digest();
+
+  return new SecretKeySpec(hashed_key,0,secret_key_length / 8,secret_key_algorithm);
+
+}
+

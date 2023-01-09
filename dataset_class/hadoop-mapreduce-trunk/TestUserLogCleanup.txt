@@ -1,0 +1,266 @@
+Location: TestUserLogCleanup.java
+
+Content: 
+
+private void jobFinished(JobID jobid,int logRetainHours){
+
+  Configuration jobconf=new Configuration();
+
+  jobconf.setInt(MRJobConfig.USER_LOG_RETAIN_HOURS,logRetainHours);
+
+  taskLogCleanupThread.markJobLogsForDeletion(myClock.getTime(),jobconf,jobid);
+
+}
+
+Location: TestUserLogCleanup.java
+
+Content: 
+
+private File localizeJob(JobID jobid) throws IOException {
+
+  File jobUserlog=TaskLog.getJobDir(jobid);
+
+  JobConf conf=new JobConf();
+
+  tt.initializeJobLogDir(jobid,conf);
+
+  assertTrue(jobUserlog + " directory is not created.",jobUserlog.exists());
+
+  return jobUserlog;
+
+}
+
+Location: TestUserLogCleanup.java
+
+Content: 
+
+/** 
+
+ * Tests job user-log directory deletion. Adds two jobs for log deletion. One with one hour retain hours, other with two retain hours. After an hour, TaskLogCleanupThread.processCompletedJobs() call, makes sure job with 1hr retain hours is removed and other is retained. After one more hour, job with 2hr retain hours is also removed.
+
+ * @throws IOException
+
+ */
+
+@Test public void testJobLogCleanup() throws IOException {
+
+  File jobUserlog1=localizeJob(jobid1);
+
+  File jobUserlog2=localizeJob(jobid2);
+
+  jobFinished(jobid1,2);
+
+  jobFinished(jobid2,1);
+
+  myClock.advance(ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertTrue(jobUserlog1 + " got deleted",jobUserlog1.exists());
+
+  assertFalse(jobUserlog2 + " still exists.",jobUserlog2.exists());
+
+  myClock.advance(ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertFalse(jobUserlog1 + " still exists.",jobUserlog1.exists());
+
+}
+
+Location: TestUserLogCleanup.java
+
+Content: 
+
+/** 
+
+ * Tests user-log directory cleanup on a TT re-init with 3 hours as log retain hours for tracker.  Adds job1 deletion before the re-init with 2 hour retain hours.  Adds job2 for which there are no tasks/killJobAction after the re-init. Adds job3 for which there is localizeJob followed by killJobAction  with 3 hours as retain hours. Adds job4 for which there are some tasks after the re-init.
+
+ * @throws IOException
+
+ */
+
+@Test public void testUserLogCleanup() throws IOException {
+
+  File jobUserlog1=localizeJob(jobid1);
+
+  File jobUserlog2=localizeJob(jobid2);
+
+  File jobUserlog3=localizeJob(jobid3);
+
+  File jobUserlog4=localizeJob(jobid4);
+
+  foo.mkdirs();
+
+  bar.createNewFile();
+
+  jobFinished(jobid1,2);
+
+  myClock.advance(ONE_HOUR);
+
+  Configuration conf=new Configuration();
+
+  conf.setInt(MRJobConfig.USER_LOG_RETAIN_HOURS,3);
+
+  taskLogCleanupThread.clearOldUserLogs(conf);
+
+  assertFalse(foo.exists());
+
+  assertFalse(bar.exists());
+
+  assertTrue(jobUserlog1.exists());
+
+  assertTrue(jobUserlog2.exists());
+
+  assertTrue(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+  assertTrue(new File(TaskLog.getUserLogDir(),MRAsyncDiskService.TOBEDELETED).exists());
+
+  myClock.advance(ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertFalse(jobUserlog1.exists());
+
+  assertTrue(jobUserlog2.exists());
+
+  assertTrue(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+  jobUserlog3=localizeJob(jobid3);
+
+  jobFinished(jobid3,3);
+
+  jobUserlog4=localizeJob(jobid4);
+
+  myClock.advance(2 * ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertFalse(jobUserlog1.exists());
+
+  assertFalse(jobUserlog2.exists());
+
+  assertTrue(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+  myClock.advance(ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertFalse(jobUserlog1.exists());
+
+  assertFalse(jobUserlog2.exists());
+
+  assertFalse(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+}
+
+Location: TestUserLogCleanup.java
+
+Content: 
+
+/** 
+
+ * Tests user-log directory cleanup on a TT restart. Adds job1 deletion before the restart with 2 hour retain hours. Adds job2 for which there are no tasks/killJobAction after the restart. Adds job3 for which there is localizeJob followed by killJobAction after the restart with 3 hours retain hours. Adds job4 for which there are some tasks after the restart.
+
+ * @throws IOException
+
+ */
+
+@Test public void testUserLogCleanupAfterRestart() throws IOException {
+
+  File jobUserlog1=localizeJob(jobid1);
+
+  File jobUserlog2=localizeJob(jobid2);
+
+  File jobUserlog3=localizeJob(jobid3);
+
+  File jobUserlog4=localizeJob(jobid4);
+
+  foo.mkdirs();
+
+  bar.createNewFile();
+
+  jobFinished(jobid1,2);
+
+  myClock.advance(ONE_HOUR);
+
+  Configuration conf=new Configuration();
+
+  conf.setInt(MRJobConfig.USER_LOG_RETAIN_HOURS,3);
+
+  taskLogCleanupThread=new UserLogCleaner(conf);
+
+  myClock=new FakeClock();
+
+  taskLogCleanupThread.setClock(myClock);
+
+  taskLogCleanupThread.clearOldUserLogs(conf);
+
+  tt.setTaskLogCleanupThread(taskLogCleanupThread);
+
+  assertFalse(foo.exists());
+
+  assertFalse(bar.exists());
+
+  assertTrue(jobUserlog1.exists());
+
+  assertTrue(jobUserlog2.exists());
+
+  assertTrue(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+  assertTrue(new File(TaskLog.getUserLogDir(),MRAsyncDiskService.TOBEDELETED).exists());
+
+  myClock.advance(ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertTrue(jobUserlog1.exists());
+
+  assertTrue(jobUserlog2.exists());
+
+  assertTrue(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+  jobUserlog3=localizeJob(jobid3);
+
+  jobFinished(jobid3,3);
+
+  jobUserlog4=localizeJob(jobid4);
+
+  myClock.advance(2 * ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertFalse(jobUserlog1.exists());
+
+  assertFalse(jobUserlog2.exists());
+
+  assertTrue(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+  myClock.advance(ONE_HOUR);
+
+  taskLogCleanupThread.processCompletedJobs();
+
+  assertFalse(jobUserlog1.exists());
+
+  assertFalse(jobUserlog2.exists());
+
+  assertFalse(jobUserlog3.exists());
+
+  assertTrue(jobUserlog4.exists());
+
+}
+

@@ -1,0 +1,250 @@
+Location: StatementSet.java
+
+Content: 
+
+public void checkIsNotColumnTarget(){
+
+  for (int i=0; i < targets.length; i++) {
+
+    ColumnSchema col=targets[i].getColumn();
+
+    if (col.getType() == SchemaObject.COLUMN) {
+
+      throw Error.error(ErrorCode.X_0U000,col.getName().statementName);
+
+    }
+
+  }
+
+}
+
+Location: StatementSet.java
+
+Content: 
+
+Result executeTriggerSetStatement(Session session){
+
+  Table table=targetTable;
+
+  int[] colMap=updateColumnMap;
+
+  Expression[] colExpressions=updateExpressions;
+
+  Type[] colTypes=table.getColumnTypes();
+
+  int index=targetRangeVariables[TriggerDef.NEW_ROW].rangePosition;
+
+  Object[] oldData=session.sessionContext.triggerArguments[index];
+
+  Object[] data=StatementDML.getUpdatedData(session,targets,table,colMap,colExpressions,colTypes,oldData);
+
+  ArrayUtil.copyArray(data,oldData,data.length);
+
+  return Result.updateOneResult;
+
+}
+
+Location: StatementSet.java
+
+Content: 
+
+Object[] getExpressionValues(Session session){
+
+  Object[] values;
+
+  if (expression.getType() == OpTypes.ROW) {
+
+    values=expression.getRowValue(session);
+
+  }
+
+ else   if (expression.getType() == OpTypes.ROW_SUBQUERY) {
+
+    values=expression.table.queryExpression.getSingleRowValues(session);
+
+    if (values == null) {
+
+      return null;
+
+    }
+
+  }
+
+ else {
+
+    values=new Object[1];
+
+    values[0]=expression.getValue(session);
+
+  }
+
+  return values;
+
+}
+
+Location: StatementSet.java
+
+Content: 
+
+static Result performAssignment(Session session,int[] variableIndexes,Expression[] targets,Object[] values,Type[] sourceTypes){
+
+  for (int j=0; j < values.length; j++) {
+
+    Object[] data=ValuePool.emptyObjectArray;
+
+switch (targets[j].getColumn().getType()) {
+
+case SchemaObject.PARAMETER:
+
+      data=session.sessionContext.routineArguments;
+
+    break;
+
+case SchemaObject.VARIABLE:
+
+  data=session.sessionContext.routineVariables;
+
+break;
+
+case SchemaObject.COLUMN:
+
+data=session.sessionContext.triggerArguments[TriggerDef.NEW_ROW];
+
+break;
+
+}
+
+int colIndex=variableIndexes[j];
+
+Object value=values[j];
+
+Type targetType;
+
+if (targets[j].getType() == OpTypes.ARRAY_ACCESS) {
+
+targetType=targets[j].getLeftNode().getColumn().getDataType().collectionBaseType();
+
+value=targetType.convertToType(session,value,sourceTypes[j]);
+
+data[colIndex]=((ExpressionAccessor)targets[j]).getUpdatedArray(session,(Object[])data[colIndex],value,true);
+
+}
+
+ else {
+
+targetType=targets[j].getColumn().getDataType();
+
+value=targetType.convertToType(session,value,sourceTypes[j]);
+
+data[colIndex]=value;
+
+}
+
+}
+
+return Result.updateZeroResult;
+
+}
+
+Location: StatementSet.java
+
+Content: 
+
+/** 
+
+ * PSM and session variable SET
+
+ */
+
+StatementSet(Session session,Expression[] targets,Expression e,int[] indexes,CompileContext compileContext){
+
+  super(StatementTypes.ASSIGNMENT,StatementTypes.X_SQL_CONTROL,null);
+
+  this.operationType=VARIABLE_SET;
+
+  this.targets=targets;
+
+  this.expression=e;
+
+  variableIndexes=indexes;
+
+  sourceTypes=expression.getNodeDataTypes();
+
+  isTransactionStatement=false;
+
+  setDatabaseObjects(session,compileContext);
+
+  checkAccessRights(session);
+
+}
+
+Location: StatementSet.java
+
+Content: 
+
+/** 
+
+ * Single row SELECT INTO
+
+ */
+
+StatementSet(Session session,Expression[] targets,QueryExpression query,int[] indexes,CompileContext compileContext){
+
+  super(StatementTypes.ASSIGNMENT,StatementTypes.X_SQL_CONTROL,null);
+
+  this.operationType=SELECT_INTO;
+
+  this.queryExpression=query;
+
+  this.targets=targets;
+
+  variableIndexes=indexes;
+
+  sourceTypes=query.getColumnTypes();
+
+  isTransactionStatement=false;
+
+  setDatabaseObjects(session,compileContext);
+
+  checkAccessRights(session);
+
+}
+
+Location: StatementSet.java
+
+Content: 
+
+/** 
+
+ * Trigger SET statement.
+
+ */
+
+StatementSet(Session session,Expression[] targets,Table table,RangeVariable[] rangeVars,int[] indexes,Expression[] colExpressions,CompileContext compileContext){
+
+  super(StatementTypes.ASSIGNMENT,StatementTypes.X_SQL_DATA_CHANGE,session.getCurrentSchemaHsqlName());
+
+  this.operationType=TRIGGER_SET;
+
+  this.targets=targets;
+
+  this.targetTable=table;
+
+  this.baseTable=targetTable.getBaseTable();
+
+  this.updateColumnMap=indexes;
+
+  this.updateExpressions=colExpressions;
+
+  this.updateCheckColumns=targetTable.getColumnCheckList(indexes);
+
+  this.targetRangeVariables=rangeVars;
+
+  isTransactionStatement=false;
+
+  setDatabaseObjects(session,compileContext);
+
+  checkAccessRights(session);
+
+}
+

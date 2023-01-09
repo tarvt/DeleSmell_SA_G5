@@ -1,0 +1,430 @@
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Add a OffDocumentItem to the area tree model. This checks if the OffDocumentItem is resolvable and attempts to resolve or add the resolvable ids for later resolution.
+
+ * @param odi the OffDocumentItem to add.
+
+ */
+
+private void addOffDocumentItem(OffDocumentItem odi){
+
+  if (odi instanceof Resolvable) {
+
+    Resolvable res=(Resolvable)odi;
+
+    String[] ids=res.getIDRefs();
+
+    for (    String id : ids) {
+
+      List<PageViewport> pageVPList=idTracker.getPageViewportsContainingID(id);
+
+      if (pageVPList != null && !pageVPList.isEmpty()) {
+
+        res.resolveIDRef(id,pageVPList);
+
+      }
+
+ else {
+
+        AreaEventProducer eventProducer=AreaEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+        eventProducer.unresolvedIDReference(this,odi.getName(),id);
+
+        idTracker.addUnresolvedIDRef(id,res);
+
+      }
+
+    }
+
+    if (res.isResolved()) {
+
+      model.handleOffDocumentItem(odi);
+
+    }
+
+  }
+
+ else {
+
+    model.handleOffDocumentItem(odi);
+
+  }
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Add an Resolvable object with an unresolved idref
+
+ * @param idref the idref whose target id has not yet been located
+
+ * @param res the Resolvable object needing the idref to be resolved
+
+ * @deprecated use getIDTracker().addUnresolvedIDRef(idref, res) instead
+
+ */
+
+@Deprecated public void addUnresolvedIDRef(String idref,Resolvable res){
+
+  idTracker.addUnresolvedIDRef(idref,res);
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Check if an ID has already been resolved
+
+ * @param id the id to check
+
+ * @return true if the ID has been resolved
+
+ * @deprecated use getIDTracker().alreadyResolvedID(id) instead
+
+ */
+
+@Deprecated public boolean alreadyResolvedID(String id){
+
+  return idTracker.alreadyResolvedID(id);
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ * @param userAgent FOUserAgent object for process
+
+ * @param outputFormat the MIME type of the output format to use (ex."application/pdf").
+
+ * @param stream OutputStream
+
+ * @throws FOPException if the RenderPagesModel cannot be created
+
+ */
+
+public AreaTreeHandler(FOUserAgent userAgent,String outputFormat,OutputStream stream) throws FOPException {
+
+  super(userAgent);
+
+  setupModel(userAgent,outputFormat,stream);
+
+  this.lmMaker=userAgent.getLayoutManagerMakerOverride();
+
+  if (lmMaker == null) {
+
+    lmMaker=new LayoutManagerMapping(userAgent);
+
+  }
+
+  this.idTracker=new IDTracker();
+
+  this.useComplexScriptFeatures=userAgent.isComplexScriptFeaturesEnabled();
+
+  if (log.isDebugEnabled()) {
+
+    statistics=new Statistics();
+
+  }
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Tie a PageViewport with an ID found on a child area of the PV. Note that an area with a given ID may be on more than one PV, hence an ID may have more than one PV associated with it.
+
+ * @param id the property ID of the area
+
+ * @param pv a page viewport that contains the area with this ID
+
+ * @deprecated use getIDTracker().associateIDWithPageViewport(id, pv) instead
+
+ */
+
+@Deprecated public void associateIDWithPageViewport(String id,PageViewport pv){
+
+  idTracker.associateIDWithPageViewport(id,pv);
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * finish the previous pageSequence
+
+ */
+
+private void finishPrevPageSequence(Numeric initialPageNumber){
+
+  if (prevPageSeqLM != null) {
+
+    prevPageSeqLM.doForcePageCount(initialPageNumber);
+
+    prevPageSeqLM.finishPageSequence();
+
+    prevPageSeqLM=null;
+
+  }
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Generates and returns a unique key for a page viewport.
+
+ * @return the generated key.
+
+ */
+
+public String generatePageViewportKey(){
+
+  this.idGen++;
+
+  return "P" + this.idGen;
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Get the area tree model for this area tree.
+
+ * @return AreaTreeModel the model being used for this area tree
+
+ */
+
+public AreaTreeModel getAreaTreeModel(){
+
+  return this.model;
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Get the IDTracker for this area tree.
+
+ * @return IDTracker used to track reference ids for items in this area tree
+
+ */
+
+public IDTracker getIDTracker(){
+
+  return this.idTracker;
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Get the set of page viewports that have an area with a given id.
+
+ * @param id the id to lookup
+
+ * @return the list of PageViewports
+
+ * @deprecated use getIDTracker().getPageViewportsContainingID(id) instead
+
+ */
+
+@Deprecated public List<PageViewport> getPageViewportsContainingID(String id){
+
+  return idTracker.getPageViewportsContainingID(id);
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Called by the PageSequenceLayoutManager when it is finished with a page-sequence.
+
+ * @param pageSequence the page-sequence just finished
+
+ * @param pageCount The number of pages generated for the page-sequence
+
+ */
+
+public void notifyPageSequenceFinished(AbstractPageSequence pageSequence,int pageCount){
+
+  this.results.haveFormattedPageSequence(pageSequence,pageCount);
+
+  if (log.isDebugEnabled()) {
+
+    log.debug("Last page-sequence produced " + pageCount + " pages.");
+
+  }
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Sets up the AreaTreeModel instance for use by the AreaTreeHandler.
+
+ * @param userAgent FOUserAgent object for process
+
+ * @param outputFormat the MIME type of the output format to use (ex."application/pdf").
+
+ * @param stream OutputStream
+
+ * @throws FOPException if the RenderPagesModel cannot be created
+
+ */
+
+protected void setupModel(FOUserAgent userAgent,String outputFormat,OutputStream stream) throws FOPException {
+
+  if (userAgent.isConserveMemoryPolicyEnabled()) {
+
+    this.model=new CachedRenderPagesModel(userAgent,outputFormat,fontInfo,stream);
+
+  }
+
+ else {
+
+    this.model=new RenderPagesModel(userAgent,outputFormat,fontInfo,stream);
+
+  }
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Signals that all areas for the formatting object with the given ID have been generated. This is used to determine when page-number-citation-last ref-ids can be resolved.
+
+ * @param id the id of the formatting object which was just finished
+
+ * @deprecated use getIDTracker().signalIDProcessed(id) instead
+
+ */
+
+@Deprecated public void signalIDProcessed(String id){
+
+  idTracker.signalIDProcessed(id);
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * This method tie an ID to the areaTreeHandler until this one is ready to be processed. This is used in page-number-citation-last processing so we know when an id can be resolved.
+
+ * @param id the id of the object being processed
+
+ * @deprecated use getIDTracker().signalPendingID(id) instead
+
+ */
+
+@Deprecated public void signalPendingID(String id){
+
+  idTracker.signalPendingID(id);
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+private void startAbstractPageSequence(AbstractPageSequence pageSequence){
+
+  rootFObj=pageSequence.getRoot();
+
+  if (this.prevPageSeqLM == null) {
+
+    wrapAndAddExtensionAttachments(rootFObj.getExtensionAttachments());
+
+    if (rootFObj.getDeclarations() != null) {
+
+      wrapAndAddExtensionAttachments(rootFObj.getDeclarations().getExtensionAttachments());
+
+    }
+
+  }
+
+  finishPrevPageSequence(pageSequence.getInitialPageNumber());
+
+  pageSequence.initPageNumber();
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+/** 
+
+ * Tries to resolve all unresolved ID references on the given page.
+
+ * @param pv page viewport whose ID refs to resolve
+
+ * @deprecated use getIDTracker().tryIDResolution(pv) instead
+
+ */
+
+@Deprecated public void tryIDResolution(PageViewport pv){
+
+  idTracker.tryIDResolution(pv);
+
+}
+
+Location: AreaTreeHandler.java
+
+Content: 
+
+private void wrapAndAddExtensionAttachments(List<ExtensionAttachment> list){
+
+  for (  ExtensionAttachment attachment : list) {
+
+    addOffDocumentItem(new OffDocumentExtensionAttachment(attachment));
+
+  }
+
+}
+

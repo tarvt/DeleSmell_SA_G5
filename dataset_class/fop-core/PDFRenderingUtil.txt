@@ -1,0 +1,1316 @@
+Location: PDFRenderingUtil.java
+
+Content: 
+
+/** 
+
+ * Adds an embedded file to the PDF file.
+
+ * @param embeddedFile the object representing the embedded file to be added
+
+ * @throws IOException if an I/O error occurs
+
+ */
+
+public void addEmbeddedFile(PDFEmbeddedFileAttachment embeddedFile) throws IOException {
+
+  this.pdfDoc.getProfile().verifyEmbeddedFilesAllowed();
+
+  PDFNames names=this.pdfDoc.getRoot().getNames();
+
+  if (names == null) {
+
+    names=this.pdfDoc.getFactory().makeNames();
+
+    this.pdfDoc.getRoot().setNames(names);
+
+  }
+
+  PDFEmbeddedFile file=new PDFEmbeddedFile();
+
+  this.pdfDoc.registerObject(file);
+
+  URI srcURI;
+
+  try {
+
+    srcURI=InternalResourceResolver.cleanURI(embeddedFile.getSrc());
+
+  }
+
+ catch (  URISyntaxException use) {
+
+    throw new RuntimeException(use);
+
+  }
+
+  InputStream in=userAgent.getResourceResolver().getResource(srcURI);
+
+  if (in == null) {
+
+    throw new FileNotFoundException(embeddedFile.getSrc());
+
+  }
+
+  try {
+
+    OutputStream out=file.getBufferOutputStream();
+
+    IOUtils.copyLarge(in,out);
+
+  }
+
+  finally {
+
+    IOUtils.closeQuietly(in);
+
+  }
+
+  PDFDictionary dict=new PDFDictionary();
+
+  dict.put("F",file);
+
+  PDFFileSpec fileSpec=new PDFFileSpec(embeddedFile.getFilename(),embeddedFile.getUnicodeFilename());
+
+  String filename=fileSpec.getFilename();
+
+  pdfDoc.getRoot().addAF(fileSpec);
+
+  fileSpec.setEmbeddedFile(dict);
+
+  if (embeddedFile.getDesc() != null) {
+
+    fileSpec.setDescription(embeddedFile.getDesc());
+
+  }
+
+  this.pdfDoc.registerObject(fileSpec);
+
+  PDFEmbeddedFiles embeddedFiles=names.getEmbeddedFiles();
+
+  if (embeddedFiles == null) {
+
+    embeddedFiles=new PDFEmbeddedFiles();
+
+    this.pdfDoc.assignObjectNumber(embeddedFiles);
+
+    this.pdfDoc.addTrailerObject(embeddedFiles);
+
+    names.setEmbeddedFiles(embeddedFiles);
+
+  }
+
+  PDFArray nameArray=embeddedFiles.getNames();
+
+  if (nameArray == null) {
+
+    nameArray=new PDFArray();
+
+    embeddedFiles.setNames(nameArray);
+
+  }
+
+  nameArray.add(filename);
+
+  nameArray.add(new PDFReference(fileSpec));
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public void addLayer(PDFDictionaryExtension extension){
+
+  assert extension.getDictionaryType() == PDFDictionaryType.Layer;
+
+  String id=extension.getProperty(PDFDictionaryExtension.PROPERTY_ID);
+
+  if ((id != null) && (id.length() > 0)) {
+
+    PDFLayer layer=pdfDoc.getFactory().makeLayer(id);
+
+    layer.setResolver(new PDFLayer.Resolver(layer,extension){
+
+      public void performResolution(){
+
+        PDFDictionaryExtension extension=(PDFDictionaryExtension)getExtension();
+
+        Object name=extension.findEntryValue("Name");
+
+        Object intent=extension.findEntryValue("Intent");
+
+        Object usage=makeDictionary(extension.findEntryValue("Usage"));
+
+        getLayer().populate(name,intent,usage);
+
+      }
+
+    }
+
+);
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public void addNavigatorAction(PDFDictionaryExtension extension){
+
+  assert extension.getDictionaryType() == PDFDictionaryType.Action;
+
+  String id=extension.getProperty(PDFDictionaryExtension.PROPERTY_ID);
+
+  if ((id != null) && (id.length() > 0)) {
+
+    String type=extension.getProperty(PDFActionExtension.PROPERTY_TYPE);
+
+    if (type != null) {
+
+      if (type.equals("SetOCGState")) {
+
+        PDFSetOCGStateAction action=pdfDoc.getFactory().makeSetOCGStateAction(id);
+
+        action.setResolver(new PDFSetOCGStateAction.Resolver(action,extension){
+
+          public void performResolution(){
+
+            PDFDictionaryExtension extension=(PDFDictionaryExtension)getExtension();
+
+            Object state=makeArray(extension.findEntryValue("State"));
+
+            Object preserveRB=extension.findEntryValue("PreserveRB");
+
+            Object nextAction=makeDictionaryOrArray(extension.findEntryValue("Next"));
+
+            getAction().populate(state,preserveRB,nextAction);
+
+          }
+
+        }
+
+);
+
+      }
+
+ else       if (type.equals("Trans")) {
+
+        PDFTransitionAction action=pdfDoc.getFactory().makeTransitionAction(id);
+
+        action.setResolver(new PDFTransitionAction.Resolver(action,extension){
+
+          public void performResolution(){
+
+            PDFDictionaryExtension extension=(PDFDictionaryExtension)getExtension();
+
+            Object transition=makeDictionary(extension.findEntryValue("Trans"));
+
+            Object nextAction=makeDictionaryOrArray(extension.findEntryValue("Next"));
+
+            getAction().populate(transition,nextAction);
+
+          }
+
+        }
+
+);
+
+      }
+
+ else {
+
+        throw new UnsupportedOperationException();
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public void addNavigator(PDFDictionaryExtension extension){
+
+  assert extension.getDictionaryType() == PDFDictionaryType.Navigator;
+
+  String id=extension.getProperty(PDFDictionaryExtension.PROPERTY_ID);
+
+  if ((id != null) && (id.length() > 0)) {
+
+    PDFNavigator navigator=pdfDoc.getFactory().makeNavigator(id);
+
+    navigator.setResolver(new PDFNavigator.Resolver(navigator,extension){
+
+      public void performResolution(){
+
+        PDFDictionaryExtension extension=(PDFDictionaryExtension)getExtension();
+
+        Object nextAction=makeDictionary(extension.findEntryValue("NA"));
+
+        Object next=makeDictionary(extension.findEntryValue("Next"));
+
+        Object prevAction=makeDictionary(extension.findEntryValue("PA"));
+
+        Object prev=makeDictionary(extension.findEntryValue("Prev"));
+
+        Object duration=extension.findEntryValue("Dur");
+
+        getNavigator().populate(nextAction,next,prevAction,prev,duration);
+
+      }
+
+    }
+
+);
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+/** 
+
+ * Adds an OutputIntent to the PDF as mandated by PDF/A-1 when uncalibrated color spaces are used (which is true if we use DeviceRGB to represent sRGB colors).
+
+ * @throws IOException in case of an I/O problem
+
+ */
+
+private void addPDFA1OutputIntent() throws IOException {
+
+  hongshuai();
+
+  if (this.outputProfile != null) {
+
+    return;
+
+  }
+
+  ICC_Profile profile;
+
+  InputStream in=null;
+
+  URI outputProfileUri=rendererConfig.getOutputProfileURI();
+
+  if (outputProfileUri != null) {
+
+    this.outputProfile=pdfDoc.getFactory().makePDFICCStream();
+
+    in=userAgent.getResourceResolver().getResource(rendererConfig.getOutputProfileURI());
+
+    try {
+
+      profile=ColorProfileUtil.getICC_Profile(in);
+
+    }
+
+  finally {
+
+      IOUtils.closeQuietly(in);
+
+    }
+
+    this.outputProfile.setColorSpace(profile,null);
+
+  }
+
+ else {
+
+    outputProfile=sRGBColorSpace.getICCStream();
+
+  }
+
+  String desc=ColorProfileUtil.getICCProfileDescription(this.outputProfile.getICCProfile());
+
+  PDFOutputIntent outputIntent=pdfDoc.getFactory().makeOutputIntent();
+
+  outputIntent.setSubtype(PDFOutputIntent.GTS_PDFA1);
+
+  outputIntent.setDestOutputProfile(this.outputProfile);
+
+  outputIntent.setOutputConditionIdentifier(desc);
+
+  outputIntent.setInfo(outputIntent.getOutputConditionIdentifier());
+
+  pdfDoc.getRoot().addOutputIntent(outputIntent);
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+/** 
+
+ * Adds an OutputIntent to the PDF as mandated by PDF/X when uncalibrated color spaces are used (which is true if we use DeviceRGB to represent sRGB colors).
+
+ * @throws IOException in case of an I/O problem
+
+ */
+
+private void addPDFXOutputIntent() throws IOException {
+
+  hongshuai();
+
+  if (this.outputProfile != null) {
+
+    return;
+
+  }
+
+  ICC_Profile profile;
+
+  InputStream in=null;
+
+  URI outputProfileUri=rendererConfig.getOutputProfileURI();
+
+  if (outputProfileUri != null) {
+
+    this.outputProfile=pdfDoc.getFactory().makePDFICCStream();
+
+    in=userAgent.getResourceResolver().getResource(rendererConfig.getOutputProfileURI());
+
+    try {
+
+      profile=ColorProfileUtil.getICC_Profile(in);
+
+    }
+
+  finally {
+
+      IOUtils.closeQuietly(in);
+
+    }
+
+    this.outputProfile.setColorSpace(profile,null);
+
+  }
+
+ else {
+
+    outputProfile=sRGBColorSpace.getICCStream();
+
+  }
+
+  String desc=ColorProfileUtil.getICCProfileDescription(this.outputProfile.getICCProfile());
+
+  int deviceClass=this.outputProfile.getICCProfile().getProfileClass();
+
+  if (deviceClass != ICC_Profile.CLASS_OUTPUT) {
+
+    throw new PDFConformanceException(pdfDoc.getProfile().getPDFXMode() + " requires that" + " the DestOutputProfile be an Output Device Profile. "+ desc+ " does not match that requirement.");
+
+  }
+
+  PDFOutputIntent outputIntent=pdfDoc.getFactory().makeOutputIntent();
+
+  outputIntent.setSubtype(PDFOutputIntent.GTS_PDFX);
+
+  outputIntent.setDestOutputProfile(this.outputProfile);
+
+  outputIntent.setOutputConditionIdentifier(desc);
+
+  outputIntent.setInfo(outputIntent.getOutputConditionIdentifier());
+
+  pdfDoc.getRoot().addOutputIntent(outputIntent);
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private void addsRGBColorSpace() throws IOException {
+
+  if (rendererConfig.getDisableSRGBColorSpace()) {
+
+    if (rendererConfig.getPDFAMode() != PDFAMode.DISABLED || rendererConfig.getPDFXMode() != PDFXMode.DISABLED || rendererConfig.getOutputProfileURI() != null) {
+
+      throw new IllegalStateException("It is not possible to disable the sRGB color" + " space if PDF/A or PDF/X functionality is enabled or an" + " output profile is set!");
+
+    }
+
+  }
+
+ else {
+
+    if (this.sRGBColorSpace != null) {
+
+      return;
+
+    }
+
+    this.sRGBColorSpace=PDFICCBasedColorSpace.setupsRGBAsDefaultRGBColorSpace(pdfDoc);
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private PDFArray augmentArray(PDFArray array,PDFArrayExtension extension){
+
+  for (  PDFCollectionEntryExtension entry : extension.getEntries()) {
+
+    if (entry instanceof PDFDictionaryExtension) {
+
+      array.add(augmentDictionary(new PDFDictionary(array),(PDFDictionaryExtension)entry));
+
+    }
+
+ else     if (entry instanceof PDFArrayExtension) {
+
+      array.add(augmentArray(new PDFArray(array),(PDFArrayExtension)entry));
+
+    }
+
+ else {
+
+      augmentArray(array,entry);
+
+    }
+
+  }
+
+  return array;
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private void augmentArray(PDFArray array,PDFCollectionEntryExtension entry){
+
+  PDFObjectType type=entry.getType();
+
+  if (type == PDFObjectType.Boolean) {
+
+    array.add(entry.getValueAsBoolean());
+
+  }
+
+ else   if (type == PDFObjectType.Name) {
+
+    array.add(new PDFName(entry.getValueAsString()));
+
+  }
+
+ else   if (type == PDFObjectType.Number) {
+
+    array.add(new PDFNumber(entry.getValueAsNumber()));
+
+  }
+
+ else   if (type == PDFObjectType.Reference) {
+
+    assert entry instanceof PDFReferenceExtension;
+
+    array.add(resolveReference((PDFReferenceExtension)entry));
+
+  }
+
+ else   if (type == PDFObjectType.String) {
+
+    array.add(entry.getValueAsString());
+
+  }
+
+ else {
+
+    throw new IllegalStateException();
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private void augmentDictionary(PDFDictionary dictionary,PDFCollectionEntryExtension entry){
+
+  PDFObjectType type=entry.getType();
+
+  String key=entry.getKey();
+
+  if (type == PDFObjectType.Boolean) {
+
+    dictionary.put(key,entry.getValueAsBoolean());
+
+  }
+
+ else   if (type == PDFObjectType.Name) {
+
+    dictionary.put(key,new PDFName(entry.getValueAsString()));
+
+  }
+
+ else   if (type == PDFObjectType.Number) {
+
+    dictionary.put(key,new PDFNumber(entry.getValueAsNumber()));
+
+  }
+
+ else   if (type == PDFObjectType.Reference) {
+
+    assert entry instanceof PDFReferenceExtension;
+
+    dictionary.put(key,resolveReference((PDFReferenceExtension)entry));
+
+  }
+
+ else   if (type == PDFObjectType.String) {
+
+    dictionary.put(key,entry.getValueAsString());
+
+  }
+
+ else {
+
+    throw new IllegalStateException();
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private PDFDictionary augmentDictionary(PDFDictionary dictionary,PDFDictionaryExtension extension){
+
+  for (  PDFCollectionEntryExtension entry : extension.getEntries()) {
+
+    if (entry instanceof PDFDictionaryExtension) {
+
+      String[] keys=entry.getKey().split("/");
+
+      for (int i=0; i < keys.length; i++) {
+
+        if (keys[i].isEmpty()) {
+
+          throw new IllegalStateException("pdf:dictionary key: " + entry.getKey() + " not valid");
+
+        }
+
+        if (i == keys.length - 1) {
+
+          dictionary.put(keys[i],augmentDictionary(new PDFDictionary(dictionary),(PDFDictionaryExtension)entry));
+
+        }
+
+ else {
+
+          PDFDictionary d=new PDFDictionary();
+
+          dictionary.put(keys[i],d);
+
+          dictionary=d;
+
+        }
+
+      }
+
+    }
+
+ else     if (entry instanceof PDFArrayExtension) {
+
+      dictionary.put(entry.getKey(),augmentArray(new PDFArray(dictionary),(PDFArrayExtension)entry));
+
+    }
+
+ else {
+
+      augmentDictionary(dictionary,entry);
+
+    }
+
+  }
+
+  return dictionary;
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private static PDFRendererOptionsConfig createFromUserAgent(FOUserAgent userAgent){
+
+  Map<PDFRendererOption,Object> properties=new EnumMap<PDFRendererOption,Object>(PDFRendererOption.class);
+
+  for (  PDFRendererOption option : PDFRendererOption.values()) {
+
+    Object value=userAgent.getRendererOption(option);
+
+    properties.put(option,option.parse(value));
+
+  }
+
+  PDFEncryptionParams encryptionConfig=new EncryptionParamsBuilder().createParams(userAgent);
+
+  return new PDFRendererOptionsConfig(properties,encryptionConfig);
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public void generateDefaultXMPMetadata(){
+
+  if (pdfDoc.getRoot().getMetadata() == null) {
+
+    Metadata xmp=PDFMetadata.createXMPFromPDFDocument(pdfDoc);
+
+    PDFMetadata pdfMetadata=pdfDoc.getFactory().makeMetadata(xmp,true);
+
+    pdfDoc.getRoot().setMetadata(pdfMetadata);
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+/** 
+
+ * Generates a page label in the PDF document.
+
+ * @param pageIndex the index of the page
+
+ * @param pageNumber the formatted page number
+
+ */
+
+public void generatePageLabel(int pageIndex,String pageNumber){
+
+  PDFPageLabels pageLabels=this.pdfDoc.getRoot().getPageLabels();
+
+  if (pageLabels == null) {
+
+    pageLabels=this.pdfDoc.getFactory().makePageLabels();
+
+    this.pdfDoc.getRoot().setPageLabels(pageLabels);
+
+  }
+
+  pageLabels.addPageLabel(pageIndex,pageNumber);
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private boolean hasKeyedEntry(List<?> entries){
+
+  for (  PDFCollectionEntryExtension entry : (List<PDFCollectionEntryExtension>)entries) {
+
+    if (entry.getKey() != null) {
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private Object makeArray(Object value){
+
+  if (value == null) {
+
+    return null;
+
+  }
+
+ else   if (value instanceof PDFReferenceExtension) {
+
+    return resolveReference((PDFReferenceExtension)value);
+
+  }
+
+ else   if (value instanceof List<?>) {
+
+    return populateArray(new PDFArray(),(List<?>)value);
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException();
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private Object makeDictionaryOrArray(Object value){
+
+  if (value == null) {
+
+    return null;
+
+  }
+
+ else   if (value instanceof PDFReferenceExtension) {
+
+    return resolveReference((PDFReferenceExtension)value);
+
+  }
+
+ else   if (value instanceof List<?>) {
+
+    if (hasKeyedEntry((List<?>)value)) {
+
+      return populateDictionary(new PDFDictionary(),(List<?>)value);
+
+    }
+
+ else {
+
+      return populateArray(new PDFArray(),(List<?>)value);
+
+    }
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException();
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private Object makeDictionary(Object value){
+
+  if (value == null) {
+
+    return null;
+
+  }
+
+ else   if (value instanceof PDFReferenceExtension) {
+
+    return resolveReference((PDFReferenceExtension)value);
+
+  }
+
+ else   if (value instanceof List<?>) {
+
+    return populateDictionary(new PDFDictionary(),(List<?>)value);
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException();
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+void mergeRendererOptionsConfig(PDFRendererOptionsConfig config){
+
+  rendererConfig=rendererConfig.merge(config);
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+PDFRenderingUtil(FOUserAgent userAgent){
+
+  this.userAgent=userAgent;
+
+  initialize();
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private Object populateArray(PDFArray array,List<?> entries){
+
+  for (  PDFCollectionEntryExtension entry : (List<PDFCollectionEntryExtension>)entries) {
+
+    PDFObjectType type=entry.getType();
+
+    if (type == PDFObjectType.Array) {
+
+      array.add(makeArray(entry.getValue()));
+
+    }
+
+ else     if (type == PDFObjectType.Boolean) {
+
+      array.add(entry.getValueAsBoolean());
+
+    }
+
+ else     if (type == PDFObjectType.Dictionary) {
+
+      array.add(makeDictionary(entry.getValue()));
+
+    }
+
+ else     if (type == PDFObjectType.Name) {
+
+      array.add(new PDFName(entry.getValueAsString()));
+
+    }
+
+ else     if (type == PDFObjectType.Number) {
+
+      array.add(new PDFNumber(entry.getValueAsNumber()));
+
+    }
+
+ else     if (type == PDFObjectType.Reference) {
+
+      assert (entry instanceof PDFReferenceExtension);
+
+      array.add(resolveReference((PDFReferenceExtension)entry));
+
+    }
+
+ else     if (type == PDFObjectType.String) {
+
+      array.add(entry.getValue());
+
+    }
+
+  }
+
+  return array;
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private Object populateDictionary(PDFDictionary dictionary,List<?> entries){
+
+  for (  PDFCollectionEntryExtension entry : (List<PDFCollectionEntryExtension>)entries) {
+
+    PDFObjectType type=entry.getType();
+
+    String key=entry.getKey();
+
+    if (type == PDFObjectType.Array) {
+
+      dictionary.put(key,makeArray(entry.getValue()));
+
+    }
+
+ else     if (type == PDFObjectType.Boolean) {
+
+      dictionary.put(key,entry.getValueAsBoolean());
+
+    }
+
+ else     if (type == PDFObjectType.Dictionary) {
+
+      dictionary.put(key,makeDictionary(entry.getValue()));
+
+    }
+
+ else     if (type == PDFObjectType.Name) {
+
+      dictionary.put(key,new PDFName(entry.getValueAsString()));
+
+    }
+
+ else     if (type == PDFObjectType.Number) {
+
+      dictionary.put(key,new PDFNumber(entry.getValueAsNumber()));
+
+    }
+
+ else     if (type == PDFObjectType.Reference) {
+
+      assert (entry instanceof PDFReferenceExtension);
+
+      dictionary.put(key,resolveReference((PDFReferenceExtension)entry));
+
+    }
+
+ else     if (type == PDFObjectType.String) {
+
+      dictionary.put(key,entry.getValue());
+
+    }
+
+  }
+
+  return dictionary;
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public void renderDictionaryExtension(PDFDictionaryAttachment attachment,PDFPage currentPage){
+
+  PDFDictionaryExtension extension=attachment.getExtension();
+
+  PDFDictionaryType type=extension.getDictionaryType();
+
+  if (type == PDFDictionaryType.Action) {
+
+    addNavigatorAction(extension);
+
+  }
+
+ else   if (type == PDFDictionaryType.Layer) {
+
+    addLayer(extension);
+
+  }
+
+ else   if (type == PDFDictionaryType.Navigator) {
+
+    addNavigator(extension);
+
+  }
+
+ else {
+
+    renderDictionaryExtension(extension,currentPage);
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public void renderDictionaryExtension(PDFDictionaryExtension extension,PDFPage currentPage){
+
+  PDFDictionaryType type=extension.getDictionaryType();
+
+  if (type == PDFDictionaryType.Catalog) {
+
+    augmentDictionary(pdfDoc.getRoot(),extension);
+
+  }
+
+ else   if (type == PDFDictionaryType.Page) {
+
+    assert extension instanceof PDFPageExtension;
+
+    if (((PDFPageExtension)extension).matchesPageNumber(currentPage.getPageIndex() + 1)) {
+
+      augmentDictionary(currentPage,extension);
+
+    }
+
+  }
+
+ else   if (type == PDFDictionaryType.Info) {
+
+    PDFInfo info=pdfDoc.getInfo();
+
+    for (    PDFCollectionEntryExtension entry : extension.getEntries()) {
+
+      info.put(entry.getKey(),entry.getValueAsString());
+
+    }
+
+  }
+
+ else   if (type == PDFDictionaryType.VT) {
+
+    if (currentPage.get("DPart") != null) {
+
+      augmentDictionary((PDFDictionary)currentPage.get("DPart"),extension);
+
+    }
+
+  }
+
+ else   if (type == PDFDictionaryType.PagePiece) {
+
+    String date=DateFormatUtil.formatPDFDate(new Date(),TimeZone.getDefault());
+
+    if (currentPage.get("PieceInfo") == null) {
+
+      currentPage.put("PieceInfo",new PDFDictionary());
+
+      currentPage.put("LastModified",date);
+
+    }
+
+    PDFDictionary d=augmentDictionary((PDFDictionary)currentPage.get("PieceInfo"),extension);
+
+    d.put("LastModified",date);
+
+  }
+
+ else {
+
+    throw new IllegalStateException();
+
+  }
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public void renderXMPMetadata(XMPMetadata metadata){
+
+  Metadata docXMP=metadata.getMetadata();
+
+  Metadata fopXMP=PDFMetadata.createXMPFromPDFDocument(pdfDoc);
+
+  List<Class> exclude=new ArrayList<Class>();
+
+  if (pdfDoc.getProfile().getPDFAMode().isPart1()) {
+
+    exclude.add(DublinCoreSchema.class);
+
+  }
+
+  fopXMP.mergeInto(docXMP,exclude);
+
+  XMPBasicAdapter xmpBasic=XMPBasicSchema.getAdapter(docXMP);
+
+  xmpBasic.setMetadataDate(new java.util.Date());
+
+  PDFMetadata.updateInfoFromMetadata(docXMP,pdfDoc.getInfo());
+
+  PDFMetadata pdfMetadata=pdfDoc.getFactory().makeMetadata(docXMP,metadata.isReadOnly());
+
+  pdfDoc.getRoot().setMetadata(pdfMetadata);
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private Object resolveReference(PDFReferenceExtension entry){
+
+  PDFReference reference=(PDFReference)entry.getResolvedReference();
+
+  if (reference == null) {
+
+    reference=pdfDoc.resolveExtensionReference(entry.getReferenceId());
+
+    if (reference != null) {
+
+      entry.setResolvedReference(reference);
+
+    }
+
+    return reference;
+
+  }
+
+  return PDFNull.INSTANCE;
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+public PDFDocument setupPDFDocument(OutputStream out) throws IOException {
+
+  if (this.pdfDoc != null) {
+
+    throw new IllegalStateException("PDFDocument already set up");
+
+  }
+
+  String producer=userAgent.getProducer() != null ? userAgent.getProducer() : "";
+
+  final Version maxPDFVersion=rendererConfig.getPDFVersion();
+
+  if (maxPDFVersion == null) {
+
+    this.pdfDoc=new PDFDocument(producer);
+
+  }
+
+ else {
+
+    VersionController controller=VersionController.getFixedVersionController(maxPDFVersion);
+
+    this.pdfDoc=new PDFDocument(producer,controller);
+
+  }
+
+  updateInfo();
+
+  updatePDFProfiles();
+
+  pdfDoc.setFilterMap(rendererConfig.getFilterMap());
+
+  pdfDoc.outputHeader(out);
+
+  PDFEncryptionManager.setupPDFEncryption(rendererConfig.getEncryptionParameters(),pdfDoc);
+
+  addsRGBColorSpace();
+
+  if (rendererConfig.getOutputProfileURI() != null) {
+
+    hongshuai();
+
+    if (this.outputProfile != null) {
+
+      return;
+
+    }
+
+    ICC_Profile profile;
+
+    InputStream in=null;
+
+    URI outputProfileUri=rendererConfig.getOutputProfileURI();
+
+    if (outputProfileUri != null) {
+
+      this.outputProfile=pdfDoc.getFactory().makePDFICCStream();
+
+      in=userAgent.getResourceResolver().getResource(rendererConfig.getOutputProfileURI());
+
+      try {
+
+        profile=ColorProfileUtil.getICC_Profile(in);
+
+      }
+
+  finally {
+
+        IOUtils.closeQuietly(in);
+
+      }
+
+      this.outputProfile.setColorSpace(profile,null);
+
+    }
+
+ else {
+
+      outputProfile=sRGBColorSpace.getICCStream();
+
+    }
+
+  }
+
+  PDFXMode pdfXMode=rendererConfig.getPDFXMode();
+
+  if (pdfXMode != PDFXMode.DISABLED) {
+
+    log.debug(pdfXMode + " is active.");
+
+    log.warn("Note: " + pdfXMode + " support is work-in-progress and not fully implemented, yet!");
+
+    addPDFXOutputIntent();
+
+  }
+
+  PDFAMode pdfAMode=rendererConfig.getPDFAMode();
+
+  if (pdfAMode.isEnabled()) {
+
+    log.debug("PDF/A is active. Conformance Level: " + pdfAMode);
+
+    addPDFA1OutputIntent();
+
+  }
+
+  this.pdfDoc.enableAccessibility(userAgent.isAccessibilityEnabled());
+
+  pdfDoc.setMergeFontsEnabled(rendererConfig.getMergeFontsEnabled());
+
+  pdfDoc.setLinearizationEnabled(rendererConfig.getLinearizationEnabled());
+
+  pdfDoc.setFormXObjectEnabled(rendererConfig.getFormXObjectEnabled());
+
+  return this.pdfDoc;
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private void updateInfo(){
+
+  PDFInfo info=pdfDoc.getInfo();
+
+  info.setCreator(userAgent.getCreator());
+
+  info.setCreationDate(userAgent.getCreationDate());
+
+  info.setAuthor(userAgent.getAuthor());
+
+  info.setTitle(userAgent.getTitle());
+
+  info.setSubject(userAgent.getSubject());
+
+  info.setKeywords(userAgent.getKeywords());
+
+}
+
+Location: PDFRenderingUtil.java
+
+Content: 
+
+private void updatePDFProfiles(){
+
+  pdfDoc.getProfile().setPDFAMode(rendererConfig.getPDFAMode());
+
+  pdfDoc.getProfile().setPDFUAMode(rendererConfig.getPDFUAMode());
+
+  userAgent.setPdfUAEnabled(pdfDoc.getProfile().getPDFUAMode().isEnabled());
+
+  pdfDoc.getProfile().setPDFXMode(rendererConfig.getPDFXMode());
+
+  pdfDoc.getProfile().setPDFVTMode(rendererConfig.getPDFVTMode());
+
+}
+

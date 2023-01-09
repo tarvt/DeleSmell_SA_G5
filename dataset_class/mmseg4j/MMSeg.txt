@@ -1,0 +1,524 @@
+Location: MMSeg.java
+
+Content: 
+
+private Sentence createSentence(StringBuilder sentenceBuffer){
+
+  return new Sentence(toChars(sentenceBuffer),startIdx(sentenceBuffer));
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private Word createWord(StringBuilder bufSentence,int startIdx,String type){
+
+  return new Word(toChars(bufSentence),startIdx,type);
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private Word createWord(StringBuilder sentenceBuffer,String type){
+
+  return new Word(toChars(sentenceBuffer),startIdx(sentenceBuffer),type);
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private NationLetter getNation(int codePoint){
+
+  if (isAsciiLetter(codePoint)) {
+
+    return NationLetter.EN;
+
+  }
+
+  if (isRussiaLetter(codePoint)) {
+
+    return NationLetter.RA;
+
+  }
+
+  if (isGreeceLetter(codePoint)) {
+
+    return NationLetter.GE;
+
+  }
+
+  return NationLetter.UNKNOW;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private static boolean isAsciiLetter(int codePoint){
+
+  return (codePoint >= 'A' && codePoint <= 'Z') || (codePoint >= 'a' && codePoint <= 'z');
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+static boolean isCJK(int type){
+
+  return type == Character.OTHER_LETTER;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+static boolean isDigit(int type){
+
+  return type == Character.DECIMAL_DIGIT_NUMBER;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+static boolean isDot(int type){
+
+  return type == 46;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private static boolean isGreeceLetter(int codePoint){
+
+  return (codePoint >= 'Α' && codePoint <= 'Ω') || (codePoint >= 'α' && codePoint <= 'ω');
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+public static boolean isLetterOrDigit(char c){
+
+  return (c >= 97 && c <= 122) || (c <= 90 && c >= 65) || (c <= 57 && c >= 48);
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+static boolean isLetter(int type){
+
+  return type <= Character.MODIFIER_LETTER && type >= Character.UPPERCASE_LETTER;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private static boolean isRussiaLetter(int codePoint){
+
+  return (codePoint >= 'А' && codePoint <= 'я') || codePoint == 'Ё' || codePoint == 'ё';
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+public MMSeg(Reader input,Seg seg){
+
+  this.seg=seg;
+
+  reset(input);
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+public Word next() throws IOException {
+
+  Word word=wordBuffer.poll();
+
+  if (word == null) {
+
+    sentenceBuffer.setLength(0);
+
+    int data=-1;
+
+    boolean read=true;
+
+    while (read && (data=readNext()) != -1) {
+
+      read=false;
+
+      int type=Character.getType(data);
+
+switch (type) {
+
+case Character.UPPERCASE_LETTER:
+
+case Character.LOWERCASE_LETTER:
+
+case Character.TITLECASE_LETTER:
+
+case Character.MODIFIER_LETTER:
+
+{
+
+          data=toAscii(data);
+
+          NationLetter nl=getNation(data);
+
+          if (nl == NationLetter.UNKNOW) {
+
+            read=true;
+
+            break;
+
+          }
+
+          sentenceBuffer.appendCodePoint(data);
+
+switch (nl) {
+
+case EN:
+
+            readChars(sentenceBuffer,new ReadCharByAsciiOrDigitOrCJK());
+
+          currentSentence=createSentence(sentenceBuffer);
+
+        break;
+
+case RA:
+
+      readChars(sentenceBuffer,new ReadCharByRussia());
+
+    wordBuffer.add(createWord(sentenceBuffer,Word.TYPE_WORD));
+
+  break;
+
+case GE:
+
+readChars(sentenceBuffer,new ReadCharByGreece());
+
+wordBuffer.add(createWord(sentenceBuffer,Word.TYPE_WORD));
+
+break;
+
+default :
+
+break;
+
+}
+
+sentenceBuffer.setLength(0);
+
+break;
+
+}
+
+case Character.OTHER_LETTER:
+
+{
+
+sentenceBuffer.appendCodePoint(data);
+
+readChars(sentenceBuffer,new ReadCharByAsciiOrDigitOrCJK());
+
+currentSentence=createSentence(sentenceBuffer);
+
+sentenceBuffer.setLength(0);
+
+break;
+
+}
+
+case Character.DECIMAL_DIGIT_NUMBER:
+
+{
+
+String wordType=Word.TYPE_DIGIT;
+
+sentenceBuffer.appendCodePoint(toAscii(data));
+
+readChars(sentenceBuffer,new ReadCharDigit());
+
+int d=readNext();
+
+if (d > -1) {
+
+if (seg.isUnit(d)) {
+
+sentenceBuffer.appendCodePoint(d);
+
+wordBuffer.add(createWord(sentenceBuffer,startIdx(sentenceBuffer),Word.TYPE_DIGIT));
+
+sentenceBuffer.setLength(0);
+
+}
+
+ else {
+
+pushBack(d);
+
+if (readChars(sentenceBuffer,new ReadCharByAsciiOrDigit()) > 0) {
+
+wordType=Word.TYPE_DIGIT_OR_LETTER;
+
+}
+
+wordBuffer.add(createWord(sentenceBuffer,wordType));
+
+sentenceBuffer.setLength(0);
+
+}
+
+}
+
+break;
+
+}
+
+case Character.LETTER_NUMBER:
+
+{
+
+sentenceBuffer.appendCodePoint(data);
+
+readChars(sentenceBuffer,new ReadCharByType(Character.LETTER_NUMBER));
+
+int startIdx=startIdx(sentenceBuffer);
+
+for (int i=0; i < sentenceBuffer.length(); i++) {
+
+wordBuffer.add(new Word(new char[]{sentenceBuffer.charAt(i)},startIdx++,Word.TYPE_LETTER_NUMBER));
+
+}
+
+sentenceBuffer.setLength(0);
+
+break;
+
+}
+
+case Character.OTHER_NUMBER:
+
+{
+
+sentenceBuffer.appendCodePoint(data);
+
+readChars(sentenceBuffer,new ReadCharByType(Character.OTHER_NUMBER));
+
+wordBuffer.add(createWord(sentenceBuffer,Word.TYPE_OTHER_NUMBER));
+
+sentenceBuffer.setLength(0);
+
+break;
+
+}
+
+default :
+
+read=true;
+
+}
+
+}
+
+if (currentSentence != null) {
+
+do {
+
+Chunk chunk=seg.seg(currentSentence);
+
+for (int i=0; i < chunk.getCount(); i++) {
+
+Word w=chunk.getWords()[i];
+
+if (w.getString().trim().length() > 0 && !Dictionary.isStopWord(w.getString().trim())) {
+
+wordBuffer.add(w);
+
+}
+
+}
+
+}
+
+ while (!currentSentence.isFinish());
+
+currentSentence=null;
+
+}
+
+word=wordBuffer.poll();
+
+}
+
+return word;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private void pushBack(int data) throws IOException {
+
+  readIndex--;
+
+  reader.unread(data);
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+/** 
+
+ * @param sentenceBuffer
+
+ * @param readChar
+
+ * @return 
+
+ */
+
+private int readChars(StringBuilder sentenceBuffer,ReadChar readChar) throws IOException {
+
+  int num=0;
+
+  int data=-1;
+
+  while ((data=readNext()) != -1) {
+
+    int d=readChar.transform(data);
+
+    if (readChar.isRead(d) || pass.contains(String.valueOf(d))) {
+
+      sentenceBuffer.appendCodePoint(d);
+
+      num++;
+
+    }
+
+ else {
+
+      pushBack(data);
+
+      break;
+
+    }
+
+  }
+
+  return num;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+private int readNext() throws IOException {
+
+  int d=reader.read();
+
+  if (d > -1) {
+
+    readIndex++;
+
+  }
+
+  return d;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+public void reset(Reader input){
+
+  this.reader=new PushbackReader(new BufferedReader(input),20);
+
+  this.currentSentence=null;
+
+  this.wordBuffer=new LinkedList<>();
+
+  this.sentenceBuffer.setLength(0);
+
+  this.readIndex=-1;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+/** 
+
+ */
+
+private int startIdx(StringBuilder sentenceBuffer){
+
+  return readIndex - sentenceBuffer.length() + 1;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+/** 
+
+ */
+
+static int toAscii(int codePoint){
+
+  if ((codePoint >= 65296 && codePoint <= 65305) || (codePoint >= 65313 && codePoint <= 65338) || (codePoint >= 65345 && codePoint <= 65370)) {
+
+    codePoint-=65248;
+
+  }
+
+  return codePoint;
+
+}
+
+Location: MMSeg.java
+
+Content: 
+
+/** char[]
+
+ */
+
+private static char[] toChars(StringBuilder sentenceBuffer){
+
+  char[] chs=new char[sentenceBuffer.length()];
+
+  sentenceBuffer.getChars(0,sentenceBuffer.length(),chs,0);
+
+  return chs;
+
+}
+

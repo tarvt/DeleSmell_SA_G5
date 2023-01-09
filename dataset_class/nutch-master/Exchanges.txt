@@ -1,0 +1,188 @@
+Location: Exchanges.java
+
+Content: 
+
+public boolean areAvailableExchanges(){
+
+  return availableExchanges;
+
+}
+
+Location: Exchanges.java
+
+Content: 
+
+public Exchanges(Configuration conf){
+
+  try {
+
+    ExtensionPoint point=PluginRepository.get(conf).getExtensionPoint(Exchange.X_POINT_ID);
+
+    if (point == null) {
+
+      throw new RuntimeException(Exchange.X_POINT_ID + " not found.");
+
+    }
+
+    HashMap<String,Extension> extensionMap=new HashMap<>();
+
+    for (    Extension extension : point.getExtensions()) {
+
+      extensionMap.putIfAbsent(extension.getClazz(),extension);
+
+    }
+
+    exchanges=new HashMap<>();
+
+    ExchangeConfig[] exchangeConfigs=loadConfigurations(conf);
+
+    for (    ExchangeConfig exchangeConfig : exchangeConfigs) {
+
+      final String clazz=exchangeConfig.getClazz();
+
+      if (extensionMap.containsKey(clazz)) {
+
+        ExchangeConfigRelation exchangeConfigRelation=new ExchangeConfigRelation((Exchange)extensionMap.get(clazz).getExtensionInstance(),exchangeConfig);
+
+        exchanges.put(exchangeConfig.getId(),exchangeConfigRelation);
+
+      }
+
+    }
+
+    if (exchanges.isEmpty() && defaultExchangeConfig == null) {
+
+      availableExchanges=false;
+
+      LOG.warn("No exchange was configured. The documents will be routed to all index writers.");
+
+    }
+
+  }
+
+ catch (  PluginRuntimeException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: Exchanges.java
+
+Content: 
+
+/** 
+
+ * Returns all the indexers where the document must be sent to.
+
+ * @param nutchDocument The document to process.
+
+ * @return Indexers.
+
+ */
+
+public String[] indexWriters(final NutchDocument nutchDocument){
+
+  final Set<String> writersIDs=new HashSet<>();
+
+  exchanges.forEach((id,value) -> {
+
+    if (value.exchange.match(nutchDocument)) {
+
+      writersIDs.addAll(Arrays.asList(value.config.getWritersIDs()));
+
+    }
+
+  }
+
+);
+
+  if (defaultExchangeConfig != null && writersIDs.isEmpty()) {
+
+    return defaultExchangeConfig.getWritersIDs();
+
+  }
+
+  return writersIDs.toArray(new String[0]);
+
+}
+
+Location: Exchanges.java
+
+Content: 
+
+/** 
+
+ * Loads the configuration of each exchange.
+
+ * @param conf Nutch's configuration.
+
+ * @return An array with each exchange's configuration.
+
+ */
+
+private ExchangeConfig[] loadConfigurations(Configuration conf){
+
+  String filename=conf.get("exchanges.exchanges.file","exchanges.xml");
+
+  InputSource inputSource=new InputSource(conf.getConfResourceAsInputStream(filename));
+
+  final List<ExchangeConfig> configList=new LinkedList<>();
+
+  try {
+
+    DocumentBuilderFactory factory=DocumentBuilderFactory.newInstance();
+
+    DocumentBuilder builder=factory.newDocumentBuilder();
+
+    Element rootElement=builder.parse(inputSource).getDocumentElement();
+
+    NodeList exchangeList=rootElement.getElementsByTagName("exchange");
+
+    for (int i=0; i < exchangeList.getLength(); i++) {
+
+      Element element=(Element)exchangeList.item(i);
+
+      ExchangeConfig exchangeConfig=ExchangeConfig.getInstance(element);
+
+      if ("default".equals(exchangeConfig.getClazz())) {
+
+        this.defaultExchangeConfig=exchangeConfig;
+
+        continue;
+
+      }
+
+      configList.add(exchangeConfig);
+
+    }
+
+  }
+
+ catch (  SAXException|IOException|ParserConfigurationException e) {
+
+    LOG.error(e.toString());
+
+  }
+
+  return configList.toArray(new ExchangeConfig[0]);
+
+}
+
+Location: Exchanges.java
+
+Content: 
+
+/** 
+
+ * Opens each configured exchange.
+
+ */
+
+public void open(){
+
+  exchanges.forEach((id,value) -> value.exchange.open(value.config.getParameters()));
+
+}
+

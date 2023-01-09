@@ -1,0 +1,340 @@
+Location: RingBufferSeqno.java
+
+Content: 
+
+/** 
+
+ * Adds a new element to the buffer
+
+ * @param seqno The seqno of the element
+
+ * @param element The element
+
+ * @param block If true, add() will block when the buffer is full until there is space. Else, add() willreturn immediately, either successfully or unsuccessfully (if the buffer is full)
+
+ * @return True if the element was added, false otherwise.
+
+ */
+
+public boolean add(long seqno,T element,boolean block){
+
+  lock.lock();
+
+  try {
+
+    if (seqno <= hd)     return false;
+
+    if (seqno - low > capacity() && (!block || !block(seqno)))     return false;
+
+    int index=index(seqno);
+
+    if (buf[index] != null)     return false;
+
+ else     buf[index]=element;
+
+    if (seqno > hr)     hr=seqno;
+
+    return true;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+@GuardedBy("lock") protected boolean block(long seqno){
+
+  while (running && seqno - low > capacity()) {
+
+    try {
+
+      buffer_full.await();
+
+    }
+
+ catch (    InterruptedException e) {
+
+    }
+
+  }
+
+  return running;
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+protected int count(boolean missing){
+
+  int retval=0;
+
+  long tmp_hd=hd, tmp_hr=hr;
+
+  for (long i=tmp_hd + 1; i <= tmp_hr; i++) {
+
+    int index=index(i);
+
+    T element=buf[index];
+
+    if (missing && element == null)     retval++;
+
+    if (!missing && element != null)     retval++;
+
+  }
+
+  return retval;
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+public AtomicBoolean getProcessing(){
+
+  return processing;
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+/** 
+
+ * Returns a list of messages in the range [from .. to], including from and to
+
+ * @param from
+
+ * @param to
+
+ * @return A list of messages, or null if none in range [from .. to] was found
+
+ */
+
+public List<T> get(long from,long to){
+
+  if (from > to)   throw new IllegalArgumentException("from (" + from + ") has to be <= to ("+ to+ ")");
+
+  List<T> retval=null;
+
+  for (long i=from; i <= to; i++) {
+
+    T element=get(i);
+
+    if (element != null) {
+
+      if (retval == null)       retval=new ArrayList<>();
+
+      retval.add(element);
+
+    }
+
+  }
+
+  return retval;
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+protected int index(long seqno){
+
+  return (int)((seqno - offset - 1) & (capacity() - 1));
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+public int missing(){
+
+  return count(true);
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+public List<T> removeMany(final AtomicBoolean processing,boolean nullify,int max_results){
+
+  List<T> list=null;
+
+  int num_results=0;
+
+  T element;
+
+  lock.lock();
+
+  try {
+
+    long start=hd, end=hr;
+
+    while (start + 1 <= end && (element=buf[index(start + 1)]) != null) {
+
+      if (list == null)       list=new ArrayList<>(max_results > 0 ? max_results : 20);
+
+      list.add(element);
+
+      start++;
+
+      if (max_results > 0 && ++num_results >= max_results)       break;
+
+    }
+
+    if (start > hd) {
+
+      hd=start;
+
+      if (nullify) {
+
+        int from=index(low + 1), length=(int)(start - low), capacity=capacity();
+
+        for (int i=from; i < from + length; i++) {
+
+          int index=i & (capacity - 1);
+
+          buf[index]=null;
+
+        }
+
+        if (start > low) {
+
+          low=start;
+
+          buffer_full.signalAll();
+
+        }
+
+      }
+
+    }
+
+    if ((list == null || list.isEmpty()) && processing != null)     processing.set(false);
+
+    return list;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+/** 
+
+ * Creates a RingBuffer
+
+ * @param capacity The number of elements the ring buffer's array should hold.
+
+ * @param offset The offset. The first element to be added has to be offset +1.
+
+ */
+
+public RingBufferSeqno(int capacity,long offset){
+
+  if (capacity < 1)   throw new IllegalArgumentException("incorrect capacity of " + capacity);
+
+  if (offset < 0)   throw new IllegalArgumentException("invalid offset of " + offset);
+
+  int cap=1;
+
+  while (capacity > cap)   cap<<=1;
+
+  this.buf=(T[])new Object[cap];
+
+  this.low=this.hd=this.hr=this.offset=offset;
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+public double saturation(){
+
+  int space=spaceUsed();
+
+  return space == 0 ? 0.0 : space / (double)capacity();
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+public int spaceUsed(){
+
+  return (int)(hr - low);
+
+}
+
+Location: RingBufferSeqno.java
+
+Content: 
+
+/** 
+
+ * Nulls elements between low and seqno and forwards low 
+
+ */
+
+public void stable(long seqno){
+
+  lock.lock();
+
+  try {
+
+    if (seqno <= low)     return;
+
+    if (seqno > hd)     throw new IllegalArgumentException("seqno " + seqno + " cannot be bigger than hd ("+ hd+ ")");
+
+    int from=index(low + 1), length=(int)(seqno - low), capacity=capacity();
+
+    for (int i=from; i < from + length; i++) {
+
+      int index=i & (capacity - 1);
+
+      buf[index]=null;
+
+    }
+
+    if (seqno > low) {
+
+      low=seqno;
+
+      buffer_full.signalAll();
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+

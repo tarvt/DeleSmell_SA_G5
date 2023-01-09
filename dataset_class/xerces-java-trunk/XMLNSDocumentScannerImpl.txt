@@ -1,0 +1,156 @@
+Location: XMLNSDocumentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans an attribute. <p> <pre> [41] Attribute ::= Name Eq AttValue </pre> <p> <strong>Note:</strong> This method assumes that the next character on the stream is the first character of the attribute name. <p> <strong>Note:</strong> This method uses the fAttributeQName and fQName variables. The contents of these variables will be destroyed.
+
+ * @param attributes The attributes list for the scanned attribute.
+
+ */
+
+protected void scanAttribute(XMLAttributesImpl attributes) throws IOException, XNIException {
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println(">>> scanAttribute()");
+
+  fEntityScanner.scanQName(fAttributeQName);
+
+  fEntityScanner.skipSpaces();
+
+  if (!fEntityScanner.skipChar('=')) {
+
+    reportFatalError("EqRequiredInAttribute",new Object[]{fCurrentElement.rawname,fAttributeQName.rawname});
+
+  }
+
+  fEntityScanner.skipSpaces();
+
+  int attrIndex;
+
+  if (fBindNamespaces) {
+
+    attrIndex=attributes.getLength();
+
+    attributes.addAttributeNS(fAttributeQName,XMLSymbols.fCDATASymbol,null);
+
+  }
+
+ else {
+
+    int oldLen=attributes.getLength();
+
+    attrIndex=attributes.addAttribute(fAttributeQName,XMLSymbols.fCDATASymbol,null);
+
+    if (oldLen == attributes.getLength()) {
+
+      reportFatalError("AttributeNotUnique",new Object[]{fCurrentElement.rawname,fAttributeQName.rawname});
+
+    }
+
+  }
+
+  boolean isSameNormalizedAttr=scanAttributeValue(this.fTempString,fTempString2,fAttributeQName.rawname,fIsEntityDeclaredVC,fCurrentElement.rawname);
+
+  String value=fTempString.toString();
+
+  attributes.setValue(attrIndex,value);
+
+  if (!isSameNormalizedAttr) {
+
+    attributes.setNonNormalizedValue(attrIndex,fTempString2.toString());
+
+  }
+
+  attributes.setSpecified(attrIndex,true);
+
+  if (fBindNamespaces) {
+
+    String localpart=fAttributeQName.localpart;
+
+    String prefix=fAttributeQName.prefix != null ? fAttributeQName.prefix : XMLSymbols.EMPTY_STRING;
+
+    if (prefix == XMLSymbols.PREFIX_XMLNS || prefix == XMLSymbols.EMPTY_STRING && localpart == XMLSymbols.PREFIX_XMLNS) {
+
+      String uri=fSymbolTable.addSymbol(value);
+
+      if (prefix == XMLSymbols.PREFIX_XMLNS && localpart == XMLSymbols.PREFIX_XMLNS) {
+
+        fErrorReporter.reportError(XMLMessageFormatter.XMLNS_DOMAIN,"CantBindXMLNS",new Object[]{fAttributeQName},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+      }
+
+      if (uri == NamespaceContext.XMLNS_URI) {
+
+        fErrorReporter.reportError(XMLMessageFormatter.XMLNS_DOMAIN,"CantBindXMLNS",new Object[]{fAttributeQName},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+      }
+
+      if (localpart == XMLSymbols.PREFIX_XML) {
+
+        if (uri != NamespaceContext.XML_URI) {
+
+          fErrorReporter.reportError(XMLMessageFormatter.XMLNS_DOMAIN,"CantBindXML",new Object[]{fAttributeQName},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+        }
+
+      }
+
+ else {
+
+        if (uri == NamespaceContext.XML_URI) {
+
+          fErrorReporter.reportError(XMLMessageFormatter.XMLNS_DOMAIN,"CantBindXML",new Object[]{fAttributeQName},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+        }
+
+      }
+
+      prefix=localpart != XMLSymbols.PREFIX_XMLNS ? localpart : XMLSymbols.EMPTY_STRING;
+
+      if (uri == XMLSymbols.EMPTY_STRING && localpart != XMLSymbols.PREFIX_XMLNS) {
+
+        fErrorReporter.reportError(XMLMessageFormatter.XMLNS_DOMAIN,"EmptyPrefixedAttName",new Object[]{fAttributeQName},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+      }
+
+      fNamespaceContext.declarePrefix(prefix,uri.length() != 0 ? uri : null);
+
+      attributes.setURI(attrIndex,fNamespaceContext.getURI(XMLSymbols.PREFIX_XMLNS));
+
+    }
+
+ else {
+
+      if (fAttributeQName.prefix != null) {
+
+        attributes.setURI(attrIndex,fNamespaceContext.getURI(fAttributeQName.prefix));
+
+      }
+
+    }
+
+  }
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println("<<< scanAttribute()");
+
+}
+
+Location: XMLNSDocumentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * The scanner is responsible for removing DTD validator from the pipeline if it is not needed.
+
+ * @param dtdValidator The DTDValidator
+
+ */
+
+public void setDTDValidator(XMLDTDValidatorFilter dtdValidator){
+
+  fDTDValidator=dtdValidator;
+
+}
+

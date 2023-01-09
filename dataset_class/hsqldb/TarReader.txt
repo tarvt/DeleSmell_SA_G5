@@ -1,0 +1,320 @@
+Location: TarReader.java
+
+Content: 
+
+protected void extractFile(TarEntryHeader header) throws IOException, TarMalformatException {
+
+  if (header.getDataSize() < 1) {
+
+    throw new TarMalformatException(RB.data_size_unknown.getString());
+
+  }
+
+  int readNow;
+
+  int readBlocks=(int)(header.getDataSize() / 512L);
+
+  int modulus=(int)(header.getDataSize() % 512L);
+
+  File newFile=header.generateFile();
+
+  if (!newFile.isAbsolute()) {
+
+    newFile=(extractBaseDir == null) ? newFile.getAbsoluteFile() : new File(extractBaseDir,newFile.getPath());
+
+  }
+
+  File parentDir=newFile.getParentFile();
+
+  if (newFile.exists()) {
+
+    if (mode != TarReader.OVERWRITE_MODE) {
+
+      throw new IOException(RB.extraction_exists.getString(newFile.getAbsolutePath()));
+
+    }
+
+    if (!newFile.isFile()) {
+
+      throw new IOException(RB.extraction_exists_notfile.getString(newFile.getAbsolutePath()));
+
+    }
+
+  }
+
+  if (parentDir.exists()) {
+
+    if (!parentDir.isDirectory()) {
+
+      throw new IOException(RB.extraction_parent_not_dir.getString(parentDir.getAbsolutePath()));
+
+    }
+
+    if (!parentDir.canWrite()) {
+
+      throw new IOException(RB.extraction_parent_not_writable.getString(parentDir.getAbsolutePath()));
+
+    }
+
+  }
+
+ else {
+
+    if (!parentDir.mkdirs()) {
+
+      throw new IOException(RB.extraction_parent_mkfail.getString(parentDir.getAbsolutePath()));
+
+    }
+
+  }
+
+  int fileMode=header.getFileMode();
+
+  FileOutputStream outStream=new FileOutputStream(newFile);
+
+  try {
+
+    newFile.setExecutable(false,false);
+
+    newFile.setReadable(false,false);
+
+    newFile.setWritable(false,false);
+
+    newFile.setExecutable(((fileMode & 0100) != 0),true);
+
+    newFile.setReadable((fileMode & 0400) != 0,true);
+
+    newFile.setWritable((fileMode & 0200) != 0,true);
+
+    while (readBlocks > 0) {
+
+      readNow=(readBlocks > archive.getReadBufferBlocks()) ? archive.getReadBufferBlocks() : readBlocks;
+
+      archive.readBlocks(readNow);
+
+      readBlocks-=readNow;
+
+      outStream.write(archive.readBuffer,0,readNow * 512);
+
+    }
+
+    if (modulus != 0) {
+
+      archive.readBlock();
+
+      outStream.write(archive.readBuffer,0,modulus);
+
+    }
+
+    outStream.flush();
+
+  }
+
+  finally {
+
+    try {
+
+      outStream.close();
+
+    }
+
+  finally {
+
+      outStream=null;
+
+    }
+
+  }
+
+  newFile.setLastModified(header.getModTime() * 1000);
+
+  if (newFile.length() != header.getDataSize()) {
+
+    throw new IOException(RB.write_count_mismatch.getString(Long.toString(header.getDataSize()),newFile.getAbsolutePath(),Long.toString(newFile.length())));
+
+  }
+
+}
+
+Location: TarReader.java
+
+Content: 
+
+protected PIFData getPifData(TarEntryHeader header) throws IOException, TarMalformatException {
+
+  long dataSize=header.getDataSize();
+
+  if (dataSize < 1) {
+
+    throw new TarMalformatException(RB.pif_unknown_datasize.getString());
+
+  }
+
+  if (dataSize > Integer.MAX_VALUE) {
+
+    throw new TarMalformatException(RB.pif_data_toobig.getString(Long.toString(dataSize),Integer.MAX_VALUE));
+
+  }
+
+  int readNow;
+
+  int readBlocks=(int)(dataSize / 512L);
+
+  int modulus=(int)(dataSize % 512L);
+
+  PipedInputStream inPipe=null;
+
+  PipedOutputStream outPipe=new PipedOutputStream();
+
+  try {
+
+    inPipe=new PipedInputStream(outPipe);
+
+    while (readBlocks > 0) {
+
+      readNow=(readBlocks > archive.getReadBufferBlocks()) ? archive.getReadBufferBlocks() : readBlocks;
+
+      archive.readBlocks(readNow);
+
+      readBlocks-=readNow;
+
+      outPipe.write(archive.readBuffer,0,readNow * 512);
+
+    }
+
+    if (modulus != 0) {
+
+      archive.readBlock();
+
+      outPipe.write(archive.readBuffer,0,modulus);
+
+    }
+
+    outPipe.flush();
+
+  }
+
+ catch (  IOException ioe) {
+
+    if (inPipe != null) {
+
+      inPipe.close();
+
+    }
+
+    throw ioe;
+
+  }
+
+ finally {
+
+    try {
+
+      outPipe.close();
+
+    }
+
+  finally {
+
+      outPipe=null;
+
+    }
+
+  }
+
+  return new PIFData(inPipe);
+
+}
+
+Location: TarReader.java
+
+Content: 
+
+protected void skipFileData(TarEntryHeader header) throws IOException, TarMalformatException {
+
+  if (header.getDataSize() == 0) {
+
+    return;
+
+  }
+
+  if (header.getDataSize() < 0) {
+
+    throw new TarMalformatException(RB.data_size_unknown.getString());
+
+  }
+
+  int skipNow;
+
+  int oddBlocks=(header.getDataSize() % 512L == 0L) ? 0 : 1;
+
+  int skipBlocks=(int)(header.getDataSize() / 512L) + oddBlocks;
+
+  while (skipBlocks > 0) {
+
+    skipNow=(skipBlocks > archive.getReadBufferBlocks()) ? archive.getReadBufferBlocks() : skipBlocks;
+
+    archive.readBlocks(skipNow);
+
+    skipBlocks-=skipNow;
+
+  }
+
+}
+
+Location: TarReader.java
+
+Content: 
+
+/** 
+
+ * Compression is determined directly by the suffix of the file name in the specified path.
+
+ * @param inFile  Absolute or relative (from user.dir) path totar file to be read.  Suffix may indicate a compression method.
+
+ * @param mode    Whether to list, extract-without-overwrite, orextract-with-overwrite.
+
+ * @param patternStrings List of regular expressions to match against tar entry names.  If null, all entries will be listed or extracted.  If non-null, then only entries with names which match will be extracted or listed.
+
+ * @param readBufferBlocks  Null will use default tar value.
+
+ * @param inDir   Directory that RELATIVE entries will be extractedrelative to.  Defaults to current directory (user.dir). Only used for extract modes and relative file entries.
+
+ * @throws IllegalArgumentException if any given pattern is an invalidregular expression.  Don't have to worry about this if you call with null 'patterns' param.
+
+ * @see Pattern
+
+ */
+
+public TarReader(File inFile,int mode,String[] patternStrings,Integer readBufferBlocks,File inDir) throws IOException {
+
+  this.mode=mode;
+
+  File archiveFile=inFile.getAbsoluteFile();
+
+  extractBaseDir=(inDir == null) ? null : inDir.getAbsoluteFile();
+
+  int compression=TarFileOutputStream.Compression.NO_COMPRESSION;
+
+  if (archiveFile.getName().endsWith(".tgz") || archiveFile.getName().endsWith(".gz")) {
+
+    compression=TarFileOutputStream.Compression.GZIP_COMPRESSION;
+
+  }
+
+  if (patternStrings != null) {
+
+    patterns=new Pattern[patternStrings.length];
+
+    for (int i=0; i < patternStrings.length; i++) {
+
+      patterns[i]=Pattern.compile(patternStrings[i]);
+
+    }
+
+  }
+
+  archive=(readBufferBlocks == null) ? new TarFileInputStream(archiveFile,compression) : new TarFileInputStream(archiveFile,compression,readBufferBlocks.intValue());
+
+}
+

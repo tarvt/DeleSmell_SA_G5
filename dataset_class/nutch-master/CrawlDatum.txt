@@ -1,0 +1,382 @@
+Location: CrawlDatum.java
+
+Content: 
+
+/** 
+
+ * Sort two  {@link CrawlDatum} objects by decreasing score.
+
+ * @param that an existing {@link CrawlDatum}
+
+ * @return 1 if any one field (score, status, fetchTime, retries,fetchInterval or modifiedTime) of the new  {@link CrawlDatum}minus the correspoinding field of the existing  {@link CrawlDatum}is greater than 0, otherwise return -1.
+
+ */
+
+public int compareTo(CrawlDatum that){
+
+  if (that.score != this.score)   return (that.score - this.score) > 0 ? 1 : -1;
+
+  if (that.status != this.status)   return this.status - that.status;
+
+  if (that.fetchTime != this.fetchTime)   return (that.fetchTime - this.fetchTime) > 0 ? 1 : -1;
+
+  if (that.retries != this.retries)   return that.retries - this.retries;
+
+  if (that.fetchInterval != this.fetchInterval)   return (that.fetchInterval - this.fetchInterval) > 0 ? 1 : -1;
+
+  if (that.modifiedTime != this.modifiedTime)   return (that.modifiedTime - this.modifiedTime) > 0 ? 1 : -1;
+
+  return SignatureComparator._compare(this,that);
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public CrawlDatum(){
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public CrawlDatum(int status,int fetchInterval){
+
+  this();
+
+  this.status=(byte)status;
+
+  this.fetchInterval=fetchInterval;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public CrawlDatum(int status,int fetchInterval,float score){
+
+  this(status,fetchInterval);
+
+  this.score=score;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public boolean evaluate(JexlExpression expr,String url){
+
+  if (expr != null && url != null) {
+
+    JexlContext jcontext=new MapContext();
+
+    jcontext.set("url",url);
+
+    jcontext.set("status",getStatusName(getStatus()));
+
+    jcontext.set("fetchTime",(long)(getFetchTime()));
+
+    jcontext.set("modifiedTime",(long)(getModifiedTime()));
+
+    jcontext.set("retries",getRetriesSinceFetch());
+
+    jcontext.set("interval",Integer.valueOf(getFetchInterval()));
+
+    jcontext.set("score",getScore());
+
+    jcontext.set("signature",StringUtil.toHexString(getSignature()));
+
+    for (    Map.Entry<Writable,Writable> entry : getMetaData().entrySet()) {
+
+      Object value=entry.getValue();
+
+      Text tkey=(Text)entry.getKey();
+
+      if (value instanceof FloatWritable) {
+
+        FloatWritable fvalue=(FloatWritable)value;
+
+        jcontext.set(tkey.toString(),fvalue.get());
+
+      }
+
+      if (value instanceof IntWritable) {
+
+        IntWritable ivalue=(IntWritable)value;
+
+        jcontext.set(tkey.toString(),ivalue.get());
+
+      }
+
+      if (value instanceof Text) {
+
+        Text tvalue=(Text)value;
+
+        jcontext.set(tkey.toString().replace("-","_"),tvalue.toString());
+
+      }
+
+      if (value instanceof ProtocolStatus) {
+
+        ProtocolStatus pvalue=(ProtocolStatus)value;
+
+        jcontext.set(tkey.toString().replace("-","_"),pvalue.toString());
+
+      }
+
+    }
+
+    try {
+
+      if (Boolean.TRUE.equals(expr.evaluate(jcontext))) {
+
+        return true;
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public int getFetchInterval(){
+
+  return fetchInterval;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public long getModifiedTime(){
+
+  return modifiedTime;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public byte getRetriesSinceFetch(){
+
+  return retries;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public static byte getStatusByName(String name){
+
+  for (  Entry<Byte,String> status : statNames.entrySet()) {
+
+    if (name.equalsIgnoreCase(status.getValue())) {
+
+      return status.getKey();
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public static String getStatusName(byte value){
+
+  String res=statNames.get(value);
+
+  if (res == null)   res="unknown";
+
+  return res;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public static boolean hasDbStatus(CrawlDatum datum){
+
+  if (datum.status <= STATUS_DB_MAX)   return true;
+
+  return false;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public static boolean hasFetchStatus(CrawlDatum datum){
+
+  if (datum.status > STATUS_DB_MAX && datum.status <= STATUS_FETCH_MAX)   return true;
+
+  return false;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+private boolean metadataEquals(org.apache.hadoop.io.MapWritable otherMetaData){
+
+  if (metaData == null || metaData.size() == 0) {
+
+    return otherMetaData == null || otherMetaData.size() == 0;
+
+  }
+
+  if (otherMetaData == null) {
+
+    return false;
+
+  }
+
+  HashSet<Entry<Writable,Writable>> set1=new HashSet<>(metaData.entrySet());
+
+  HashSet<Entry<Writable,Writable>> set2=new HashSet<>(otherMetaData.entrySet());
+
+  return set1.equals(set2);
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+/** 
+
+ * Add all metadata from other CrawlDatum to this CrawlDatum.
+
+ * @param other CrawlDatum
+
+ */
+
+public void putAllMetaData(CrawlDatum other){
+
+  for (  Entry<Writable,Writable> e : other.getMetaData().entrySet()) {
+
+    getMetaData().put(e.getKey(),e.getValue());
+
+  }
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public void setFetchInterval(float fetchInterval){
+
+  this.fetchInterval=Math.round(fetchInterval);
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public void setFetchInterval(int fetchInterval){
+
+  this.fetchInterval=fetchInterval;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public void setModifiedTime(long modifiedTime){
+
+  this.modifiedTime=modifiedTime;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public void setRetriesSinceFetch(int retries){
+
+  this.retries=(byte)retries;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+public void setSignature(byte[] signature){
+
+  if (signature != null && signature.length > 256)   throw new RuntimeException("Max signature length (256) exceeded: " + signature.length);
+
+  this.signature=signature;
+
+}
+
+Location: CrawlDatum.java
+
+Content: 
+
+/** 
+
+ * Copy the contents of another instance into this instance.
+
+ * @param that an existing {@link CrawlDatum}
+
+ */
+
+public void set(CrawlDatum that){
+
+  this.status=that.status;
+
+  this.fetchTime=that.fetchTime;
+
+  this.retries=that.retries;
+
+  this.fetchInterval=that.fetchInterval;
+
+  this.score=that.score;
+
+  this.modifiedTime=that.modifiedTime;
+
+  this.signature=that.signature;
+
+  if (that.metaData != null) {
+
+    this.metaData=new org.apache.hadoop.io.MapWritable(that.metaData);
+
+  }
+
+ else {
+
+    this.metaData=null;
+
+  }
+
+}
+

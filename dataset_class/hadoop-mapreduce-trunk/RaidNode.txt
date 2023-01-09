@@ -1,0 +1,1266 @@
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Create an instance of the RaidNode 
+
+ */
+
+public static RaidNode createRaidNode(String argv[],Configuration conf) throws IOException, ClassNotFoundException {
+
+  if (conf == null) {
+
+    conf=new Configuration();
+
+  }
+
+  StartupOption startOpt=parseArguments(argv);
+
+  if (startOpt == null) {
+
+    printUsage();
+
+    return null;
+
+  }
+
+  setStartupOption(conf,startOpt);
+
+  RaidNode node=createRaidNode(conf);
+
+  return node;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+private void doHar() throws IOException, InterruptedException {
+
+  long prevExec=0;
+
+  while (running) {
+
+    while (now() < prevExec + configMgr.getPeriodicity()) {
+
+      Thread.sleep(SLEEP_TIME);
+
+    }
+
+    LOG.info("Started archive scan");
+
+    prevExec=now();
+
+    for (    PolicyList category : configMgr.getAllPolicies()) {
+
+      for (      PolicyInfo info : category.getAll()) {
+
+        String tmpHarPath=tmpHarPathForCode(conf,info.getErasureCode());
+
+        String str=info.getProperty("time_before_har");
+
+        if (str != null) {
+
+          try {
+
+            long cutoff=now() - (Long.parseLong(str) * 24L * 3600000L);
+
+            Path destPref=getDestinationPath(info.getErasureCode(),conf);
+
+            FileSystem destFs=destPref.getFileSystem(conf);
+
+            Path[] srcPaths=info.getSrcPathExpanded();
+
+            if (srcPaths != null) {
+
+              for (              Path srcPath : srcPaths) {
+
+                Path destPath=getOriginalParityFile(destPref,srcPath);
+
+                FileStatus stat=null;
+
+                try {
+
+                  stat=destFs.getFileStatus(destPath);
+
+                }
+
+ catch (                FileNotFoundException e) {
+
+                }
+
+                if (stat != null) {
+
+                  LOG.info("Haring parity files for policy " + info.getName() + " "+ destPath);
+
+                  recurseHar(info,destFs,stat,destPref.toUri().getPath(),srcPath.getFileSystem(conf),cutoff,tmpHarPath);
+
+                }
+
+              }
+
+            }
+
+          }
+
+ catch (          Exception e) {
+
+            LOG.warn("Ignoring Exception while processing policy " + info.getName() + " "+ StringUtils.stringifyException(e));
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+  return;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * RAID an individual file
+
+ */
+
+static public void doRaid(Configuration conf,FileStatus stat,Path destPath,PolicyInfo.ErasureCodeType code,Statistics statistics,Progressable reporter,boolean doSimulate,int targetRepl,int metaRepl,int stripeLength) throws IOException {
+
+  Path p=stat.getPath();
+
+  FileSystem srcFs=p.getFileSystem(conf);
+
+  BlockLocation[] locations=srcFs.getFileBlockLocations(stat,0,stat.getLen());
+
+  if (locations.length <= 2) {
+
+    return;
+
+  }
+
+  long diskSpace=0;
+
+  for (  BlockLocation l : locations) {
+
+    diskSpace+=(l.getLength() * stat.getReplication());
+
+  }
+
+  statistics.numProcessedBlocks+=locations.length;
+
+  statistics.processedSize+=diskSpace;
+
+  generateParityFile(conf,stat,reporter,srcFs,destPath,code,locations,metaRepl,stripeLength);
+
+  if (!doSimulate) {
+
+    if (srcFs.setReplication(p,(short)targetRepl) == false) {
+
+      LOG.error("Error in reducing relication factor of file " + p + " to "+ targetRepl);
+
+      statistics.remainingSize+=diskSpace;
+
+      return;
+
+    }
+
+  }
+
+  diskSpace=0;
+
+  for (  BlockLocation l : locations) {
+
+    diskSpace+=(l.getLength() * targetRepl);
+
+  }
+
+  statistics.remainingSize+=diskSpace;
+
+  int numMeta=locations.length / stripeLength;
+
+  if (locations.length % stripeLength != 0) {
+
+    numMeta++;
+
+  }
+
+  statistics.numMetaBlocks+=(numMeta * metaRepl);
+
+  statistics.metaSize+=(numMeta * metaRepl * stat.getBlockSize());
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * RAID an individual file
+
+ */
+
+static public void doRaid(Configuration conf,PolicyInfo info,FileStatus src,Statistics statistics,Progressable reporter) throws IOException {
+
+  int targetRepl=Integer.parseInt(info.getProperty("targetReplication"));
+
+  int metaRepl=Integer.parseInt(info.getProperty("metaReplication"));
+
+  int stripeLength=getStripeLength(conf);
+
+  Path destPref=getDestinationPath(info.getErasureCode(),conf);
+
+  String simulate=info.getProperty("simulate");
+
+  boolean doSimulate=simulate == null ? false : Boolean.parseBoolean(simulate);
+
+  doRaid(conf,src,destPref,info.getErasureCode(),statistics,reporter,doSimulate,targetRepl,metaRepl,stripeLength);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * RAID a list of files.
+
+ */
+
+void doRaid(Configuration conf,PolicyInfo info,List<FileStatus> paths) throws IOException {
+
+  int targetRepl=Integer.parseInt(info.getProperty("targetReplication"));
+
+  int metaRepl=Integer.parseInt(info.getProperty("metaReplication"));
+
+  int stripeLength=getStripeLength(conf);
+
+  Path destPref=getDestinationPath(info.getErasureCode(),conf);
+
+  String simulate=info.getProperty("simulate");
+
+  boolean doSimulate=simulate == null ? false : Boolean.parseBoolean(simulate);
+
+  Statistics statistics=new Statistics();
+
+  int count=0;
+
+  for (  FileStatus s : paths) {
+
+    doRaid(conf,s,destPref,info.getErasureCode(),statistics,new RaidUtils.DummyProgressable(),doSimulate,targetRepl,metaRepl,stripeLength);
+
+    if (count % 1000 == 0) {
+
+      LOG.info("RAID statistics " + statistics.toString());
+
+    }
+
+    count++;
+
+  }
+
+  LOG.info("RAID statistics " + statistics.toString());
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+static Encoder encoderForCode(Configuration conf,ErasureCodeType code){
+
+  int stripeLength=getStripeLength(conf);
+
+switch (code) {
+
+case XOR:
+
+    return new XOREncoder(conf,stripeLength);
+
+case RS:
+
+  return new ReedSolomonEncoder(conf,stripeLength,rsParityLength(conf));
+
+default :
+
+return null;
+
+}
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Create the parity file.
+
+ */
+
+static private void generateParityFile(Configuration conf,FileStatus stat,Progressable reporter,FileSystem inFs,Path destPathPrefix,ErasureCodeType code,BlockLocation[] locations,int metaRepl,int stripeLength) throws IOException {
+
+  Path inpath=stat.getPath();
+
+  Path outpath=getOriginalParityFile(destPathPrefix,inpath);
+
+  FileSystem outFs=outpath.getFileSystem(conf);
+
+  try {
+
+    FileStatus stmp=outFs.getFileStatus(outpath);
+
+    if (stmp.getModificationTime() == stat.getModificationTime()) {
+
+      LOG.info("Parity file for " + inpath + "("+ locations.length+ ") is "+ outpath+ " already upto-date. Nothing more to do.");
+
+      return;
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+  }
+
+  Encoder encoder=encoderForCode(conf,code);
+
+  encoder.encodeFile(inFs,inpath,outFs,outpath,(short)metaRepl,reporter);
+
+  outFs.setTimes(outpath,stat.getModificationTime(),-1);
+
+  inFs.setTimes(inpath,stat.getModificationTime(),stat.getAccessTime());
+
+  FileStatus outstat=outFs.getFileStatus(outpath);
+
+  FileStatus inStat=inFs.getFileStatus(inpath);
+
+  LOG.info("Source file " + inpath + " of size "+ inStat.getLen()+ " Parity file "+ outpath+ " of size "+ outstat.getLen()+ " src mtime "+ stat.getModificationTime()+ " parity mtime "+ outstat.getModificationTime());
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+private static InetSocketAddress getAddress(String address){
+
+  return NetUtils.createSocketAddr(address);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the path prefix that stores the parity files
+
+ */
+
+static Path getDestinationPath(ErasureCodeType code,Configuration conf) throws IOException {
+
+switch (code) {
+
+case XOR:
+
+    return xorDestinationPath(conf);
+
+case RS:
+
+  return rsDestinationPath(conf);
+
+default :
+
+return null;
+
+}
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+public InetSocketAddress getListenerAddress(){
+
+  return server.getListenerAddress();
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+static private Path getOriginalParityFile(Path destPathPrefix,Path srcPath){
+
+  return new Path(destPathPrefix,makeRelative(srcPath));
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+private ParityFilePair getParityFile(Path destPathPrefix,Path srcPath) throws IOException {
+
+  return getParityFile(destPathPrefix,srcPath,conf);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Returns the Path to the parity file of a given file
+
+ * @param destPathPrefix Destination prefix defined by some policy
+
+ * @param srcPath Path to the original source file
+
+ * @param create Boolean value telling whether a new parity file should be created
+
+ * @return Path object representing the parity file of the source
+
+ * @throws IOException
+
+ */
+
+static ParityFilePair getParityFile(Path destPathPrefix,Path srcPath,Configuration conf) throws IOException {
+
+  Path srcParent=srcPath.getParent();
+
+  FileSystem fsDest=destPathPrefix.getFileSystem(conf);
+
+  FileSystem fsSrc=srcPath.getFileSystem(conf);
+
+  FileStatus srcStatus=null;
+
+  try {
+
+    srcStatus=fsSrc.getFileStatus(srcPath);
+
+  }
+
+ catch (  java.io.FileNotFoundException e) {
+
+    return null;
+
+  }
+
+  Path outDir=destPathPrefix;
+
+  if (srcParent != null) {
+
+    if (srcParent.getParent() == null) {
+
+      outDir=destPathPrefix;
+
+    }
+
+ else {
+
+      outDir=new Path(destPathPrefix,makeRelative(srcParent));
+
+    }
+
+  }
+
+  Path outPath=getOriginalParityFile(destPathPrefix,srcPath);
+
+  String harDirName=srcParent.getName() + HAR_SUFFIX;
+
+  Path HarPath=new Path(outDir,harDirName);
+
+  if (fsDest.exists(HarPath)) {
+
+    URI HarPathUri=HarPath.toUri();
+
+    Path inHarPath=new Path("har://",HarPathUri.getPath() + "/" + outPath.toUri().getPath());
+
+    FileSystem fsHar=new HarFileSystem(fsDest);
+
+    fsHar.initialize(inHarPath.toUri(),conf);
+
+    if (fsHar.exists(inHarPath)) {
+
+      FileStatus inHar=fsHar.getFileStatus(inHarPath);
+
+      if (inHar.getModificationTime() == srcStatus.getModificationTime()) {
+
+        return new ParityFilePair(inHarPath,fsHar);
+
+      }
+
+    }
+
+  }
+
+  try {
+
+    FileStatus outHar=fsDest.getFileStatus(outPath);
+
+    if (outHar.getModificationTime() == srcStatus.getModificationTime()) {
+
+      return new ParityFilePair(outPath,fsDest);
+
+    }
+
+  }
+
+ catch (  java.io.FileNotFoundException e) {
+
+  }
+
+  return null;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Obtain stripe length from configuration
+
+ */
+
+public static int getStripeLength(Configuration conf){
+
+  return conf.getInt(STRIPE_LENGTH_KEY,DEFAULT_STRIPE_LENGTH);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+static boolean isParityHarPartFile(Path p){
+
+  Matcher m=PARITY_HAR_PARTFILE_PATTERN.matcher(p.toUri().getPath());
+
+  return m.matches();
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Make an absolute path relative by stripping the leading /
+
+ */
+
+static private Path makeRelative(Path path){
+
+  if (!path.isAbsolute()) {
+
+    return path;
+
+  }
+
+  String p=path.toUri().getPath();
+
+  String relative=p.substring(1,p.length());
+
+  return new Path(relative);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+private static StartupOption parseArguments(String args[]){
+
+  int argsLen=(args == null) ? 0 : args.length;
+
+  StartupOption startOpt=StartupOption.REGULAR;
+
+  for (int i=0; i < argsLen; i++) {
+
+    String cmd=args[i];
+
+  }
+
+  return startOpt;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Start RaidNode. <p> The raid-node can be started with one of the following startup options: <ul>  <li> {@link StartupOption#REGULAR REGULAR} - normal raid node startup</li></ul> The option is passed via configuration field:  <tt>fs.raidnode.startup</tt> The conf will be modified to reflect the actual ports on which  the RaidNode is up and running if the user passes the port as <code>zero</code> in the conf.
+
+ * @param conf  confirguration
+
+ * @throws IOException
+
+ */
+
+RaidNode(Configuration conf) throws IOException {
+
+  try {
+
+    initialize(conf);
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+    this.stop();
+
+    throw e;
+
+  }
+
+catch (  Exception e) {
+
+    this.stop();
+
+    throw new IOException(e);
+
+  }
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+void recurseHar(PolicyInfo info,FileSystem destFs,FileStatus dest,String destPrefix,FileSystem srcFs,long cutoff,String tmpHarPath) throws IOException {
+
+  if (dest.isFile()) {
+
+    return;
+
+  }
+
+  Path destPath=dest.getPath();
+
+  String destStr=destPath.toUri().getPath();
+
+  if (destFs.exists(new Path(destPath,destPath.getName() + HAR_SUFFIX))) {
+
+    return;
+
+  }
+
+  FileStatus[] files=null;
+
+  files=destFs.listStatus(destPath);
+
+  boolean shouldHar=false;
+
+  if (files != null) {
+
+    shouldHar=files.length > 0;
+
+    for (    FileStatus one : files) {
+
+      if (one.isDirectory()) {
+
+        recurseHar(info,destFs,one,destPrefix,srcFs,cutoff,tmpHarPath);
+
+        shouldHar=false;
+
+      }
+
+ else       if (one.getModificationTime() > cutoff) {
+
+        if (shouldHar) {
+
+          LOG.info("Cannot archive " + destPath + " because "+ one.getPath()+ " was modified after cutoff");
+
+          shouldHar=false;
+
+        }
+
+      }
+
+    }
+
+    if (shouldHar) {
+
+      String src=destStr.replaceFirst(destPrefix,"");
+
+      Path srcPath=new Path(src);
+
+      FileStatus[] statuses=srcFs.listStatus(srcPath);
+
+      Path destPathPrefix=new Path(destPrefix).makeQualified(destFs);
+
+      if (statuses != null) {
+
+        for (        FileStatus status : statuses) {
+
+          if (getParityFile(destPathPrefix,status.getPath().makeQualified(srcFs)) == null) {
+
+            LOG.info("Cannot archive " + destPath + " because it doesn't contain parity file for "+ status.getPath().makeQualified(srcFs)+ " on destination "+ destPathPrefix);
+
+            shouldHar=false;
+
+            break;
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+  if (shouldHar) {
+
+    LOG.info("Archiving " + dest.getPath() + " to "+ tmpHarPath);
+
+    singleHar(info,destFs,dest,tmpHarPath);
+
+  }
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the destination path for ReedSolomon parity files
+
+ */
+
+public static Path rsDestinationPath(Configuration conf) throws IOException {
+
+  String loc=conf.get(RAIDRS_LOCATION_KEY,DEFAULT_RAIDRS_LOCATION);
+
+  Path p=new Path(loc.trim());
+
+  FileSystem fs=FileSystem.get(p.toUri(),conf);
+
+  p=p.makeQualified(fs);
+
+  return p;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the destination path for ReedSolomon parity files
+
+ */
+
+public static Path rsDestinationPath(Configuration conf,FileSystem fs){
+
+  String loc=conf.get(RAIDRS_LOCATION_KEY,DEFAULT_RAIDRS_LOCATION);
+
+  Path p=new Path(loc.trim());
+
+  p=p.makeQualified(fs);
+
+  return p;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the temp path for ReedSolomonEncoder parity files
+
+ */
+
+public static String rsHarTempPrefix(Configuration conf){
+
+  return conf.get(RAIDRS_HAR_TMP_LOCATION_KEY,DEFAULT_RAIDRS_HAR_TMP_LOCATION);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+static ParityFilePair rsParityForSource(Path srcPath,Configuration conf) throws IOException {
+
+  try {
+
+    Path destPath=rsDestinationPath(conf);
+
+    return getParityFile(destPath,srcPath,conf);
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+  }
+
+  return null;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Obtain stripe length from configuration
+
+ */
+
+public static int rsParityLength(Configuration conf){
+
+  return conf.getInt(RS_PARITY_LENGTH_KEY,RS_PARITY_LENGTH_DEFAULT);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the temp path for ReedSolomonEncoder parity files
+
+ */
+
+public static String rsTempPrefix(Configuration conf){
+
+  return conf.get(RAIDRS_TMP_LOCATION_KEY,DEFAULT_RAIDRS_TMP_LOCATION);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Convert command line options to configuration parameters
+
+ */
+
+private static void setStartupOption(Configuration conf,StartupOption opt){
+
+  conf.set("fs.raidnode.startup",opt.toString());
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+private void singleHar(PolicyInfo info,FileSystem destFs,FileStatus dest,String tmpHarPath) throws IOException {
+
+  Random rand=new Random();
+
+  Path root=new Path("/");
+
+  Path qualifiedPath=dest.getPath().makeQualified(destFs);
+
+  String harFileDst=qualifiedPath.getName() + HAR_SUFFIX;
+
+  String harFileSrc=qualifiedPath.getName() + "-" + rand.nextLong()+ "-"+ HAR_SUFFIX;
+
+  short metaReplication=(short)Integer.parseInt(info.getProperty("metaReplication"));
+
+  conf.setLong("har.partfile.size",configMgr.getHarPartfileSize());
+
+  HadoopArchives har=new HadoopArchives(conf);
+
+  String[] args=new String[7];
+
+  args[0]="-Ddfs.replication=" + metaReplication;
+
+  args[1]="-archiveName";
+
+  args[2]=harFileSrc;
+
+  args[3]="-p";
+
+  args[4]=root.makeQualified(destFs).toString();
+
+  args[5]=qualifiedPath.toUri().getPath().substring(1);
+
+  args[6]=tmpHarPath.toString();
+
+  int ret=0;
+
+  try {
+
+    ret=ToolRunner.run(har,args);
+
+    if (ret == 0 && !destFs.rename(new Path(tmpHarPath + "/" + harFileSrc),new Path(qualifiedPath,harFileDst))) {
+
+      LOG.error("HAR rename didn't succeed from " + tmpHarPath + "/"+ harFileSrc+ " to "+ qualifiedPath+ "/"+ harFileDst);
+
+      ret=-2;
+
+    }
+
+  }
+
+ catch (  Exception exc) {
+
+    throw new IOException("Error while creating archive " + ret,exc);
+
+  }
+
+  if (ret != 0) {
+
+    throw new IOException("Error while creating archive " + ret);
+
+  }
+
+  return;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+static String tmpHarPathForCode(Configuration conf,ErasureCodeType code){
+
+switch (code) {
+
+case XOR:
+
+    return xorHarTempPrefix(conf);
+
+case RS:
+
+  return rsHarTempPrefix(conf);
+
+default :
+
+return null;
+
+}
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+public static Path unRaidCorruptBlock(Configuration conf,Path srcPath,Path destPathPrefix,Decoder decoder,int stripeLength,long corruptOffset) throws IOException {
+
+  ParityFilePair ppair=getParityFile(destPathPrefix,srcPath,conf);
+
+  if (ppair == null) {
+
+    LOG.error("Could not find parity file for " + srcPath);
+
+    return null;
+
+  }
+
+  final Path recoveryDestination=new Path(RaidNode.xorTempPrefix(conf));
+
+  FileSystem destFs=recoveryDestination.getFileSystem(conf);
+
+  final Path recoveredPrefix=destFs.makeQualified(new Path(recoveryDestination,makeRelative(srcPath)));
+
+  final Path recoveredBlock=new Path(recoveredPrefix + "." + new Random().nextLong()+ ".recovered");
+
+  LOG.info("Creating recovered Block " + recoveredBlock);
+
+  FileSystem srcFs=srcPath.getFileSystem(conf);
+
+  FileStatus stat=srcFs.getFileStatus(srcPath);
+
+  long limit=Math.min(stat.getBlockSize(),stat.getLen() - corruptOffset);
+
+  java.io.OutputStream out=ppair.getFileSystem().create(recoveredBlock);
+
+  decoder.fixErasedBlock(srcFs,srcPath,ppair.getFileSystem(),ppair.getPath(),stat.getBlockSize(),corruptOffset,0,limit,out);
+
+  out.close();
+
+  return recoveredBlock;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the temp path for XOR parity files
+
+ */
+
+public static String unraidTmpDirectory(Configuration conf){
+
+  return conf.get(RAID_TMP_LOCATION_KEY,DEFAULT_RAID_TMP_LOCATION);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Extract a good block from the parity block. This assumes that the corruption is in the main file and the parity file is always good.
+
+ */
+
+public static Path unRaid(Configuration conf,Path srcPath,Path destPathPrefix,Decoder decoder,int stripeLength,long corruptOffset) throws IOException {
+
+  ParityFilePair ppair=getParityFile(destPathPrefix,srcPath,conf);
+
+  if (ppair == null) {
+
+    return null;
+
+  }
+
+  final Path recoveryDestination=new Path(RaidNode.unraidTmpDirectory(conf));
+
+  FileSystem destFs=recoveryDestination.getFileSystem(conf);
+
+  final Path recoveredPrefix=destFs.makeQualified(new Path(recoveryDestination,makeRelative(srcPath)));
+
+  final Path recoveredPath=new Path(recoveredPrefix + "." + new Random().nextLong()+ ".recovered");
+
+  LOG.info("Creating recovered file " + recoveredPath);
+
+  FileSystem srcFs=srcPath.getFileSystem(conf);
+
+  decoder.decodeFile(srcFs,srcPath,ppair.getFileSystem(),ppair.getPath(),corruptOffset,recoveredPath);
+
+  return recoveredPath;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+protected static int usefulHar(ErasureCodeType code,FileSystem srcFs,FileSystem destFs,Path harPath,String destPrefix,Configuration conf) throws IOException {
+
+  FileSystem fsHar=new HarFileSystem(destFs);
+
+  String harURIPath=harPath.toUri().getPath();
+
+  Path qualifiedPath=new Path("har://",harURIPath + Path.SEPARATOR + harPath.getParent().toUri().getPath());
+
+  fsHar.initialize(qualifiedPath.toUri(),conf);
+
+  FileStatus[] filesInHar=fsHar.listStatus(qualifiedPath);
+
+  if (filesInHar.length == 0) {
+
+    return 0;
+
+  }
+
+  int numUseless=0;
+
+  for (  FileStatus one : filesInHar) {
+
+    Path parityPath=one.getPath();
+
+    String parityStr=parityPath.toUri().getPath();
+
+    if (parityStr.startsWith("har:/")) {
+
+      LOG.error("Unexpected prefix har:/ for " + parityStr);
+
+      continue;
+
+    }
+
+    String prefixToReplace=harURIPath + destPrefix;
+
+    if (!parityStr.startsWith(prefixToReplace)) {
+
+      continue;
+
+    }
+
+    String src=parityStr.substring(prefixToReplace.length());
+
+    if (code == ErasureCodeType.XOR) {
+
+      ParityFilePair ppair=getParityFile(getDestinationPath(ErasureCodeType.RS,conf),new Path(src),conf);
+
+      if (ppair != null) {
+
+        numUseless++;
+
+        continue;
+
+      }
+
+    }
+
+    try {
+
+      FileStatus srcStatus=srcFs.getFileStatus(new Path(src));
+
+      if (srcStatus == null) {
+
+        numUseless++;
+
+      }
+
+ else       if (one.getModificationTime() != srcStatus.getModificationTime()) {
+
+        numUseless++;
+
+      }
+
+    }
+
+ catch (    FileNotFoundException e) {
+
+      LOG.info("File not found: " + e);
+
+      numUseless++;
+
+    }
+
+  }
+
+  int uselessPercent=numUseless * 100 / filesInHar.length;
+
+  return 100 - uselessPercent;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the destination path for XOR parity files
+
+ */
+
+public static Path xorDestinationPath(Configuration conf) throws IOException {
+
+  String loc=conf.get(RAID_LOCATION_KEY,DEFAULT_RAID_LOCATION);
+
+  Path p=new Path(loc.trim());
+
+  FileSystem fs=FileSystem.get(p.toUri(),conf);
+
+  p=p.makeQualified(fs);
+
+  return p;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the destination path for XOR parity files
+
+ */
+
+public static Path xorDestinationPath(Configuration conf,FileSystem fs){
+
+  String loc=conf.get(RAID_LOCATION_KEY,DEFAULT_RAID_LOCATION);
+
+  Path p=new Path(loc.trim());
+
+  p=p.makeQualified(fs);
+
+  return p;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the temp path for XOR parity files
+
+ */
+
+public static String xorHarTempPrefix(Configuration conf){
+
+  return conf.get(RAID_HAR_TMP_LOCATION_KEY,DEFAULT_RAID_HAR_TMP_LOCATION);
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+static ParityFilePair xorParityForSource(Path srcPath,Configuration conf) throws IOException {
+
+  try {
+
+    Path destPath=xorDestinationPath(conf);
+
+    return getParityFile(destPath,srcPath,conf);
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+  }
+
+  return null;
+
+}
+
+Location: RaidNode.java
+
+Content: 
+
+/** 
+
+ * Return the temp path for XOR parity files
+
+ */
+
+public static String xorTempPrefix(Configuration conf){
+
+  return conf.get(RAID_TMP_LOCATION_KEY,DEFAULT_RAID_TMP_LOCATION);
+
+}
+

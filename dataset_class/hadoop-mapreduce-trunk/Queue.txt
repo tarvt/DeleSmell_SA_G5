@@ -1,0 +1,380 @@
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ */
+
+void addChild(Queue child){
+
+  if (children == null) {
+
+    children=new TreeSet<Queue>();
+
+  }
+
+  children.add(child);
+
+}
+
+Location: Queue.java
+
+Content: 
+
+@Override public int compareTo(Queue queue){
+
+  return name.compareTo(queue.getName());
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * Copy the scheduling information from the sourceQueue into this queue recursively.
+
+ * @param sourceQueue
+
+ */
+
+void copySchedulingInfo(Queue sourceQueue){
+
+  Set<Queue> destChildren=getChildren();
+
+  if (destChildren != null) {
+
+    Iterator<Queue> itr1=destChildren.iterator();
+
+    Iterator<Queue> itr2=sourceQueue.getChildren().iterator();
+
+    while (itr1.hasNext()) {
+
+      itr1.next().copySchedulingInfo(itr2.next());
+
+    }
+
+  }
+
+  setSchedulingInfo(sourceQueue.getSchedulingInfo());
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * Return the ACLs for the queue The keys in the map indicate the operations that can be performed, and the values indicate the list of users/groups who can perform the operation.
+
+ * @return Map containing the operations that can be performed andwho can perform the operations.
+
+ */
+
+Map<String,AccessControlList> getAcls(){
+
+  return acls;
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * This methods helps in traversing the tree hierarchy. Returns list of all inner queues.i.e nodes which has children. below this level. Incase of children being null , returns an empty map. This helps in case of creating union of inner and leaf queues.
+
+ * @return
+
+ */
+
+Map<String,Queue> getInnerQueues(){
+
+  Map<String,Queue> l=new HashMap<String,Queue>();
+
+  if (children == null) {
+
+    return l;
+
+  }
+
+  for (  Queue child : children) {
+
+    if (child.getChildren() != null && child.getChildren().size() > 0) {
+
+      l.put(child.getName(),child);
+
+      l.putAll(child.getInnerQueues());
+
+    }
+
+  }
+
+  return l;
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * Return hierarchy of  {@link JobQueueInfo} objectsunder this Queue.
+
+ * @return JobQueueInfo[]
+
+ */
+
+JobQueueInfo getJobQueueInfo(){
+
+  JobQueueInfo queueInfo=new JobQueueInfo();
+
+  queueInfo.setQueueName(name);
+
+  LOG.debug("created jobQInfo " + queueInfo.getQueueName());
+
+  queueInfo.setQueueState(state.getStateName());
+
+  if (schedulingInfo != null) {
+
+    queueInfo.setSchedulingInfo(schedulingInfo.toString());
+
+  }
+
+  if (props != null) {
+
+    Properties newProps=new Properties();
+
+    for (    Object key : props.keySet()) {
+
+      newProps.setProperty(key.toString(),props.getProperty(key.toString()));
+
+    }
+
+    queueInfo.setProperties(newProps);
+
+  }
+
+  if (children != null && children.size() > 0) {
+
+    List<JobQueueInfo> list=new ArrayList<JobQueueInfo>();
+
+    for (    Queue child : children) {
+
+      list.add(child.getJobQueueInfo());
+
+    }
+
+    queueInfo.setChildren(list);
+
+  }
+
+  return queueInfo;
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * This method helps in maintaining the single data structure across QueueManager. Now if we just maintain list of root queues we should be done. Doesn't return null . Adds itself if this is leaf node.
+
+ * @return
+
+ */
+
+Map<String,Queue> getLeafQueues(){
+
+  Map<String,Queue> l=new HashMap<String,Queue>();
+
+  if (children == null) {
+
+    l.put(name,this);
+
+    return l;
+
+  }
+
+  for (  Queue child : children) {
+
+    l.putAll(child.getLeafQueues());
+
+  }
+
+  return l;
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * For each node validate if current node hierarchy is same newState. recursively check for child nodes.
+
+ * @param newState
+
+ * @return
+
+ */
+
+boolean isHierarchySameAs(Queue newState){
+
+  if (newState == null) {
+
+    return false;
+
+  }
+
+  if (!(name.equals(newState.getName()))) {
+
+    LOG.info(" current name " + name + " not equal to "+ newState.getName());
+
+    return false;
+
+  }
+
+  if (children == null || children.size() == 0) {
+
+    if (newState.getChildren() != null && newState.getChildren().size() > 0) {
+
+      LOG.info(newState + " has added children in refresh ");
+
+      return false;
+
+    }
+
+  }
+
+ else   if (children.size() > 0) {
+
+    if (newState.getChildren() == null) {
+
+      LOG.fatal("In the current state, queue " + getName() + " has "+ children.size()+ " but the new state has none!");
+
+      return false;
+
+    }
+
+    int childrenSize=children.size();
+
+    int newChildrenSize=newState.getChildren().size();
+
+    if (childrenSize != newChildrenSize) {
+
+      LOG.fatal("Number of children for queue " + newState.getName() + " in newState is "+ newChildrenSize+ " which is not equal to "+ childrenSize+ " in the current state.");
+
+      return false;
+
+    }
+
+    Iterator<Queue> itr1=children.iterator();
+
+    Iterator<Queue> itr2=newState.getChildren().iterator();
+
+    while (itr1.hasNext()) {
+
+      Queue q=itr1.next();
+
+      Queue newq=itr2.next();
+
+      if (!(q.isHierarchySameAs(newq))) {
+
+        LOG.info(" Queue " + q.getName() + " not equal to "+ newq.getName());
+
+        return false;
+
+      }
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * Default constructor is useful in creating the hierarchy. The variables are populated using mutator methods.
+
+ */
+
+Queue(){
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * Create a job queue
+
+ * @param name name of the queue
+
+ * @param acls ACLs for the queue
+
+ * @param state state of the queue
+
+ */
+
+Queue(String name,Map<String,AccessControlList> acls,QueueState state){
+
+  this.name=name;
+
+  this.acls=acls;
+
+  this.state=state;
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * Set the ACLs for the queue
+
+ * @param acls Map containing the operations that can be performed andwho can perform the operations.
+
+ */
+
+void setAcls(Map<String,AccessControlList> acls){
+
+  this.acls=acls;
+
+}
+
+Location: Queue.java
+
+Content: 
+
+/** 
+
+ * Set the scheduling information from the queue.
+
+ * @param schedulingInfo scheduling information for the queue.
+
+ */
+
+void setSchedulingInfo(Object schedulingInfo){
+
+  this.schedulingInfo=schedulingInfo;
+
+}
+

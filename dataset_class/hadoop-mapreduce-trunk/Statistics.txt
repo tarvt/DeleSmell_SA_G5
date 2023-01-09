@@ -1,0 +1,142 @@
+Location: Statistics.java
+
+Content: 
+
+public void addClusterStatsObservers(StatListener<ClusterStats> listener){
+
+  clusterStatlisteners.add(listener);
+
+}
+
+Location: Statistics.java
+
+Content: 
+
+public void addJobStatsListeners(StatListener<JobStats> listener){
+
+  this.jobStatListeners.add(listener);
+
+}
+
+Location: Statistics.java
+
+Content: 
+
+public void addJobStats(Job job,JobStory jobdesc){
+
+  int seq=GridmixJob.getJobSeqId(job);
+
+  if (seq < 0) {
+
+    LOG.info("Not tracking job " + job.getJobName() + " as seq id is less than zero: "+ seq);
+
+    return;
+
+  }
+
+  int maps=0;
+
+  if (jobdesc == null) {
+
+    throw new IllegalArgumentException(" JobStory not available for job " + job.getJobName());
+
+  }
+
+ else {
+
+    maps=jobdesc.getNumberMaps();
+
+  }
+
+  JobStats stats=new JobStats(maps,job);
+
+  jobMaps.put(seq,stats);
+
+}
+
+Location: Statistics.java
+
+Content: 
+
+/** 
+
+ * Used by JobMonitor to add the completed job.
+
+ */
+
+@Override public void add(Job job){
+
+  if (!statistics.isAlive()) {
+
+    return;
+
+  }
+
+  JobStats stat=jobMaps.remove(GridmixJob.getJobSeqId(job));
+
+  if (stat == null)   return;
+
+  completedJobsInCurrentInterval++;
+
+  if (completedJobsInCurrentInterval >= maxJobCompletedInInterval) {
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug(" Reached maximum limit of jobs in a polling interval " + completedJobsInCurrentInterval);
+
+    }
+
+    completedJobsInCurrentInterval=0;
+
+    lock.lock();
+
+    try {
+
+      for (      StatListener<JobStats> l : jobStatListeners) {
+
+        l.update(stat);
+
+      }
+
+      this.jobCompleted.signalAll();
+
+    }
+
+  finally {
+
+      lock.unlock();
+
+    }
+
+  }
+
+}
+
+Location: Statistics.java
+
+Content: 
+
+public Statistics(final Configuration conf,int pollingInterval,CountDownLatch startFlag) throws IOException, InterruptedException {
+
+  UserGroupInformation ugi=UserGroupInformation.getLoginUser();
+
+  this.cluster=ugi.doAs(new PrivilegedExceptionAction<JobClient>(){
+
+    public JobClient run() throws IOException {
+
+      return new JobClient(new JobConf(conf));
+
+    }
+
+  }
+
+);
+
+  this.jtPollingInterval=pollingInterval;
+
+  maxJobCompletedInInterval=conf.getInt(MAX_JOBS_COMPLETED_IN_POLL_INTERVAL_KEY,1);
+
+  this.startFlag=startFlag;
+
+}
+

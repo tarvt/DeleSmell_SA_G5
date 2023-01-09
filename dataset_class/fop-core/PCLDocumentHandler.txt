@@ -1,0 +1,268 @@
+Location: PCLDocumentHandler.java
+
+Content: 
+
+private void copy(InputStream is,long len) throws IOException {
+
+  while (len > 0) {
+
+    int bufsize=(int)Math.min(1024,len);
+
+    byte[] buf=new byte[bufsize];
+
+    if (is.read(buf) == -1) {
+
+      return;
+
+    }
+
+    outputStream.write(buf);
+
+    len-=bufsize;
+
+  }
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+private IFPainter createAllBitmapPainter(){
+
+  double scale=gen.getMaximumBitmapResolution() / FopFactoryConfig.DEFAULT_TARGET_RESOLUTION;
+
+  Rectangle printArea=this.currentPageDefinition.getLogicalPageRect();
+
+  int bitmapWidth=(int)Math.ceil(UnitConv.mpt2px(printArea.width,gen.getMaximumBitmapResolution()));
+
+  int bitmapHeight=(int)Math.ceil(UnitConv.mpt2px(printArea.height,gen.getMaximumBitmapResolution()));
+
+  this.currentImage=createBufferedImage(bitmapWidth,bitmapHeight);
+
+  Graphics2D graphics2D=this.currentImage.createGraphics();
+
+  if (!PCLGenerator.isJAIAvailable()) {
+
+    RenderingHints hints=new RenderingHints(null);
+
+    hints.put(RenderingHints.KEY_DITHERING,RenderingHints.VALUE_DITHER_ENABLE);
+
+    graphics2D.addRenderingHints(hints);
+
+  }
+
+  graphics2D.setBackground(Color.WHITE);
+
+  graphics2D.clearRect(0,0,bitmapWidth,bitmapHeight);
+
+  graphics2D.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+
+  graphics2D.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,RenderingHints.VALUE_STROKE_PURE);
+
+  graphics2D.scale(scale / 1000f,scale / 1000f);
+
+  graphics2D.translate(-printArea.x,-printArea.y);
+
+  return new Java2DPainter(graphics2D,getContext(),getFontInfo(),this);
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+private BufferedImage createBufferedImage(int bitmapWidth,int bitmapHeight){
+
+  int bitmapType;
+
+  if (PCLGenerator.isJAIAvailable()) {
+
+    bitmapType=BufferedImage.TYPE_BYTE_GRAY;
+
+  }
+
+ else {
+
+    bitmapType=BufferedImage.TYPE_BYTE_BINARY;
+
+  }
+
+  return new BufferedImage(bitmapWidth,bitmapHeight,bitmapType);
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+PCLGenerator getPCLGenerator(){
+
+  return this.gen;
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+PCLRenderingUtil getPCLUtil(){
+
+  return this.pclUtil;
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+/** 
+
+ * @return the target resolution 
+
+ */
+
+protected int getResolution(){
+
+  int resolution=Math.round(getUserAgent().getTargetResolution());
+
+  if (resolution <= 300) {
+
+    return 300;
+
+  }
+
+ else {
+
+    return 600;
+
+  }
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+/** 
+
+ * Default constructor.
+
+ */
+
+public PCLDocumentHandler(IFContext context){
+
+  super(context);
+
+  this.pclUtil=new PCLRenderingUtil(context.getUserAgent());
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+private void rewritePCLFile() throws IOException {
+
+  InputStream in=new BufferedInputStream(getUserAgent().getResourceResolver().getResource(tempURI));
+
+  long offset=0;
+
+  for (  Map.Entry<PCLSoftFontManager,Map<Typeface,Long>> fontManagerMapEntry : gen.fontManagerMap.entrySet()) {
+
+    PCLSoftFontManager softFontManager=fontManagerMapEntry.getKey();
+
+    for (    Map.Entry<Typeface,Long> fontEntry : fontManagerMapEntry.getValue().entrySet()) {
+
+      ByteArrayOutputStream fontData=softFontManager.makeSoftFont(fontEntry.getKey(),null);
+
+      long pos=fontEntry.getValue();
+
+      copy(in,pos - offset);
+
+      outputStream.write(fontData.toByteArray());
+
+      offset=pos;
+
+    }
+
+  }
+
+  copy(in,Long.MAX_VALUE);
+
+  this.outputStream.flush();
+
+  IOUtils.closeQuietly(in);
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+private void selectPageFormat(long pagewidth,long pageheight) throws IOException {
+
+  if ((pagewidth != this.pageWidth) || (pageheight != this.pageHeight)) {
+
+    this.pageWidth=pagewidth;
+
+    this.pageHeight=pageheight;
+
+    this.currentPageDefinition=PCLPageDefinition.getPageDefinition(pagewidth,pageheight,1000);
+
+    if (this.currentPageDefinition == null) {
+
+      this.currentPageDefinition=PCLPageDefinition.getDefaultPageDefinition();
+
+      log.warn("Paper type could not be determined. Falling back to: " + this.currentPageDefinition.getName());
+
+    }
+
+    if (log.isDebugEnabled()) {
+
+      log.debug("page size: " + currentPageDefinition.getPhysicalPageSize());
+
+      log.debug("logical page: " + currentPageDefinition.getLogicalPageRect());
+
+    }
+
+    if (this.currentPageDefinition.isLandscapeFormat()) {
+
+      gen.writeCommand("&l1O");
+
+    }
+
+ else {
+
+      gen.writeCommand("&l0O");
+
+    }
+
+    gen.selectPageSize(this.currentPageDefinition.getSelector());
+
+    gen.clearHorizontalMargins();
+
+    gen.setTopMargin(0);
+
+  }
+
+}
+
+Location: PCLDocumentHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override public void setDefaultFontInfo(FontInfo fontInfo){
+
+  FontInfo fi=Java2DUtil.buildDefaultJava2DBasedFontInfo(fontInfo,getUserAgent());
+
+  setFontInfo(fi);
+
+}
+

@@ -1,0 +1,174 @@
+Location: TestLocalizationWithLinuxTaskController.java
+
+Content: 
+
+@Override protected void checkJobLocalization() throws IOException {
+
+  String expectedDirPerms=taskTrackerUserName.equals(task.getUser()) ? "drwxrws---" : "dr-xrws---";
+
+  String expectedFilePerms=taskTrackerUserName.equals(task.getUser()) ? "-rwxrwx---" : "-r-xrwx---";
+
+  for (  String localDir : trackerFConf.getStrings(MRConfig.LOCAL_DIR)) {
+
+    File jobDir=new File(localDir,TaskTracker.getLocalJobDir(task.getUser(),jobId.toString()));
+
+    checkFilePermissions(jobDir.getAbsolutePath(),expectedDirPerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  }
+
+  List<Path> dirs=new ArrayList<Path>();
+
+  Path jarsDir=lDirAlloc.getLocalPathToRead(TaskTracker.getJobJarsDir(task.getUser(),jobId.toString()),trackerFConf);
+
+  dirs.add(jarsDir);
+
+  dirs.add(new Path(jarsDir,"lib"));
+
+  for (  Path dir : dirs) {
+
+    checkFilePermissions(dir.toUri().getPath(),expectedDirPerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  }
+
+  Path jobWorkDir=lDirAlloc.getLocalPathToRead(TaskTracker.getJobWorkDir(task.getUser(),jobId.toString()),trackerFConf);
+
+  checkFilePermissions(jobWorkDir.toUri().getPath(),"drwxrws---",task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  List<Path> files=new ArrayList<Path>();
+
+  files.add(lDirAlloc.getLocalPathToRead(TaskTracker.getLocalJobConfFile(task.getUser(),jobId.toString()),trackerFConf));
+
+  files.add(lDirAlloc.getLocalPathToRead(TaskTracker.getJobJarFile(task.getUser(),jobId.toString()),trackerFConf));
+
+  files.add(new Path(jarsDir,"lib" + Path.SEPARATOR + "lib1.jar"));
+
+  files.add(new Path(jarsDir,"lib" + Path.SEPARATOR + "lib2.jar"));
+
+  for (  Path file : files) {
+
+    checkFilePermissions(file.toUri().getPath(),expectedFilePerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  }
+
+  File jobLogDir=TaskLog.getJobDir(jobId);
+
+  checkFilePermissions(jobLogDir.toString(),expectedDirPerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  checkFilePermissions(jobLogDir.toString() + Path.SEPARATOR + TaskTracker.jobACLsFile,expectedFilePerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  validateJobACLsFileContent();
+
+}
+
+Location: TestLocalizationWithLinuxTaskController.java
+
+Content: 
+
+@Override protected void checkTaskLocalization() throws IOException {
+
+  List<Path> dirs=new ArrayList<Path>();
+
+  dirs.add(lDirAlloc.getLocalPathToRead(TaskTracker.getLocalTaskDir(task.getUser(),jobId.toString(),taskId.toString(),task.isTaskCleanupTask()),trackerFConf));
+
+  dirs.add(attemptWorkDir);
+
+  dirs.add(new Path(attemptWorkDir,"tmp"));
+
+  dirs.add(new Path(attemptLogFiles[1].getParentFile().getAbsolutePath()));
+
+  for (  Path dir : dirs) {
+
+    checkFilePermissions(dir.toUri().getPath(),"drwxrws---",task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  }
+
+  List<Path> files=new ArrayList<Path>();
+
+  files.add(lDirAlloc.getLocalPathToRead(TaskTracker.getTaskConfFile(task.getUser(),task.getJobID().toString(),task.getTaskID().toString(),task.isTaskCleanupTask()),trackerFConf));
+
+  for (  Path file : files) {
+
+    checkFilePermissions(file.toUri().getPath(),"-rwxrwx---",task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  }
+
+}
+
+Location: TestLocalizationWithLinuxTaskController.java
+
+Content: 
+
+@Override protected void checkUserLocalization() throws IOException {
+
+  for (  String dir : localDirs) {
+
+    File localDir=new File(dir);
+
+    assertTrue(MRConfig.LOCAL_DIR + localDir + " isn'task created!",localDir.exists());
+
+    File taskTrackerSubDir=new File(localDir,TaskTracker.SUBDIR);
+
+    assertTrue("taskTracker sub-dir in the local-dir " + localDir + "is not created!",taskTrackerSubDir.exists());
+
+    String expectedDirPerms=taskTrackerUserName.equals(task.getUser()) ? "drwxrws---" : "dr-xrws---";
+
+    File userDir=new File(taskTrackerSubDir,task.getUser());
+
+    assertTrue("user-dir in taskTrackerSubdir " + taskTrackerSubDir + "is not created!",userDir.exists());
+
+    checkFilePermissions(userDir.getAbsolutePath(),expectedDirPerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+    File jobCache=new File(userDir,TaskTracker.JOBCACHE);
+
+    assertTrue("jobcache in the userDir " + userDir + " isn't created!",jobCache.exists());
+
+    checkFilePermissions(jobCache.getAbsolutePath(),expectedDirPerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+    File distributedCacheDir=new File(localDir,TaskTracker.getPrivateDistributedCacheDir(task.getUser()));
+
+    assertTrue("distributed cache dir " + distributedCacheDir + " doesn't exists!",distributedCacheDir.exists());
+
+    checkFilePermissions(distributedCacheDir.getAbsolutePath(),expectedDirPerms,task.getUser(),ClusterWithLinuxTaskController.taskTrackerSpecialGroup);
+
+  }
+
+}
+
+Location: TestLocalizationWithLinuxTaskController.java
+
+Content: 
+
+protected TaskController createTaskController(){
+
+  return new MyLinuxTaskController();
+
+}
+
+Location: TestLocalizationWithLinuxTaskController.java
+
+Content: 
+
+protected UserGroupInformation getJobOwner(){
+
+  String ugi=System.getProperty(ClusterWithLinuxTaskController.TASKCONTROLLER_UGI);
+
+  String[] splits=ugi.split(",");
+
+  return UserGroupInformation.createUserForTesting(splits[0],new String[]{splits[1]});
+
+}
+
+Location: TestLocalizationWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * @InheritDoc 
+
+ */
+
+@Override public void testTaskControllerSetup(){
+
+}
+

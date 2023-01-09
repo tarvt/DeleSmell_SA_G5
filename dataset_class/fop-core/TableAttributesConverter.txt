@@ -1,0 +1,316 @@
+Location: TableAttributesConverter.java
+
+Content: 
+
+/** 
+
+ * Converts cell attributes to rtf attributes.
+
+ * @param fobj FObj whose properties are to be converted
+
+ * @return All valid rtf attributes together
+
+ * @throws ConverterException On conversion error
+
+ */
+
+static RtfAttributes convertCellAttributes(TableCell fobj) throws FOPException {
+
+  FOPRtfAttributes attrib=new FOPRtfAttributes();
+
+  CommonBorderPaddingBackground border=fobj.getCommonBorderPaddingBackground();
+
+  Color color=border.backgroundColor;
+
+  if (color == null) {
+
+    CommonBorderPaddingBackground brd=null;
+
+    if (fobj.getParent() instanceof TableRow) {
+
+      TableRow parentRow=(TableRow)fobj.getParent();
+
+      brd=parentRow.getCommonBorderPaddingBackground();
+
+      color=brd.backgroundColor;
+
+    }
+
+ else     if (fobj.getParent() instanceof TableHeader) {
+
+      TableHeader parentHeader=(TableHeader)fobj.getParent();
+
+      brd=parentHeader.getCommonBorderPaddingBackground();
+
+      color=brd.backgroundColor;
+
+    }
+
+    if (color == null && fobj.getParent() != null && fobj.getParent().getParent() != null && fobj.getParent().getParent().getParent() instanceof Table) {
+
+      Table table=(Table)fobj.getParent().getParent().getParent();
+
+      brd=table.getCommonBorderPaddingBackground();
+
+      color=brd.backgroundColor;
+
+    }
+
+  }
+
+  if ((color != null) && (color.getAlpha() != 0 || color.getRed() != 0 || color.getGreen() != 0 || color.getBlue() != 0)) {
+
+    attrib.set(ITableAttributes.CELL_COLOR_BACKGROUND,color);
+
+  }
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.BEFORE,attrib,ITableAttributes.CELL_BORDER_TOP);
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.AFTER,attrib,ITableAttributes.CELL_BORDER_BOTTOM);
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.START,attrib,ITableAttributes.CELL_BORDER_LEFT);
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.END,attrib,ITableAttributes.CELL_BORDER_RIGHT);
+
+  int padding;
+
+  boolean reproduceMSWordBug=true;
+
+  if (reproduceMSWordBug) {
+
+    padding=border.getPaddingStart(false,null);
+
+    if (padding != 0) {
+
+      attrib.setTwips(ITableAttributes.ATTR_CELL_PADDING_TOP,padding);
+
+      attrib.set(ITableAttributes.ATTR_CELL_U_PADDING_TOP,3);
+
+    }
+
+    padding=border.getPaddingBefore(false,null);
+
+    if (padding != 0) {
+
+      attrib.setTwips(ITableAttributes.ATTR_CELL_PADDING_LEFT,padding);
+
+      attrib.set(ITableAttributes.ATTR_CELL_U_PADDING_LEFT,3);
+
+    }
+
+  }
+
+ else {
+
+    padding=border.getPaddingStart(false,null);
+
+    if (padding != 0) {
+
+      attrib.setTwips(ITableAttributes.ATTR_CELL_PADDING_LEFT,padding);
+
+      attrib.set(ITableAttributes.ATTR_CELL_U_PADDING_LEFT,3);
+
+    }
+
+    padding=border.getPaddingBefore(false,null);
+
+    if (padding != 0) {
+
+      attrib.setTwips(ITableAttributes.ATTR_CELL_PADDING_TOP,padding);
+
+      attrib.set(ITableAttributes.ATTR_CELL_U_PADDING_TOP,3);
+
+    }
+
+  }
+
+  padding=border.getPaddingEnd(false,null);
+
+  if (padding != 0) {
+
+    attrib.setTwips(ITableAttributes.ATTR_CELL_PADDING_RIGHT,padding);
+
+    attrib.set(ITableAttributes.ATTR_CELL_U_PADDING_RIGHT,3);
+
+  }
+
+  padding=border.getPaddingAfter(false,null);
+
+  if (padding != 0) {
+
+    attrib.setTwips(ITableAttributes.ATTR_CELL_PADDING_BOTTOM,padding);
+
+    attrib.set(ITableAttributes.ATTR_CELL_U_PADDING_BOTTOM,3);
+
+  }
+
+  int n=fobj.getNumberColumnsSpanned();
+
+  if (n > 1) {
+
+    attrib.set(ITableAttributes.COLUMN_SPAN,n);
+
+  }
+
+switch (fobj.getDisplayAlign()) {
+
+case Constants.EN_BEFORE:
+
+    attrib.set(ITableAttributes.ATTR_CELL_VERT_ALIGN_TOP);
+
+  break;
+
+case Constants.EN_CENTER:
+
+attrib.set(ITableAttributes.ATTR_CELL_VERT_ALIGN_CENTER);
+
+break;
+
+case Constants.EN_AFTER:
+
+attrib.set(ITableAttributes.ATTR_CELL_VERT_ALIGN_BOTTOM);
+
+break;
+
+default :
+
+}
+
+return attrib;
+
+}
+
+Location: TableAttributesConverter.java
+
+Content: 
+
+/** 
+
+ * Converts table and row attributes to rtf attributes.
+
+ * @param fobj FObj to be converted
+
+ * @return All valid rtf attributes together
+
+ * @throws ConverterException On converion error
+
+ */
+
+static RtfAttributes convertRowAttributes(TableRow fobj,RtfAttributes rtfatts) throws FOPException {
+
+  RtfAttributes attrib=null;
+
+  if (rtfatts == null) {
+
+    attrib=new RtfAttributes();
+
+  }
+
+ else {
+
+    attrib=rtfatts;
+
+  }
+
+  if (fobj.getKeepTogether().getWithinPage().getEnum() == Constants.EN_ALWAYS) {
+
+    attrib.set(ITableAttributes.ROW_KEEP_TOGETHER);
+
+  }
+
+  if (fobj.getKeepWithNext().getWithinPage().getEnum() == Constants.EN_ALWAYS) {
+
+    attrib.set(ITableAttributes.ROW_KEEP_WITH_NEXT);
+
+  }
+
+  if (fobj.getKeepWithPrevious().getWithinPage().getEnum() == Constants.EN_ALWAYS) {
+
+    attrib.set(ITableAttributes.ROW_KEEP_WITH_PREVIOUS);
+
+  }
+
+  if (fobj.getHeight().getEnum() != Constants.EN_AUTO) {
+
+    attrib.set(ITableAttributes.ROW_HEIGHT,fobj.getHeight().getValue() / (1000 / 20));
+
+  }
+
+  CommonBorderPaddingBackground border=fobj.getCommonBorderPaddingBackground();
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.BEFORE,attrib,ITableAttributes.CELL_BORDER_TOP);
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.AFTER,attrib,ITableAttributes.CELL_BORDER_BOTTOM);
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.START,attrib,ITableAttributes.CELL_BORDER_LEFT);
+
+  BorderAttributesConverter.makeBorder(border,CommonBorderPaddingBackground.END,attrib,ITableAttributes.CELL_BORDER_RIGHT);
+
+  return attrib;
+
+}
+
+Location: TableAttributesConverter.java
+
+Content: 
+
+/** 
+
+ * Converts table-only attributes to rtf attributes.
+
+ * @param fobj the table for which the attributes are converted
+
+ * @return All valid rtf attributes together
+
+ * @throws ConverterException On convertion error
+
+ */
+
+static RtfAttributes convertTableAttributes(Table fobj) throws FOPException {
+
+  FOPRtfAttributes attrib=new FOPRtfAttributes();
+
+  attrib.setTwips(ITableAttributes.ATTR_ROW_LEFT_INDENT,fobj.getCommonMarginBlock().marginLeft);
+
+  return attrib;
+
+}
+
+Location: TableAttributesConverter.java
+
+Content: 
+
+/** 
+
+ * Converts table-only attributes to rtf attributes.
+
+ * @param part the table part for which the attributes are converted
+
+ * @return All valid rtf attributes together
+
+ * @throws ConverterException On convertion error
+
+ */
+
+static RtfAttributes convertTablePartAttributes(TablePart part) throws FOPException {
+
+  FOPRtfAttributes attrib=new FOPRtfAttributes();
+
+  return attrib;
+
+}
+
+Location: TableAttributesConverter.java
+
+Content: 
+
+/** 
+
+ * Constructor is private, because it's just a utility class.
+
+ */
+
+private TableAttributesConverter(){
+
+}
+

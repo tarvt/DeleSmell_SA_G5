@@ -1,0 +1,698 @@
+Location: RequestCorrelator.java
+
+Content: 
+
+public boolean asyncDispatching(){
+
+  return async_dispatching;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public RequestCorrelator asyncDispatching(boolean flag){
+
+  async_dispatching=flag;
+
+  return this;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+protected void dispatch(final Message msg,final Header hdr){
+
+switch (hdr.type) {
+
+case Header.REQ:
+
+    handleRequest(msg,hdr);
+
+  break;
+
+case Header.RSP:
+
+case Header.EXC_RSP:
+
+Request req=requests.get(hdr.req_id);
+
+if (req != null) handleResponse(req,msg.src(),msg.getRawBuffer(),msg.getOffset(),msg.getLength(),hdr.type == Header.EXC_RSP);
+
+break;
+
+default :
+
+log.error(Util.getMessage("HeaderSTypeIsNeitherREQNorRSP"));
+
+break;
+
+}
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * Used to signal that a certain request may be garbage collected as all responses have been received.
+
+ */
+
+public void done(long id){
+
+  removeEntry(id);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public Marshaller getMarshaller(){
+
+  return marshaller;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * Handle a request msg for this correlator 
+
+ */
+
+protected void handleRequest(Message req,Header hdr){
+
+  Object retval;
+
+  boolean threw_exception=false;
+
+  if (log.isTraceEnabled())   log.trace("calling (%s) with request %d",request_handler != null ? request_handler.getClass().getName() : "null",hdr.req_id);
+
+  if (async_dispatching && request_handler != null) {
+
+    Response rsp=hdr.rspExpected() ? new ResponseImpl(req,hdr.req_id) : null;
+
+    try {
+
+      request_handler.handle(req,rsp);
+
+    }
+
+ catch (    Throwable t) {
+
+      if (rsp != null)       rsp.send(wrap_exceptions ? new InvocationTargetException(t) : t,true);
+
+ else       log.error("%s: failed dispatching request asynchronously: %s",local_addr,t);
+
+    }
+
+    return;
+
+  }
+
+  try {
+
+    retval=request_handler.handle(req);
+
+  }
+
+ catch (  Throwable t) {
+
+    threw_exception=true;
+
+    retval=wrap_exceptions ? new InvocationTargetException(t) : t;
+
+  }
+
+  if (hdr.rspExpected())   sendReply(req,hdr.req_id,retval,threw_exception);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+protected void handleResponse(Request req,Address sender,byte[] buf,int offset,int length,boolean is_exception){
+
+  Object retval;
+
+  try {
+
+    retval=replyFromBuffer(buf,offset,length,marshaller);
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("FailedUnmarshallingBufferIntoReturnValue"),e);
+
+    retval=e;
+
+    is_exception=true;
+
+  }
+
+  req.receiveResponse(retval,sender,is_exception);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public void receiveMessageBatch(MessageBatch batch){
+
+  for (  Message msg : batch) {
+
+    Header hdr=msg.getHeader(this.corr_id);
+
+    if (hdr == null || hdr.corrId != this.corr_id)     continue;
+
+    if (hdr instanceof MultiDestinationHeader) {
+
+      Address[] exclusion_list=((MultiDestinationHeader)hdr).exclusion_list;
+
+      if (local_addr != null && Util.contains(local_addr,exclusion_list)) {
+
+        log.trace("%s: dropped req from %s as we are in the exclusion list, hdr=%s",local_addr,msg.src(),hdr);
+
+        batch.remove(msg);
+
+        continue;
+
+      }
+
+    }
+
+    dispatch(msg,hdr);
+
+  }
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * Handles a message coming from a layer below
+
+ * @return true if the message was consumed, don't pass it further up, else false
+
+ */
+
+public boolean receiveMessage(Message msg){
+
+  Header hdr=msg.getHeader(this.corr_id);
+
+  if (hdr == null || hdr.corrId != this.corr_id) {
+
+    log.trace("ID of request correlator header (%s) is different from ours (%d). Msg not accepted, passed up",hdr != null ? String.valueOf(hdr.corrId) : "null",this.corr_id);
+
+    return false;
+
+  }
+
+  if (hdr instanceof MultiDestinationHeader) {
+
+    Address[] exclusion_list=((MultiDestinationHeader)hdr).exclusion_list;
+
+    if (local_addr != null && Util.contains(local_addr,exclusion_list)) {
+
+      log.trace("%s: dropped req from %s as we are in the exclusion list, hdr=%s",local_addr,msg.src(),hdr);
+
+      return true;
+
+    }
+
+  }
+
+  dispatch(msg,hdr);
+
+  return true;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * View received: mark all responses from members that are not in new_view as suspected
+
+ */
+
+public void receiveView(View new_view){
+
+  view=new_view;
+
+  requests.values().stream().filter(Objects::nonNull).forEach(req -> req.viewChange(new_view));
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * <b>Callback</b>. <p> Called by the protocol below when a message has been received. The algorithm should test whether the message is destined for us and, if not, pass it up to the next layer. Otherwise, it should remove the header and check whether the message is a request or response. In the first case, the message will be delivered to the request handler registered (calling its  {@code handle()} method), in the second case, the corresponding response collector is looked up andthe message delivered.
+
+ * @param evt The event to be received
+
+ * @return Whether or not the event was consumed. If true, don't pass message up, else pass it up
+
+ */
+
+public boolean receive(Event evt){
+
+switch (evt.getType()) {
+
+case Event.VIEW_CHANGE:
+
+    receiveView(evt.getArg());
+
+  break;
+
+case Event.SET_LOCAL_ADDRESS:
+
+setLocalAddress(evt.getArg());
+
+break;
+
+case Event.SITE_UNREACHABLE:
+
+SiteMaster site_master=evt.getArg();
+
+String site=site_master.getSite();
+
+setSiteUnreachable(site);
+
+break;
+
+}
+
+return false;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public void registerProbeHandler(TP transport){
+
+  if (transport != null)   transport.registerProbeHandler(probe_handler);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+protected RequestCorrelator removeEntry(long id){
+
+  Request req=requests.remove(id);
+
+  if (req != null) {
+
+    long time_ns=req.start_time > 0 ? System.nanoTime() - req.start_time : 0;
+
+    if (req instanceof UnicastRequest)     rpc_stats.add(RpcStats.Type.UNICAST,((UnicastRequest)req).target,true,time_ns);
+
+ else     if (req instanceof GroupRequest) {
+
+      if (req.options != null && req.options.anycasting())       rpc_stats.addAnycast(true,time_ns,((GroupRequest)req).rsps.keySet());
+
+ else       rpc_stats.add(RpcStats.Type.MULTICAST,null,true,time_ns);
+
+    }
+
+ else     log.error("request type %s not known",req != null ? req.getClass().getSimpleName() : req);
+
+  }
+
+  return this;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+protected static Object replyFromBuffer(final byte[] buf,int offset,int length,Marshaller marshaller) throws Exception {
+
+  ByteArrayDataInputStream in=new ByteArrayDataInputStream(buf,offset,length);
+
+  return marshaller != null ? marshaller.objectFromStream(in) : Util.objectFromStream(in);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+protected static Buffer replyToBuffer(Object obj,Marshaller marshaller) throws Exception {
+
+  int estimated_size=marshaller != null ? marshaller.estimatedSize(obj) : (obj == null ? 2 : 50);
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(estimated_size,true);
+
+  if (marshaller != null)   marshaller.objectToStream(obj,out);
+
+ else   Util.objectToStream(obj,out);
+
+  return out.getBuffer();
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public RequestCorrelator(Protocol transport,RequestHandler handler,Address local_addr){
+
+  this.transport=transport;
+
+  this.local_addr=local_addr;
+
+  request_handler=handler;
+
+  start();
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * Constructor. Uses transport to send messages. If  {@code handler} is not null, all incoming requests will bedispatched to it (via  {@code handle(Message)}).
+
+ * @param corr_id Used to differentiate between different RequestCorrelators (e.g. in different protocol layers).Has to be unique if multiple request correlators are used.
+
+ * @param transport Used to send/pass up requests.
+
+ * @param handler Request handler. Method {@code handle(Message)} will be called when a request is received.
+
+ */
+
+public RequestCorrelator(short corr_id,Protocol transport,RequestHandler handler,Address local_addr){
+
+  this.corr_id=corr_id;
+
+  this.transport=transport;
+
+  this.local_addr=local_addr;
+
+  request_handler=handler;
+
+  start();
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+protected void sendReply(final Message req,final long req_id,Object reply,boolean is_exception){
+
+  Buffer rsp_buf;
+
+  try {
+
+    rsp_buf=replyToBuffer(reply,marshaller);
+
+  }
+
+ catch (  Throwable t) {
+
+    try {
+
+      rsp_buf=replyToBuffer(t,marshaller);
+
+      is_exception=true;
+
+    }
+
+ catch (    NotSerializableException not_serializable) {
+
+      if (log.isErrorEnabled())       log.error(Util.getMessage("FailedMarshallingRsp") + reply + "): not serializable");
+
+      return;
+
+    }
+
+catch (    Throwable tt) {
+
+      if (log.isErrorEnabled())       log.error(Util.getMessage("FailedMarshallingRsp") + reply + "): "+ tt);
+
+      return;
+
+    }
+
+  }
+
+  Message rsp=req.makeReply().setFlag(req.getFlags()).setBuffer(rsp_buf).clearFlag(Message.Flag.RSVP,Message.Flag.INTERNAL);
+
+  sendResponse(rsp,req_id,is_exception);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * Sends a request to a group. If no response collector is given, no responses are expected (making the call asynchronous)
+
+ * @param dest_mbrs The list of members who should receive the call. Usually a group RPCis sent via multicast, but a receiver drops the request if its own address is not in this list. Will not be used if it is null.
+
+ * @param data the data to be sent.
+
+ * @param req A request (usually the object that invokes this method). Its methods {@code receiveResponse()} and{@code suspect()} will be invoked when a message has been received or a member is suspected.
+
+ */
+
+public void sendRequest(Collection<Address> dest_mbrs,Buffer data,Request req,RequestOptions opts) throws Exception {
+
+  if (transport == null) {
+
+    log.warn("transport is not available !");
+
+    return;
+
+  }
+
+  Header hdr=opts.hasExclusionList() ? new MultiDestinationHeader(Header.REQ,0,this.corr_id,opts.exclusionList()) : new Header(Header.REQ,0,this.corr_id);
+
+  Message msg=new Message(null,data).putHeader(this.corr_id,hdr).setFlag(opts.flags()).setTransientFlag(opts.transientFlags());
+
+  if (req != null) {
+
+    long req_id=REQUEST_ID.getAndIncrement();
+
+    req.requestId(req_id);
+
+    hdr.requestId(req_id);
+
+    if (log.isTraceEnabled())     log.trace("%s: invoking multicast RPC [req-id=%d]",local_addr,req_id);
+
+    requests.putIfAbsent(req_id,req);
+
+    req.viewChange(view);
+
+    if (rpc_stats.extendedStats())     req.start_time=System.nanoTime();
+
+  }
+
+ else {
+
+    if (opts != null && opts.anycasting())     rpc_stats.addAnycast(false,0,dest_mbrs);
+
+ else     rpc_stats.add(RpcStats.Type.MULTICAST,null,false,0);
+
+  }
+
+  if (opts.anycasting()) {
+
+    if (opts.useAnycastAddresses()) {
+
+      transport.down(msg.dest(new AnycastAddress(dest_mbrs)));
+
+    }
+
+ else {
+
+      boolean first=true;
+
+      for (      Address mbr : dest_mbrs) {
+
+        Message copy=(first ? msg : msg.copy(true)).dest(mbr);
+
+        first=false;
+
+        if (!mbr.equals(local_addr) && copy.isTransientFlagSet(Message.TransientFlag.DONT_LOOPBACK))         copy.clearTransientFlag(Message.TransientFlag.DONT_LOOPBACK);
+
+        transport.down(copy);
+
+      }
+
+    }
+
+  }
+
+ else   transport.down(msg);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+protected void sendResponse(Message rsp,long req_id,boolean is_exception){
+
+  Header rsp_hdr=new Header(is_exception ? Header.EXC_RSP : Header.RSP,req_id,corr_id);
+
+  rsp.putHeader(corr_id,rsp_hdr);
+
+  if (log.isTraceEnabled())   log.trace("sending rsp for %d to %s",req_id,rsp.getDest());
+
+  transport.down(rsp);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * Sends a request to a single destination 
+
+ */
+
+public void sendUnicastRequest(Address dest,Buffer data,Request req,RequestOptions opts) throws Exception {
+
+  if (transport == null) {
+
+    if (log.isWarnEnabled())     log.warn("transport is not available !");
+
+    return;
+
+  }
+
+  Header hdr=new Header(Header.REQ,0,this.corr_id);
+
+  Message msg=new Message(dest,data).putHeader(this.corr_id,hdr).setFlag(opts.flags()).setTransientFlag(opts.transientFlags());
+
+  if (req != null) {
+
+    long req_id=REQUEST_ID.getAndIncrement();
+
+    req.requestId(req_id);
+
+    hdr.requestId(req_id);
+
+    if (log.isTraceEnabled())     log.trace("%s: invoking unicast RPC [req-id=%d] on %s",local_addr,req_id,msg.dest());
+
+    requests.putIfAbsent(req_id,req);
+
+    req.viewChange(view);
+
+    if (rpc_stats.extendedStats())     req.start_time=System.nanoTime();
+
+  }
+
+ else   rpc_stats.add(RpcStats.Type.UNICAST,dest,false,0);
+
+  transport.down(msg);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public RequestCorrelator setMarshaller(Marshaller m){
+
+  this.marshaller=m;
+
+  return this;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public void setRequestHandler(RequestHandler handler){
+
+  request_handler=handler;
+
+  start();
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+/** 
+
+ * An entire site is down; mark all requests that point to that site as unreachable (used by RELAY2) 
+
+ */
+
+public void setSiteUnreachable(String site){
+
+  requests.values().stream().filter(Objects::nonNull).forEach(req -> req.siteUnreachable(site));
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public void unregisterProbeHandler(TP transport){
+
+  if (transport != null)   transport.unregisterProbeHandler(probe_handler);
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public boolean wrapExceptions(){
+
+  return wrap_exceptions;
+
+}
+
+Location: RequestCorrelator.java
+
+Content: 
+
+public RequestCorrelator wrapExceptions(boolean flag){
+
+  wrap_exceptions=flag;
+
+  return this;
+
+}
+

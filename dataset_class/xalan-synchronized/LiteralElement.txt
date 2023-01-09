@@ -1,0 +1,432 @@
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Returns the namespace URI for which a prefix is pointing to
+
+ */
+
+private String accessedNamespace(String prefix){
+
+  if (_literalElemParent != null) {
+
+    String result=_literalElemParent.accessedNamespace(prefix);
+
+    if (result != null) {
+
+      return result;
+
+    }
+
+  }
+
+  return _accessedPrefixes != null ? (String)_accessedPrefixes.get(prefix) : null;
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Add an attribute to this element
+
+ */
+
+public void addAttribute(SyntaxTreeNode attribute){
+
+  if (_attributeElements == null) {
+
+    _attributeElements=new Vector(2);
+
+  }
+
+  _attributeElements.add(attribute);
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Return true if all attributes of this LRE have unique names.
+
+ */
+
+public boolean allAttributesUnique(){
+
+  return _allAttributesUnique;
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Return true if the instructions under the given SyntaxTreeNode can produce attribute nodes to an element. Only return false when we are sure that no attribute node is produced. Return true if we are not sure. If the flag ignoreXslAttribute is true, the direct <xsl:attribute> children of the current node are not included in the check.
+
+ */
+
+private boolean canProduceAttributeNodes(SyntaxTreeNode node,boolean ignoreXslAttribute){
+
+  Vector contents=node.getContents();
+
+  int size=contents.size();
+
+  for (int i=0; i < size; i++) {
+
+    SyntaxTreeNode child=(SyntaxTreeNode)contents.elementAt(i);
+
+    if (child instanceof Text) {
+
+      Text text=(Text)child;
+
+      if (text.isIgnore())       continue;
+
+ else       return false;
+
+    }
+
+ else     if (child instanceof LiteralElement || child instanceof ValueOf || child instanceof XslElement|| child instanceof Comment|| child instanceof Number|| child instanceof ProcessingInstruction)     return false;
+
+ else     if (child instanceof XslAttribute) {
+
+      if (ignoreXslAttribute)       continue;
+
+ else       return true;
+
+    }
+
+ else     if (child instanceof CallTemplate || child instanceof ApplyTemplates || child instanceof Copy|| child instanceof CopyOf)     return true;
+
+ else     if ((child instanceof If || child instanceof ForEach) && canProduceAttributeNodes(child,false)) {
+
+      return true;
+
+    }
+
+ else     if (child instanceof Choose) {
+
+      Vector chooseContents=child.getContents();
+
+      int num=chooseContents.size();
+
+      for (int k=0; k < num; k++) {
+
+        SyntaxTreeNode chooseChild=(SyntaxTreeNode)chooseContents.elementAt(k);
+
+        if (chooseChild instanceof When || chooseChild instanceof Otherwise) {
+
+          if (canProduceAttributeNodes(chooseChild,false))           return true;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Check whether all attributes are unique.
+
+ */
+
+private boolean checkAttributesUnique(){
+
+  boolean hasHiddenXslAttribute=canProduceAttributeNodes(this,true);
+
+  if (hasHiddenXslAttribute)   return false;
+
+  if (_attributeElements != null) {
+
+    int numAttrs=_attributeElements.size();
+
+    Hashtable attrsTable=null;
+
+    for (int i=0; i < numAttrs; i++) {
+
+      SyntaxTreeNode node=(SyntaxTreeNode)_attributeElements.elementAt(i);
+
+      if (node instanceof UseAttributeSets) {
+
+        return false;
+
+      }
+
+ else       if (node instanceof XslAttribute) {
+
+        if (attrsTable == null) {
+
+          attrsTable=new Hashtable();
+
+          for (int k=0; k < i; k++) {
+
+            SyntaxTreeNode n=(SyntaxTreeNode)_attributeElements.elementAt(k);
+
+            if (n instanceof LiteralAttribute) {
+
+              LiteralAttribute literalAttr=(LiteralAttribute)n;
+
+              attrsTable.put(literalAttr.getName(),literalAttr);
+
+            }
+
+          }
+
+        }
+
+        XslAttribute xslAttr=(XslAttribute)node;
+
+        AttributeValue attrName=xslAttr.getName();
+
+        if (attrName instanceof AttributeValueTemplate) {
+
+          return false;
+
+        }
+
+ else         if (attrName instanceof SimpleAttributeValue) {
+
+          SimpleAttributeValue simpleAttr=(SimpleAttributeValue)attrName;
+
+          String name=simpleAttr.toString();
+
+          if (name != null && attrsTable.get(name) != null)           return false;
+
+ else           if (name != null) {
+
+            attrsTable.put(name,xslAttr);
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Return the ElemDesc object for an HTML element. Return null if the output method is not HTML or this is not a valid HTML element.
+
+ */
+
+public ElemDesc getElemDesc(){
+
+  if (isHTMLOutput()) {
+
+    return ToHTMLStream.getElemDesc(_name);
+
+  }
+
+ else   return null;
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * This method starts at a given node, traverses all namespace mappings, and assembles a list of all prefixes that (for the given node) maps to _ANY_ namespace URI. Used by literal result elements to determine
+
+ */
+
+public Enumeration getNamespaceScope(SyntaxTreeNode node){
+
+  Hashtable all=new Hashtable();
+
+  while (node != null) {
+
+    Hashtable mapping=node.getPrefixMapping();
+
+    if (mapping != null) {
+
+      Enumeration prefixes=mapping.keys();
+
+      while (prefixes.hasMoreElements()) {
+
+        String prefix=(String)prefixes.nextElement();
+
+        if (!all.containsKey(prefix)) {
+
+          all.put(prefix,mapping.get(prefix));
+
+        }
+
+      }
+
+    }
+
+    node=node.getParent();
+
+  }
+
+  return (all.keys());
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Return true if the output method is html.
+
+ */
+
+private boolean isHTMLOutput(){
+
+  return getStylesheet().getOutputMethod() == Stylesheet.HTML_OUTPUT;
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Method used to keep track of what namespaces that are references by this literal element and its attributes. The output must contain a definition for each namespace, so we stuff them in a hashtable.
+
+ */
+
+public void registerNamespace(String prefix,String uri,SymbolTable stable,boolean declared){
+
+  if (_literalElemParent != null) {
+
+    final String parentUri=_literalElemParent.accessedNamespace(prefix);
+
+    if (parentUri != null && parentUri.equals(uri)) {
+
+      return;
+
+    }
+
+  }
+
+  if (_accessedPrefixes == null) {
+
+    _accessedPrefixes=new Hashtable();
+
+  }
+
+ else {
+
+    if (!declared) {
+
+      final String old=(String)_accessedPrefixes.get(prefix);
+
+      if (old != null) {
+
+        if (old.equals(uri))         return;
+
+ else         prefix=stable.generateNamespacePrefix();
+
+      }
+
+    }
+
+  }
+
+  if (!prefix.equals("xml")) {
+
+    _accessedPrefixes.put(prefix,uri);
+
+  }
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Set the first attribute of this element
+
+ */
+
+public void setFirstAttribute(SyntaxTreeNode attribute){
+
+  if (_attributeElements == null) {
+
+    _attributeElements=new Vector(2);
+
+  }
+
+  _attributeElements.insertElementAt(attribute,0);
+
+}
+
+Location: LiteralElement.java
+
+Content: 
+
+/** 
+
+ * Translates the prefix of a QName according to the rules set in the attributes of xsl:stylesheet. Also registers a QName to assure that the output element contains the necessary namespace declarations.
+
+ */
+
+private String translateQName(QName qname,SymbolTable stable){
+
+  String localname=qname.getLocalPart();
+
+  String prefix=qname.getPrefix();
+
+  if (prefix == null)   prefix=Constants.EMPTYSTRING;
+
+ else   if (prefix.equals(XMLNS_STRING))   return (XMLNS_STRING);
+
+  final String alternative=stable.lookupPrefixAlias(prefix);
+
+  if (alternative != null) {
+
+    stable.excludeNamespaces(prefix);
+
+    prefix=alternative;
+
+  }
+
+  String uri=lookupNamespace(prefix);
+
+  if (uri == null)   return (localname);
+
+  registerNamespace(prefix,uri,stable,false);
+
+  if (prefix != Constants.EMPTYSTRING)   return (prefix + ":" + localname);
+
+ else   return (localname);
+
+}
+

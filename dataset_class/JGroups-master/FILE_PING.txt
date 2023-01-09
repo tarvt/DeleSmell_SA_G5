@@ -1,0 +1,190 @@
+Location: FILE_PING.java
+
+Content: 
+
+protected static String addressToFilename(Address mbr){
+
+  String logical_name=NameCache.get(mbr);
+
+  String name=(addressAsString(mbr) + (logical_name != null ? "." + logical_name + SUFFIX : SUFFIX));
+
+  return regexp.matcher(name).replaceAll("-");
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+public String getLocation(){
+
+  return location;
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+public boolean getRemoveAllDataOnViewChange(){
+
+  return remove_all_data_on_view_change;
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+protected void handleView(View new_view,View old_view,boolean coord_changed){
+
+  if (is_coord) {
+
+    if (remove_all_data_on_view_change)     removeAll(cluster_name);
+
+ else     if (remove_old_coords_on_view_change) {
+
+      Address old_coord=old_view != null ? old_view.getCreator() : null;
+
+      if (old_coord != null)       remove(cluster_name,old_coord);
+
+    }
+
+    Address[] left=View.diff(old_view,new_view)[1];
+
+    if (coord_changed || update_store_on_view_change || left.length > 0) {
+
+      writeAll(left);
+
+      if (remove_all_data_on_view_change || remove_old_coords_on_view_change)       startInfoWriter();
+
+    }
+
+  }
+
+ else   if (coord_changed)   remove(cluster_name,local_addr);
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+@ManagedAttribute(description="Whether the InfoWriter task is running") public synchronized boolean isInfoWriterRunning(){
+
+  return info_writer != null && !info_writer.isDone();
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+protected List<PingData> read(File file) throws Exception {
+
+  return read(new FileInputStream(file));
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+public FILE_PING setLocation(String l){
+
+  this.location=l;
+
+  return this;
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+public FILE_PING setRemoveAllDataOnViewChange(boolean r){
+
+  remove_all_data_on_view_change=r;
+
+  return this;
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+protected synchronized void startInfoWriter(){
+
+  if (info_writer == null || info_writer.isDone())   info_writer=timer.scheduleWithDynamicInterval(new InfoWriter(info_writer_max_writes_after_view,info_writer_sleep_time));
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+protected synchronized void stopInfoWriter(){
+
+  if (info_writer != null)   info_writer.cancel(false);
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+/** 
+
+ * Write information about all of the member to file (only if I'm the coord) 
+
+ */
+
+protected void writeAll(){
+
+  writeAll(null);
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+protected void writeAll(Address[] excluded_mbrs){
+
+  Map<Address,PhysicalAddress> cache_contents=(Map<Address,PhysicalAddress>)down_prot.down(new Event(Event.GET_LOGICAL_PHYSICAL_MAPPINGS,true));
+
+  if (excluded_mbrs != null)   for (  Address excluded_mbr : excluded_mbrs)   cache_contents.remove(excluded_mbr);
+
+  List<PingData> list=new ArrayList<>(cache_contents.size());
+
+  for (  Map.Entry<Address,PhysicalAddress> entry : cache_contents.entrySet()) {
+
+    Address addr=entry.getKey();
+
+    if (update_store_on_view_change && (view != null && !view.containsMember(addr)))     continue;
+
+    PhysicalAddress phys_addr=entry.getValue();
+
+    PingData data=new PingData(addr,true,NameCache.get(addr),phys_addr).coord(addr.equals(local_addr));
+
+    list.add(data);
+
+  }
+
+  write(list,cluster_name);
+
+  log.trace("%s: wrote to backend store: %s",local_addr,list.stream().map(PingData::getAddress).collect(Collectors.toList()));
+
+}
+
+Location: FILE_PING.java
+
+Content: 
+
+@ManagedOperation(description="Causes the member to write its own information into the DB, replacing an existing entry") public void writeInfo(){
+
+  if (is_coord)   writeAll();
+
+}
+

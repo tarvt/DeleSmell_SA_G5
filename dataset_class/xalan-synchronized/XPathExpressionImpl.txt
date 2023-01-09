@@ -1,0 +1,502 @@
+Location: XPathExpressionImpl.java
+
+Content: 
+
+/** 
+
+ * <p> Evaluate the compiled XPath expression in the context of the specified <code>InputSource</code> and return the result as a <code>String</code>. </p> <p> This method calls  {@link #evaluate(InputSource source,QName returnType)}with a <code>returnType</code> of  {@link XPathConstants#STRING}. </p> <p> See "Evaluation of XPath Expressions" section of JAXP 1.3 spec for context item evaluation, variable, function and QName resolution and return type conversion. </p> <p> If <code>source</code> is <code>null</code>, then a <code>NullPointerException</code> is thrown. </p>
+
+ * @param source The <code>InputSource</code> of the document to evaluate over.
+
+ * @return The <code>String</code> that is the result of evaluating theexpression and converting the result to a <code>String</code>.
+
+ * @throws XPathExpressionException If the expression cannot be evaluated.
+
+ * @throws NullPointerException     If <code>source</code> is <code>null</code>.
+
+ */
+
+public String evaluate(InputSource source) throws XPathExpressionException {
+
+  return (String)this.evaluate(source,XPathConstants.STRING);
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+/** 
+
+ * <p> Evaluate the compiled XPath expression in the context of the specified <code>InputSource</code> and return the result as the specified type. </p> <p> This method builds a data model for the  {@link InputSource} and calls{@link #evaluate(Object item,QName returnType)} on the resulting documentobject. </p> <p> See "Evaluation of XPath Expressions" section of JAXP 1.3 spec for context item evaluation, variable, function and QName resolution and return type conversion. </p> <p> If <code>returnType</code> is not one of the types defined in {@link XPathConstants}, then an <code>IllegalArgumentException</code> is thrown. </p> <p> If <code>source</code> or <code>returnType</code> is <code>null</code>, then a <code>NullPointerException</code> is thrown. </p>
+
+ * @param source     The <code>InputSource</code> of the document to evaluateover.
+
+ * @param returnType The desired return type.
+
+ * @return The <code>Object</code> that is the result of evaluating theexpression and converting the result to <code>returnType</code>.
+
+ * @throws XPathExpressionException If the expression cannot be evaluated.
+
+ * @throws IllegalArgumentException If <code>returnType</code> is not one of thetypes defined in  {@link XPathConstants}.
+
+ * @throws NullPointerException     If <code>source</code> or<code>returnType</code> is <code>null</code>.
+
+ */
+
+public Object evaluate(InputSource source,QName returnType) throws XPathExpressionException {
+
+  if ((source == null) || (returnType == null)) {
+
+    String fmsg=XSLMessages.createXPATHMessage(XPATHErrorResources.ER_SOURCE_RETURN_TYPE_CANNOT_BE_NULL,null);
+
+    throw new NullPointerException(fmsg);
+
+  }
+
+  if (!isSupported(returnType)) {
+
+    String fmsg=XSLMessages.createXPATHMessage(XPATHErrorResources.ER_UNSUPPORTED_RETURN_TYPE,new Object[]{returnType.toString()});
+
+    throw new IllegalArgumentException(fmsg);
+
+  }
+
+  try {
+
+    if (dbf == null) {
+
+      dbf=DocumentBuilderFactory.newInstance();
+
+      dbf.setNamespaceAware(true);
+
+      dbf.setValidating(false);
+
+    }
+
+    db=dbf.newDocumentBuilder();
+
+    Document document=db.parse(source);
+
+    return eval(document,returnType);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new XPathExpressionException(e);
+
+  }
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+/** 
+
+ * This method provides an implementation XPathResult.evaluate according to the DOM L3 XPath Specification, Working Group Note 26 February 2004. <p> See also the <a href='http://www.w3.org/TR/2004/NOTE-DOM-Level-3-XPath-20040226'>Document Object Model (DOM) Level 3 XPath Specification</a>. </p> <p> Evaluates this XPath expression and returns a result. </p>
+
+ * @param contextNode The <code>context</code> is context node for theevaluation of this XPath expression.If the XPathEvaluator was obtained by casting the <code>Document</code> then this must be owned by the same document and must be a <code>Document</code>, <code>Element</code>, <code>Attribute</code>, <code>Text</code>, <code>CDATASection</code>, <code>Comment</code>, <code>ProcessingInstruction</code>, or <code>XPathNamespace</code> node.If the context node is a <code>Text</code> or a <code>CDATASection</code>, then the context is interpreted as the whole logical text node as seen by XPath, unless the node is empty in which case it may not serve as the XPath context.
+
+ * @param type        If a specific <code>type</code> is specified, then theresult will be coerced to return the specified type relying on XPath conversions and fail if the desired coercion is not possible. This must be one of the type codes of <code>XPathResult</code>.
+
+ * @param result      The <code>result</code> specifies a specific result objectwhich may be reused and returned by this method. If this is specified as <code>null</code>or the implementation does not reuse the specified result, a new result object will be constructed and returned.For XPath 1.0 results, this object will be of type <code>XPathResult</code>.
+
+ * @return The result of the evaluation of the XPath expression.For XPath 1.0results, this object will be of type <code>XPathResult</code>.
+
+ * @exception XPathException TYPE_ERR: Raised if the result cannot be convertedto return the specified type.
+
+ * @exception DOMException   WRONG_DOCUMENT_ERR: The Node is from a documentthat is not supported by the XPathEvaluator that created this <code>XPathExpression</code>. <br> NOT_SUPPORTED_ERR: The Node is not a type permitted as an XPath context node.
+
+ * @see org.w3c.dom.xpath.XPathExpression#evaluate(Node,short,XPathResult)
+
+ * @xsl.usage internal
+
+ */
+
+public Object evaluate(Node contextNode,short type,Object result) throws XPathException, DOMException {
+
+  if (m_doc != null) {
+
+    if ((contextNode != m_doc) && (!contextNode.getOwnerDocument().equals(m_doc))) {
+
+      String fmsg=XPATHMessages.createXPATHMessage(XPATHErrorResources.ER_WRONG_DOCUMENT,null);
+
+      throw new DOMException(DOMException.WRONG_DOCUMENT_ERR,fmsg);
+
+    }
+
+    short nodeType=contextNode.getNodeType();
+
+    if ((nodeType != Document.DOCUMENT_NODE) && (nodeType != Document.ELEMENT_NODE) && (nodeType != Document.ATTRIBUTE_NODE)&& (nodeType != Document.TEXT_NODE)&& (nodeType != Document.CDATA_SECTION_NODE)&& (nodeType != Document.COMMENT_NODE)&& (nodeType != Document.PROCESSING_INSTRUCTION_NODE)&& (nodeType != XPathNamespace.XPATH_NAMESPACE_NODE)) {
+
+      String fmsg=XPATHMessages.createXPATHMessage(XPATHErrorResources.ER_WRONG_NODETYPE,null);
+
+      throw new DOMException(DOMException.NOT_SUPPORTED_ERR,fmsg);
+
+    }
+
+  }
+
+  if (!XPathResultImpl.isValidType(type)) {
+
+    String fmsg=XPATHMessages.createXPATHMessage(XPATHErrorResources.ER_INVALID_XPATH_TYPE,new Object[]{new Integer(type)});
+
+    throw new XPathException(XPathException.TYPE_ERR,fmsg);
+
+  }
+
+  XPathContext xpathSupport=new XPathContext(false);
+
+  if (null != m_doc) {
+
+    xpathSupport.getDTMHandleFromNode(m_doc);
+
+  }
+
+  XObject xobj=null;
+
+  try {
+
+    xobj=m_xpath.execute(xpathSupport,contextNode,null);
+
+  }
+
+ catch (  TransformerException te) {
+
+    throw new XPathException(XPathException.INVALID_EXPRESSION_ERR,te.getMessageAndLocation());
+
+  }
+
+  return new XPathResultImpl(type,xobj,contextNode,m_xpath);
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+/** 
+
+ * <p> Evaluate the compiled XPath expression in the specified context and return the result as a <code>String</code>. </p> <p> This method calls  {@link #evaluate(Object item,QName returnType)} with a<code>returnType</code> of  {@link XPathConstants#STRING}. </p> <p> See "Evaluation of XPath Expressions" section of JAXP 1.3 spec for context item evaluation, variable, function and QName resolution and return type conversion. </p> <p> If a <code>null</code> value is provided for <code>item</code>, an empty document will be used for the context.
+
+ * @param item The starting context (node or node list, for example).
+
+ * @return The <code>String</code> that is the result of evaluating theexpression and converting the result to a <code>String</code>.
+
+ * @throws XPathExpressionException If the expression cannot be evaluated.
+
+ */
+
+public String evaluate(Object item) throws XPathExpressionException {
+
+  return (String)this.evaluate(item,XPathConstants.STRING);
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+/** 
+
+ * <p> Evaluate the compiled XPath expression in the specified context and return the result as the specified type. </p> <p> See "Evaluation of XPath Expressions" section of JAXP 1.3 spec for context item evaluation, variable, function and QName resolution and return type conversion. </p> <p> If <code>returnType</code> is not one of the types defined in {@link XPathConstants}, then an <code>IllegalArgumentException</code> is thrown. </p> <p> If a <code>null</code> value is provided for <code>item</code>, an empty document will be used for the context. If <code>returnType</code> is <code>null</code>, then a <code>NullPointerException</code> is thrown. </p>
+
+ * @param item       The starting context (node or node list, for example).
+
+ * @param returnType The desired return type.
+
+ * @return The <code>Object</code> that is the result of evaluating theexpression and converting the result to <code>returnType</code>.
+
+ * @throws XPathExpressionException If the expression cannot be evaluated.
+
+ * @throws IllegalArgumentException If <code>returnType</code> is not one of thetypes defined in  {@link XPathConstants}.
+
+ * @throws NullPointerException     If <code>returnType</code> is<code>null</code>.
+
+ */
+
+public Object evaluate(Object item,QName returnType) throws XPathExpressionException {
+
+  if (returnType == null) {
+
+    String fmsg=XSLMessages.createXPATHMessage(XPATHErrorResources.ER_ARG_CANNOT_BE_NULL,new Object[]{"returnType"});
+
+    throw new NullPointerException(fmsg);
+
+  }
+
+  if (!isSupported(returnType)) {
+
+    String fmsg=XSLMessages.createXPATHMessage(XPATHErrorResources.ER_UNSUPPORTED_RETURN_TYPE,new Object[]{returnType.toString()});
+
+    throw new IllegalArgumentException(fmsg);
+
+  }
+
+  try {
+
+    return eval(item,returnType);
+
+  }
+
+ catch (  java.lang.NullPointerException npe) {
+
+    throw new XPathExpressionException(npe);
+
+  }
+
+catch (  javax.xml.transform.TransformerException te) {
+
+    Throwable nestedException=te.getException();
+
+    if (nestedException instanceof javax.xml.xpath.XPathFunctionException) {
+
+      throw (javax.xml.xpath.XPathFunctionException)nestedException;
+
+    }
+
+ else {
+
+      throw new XPathExpressionException(te);
+
+    }
+
+  }
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+private XObject eval(Object contextItem) throws javax.xml.transform.TransformerException {
+
+  org.apache.xpath.XPathContext xpathSupport=null;
+
+  if (functionResolver != null) {
+
+    JAXPExtensionsProvider jep=new JAXPExtensionsProvider(functionResolver,featureSecureProcessing);
+
+    xpathSupport=new org.apache.xpath.XPathContext(jep,false);
+
+  }
+
+ else {
+
+    xpathSupport=new org.apache.xpath.XPathContext(false);
+
+  }
+
+  xpathSupport.setVarStack(new JAXPVariableStack(variableResolver));
+
+  XObject xobj=null;
+
+  Node contextNode=(Node)contextItem;
+
+  if (contextNode == null) {
+
+    contextNode=getDummyDocument();
+
+  }
+
+  xobj=xpath.execute(xpathSupport,contextNode,prefixResolver);
+
+  return xobj;
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+public Object eval(Object item,QName returnType) throws javax.xml.transform.TransformerException {
+
+  XObject resultObject=eval(item);
+
+  return getResultAsType(resultObject,returnType);
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+private static Document getDummyDocument(){
+
+  try {
+
+    if (dbf == null) {
+
+      dbf=DocumentBuilderFactory.newInstance();
+
+      dbf.setNamespaceAware(true);
+
+      dbf.setValidating(false);
+
+    }
+
+    db=dbf.newDocumentBuilder();
+
+    DOMImplementation dim=db.getDOMImplementation();
+
+    d=dim.createDocument("http://java.sun.com/jaxp/xpath","dummyroot",null);
+
+    return d;
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+  }
+
+  return null;
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+private Object getResultAsType(XObject resultObject,QName returnType) throws javax.xml.transform.TransformerException {
+
+  if (returnType.equals(XPathConstants.STRING)) {
+
+    return resultObject.str();
+
+  }
+
+  if (returnType.equals(XPathConstants.NUMBER)) {
+
+    return new Double(resultObject.num());
+
+  }
+
+  if (returnType.equals(XPathConstants.BOOLEAN)) {
+
+    return resultObject.bool() ? Boolean.TRUE : Boolean.FALSE;
+
+  }
+
+  if (returnType.equals(XPathConstants.NODESET)) {
+
+    return resultObject.nodelist();
+
+  }
+
+  if (returnType.equals(XPathConstants.NODE)) {
+
+    NodeIterator ni=resultObject.nodeset();
+
+    return ni.nextNode();
+
+  }
+
+  String fmsg=XSLMessages.createXPATHMessage(XPATHErrorResources.ER_UNSUPPORTED_RETURN_TYPE,new Object[]{returnType.toString()});
+
+  throw new IllegalArgumentException(fmsg);
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+private boolean isSupported(QName returnType){
+
+  if ((returnType.equals(XPathConstants.STRING)) || (returnType.equals(XPathConstants.NUMBER)) || (returnType.equals(XPathConstants.BOOLEAN))|| (returnType.equals(XPathConstants.NODE))|| (returnType.equals(XPathConstants.NODESET))) {
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+public void setXPath(org.apache.xpath.XPath xpath){
+
+  this.xpath=xpath;
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+/** 
+
+ * Protected constructor to prevent direct instantiation; use compile() from the context.
+
+ */
+
+protected XPathExpressionImpl(){
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+protected XPathExpressionImpl(org.apache.xpath.XPath xpath,JAXPPrefixResolver prefixResolver,XPathFunctionResolver functionResolver,XPathVariableResolver variableResolver){
+
+  this.xpath=xpath;
+
+  this.prefixResolver=prefixResolver;
+
+  this.functionResolver=functionResolver;
+
+  this.variableResolver=variableResolver;
+
+  this.featureSecureProcessing=false;
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+protected XPathExpressionImpl(org.apache.xpath.XPath xpath,JAXPPrefixResolver prefixResolver,XPathFunctionResolver functionResolver,XPathVariableResolver variableResolver,boolean featureSecureProcessing){
+
+  this.xpath=xpath;
+
+  this.prefixResolver=prefixResolver;
+
+  this.functionResolver=functionResolver;
+
+  this.variableResolver=variableResolver;
+
+  this.featureSecureProcessing=featureSecureProcessing;
+
+}
+
+Location: XPathExpressionImpl.java
+
+Content: 
+
+/** 
+
+ * Constructor for XPathExpressionImpl.
+
+ * @param xpath The wrapped XPath object.
+
+ * @param doc   The document to be searched, to parallel the case where'' theXPathEvaluator is obtained by casting the document.
+
+ */
+
+XPathExpressionImpl(XPath xpath,Document doc){
+
+  m_xpath=xpath;
+
+  m_doc=doc;
+
+}
+

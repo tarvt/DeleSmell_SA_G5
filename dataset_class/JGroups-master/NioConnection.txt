@@ -1,0 +1,370 @@
+Location: NioConnection.java
+
+Content: 
+
+public synchronized void clearSelectionKey(int interest_ops){
+
+  if (key == null)   return;
+
+  key.interestOps(key.interestOps() & ~interest_ops);
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+public NioConnection connected(boolean c){
+
+  connected=c;
+
+  return this;
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+protected static byte[] getBuffer(final ByteBuffer buf){
+
+  byte[] retval=new byte[buf.limit()];
+
+  buf.get(retval,buf.position(),buf.limit());
+
+  return retval;
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+public SelectionKey key(){
+
+  return key;
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+public NioConnection key(SelectionKey k){
+
+  this.key=k;
+
+  return this;
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+protected static ByteBuffer makeLengthBuffer(ByteBuffer buf){
+
+  ByteBuffer buffer=ByteBuffer.allocate(Global.INT_SIZE).putInt(buf.remaining());
+
+  ((java.nio.Buffer)buffer).clear();
+
+  return buffer;
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+/** 
+
+ * Creates a connection stub and binds it, use  {@link #connect(Address)} to connect 
+
+ */
+
+public NioConnection(Address peer_addr,NioBaseServer server) throws Exception {
+
+  this.server=server;
+
+  if (peer_addr == null)   throw new IllegalArgumentException("Invalid parameter peer_addr=" + peer_addr);
+
+  this.peer_addr=peer_addr;
+
+  send_buf=new Buffers(server.maxSendBuffers() * 2);
+
+  channel=server.socketFactory().createSocketChannel("jgroups.nio.client");
+
+  channel.configureBlocking(false);
+
+  setSocketParameters(channel.socket());
+
+  last_access=getTimestamp();
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+public NioConnection(SocketChannel channel,NioBaseServer server) throws Exception {
+
+  this.channel=channel;
+
+  this.server=server;
+
+  setSocketParameters(this.channel.socket());
+
+  channel.configureBlocking(false);
+
+  this.connected=channel.isConnected();
+
+  send_buf=new Buffers(server.maxSendBuffers() * 2);
+
+  this.peer_addr=server.usePeerConnections() ? null : new IpAddress((InetSocketAddress)channel.getRemoteAddress());
+
+  last_access=getTimestamp();
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+public boolean readerRunning(){
+
+  return this.reader.isRunning();
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+protected Address readPeerAddress() throws Exception {
+
+  while (recv_buf.read(channel)) {
+
+    int current_position=recv_buf.position() - 1;
+
+    ByteBuffer buf=recv_buf.get(current_position);
+
+    if (buf == null)     return null;
+
+    ((java.nio.Buffer)buf).flip();
+
+switch (current_position) {
+
+case 0:
+
+      byte[] cookie_buf=getBuffer(buf);
+
+    if (!Arrays.equals(cookie,cookie_buf))     throw new IllegalStateException("BaseServer.NioConnection.readPeerAddress(): cookie read by " + server.localAddress() + " does not match own cookie; terminating connection");
+
+  recv_buf.add(ByteBuffer.allocate(Global.SHORT_SIZE));
+
+break;
+
+case 1:
+
+short version=buf.getShort();
+
+if (!Version.isBinaryCompatible(version)) throw new IOException("packet from " + channel.getRemoteAddress() + " has different version ("+ Version.print(version)+ ") from ours ("+ Version.printVersion()+ "); discarding it");
+
+recv_buf.add(ByteBuffer.allocate(Global.SHORT_SIZE));
+
+break;
+
+case 2:
+
+short addr_len=buf.getShort();
+
+recv_buf.add(ByteBuffer.allocate(addr_len));
+
+break;
+
+case 3:
+
+byte[] addr_buf=getBuffer(buf);
+
+ByteArrayDataInputStream in=new ByteArrayDataInputStream(addr_buf);
+
+IpAddress addr=new IpAddress();
+
+addr.readFrom(in);
+
+return addr;
+
+default :
+
+throw new IllegalStateException(String.format("position %d is invalid",recv_buf.position()));
+
+}
+
+}
+
+return null;
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+/** 
+
+ * Read the length first, then the actual data. This method is not reentrant and access must be synchronized 
+
+ */
+
+public void receive() throws Exception {
+
+  reader.receive();
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+public synchronized void registerSelectionKey(int interest_ops){
+
+  if (key == null)   return;
+
+  key.interestOps(key.interestOps() | interest_ops);
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+public void send() throws Exception {
+
+  send_lock.lock();
+
+  try {
+
+    boolean success=send_buf.write(channel);
+
+    writeInterest(!success);
+
+    if (success)     updateLastAccessed();
+
+    if (!success) {
+
+      if (copy_on_partial_write)       send_buf.copy();
+
+      partial_writes++;
+
+    }
+
+  }
+
+  finally {
+
+    send_lock.unlock();
+
+  }
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+protected void send(ByteBuffer buf,boolean send_length) throws Exception {
+
+  send_lock.lock();
+
+  try {
+
+    if (send_length)     send_buf.add(makeLengthBuffer(buf),buf);
+
+ else     send_buf.add(buf);
+
+    boolean success=send_buf.write(channel);
+
+    writeInterest(!success);
+
+    if (success)     updateLastAccessed();
+
+    if (!success) {
+
+      if (copy_on_partial_write)       send_buf.copy();
+
+      partial_writes++;
+
+    }
+
+  }
+
+  finally {
+
+    send_lock.unlock();
+
+  }
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+protected void writeInterest(boolean register){
+
+  if (register) {
+
+    if (!write_interest_set) {
+
+      write_interest_set=true;
+
+      registerSelectionKey(SelectionKey.OP_WRITE);
+
+    }
+
+  }
+
+ else {
+
+    if (write_interest_set) {
+
+      write_interest_set=false;
+
+      clearSelectionKey(SelectionKey.OP_WRITE);
+
+    }
+
+  }
+
+}
+
+Location: NioConnection.java
+
+Content: 
+
+protected boolean _receive(boolean update) throws Exception {
+
+  ByteBuffer msg;
+
+  Receiver receiver=server.receiver();
+
+  if (peer_addr == null && server.usePeerConnections() && (peer_addr=readPeerAddress()) != null) {
+
+    recv_buf=new Buffers(2).add(ByteBuffer.allocate(Global.INT_SIZE),null);
+
+    server.addConnection(peer_addr,this);
+
+    return true;
+
+  }
+
+  if ((msg=recv_buf.readLengthAndData(channel)) == null)   return false;
+
+  if (receiver != null)   receiver.receive(peer_addr,msg);
+
+  if (update)   updateLastAccessed();
+
+  return true;
+
+}
+

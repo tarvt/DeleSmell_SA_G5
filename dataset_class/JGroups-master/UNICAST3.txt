@@ -1,0 +1,1348 @@
+Location: UNICAST3.java
+
+Content: 
+
+@SafeVarargs protected static int accumulate(ToIntFunction<Table> func,Collection<? extends Entry>... entries){
+
+  return Stream.of(entries).flatMap(Collection::stream).map(entry -> entry.msgs).filter(Objects::nonNull).mapToInt(func).sum();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Removes and resets from connection table (which is already locked). Returns true if member was found, otherwise false. This method is public only so it can be invoked by unit testing, but should not be used !
+
+ */
+
+public void closeConnection(Address mbr){
+
+  closeSendConnection(mbr);
+
+  closeReceiveConnection(mbr);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedOperation(description="Closes connections that have been idle for more than conn_expiry_timeout ms") public void closeIdleConnections(){
+
+  for (  Map.Entry<Address,SenderEntry> entry : send_table.entrySet()) {
+
+    SenderEntry val=entry.getValue();
+
+    if (val.state() != State.OPEN)     continue;
+
+    long age=val.age();
+
+    if (age >= conn_expiry_timeout) {
+
+      log.debug("%s: closing expired connection for %s (%d ms old) in send_table",local_addr,entry.getKey(),age);
+
+      closeSendConnection(entry.getKey());
+
+    }
+
+  }
+
+  for (  Map.Entry<Address,ReceiverEntry> entry : recv_table.entrySet()) {
+
+    ReceiverEntry val=entry.getValue();
+
+    if (val.state() != State.OPEN)     continue;
+
+    long age=val.age();
+
+    if (age >= conn_expiry_timeout) {
+
+      log.debug("%s: closing expired connection for %s (%d ms old) in recv_table",local_addr,entry.getKey(),age);
+
+      closeReceiveConnection(entry.getKey());
+
+    }
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public void closeReceiveConnection(Address mbr){
+
+  ReceiverEntry entry=recv_table.get(mbr);
+
+  if (entry != null)   entry.state(State.CLOSING);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public void closeSendConnection(Address mbr){
+
+  SenderEntry entry=send_table.get(mbr);
+
+  if (entry != null)   entry.state(State.CLOSING);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Compares 2 timestamps, handles numeric overflow 
+
+ */
+
+protected static int compare(int ts1,int ts2){
+
+  int diff=ts1 - ts2;
+
+  return Integer.compare(diff,0);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected ReceiverEntry createReceiverEntry(Address sender,long seqno,short conn_id){
+
+  Table<Message> table=new Table<>(xmit_table_num_rows,xmit_table_msgs_per_row,seqno - 1,xmit_table_resize_factor,xmit_table_max_compaction_time);
+
+  ReceiverEntry entry=new ReceiverEntry(table,conn_id);
+
+  ReceiverEntry entry2=recv_table.putIfAbsent(sender,entry);
+
+  if (entry2 != null)   return entry2;
+
+  log.trace("%s: created receiver window for %s at seqno=#%d for conn-id=%d",local_addr,sender,seqno,conn_id);
+
+  return entry;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void deliverMessage(final Message msg,final Address sender,final long seqno){
+
+  if (is_trace)   log.trace("%s: delivering %s#%s",local_addr,sender,seqno);
+
+  try {
+
+    up_prot.up(msg);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.warn(Util.getMessage("FailedToDeliverMsg"),local_addr,msg.isFlagSet(Message.Flag.OOB) ? "OOB message" : "message",msg,t);
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Called by AgeOutCache, to removed expired connections
+
+ * @param key
+
+ */
+
+public void expired(Address key){
+
+  if (key != null) {
+
+    log.debug("%s: removing expired connection to %s",local_addr,key);
+
+    closeConnection(key);
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public int getAckThreshold(){
+
+  return ack_threshold;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public AgeOutCache<Address> getAgeOutCache(){
+
+  return cache;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute public int getAgeOutCacheSize(){
+
+  return cache != null ? cache.size() : 0;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute(description="Average batch size of messages removed from the table and delivered to the application") public String getAvgBatchDeliverySize(){
+
+  return avg_delivery_batch_size != null ? avg_delivery_batch_size.toString() : "n/a";
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public long getMaxRetransmitTime(){
+
+  return max_retransmit_time;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected synchronized short getNewConnectionId(){
+
+  short retval=last_conn_id;
+
+  if (last_conn_id >= Short.MAX_VALUE || last_conn_id < 0)   last_conn_id=0;
+
+ else   last_conn_id++;
+
+  return retval;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute public long getNumAcksReceived(){
+
+  return num_acks_received;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute public long getNumAcksSent(){
+
+  return num_acks_sent;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute public long getNumMessagesReceived(){
+
+  return num_msgs_received;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute(description="Returns the number of incoming (receive) connections") public int getNumReceiveConnections(){
+
+  return recv_table.size();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute(description="Returns the number of outgoing (send) connections") public int getNumSendConnections(){
+
+  return send_table.size();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * The number of messages in all Entry.sent_msgs tables (haven't received an ACK yet) 
+
+ */
+
+@ManagedAttribute public int getNumUnackedMessages(){
+
+  return accumulate(Table::size,send_table.values());
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute public long getNumXmits(){
+
+  return num_xmits;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected ReceiverEntry getReceiverEntry(Address sender,long seqno,boolean first,short conn_id){
+
+  ReceiverEntry entry=recv_table.get(sender);
+
+  if (entry != null && entry.connId() == conn_id)   return entry;
+
+  recv_table_lock.lock();
+
+  try {
+
+    entry=recv_table.get(sender);
+
+    if (first) {
+
+      if (entry == null) {
+
+        entry=createReceiverEntry(sender,seqno,conn_id);
+
+      }
+
+ else {
+
+        if (conn_id != entry.connId()) {
+
+          log.trace("%s: conn_id=%d != %d; resetting receiver window",local_addr,conn_id,entry.connId());
+
+          recv_table.remove(sender);
+
+          entry=createReceiverEntry(sender,seqno,conn_id);
+
+        }
+
+      }
+
+    }
+
+ else {
+
+      if (entry == null || entry.connId() != conn_id) {
+
+        recv_table_lock.unlock();
+
+        sendRequestForFirstSeqno(sender);
+
+        return null;
+
+      }
+
+    }
+
+    return entry;
+
+  }
+
+  finally {
+
+    if (recv_table_lock.isHeldByCurrentThread())     recv_table_lock.unlock();
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected SenderEntry getSenderEntry(Address dst){
+
+  SenderEntry entry=send_table.get(dst);
+
+  if (entry == null || entry.state() == State.CLOSED) {
+
+    if (entry != null)     send_table.remove(dst,entry);
+
+    entry=new SenderEntry(getNewConnectionId());
+
+    SenderEntry existing=send_table.putIfAbsent(dst,entry);
+
+    if (existing != null)     entry=existing;
+
+ else {
+
+      log.trace("%s: created sender window for %s (conn-id=%s)",local_addr,dst,entry.connId());
+
+      if (cache != null && !members.contains(dst))       cache.add(dst);
+
+    }
+
+  }
+
+  if (entry.state() == State.CLOSING)   entry.state(State.OPEN);
+
+  return entry;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute(description="Next seqno issued by the timestamper") public int getTimestamper(){
+
+  return timestamper.get();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute(description="Total number of deliverable messages in all receive windows") public int getXmitTableDeliverableMessages(){
+
+  return accumulate(Table::getNumDeliverable,recv_table.values());
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public int getXmitTableMsgsPerRow(){
+
+  return xmit_table_msgs_per_row;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public int getXmitTableNumRows(){
+
+  return xmit_table_num_rows;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedAttribute(description="Total number of undelivered messages in all receive windows") public int getXmitTableUndeliveredMessages(){
+
+  return accumulate(Table::size,recv_table.values());
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Add the ACK to hashtable.sender.sent_msgs 
+
+ */
+
+protected void handleAckReceived(Address sender,long seqno,short conn_id,int timestamp){
+
+  if (is_trace)   log.trace("%s <-- %s: ACK(#%d, conn-id=%d, ts=%d)",local_addr,sender,seqno,conn_id,timestamp);
+
+  SenderEntry entry=send_table.get(sender);
+
+  if (entry != null && entry.connId() != conn_id) {
+
+    log.trace("%s: my conn_id (%d) != received conn_id (%d); discarding ACK",local_addr,entry.connId(),conn_id);
+
+    return;
+
+  }
+
+  Table<Message> win=entry != null ? entry.msgs : null;
+
+  if (win != null && entry.updateLastTimestamp(timestamp)) {
+
+    win.purge(seqno,true);
+
+    num_acks_received++;
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void handleBatchFromSelf(MessageBatch batch,Entry entry){
+
+  List<LongTuple<Message>> list=new ArrayList<>(batch.size());
+
+  for (Iterator<Message> it=batch.iterator(); it.hasNext(); ) {
+
+    Message msg=it.next();
+
+    UnicastHeader3 hdr;
+
+    if (msg == null || msg.isFlagSet(Message.Flag.NO_RELIABILITY) || (hdr=msg.getHeader(id)) == null)     continue;
+
+    it.remove();
+
+    if (hdr.type != UnicastHeader3.DATA) {
+
+      handleUpEvent(msg.getSrc(),msg,hdr);
+
+      continue;
+
+    }
+
+    if (entry.conn_id != hdr.conn_id) {
+
+      it.remove();
+
+      continue;
+
+    }
+
+    list.add(new LongTuple<>(hdr.seqno(),msg));
+
+  }
+
+  if (!list.isEmpty()) {
+
+    if (is_trace)     log.trace("%s <-- %s: DATA(%s)",local_addr,batch.sender(),printMessageList(list));
+
+    int len=list.size();
+
+    Table<Message> win=entry.msgs;
+
+    update(entry,len);
+
+    if (batch.mode() == MessageBatch.Mode.OOB) {
+
+      MessageBatch oob_batch=new MessageBatch(local_addr,batch.sender(),batch.clusterName(),batch.multicast(),MessageBatch.Mode.OOB,len);
+
+      for (      LongTuple<Message> tuple : list) {
+
+        long seq=tuple.getVal1();
+
+        Message msg=win.get(seq);
+
+        if (msg != null && msg.isFlagSet(Message.Flag.OOB) && msg.setTransientFlagIfAbsent(Message.TransientFlag.OOB_DELIVERED))         oob_batch.add(msg);
+
+      }
+
+      deliverBatch(oob_batch);
+
+    }
+
+    removeAndDeliver(win,batch.sender());
+
+  }
+
+  if (!batch.isEmpty())   up_prot.up(batch);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void handleBatchReceived(final ReceiverEntry entry,Address sender,List<LongTuple<Message>> msgs,boolean oob){
+
+  if (is_trace)   log.trace("%s <-- %s: DATA(%s)",local_addr,sender,printMessageList(msgs));
+
+  int batch_size=msgs.size();
+
+  Table<Message> win=entry.msgs;
+
+  boolean added=win.add(msgs,oob,oob ? DUMMY_OOB_MSG : null);
+
+  update(entry,batch_size);
+
+  if (batch_size >= ack_threshold)   sendAck(sender,win.getHighestDeliverable(),entry.connId());
+
+ else   entry.sendAck(true);
+
+  if (added && oob) {
+
+    MessageBatch oob_batch=new MessageBatch(local_addr,sender,null,false,MessageBatch.Mode.OOB,msgs.size());
+
+    for (    LongTuple<Message> tuple : msgs)     oob_batch.add(tuple.getVal2());
+
+    deliverBatch(oob_batch);
+
+  }
+
+  removeAndDeliver(win,sender);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Called when the sender of a message is the local member. In this case, we don't need to add the message to the table as the sender already did that 
+
+ */
+
+protected void handleDataReceivedFromSelf(final Address sender,long seqno,Message msg){
+
+  Entry entry=send_table.get(sender);
+
+  if (entry == null || entry.state() == State.CLOSED) {
+
+    log.warn("%s: entry not found for %s; dropping message",local_addr,sender);
+
+    return;
+
+  }
+
+  update(entry,1);
+
+  final Table<Message> win=entry.msgs;
+
+  if (msg.isFlagSet(Message.Flag.OOB)) {
+
+    msg=win.get(seqno);
+
+    if (msg != null && msg.isFlagSet(Message.Flag.OOB) && msg.setTransientFlagIfAbsent(Message.TransientFlag.OOB_DELIVERED))     deliverMessage(msg,sender,seqno);
+
+    if (msg != null && msg.isFlagSet(Message.Flag.INTERNAL)) {
+
+      processInternalMessage(win,sender);
+
+      return;
+
+    }
+
+  }
+
+  removeAndDeliver(win,sender);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Check whether the hashtable contains an entry e for  {@code sender} (create if not). Ife.received_msgs is null and  {@code first} is true: create a new AckReceiverWindow(seqno) andadd message. Set e.received_msgs to the new window. Else just add the message.
+
+ */
+
+protected void handleDataReceived(final Address sender,long seqno,short conn_id,boolean first,final Message msg){
+
+  ReceiverEntry entry=getReceiverEntry(sender,seqno,first,conn_id);
+
+  if (entry == null)   return;
+
+  update(entry,1);
+
+  boolean oob=msg.isFlagSet(Message.Flag.OOB);
+
+  final Table<Message> win=entry.msgs;
+
+  boolean added=win.add(seqno,oob ? DUMMY_OOB_MSG : msg);
+
+  if (ack_threshold <= 1)   sendAck(sender,win.getHighestDeliverable(),entry.connId());
+
+ else   entry.sendAck(true);
+
+  if (oob) {
+
+    if (added)     deliverMessage(msg,sender,seqno);
+
+    if (msg.isFlagSet(Message.Flag.INTERNAL)) {
+
+      processInternalMessage(win,sender);
+
+      return;
+
+    }
+
+  }
+
+  removeAndDeliver(win,sender);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * We need to resend the first message with our conn_id
+
+ * @param sender
+
+ */
+
+protected void handleResendingOfFirstMessage(Address sender,int timestamp){
+
+  log.trace("%s <-- %s: SEND_FIRST_SEQNO",local_addr,sender);
+
+  SenderEntry entry=send_table.get(sender);
+
+  Table<Message> win=entry != null ? entry.msgs : null;
+
+  if (win == null) {
+
+    log.warn(Util.getMessage("SenderNotFound"),local_addr,sender);
+
+    return;
+
+  }
+
+  if (!entry.updateLastTimestamp(timestamp))   return;
+
+  Message rsp=win.get(win.getLow() + 1);
+
+  if (rsp != null) {
+
+    Message copy=rsp.copy();
+
+    UnicastHeader3 hdr=copy.getHeader(this.id);
+
+    UnicastHeader3 newhdr=hdr.copy();
+
+    newhdr.first=true;
+
+    copy.putHeader(this.id,newhdr);
+
+    down_prot.down(copy);
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void handleUpEvent(Address sender,Message msg,UnicastHeader3 hdr){
+
+  try {
+
+switch (hdr.type) {
+
+case UnicastHeader3.DATA:
+
+      throw new IllegalStateException("header of type DATA is not supposed to be handled by this method");
+
+case UnicastHeader3.ACK:
+
+    handleAckReceived(sender,hdr.seqno,hdr.conn_id,hdr.timestamp());
+
+  break;
+
+case UnicastHeader3.SEND_FIRST_SEQNO:
+
+handleResendingOfFirstMessage(sender,hdr.timestamp());
+
+break;
+
+case UnicastHeader3.XMIT_REQ:
+
+handleXmitRequest(sender,Util.streamableFromBuffer(SeqnoList::new,msg.getRawBuffer(),msg.getOffset(),msg.getLength()));
+
+break;
+
+case UnicastHeader3.CLOSE:
+
+log.trace(local_addr + "%s <-- %s: CLOSE(conn-id=%s)",local_addr,sender,hdr.conn_id);
+
+ReceiverEntry entry=recv_table.get(sender);
+
+if (entry != null && entry.connId() == hdr.conn_id) {
+
+recv_table.remove(sender,entry);
+
+log.trace("%s: removed receive connection for %s",local_addr,sender);
+
+}
+
+break;
+
+default :
+
+log.error(Util.getMessage("TypeNotKnown"),local_addr,hdr.type);
+
+break;
+
+}
+
+}
+
+ catch (Throwable t) {
+
+log.error(Util.getMessage("FailedHandlingEvent"),local_addr,t);
+
+}
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void handleXmitRequest(Address sender,SeqnoList missing){
+
+  if (is_trace)   log.trace("%s <-- %s: XMIT(#%s)",local_addr,sender,missing);
+
+  SenderEntry entry=send_table.get(sender);
+
+  xmit_reqs_received.add(missing.size());
+
+  Table<Message> win=entry != null ? entry.msgs : null;
+
+  if (win != null) {
+
+    for (    long seqno : missing) {
+
+      Message msg=win.get(seqno);
+
+      if (msg == null) {
+
+        if (log.isWarnEnabled() && log_not_found_msgs && !local_addr.equals(sender)&& seqno > win.getLow())         log.warn(Util.getMessage("MessageNotFound"),local_addr,sender,seqno);
+
+        continue;
+
+      }
+
+      down_prot.down(msg);
+
+      xmit_rsps_sent.increment();
+
+    }
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Used for testing only 
+
+ */
+
+public boolean hasSendConnectionTo(Address dest){
+
+  Entry entry=send_table.get(dest);
+
+  return entry != null && entry.state() == State.OPEN;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedOperation public String printAgeOutCache(){
+
+  return cache != null ? cache.toString() : "n/a";
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected String printMessageList(List<LongTuple<Message>> list){
+
+  StringBuilder sb=new StringBuilder();
+
+  int size=list.size();
+
+  Message first=size > 0 ? list.get(0).getVal2() : null, second=size > 1 ? list.get(size - 1).getVal2() : first;
+
+  UnicastHeader3 hdr;
+
+  if (first != null) {
+
+    hdr=first.getHeader(id);
+
+    if (hdr != null)     sb.append("#" + hdr.seqno);
+
+  }
+
+  if (second != null) {
+
+    hdr=second.getHeader(id);
+
+    if (hdr != null)     sb.append(" - #" + hdr.seqno);
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedOperation(description="Prints the contents of the receive windows for all members") public String printReceiveWindowMessages(){
+
+  StringBuilder ret=new StringBuilder(local_addr + ":\n");
+
+  for (  Map.Entry<Address,ReceiverEntry> entry : recv_table.entrySet()) {
+
+    Address addr=entry.getKey();
+
+    Table<Message> buf=entry.getValue().msgs;
+
+    ret.append(addr).append(": ").append(buf.toString()).append('\n');
+
+  }
+
+  return ret.toString();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedOperation(description="Prints the contents of the send windows for all members") public String printSendWindowMessages(){
+
+  StringBuilder ret=new StringBuilder(local_addr + ":\n");
+
+  for (  Map.Entry<Address,SenderEntry> entry : send_table.entrySet()) {
+
+    Address addr=entry.getKey();
+
+    Table<Message> buf=entry.getValue().msgs;
+
+    ret.append(addr).append(": ").append(buf.toString()).append('\n');
+
+  }
+
+  return ret.toString();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void processInternalMessage(final Table<Message> win,final Address sender){
+
+  if (!win.isEmpty() && win.getAdders().get() == 0)   getTransport().submitToThreadPool(() -> removeAndDeliver(win,sender),true);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * This method is public only so it can be invoked by unit testing, but should not otherwise be used !
+
+ */
+
+@ManagedOperation(description="Trashes all connections to other nodes. This is only used for testing") public void removeAllConnections(){
+
+  send_table.clear();
+
+  recv_table.clear();
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Removes send- and/or receive-connections whose state is not OPEN (CLOSING or CLOSED).
+
+ * @param remove_send_connections If true, send connections whose state is !OPEN are destroyed and removed
+
+ * @param remove_receive_connections If true, receive connections with state !OPEN are destroyed and removed
+
+ * @return The number of connections which were removed
+
+ */
+
+@ManagedOperation(description="Removes send- and/or receive-connections whose state is not OPEN (CLOSING or CLOSED)") public int removeConnections(boolean remove_send_connections,boolean remove_receive_connections){
+
+  int num_removed=0;
+
+  if (remove_send_connections) {
+
+    for (    Map.Entry<Address,SenderEntry> entry : send_table.entrySet()) {
+
+      SenderEntry val=entry.getValue();
+
+      if (val.state() != State.OPEN) {
+
+        log.debug("%s: removing connection for %s (%d ms old, state=%s) from send_table",local_addr,entry.getKey(),val.age(),val.state());
+
+        removeSendConnection(entry.getKey());
+
+        num_removed++;
+
+      }
+
+    }
+
+  }
+
+  if (remove_receive_connections) {
+
+    for (    Map.Entry<Address,ReceiverEntry> entry : recv_table.entrySet()) {
+
+      ReceiverEntry val=entry.getValue();
+
+      if (val.state() != State.OPEN) {
+
+        log.debug("%s: removing expired connection for %s (%d ms old, state=%s) from recv_table",local_addr,entry.getKey(),val.age(),val.state());
+
+        removeReceiveConnection(entry.getKey());
+
+        num_removed++;
+
+      }
+
+    }
+
+  }
+
+  return num_removed;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedOperation(description="Removes connections that have been closed for more than conn_close_timeout ms") public int removeExpiredConnections(){
+
+  int num_removed=0;
+
+  for (  Map.Entry<Address,SenderEntry> entry : send_table.entrySet()) {
+
+    SenderEntry val=entry.getValue();
+
+    if (val.state() == State.OPEN)     continue;
+
+    long age=val.age();
+
+    if (age >= conn_close_timeout) {
+
+      log.debug("%s: removing expired connection for %s (%d ms old) from send_table",local_addr,entry.getKey(),age);
+
+      removeSendConnection(entry.getKey());
+
+      num_removed++;
+
+    }
+
+  }
+
+  for (  Map.Entry<Address,ReceiverEntry> entry : recv_table.entrySet()) {
+
+    ReceiverEntry val=entry.getValue();
+
+    if (val.state() == State.OPEN)     continue;
+
+    long age=val.age();
+
+    if (age >= conn_close_timeout) {
+
+      log.debug("%s: removing expired connection for %s (%d ms old) from recv_table",local_addr,entry.getKey(),age);
+
+      removeReceiveConnection(entry.getKey());
+
+      num_removed++;
+
+    }
+
+  }
+
+  return num_removed;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void removeReceiveConnection(Address mbr){
+
+  sendPendingAcks();
+
+  ReceiverEntry entry=recv_table.remove(mbr);
+
+  if (entry != null)   entry.state(State.CLOSED);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void removeSendConnection(Address mbr){
+
+  SenderEntry entry=send_table.remove(mbr);
+
+  if (entry != null) {
+
+    entry.state(State.CLOSED);
+
+    if (members.contains(mbr))     sendClose(mbr,entry.connId());
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Called by the sender to resend messages for which no ACK has been received yet 
+
+ */
+
+protected void retransmit(Message msg){
+
+  if (is_trace) {
+
+    UnicastHeader3 hdr=msg.getHeader(id);
+
+    long seqno=hdr != null ? hdr.seqno : -1;
+
+    log.trace("%s --> %s: resending(#%d)",local_addr,msg.getDest(),seqno);
+
+  }
+
+  down_prot.down(msg);
+
+  num_xmits++;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+/** 
+
+ * Sends a retransmit request to the given sender 
+
+ */
+
+protected void retransmit(SeqnoList missing,Address sender){
+
+  Message xmit_msg=new Message(sender).setBuffer(Util.streamableToBuffer(missing)).setFlag(Message.Flag.OOB,Message.Flag.INTERNAL).putHeader(id,UnicastHeader3.createXmitReqHeader());
+
+  if (is_trace)   log.trace("%s --> %s: XMIT_REQ(%s)",local_addr,sender,missing);
+
+  down_prot.down(xmit_msg);
+
+  xmit_reqs_sent.add(missing.size());
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void sendAck(Address dst,long seqno,short conn_id){
+
+  if (!running)   return;
+
+  Message ack=new Message(dst).setFlag(Message.Flag.INTERNAL).putHeader(this.id,UnicastHeader3.createAckHeader(seqno,conn_id,timestamper.incrementAndGet()));
+
+  if (is_trace)   log.trace("%s --> %s: ACK(#%d)",local_addr,dst,seqno);
+
+  try {
+
+    down_prot.down(ack);
+
+    num_acks_sent++;
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(Util.getMessage("FailedSendingAck"),local_addr,seqno,dst,t);
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public void sendClose(Address dest,short conn_id){
+
+  Message msg=new Message(dest).setFlag(Message.Flag.INTERNAL).putHeader(id,UnicastHeader3.createCloseHeader(conn_id));
+
+  log.trace("%s --> %s: CLOSE(conn-id=%d)",local_addr,dest,conn_id);
+
+  down_prot.down(msg);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@ManagedOperation(description="Sends ACKs immediately for entries which are marked as pending (ACK hasn't been sent yet)") public void sendPendingAcks(){
+
+  for (  Map.Entry<Address,ReceiverEntry> entry : recv_table.entrySet()) {
+
+    Address target=entry.getKey();
+
+    ReceiverEntry val=entry.getValue();
+
+    Table<Message> win=val != null ? val.msgs : null;
+
+    if (win != null && val.sendAck())     sendAck(target,win.getHighestDeliverable(),val.connId());
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void sendRequestForFirstSeqno(Address dest){
+
+  if (last_sync_sent.addIfAbsentOrExpired(dest)) {
+
+    Message msg=new Message(dest).setFlag(Message.Flag.OOB).putHeader(this.id,UnicastHeader3.createSendFirstSeqnoHeader(timestamper.incrementAndGet()));
+
+    log.trace("%s --> %s: SEND_FIRST_SEQNO",local_addr,dest);
+
+    down_prot.down(msg);
+
+  }
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public UNICAST3 setAckThreshold(int ack_threshold){
+
+  this.ack_threshold=ack_threshold;
+
+  return this;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+@Property(description="Max number of milliseconds we try to retransmit a message to any given member. After that, " + "the connection is removed. Any new connection to that member will start with seqno #1 again. 0 disables this") public void setMaxRetransmitTime(long max_retransmit_time){
+
+  this.max_retransmit_time=max_retransmit_time;
+
+  if (cache != null && max_retransmit_time > 0)   cache.setTimeout(max_retransmit_time);
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public <T extends UNICAST3>T setXmitInterval(long interval){
+
+  xmit_interval=interval;
+
+  return (T)this;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public UNICAST3 setXmitTableMsgsPerRow(int xmit_table_msgs_per_row){
+
+  this.xmit_table_msgs_per_row=xmit_table_msgs_per_row;
+
+  return this;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+public UNICAST3 setXmitTableNumRows(int xmit_table_num_rows){
+
+  this.xmit_table_num_rows=xmit_table_num_rows;
+
+  return this;
+
+}
+
+Location: UNICAST3.java
+
+Content: 
+
+protected void update(Entry entry,int num_received){
+
+  if (conn_expiry_timeout > 0)   entry.update();
+
+  if (entry.state() == State.CLOSING)   entry.state(State.OPEN);
+
+  num_msgs_received+=num_received;
+
+}
+

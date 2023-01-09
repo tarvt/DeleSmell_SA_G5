@@ -1,0 +1,130 @@
+Location: QuasiMonteCarlo.java
+
+Content: 
+
+/** 
+
+ * Run a map/reduce job for estimating Pi.
+
+ * @return the estimated value of Pi
+
+ */
+
+public static BigDecimal estimatePi(int numMaps,long numPoints,Configuration conf) throws IOException, ClassNotFoundException, InterruptedException {
+
+  Job job=new Job(conf);
+
+  job.setJobName(QuasiMonteCarlo.class.getSimpleName());
+
+  job.setJarByClass(QuasiMonteCarlo.class);
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setOutputKeyClass(BooleanWritable.class);
+
+  job.setOutputValueClass(LongWritable.class);
+
+  job.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+  job.setMapperClass(QmcMapper.class);
+
+  job.setReducerClass(QmcReducer.class);
+
+  job.setNumReduceTasks(1);
+
+  job.setSpeculativeExecution(false);
+
+  final Path inDir=new Path(TMP_DIR,"in");
+
+  final Path outDir=new Path(TMP_DIR,"out");
+
+  FileInputFormat.setInputPaths(job,inDir);
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  final FileSystem fs=FileSystem.get(conf);
+
+  if (fs.exists(TMP_DIR)) {
+
+    throw new IOException("Tmp directory " + fs.makeQualified(TMP_DIR) + " already exists.  Please remove it first.");
+
+  }
+
+  if (!fs.mkdirs(inDir)) {
+
+    throw new IOException("Cannot create input directory " + inDir);
+
+  }
+
+  try {
+
+    for (int i=0; i < numMaps; ++i) {
+
+      final Path file=new Path(inDir,"part" + i);
+
+      final LongWritable offset=new LongWritable(i * numPoints);
+
+      final LongWritable size=new LongWritable(numPoints);
+
+      final SequenceFile.Writer writer=SequenceFile.createWriter(fs,conf,file,LongWritable.class,LongWritable.class,CompressionType.NONE);
+
+      try {
+
+        writer.append(offset,size);
+
+      }
+
+  finally {
+
+        writer.close();
+
+      }
+
+      System.out.println("Wrote input for Map #" + i);
+
+    }
+
+    System.out.println("Starting Job");
+
+    final long startTime=System.currentTimeMillis();
+
+    job.waitForCompletion(true);
+
+    final double duration=(System.currentTimeMillis() - startTime) / 1000.0;
+
+    System.out.println("Job Finished in " + duration + " seconds");
+
+    Path inFile=new Path(outDir,"reduce-out");
+
+    LongWritable numInside=new LongWritable();
+
+    LongWritable numOutside=new LongWritable();
+
+    SequenceFile.Reader reader=new SequenceFile.Reader(fs,inFile,conf);
+
+    try {
+
+      reader.next(numInside,numOutside);
+
+    }
+
+  finally {
+
+      reader.close();
+
+    }
+
+    final BigDecimal numTotal=BigDecimal.valueOf(numMaps).multiply(BigDecimal.valueOf(numPoints));
+
+    return BigDecimal.valueOf(4).setScale(20).multiply(BigDecimal.valueOf(numInside.get())).divide(numTotal,RoundingMode.HALF_UP);
+
+  }
+
+  finally {
+
+    fs.delete(TMP_DIR,true);
+
+  }
+
+}
+

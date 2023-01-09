@@ -1,0 +1,514 @@
+Location: JobBuilder.java
+
+Content: 
+
+private Integer extractMegabytes(Properties conf,String[] names){
+
+  String javaOptions=extract(conf,names,null);
+
+  if (javaOptions == null) {
+
+    return null;
+
+  }
+
+  Matcher matcher=heapPattern.matcher(javaOptions);
+
+  Integer heapMegabytes=null;
+
+  while (matcher.find()) {
+
+    String heapSize=matcher.group(1);
+
+    heapMegabytes=((int)(StringUtils.TraditionalBinaryPrefix.string2long(heapSize) / BYTES_IN_MEG));
+
+  }
+
+  return heapMegabytes;
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+static String extract(Properties conf,String[] names,String defaultValue){
+
+  for (  String name : names) {
+
+    String result=conf.getProperty(name);
+
+    if (result != null) {
+
+      return result;
+
+    }
+
+  }
+
+  return defaultValue;
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private ParsedHost getAndRecordParsedHost(String hostName){
+
+  ParsedHost result=ParsedHost.parse(hostName);
+
+  if (result != null) {
+
+    ParsedHost canonicalResult=allHosts.get(result);
+
+    if (canonicalResult != null) {
+
+      return canonicalResult;
+
+    }
+
+    allHosts.put(result,result);
+
+    return result;
+
+  }
+
+  return null;
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private LoggedTaskAttempt getOrMakeTaskAttempt(TaskType type,String taskIDName,String taskAttemptName){
+
+  LoggedTask task=getOrMakeTask(type,taskIDName,false);
+
+  LoggedTaskAttempt result=attempts.get(taskAttemptName);
+
+  if (result == null && task != null) {
+
+    result=new LoggedTaskAttempt();
+
+    result.setAttemptID(taskAttemptName);
+
+    attempts.put(taskAttemptName,result);
+
+    task.getAttempts().add(result);
+
+  }
+
+  return result;
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+/** 
+
+ * @param type the task type
+
+ * @param taskIDname the task ID name, as a string
+
+ * @param allowCreate if true, we can create a task.
+
+ * @return
+
+ */
+
+private LoggedTask getOrMakeTask(TaskType type,String taskIDname,boolean allowCreate){
+
+  Map<String,LoggedTask> taskMap=otherTasks;
+
+  List<LoggedTask> tasks=this.result.getOtherTasks();
+
+switch (type) {
+
+case MAP:
+
+    taskMap=mapTasks;
+
+  tasks=this.result.getMapTasks();
+
+break;
+
+case REDUCE:
+
+taskMap=reduceTasks;
+
+tasks=this.result.getReduceTasks();
+
+break;
+
+default :
+
+}
+
+LoggedTask result=taskMap.get(taskIDname);
+
+if (result == null && allowCreate) {
+
+result=new LoggedTask();
+
+result.setTaskType(getPre21Value(type.toString()));
+
+result.setTaskID(taskIDname);
+
+taskMap.put(taskIDname,result);
+
+tasks.add(result);
+
+}
+
+return result;
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private static Values getPre21Value(String name){
+
+  if (name.equalsIgnoreCase("JOB_CLEANUP")) {
+
+    return Values.CLEANUP;
+
+  }
+
+  if (name.equalsIgnoreCase("JOB_SETUP")) {
+
+    return Values.SETUP;
+
+  }
+
+  if (name.equalsIgnoreCase(TaskStatus.State.SUCCEEDED.toString())) {
+
+    return Values.SUCCESS;
+
+  }
+
+  return Values.valueOf(name.toUpperCase());
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private LoggedTask getTask(String taskIDname){
+
+  LoggedTask result=mapTasks.get(taskIDname);
+
+  if (result != null) {
+
+    return result;
+
+  }
+
+  result=reduceTasks.get(taskIDname);
+
+  if (result != null) {
+
+    return result;
+
+  }
+
+  return otherTasks.get(taskIDname);
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+public JobBuilder(String jobID){
+
+  this.jobID=jobID;
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private ArrayList<LoggedDiscreteCDF> mapCDFArrayList(Histogram[] data){
+
+  ArrayList<LoggedDiscreteCDF> result=new ArrayList<LoggedDiscreteCDF>();
+
+  for (  Histogram hist : data) {
+
+    LoggedDiscreteCDF discCDF=new LoggedDiscreteCDF();
+
+    discCDF.setCDF(hist,attemptTimesPercentiles,100);
+
+    result.add(discCDF);
+
+  }
+
+  return result;
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void maybeSetHeapMegabytes(Integer megabytes){
+
+  if (megabytes != null) {
+
+    result.setHeapMegabytes(megabytes);
+
+  }
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void maybeSetJobMapMB(Integer megabytes){
+
+  if (megabytes != null) {
+
+    result.setJobMapMB(megabytes);
+
+  }
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void maybeSetJobReduceMB(Integer megabytes){
+
+  if (megabytes != null) {
+
+    result.setJobReduceMB(megabytes);
+
+  }
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processJobFinishedEvent(JobFinishedEvent event){
+
+  result.setFinishTime(event.getFinishTime());
+
+  result.setJobID(jobID);
+
+  result.setOutcome(Values.SUCCESS);
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processJobInfoChangeEvent(JobInfoChangeEvent event){
+
+  result.setLaunchTime(event.getLaunchTime());
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processJobInitedEvent(JobInitedEvent event){
+
+  result.setLaunchTime(event.getLaunchTime());
+
+  result.setTotalMaps(event.getTotalMaps());
+
+  result.setTotalReduces(event.getTotalReduces());
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processJobPriorityChangeEvent(JobPriorityChangeEvent event){
+
+  result.setPriority(LoggedJob.JobPriority.valueOf(event.getPriority().toString()));
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processJobStatusChangedEvent(JobStatusChangedEvent event){
+
+  result.setOutcome(Pre21JobHistoryConstants.Values.valueOf(event.getStatus()));
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processJobSubmittedEvent(JobSubmittedEvent event){
+
+  result.setJobID(event.getJobId().toString());
+
+  result.setJobName(event.getJobName());
+
+  result.setUser(event.getUserName());
+
+  result.setSubmitTime(event.getSubmitTime());
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processJobUnsuccessfulCompletionEvent(JobUnsuccessfulCompletionEvent event){
+
+  result.setOutcome(Pre21JobHistoryConstants.Values.valueOf(event.getStatus()));
+
+  result.setFinishTime(event.getFinishTime());
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processMapAttemptFinishedEvent(MapAttemptFinishedEvent event){
+
+  LoggedTaskAttempt attempt=getOrMakeTaskAttempt(event.getTaskType(),event.getTaskId().toString(),event.getAttemptId().toString());
+
+  if (attempt == null) {
+
+    return;
+
+  }
+
+  attempt.setResult(getPre21Value(event.getTaskStatus()));
+
+  attempt.setHostName(event.getHostname());
+
+  attempt.setFinishTime(event.getFinishTime());
+
+  attempt.incorporateCounters(((MapAttemptFinished)event.getDatum()).counters);
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processReduceAttemptFinishedEvent(ReduceAttemptFinishedEvent event){
+
+  LoggedTaskAttempt attempt=getOrMakeTaskAttempt(event.getTaskType(),event.getTaskId().toString(),event.getAttemptId().toString());
+
+  if (attempt == null) {
+
+    return;
+
+  }
+
+  attempt.setResult(getPre21Value(event.getTaskStatus()));
+
+  attempt.setHostName(event.getHostname());
+
+  attempt.setFinishTime(event.getFinishTime());
+
+  attempt.setShuffleFinished(event.getShuffleFinishTime());
+
+  attempt.setSortFinished(event.getSortFinishTime());
+
+  attempt.incorporateCounters(((ReduceAttemptFinished)event.getDatum()).counters);
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processTaskAttemptStartedEvent(TaskAttemptStartedEvent event){
+
+  LoggedTaskAttempt attempt=getOrMakeTaskAttempt(event.getTaskType(),event.getTaskId().toString(),event.getTaskAttemptId().toString());
+
+  if (attempt == null) {
+
+    return;
+
+  }
+
+  attempt.setStartTime(event.getStartTime());
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processTaskFailedEvent(TaskFailedEvent event){
+
+  LoggedTask task=getOrMakeTask(event.getTaskType(),event.getTaskId().toString(),false);
+
+  if (task == null) {
+
+    return;
+
+  }
+
+  task.setFinishTime(event.getFinishTime());
+
+  task.setTaskStatus(getPre21Value(event.getTaskStatus()));
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processTaskFinishedEvent(TaskFinishedEvent event){
+
+  LoggedTask task=getOrMakeTask(event.getTaskType(),event.getTaskId().toString(),false);
+
+  if (task == null) {
+
+    return;
+
+  }
+
+  task.setFinishTime(event.getFinishTime());
+
+  task.setTaskStatus(getPre21Value(event.getTaskStatus()));
+
+  task.incorporateCounters(((TaskFinished)event.getDatum()).counters);
+
+}
+
+Location: JobBuilder.java
+
+Content: 
+
+private void processTaskUpdatedEvent(TaskUpdatedEvent event){
+
+  LoggedTask task=getTask(event.getTaskId().toString());
+
+  if (task == null) {
+
+    return;
+
+  }
+
+  task.setFinishTime(event.getFinishTime());
+
+}
+

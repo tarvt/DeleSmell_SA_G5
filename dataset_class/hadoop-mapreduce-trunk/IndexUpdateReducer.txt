@@ -1,0 +1,96 @@
+Location: IndexUpdateReducer.java
+
+Content: 
+
+public void reduce(Shard key,Iterator<IntermediateForm> values,OutputCollector<Shard,Text> output,Reporter reporter) throws IOException {
+
+  LOG.info("Construct a shard writer for " + key);
+
+  FileSystem fs=FileSystem.get(iconf.getConfiguration());
+
+  String temp=mapredTempDir + Path.SEPARATOR + "shard_"+ System.currentTimeMillis();
+
+  final ShardWriter writer=new ShardWriter(fs,key,temp,iconf);
+
+  while (values.hasNext()) {
+
+    IntermediateForm form=values.next();
+
+    writer.process(form);
+
+    reporter.progress();
+
+  }
+
+  final Reporter fReporter=reporter;
+
+  new Closeable(){
+
+    volatile boolean closed=false;
+
+    public void close() throws IOException {
+
+      Thread prog=new Thread(){
+
+        public void run(){
+
+          while (!closed) {
+
+            try {
+
+              fReporter.setStatus("closing");
+
+              Thread.sleep(1000);
+
+            }
+
+ catch (            InterruptedException e) {
+
+              continue;
+
+            }
+
+catch (            Throwable e) {
+
+              return;
+
+            }
+
+          }
+
+        }
+
+      }
+
+;
+
+      try {
+
+        prog.start();
+
+        if (writer != null) {
+
+          writer.close();
+
+        }
+
+      }
+
+  finally {
+
+        closed=true;
+
+      }
+
+    }
+
+  }
+
+.close();
+
+  LOG.info("Closed the shard writer for " + key + ", writer = "+ writer);
+
+  output.collect(key,DONE);
+
+}
+

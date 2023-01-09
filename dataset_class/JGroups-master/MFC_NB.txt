@@ -1,0 +1,116 @@
+Location: MFC_NB.java
+
+Content: 
+
+protected CreditMap createCreditMap(long max_creds){
+
+  return new NonBlockingCreditMap(max_creds,max_queue_size,new ReentrantLock(true),send_function);
+
+}
+
+Location: MFC_NB.java
+
+Content: 
+
+public int getMaxQueueSize(){
+
+  return max_queue_size;
+
+}
+
+Location: MFC_NB.java
+
+Content: 
+
+@ManagedAttribute(description="The number of messages currently queued due to insufficient credit") public int getNumberOfQueuedMessages(){
+
+  return ((NonBlockingCreditMap)credits).getQueuedMessages();
+
+}
+
+Location: MFC_NB.java
+
+Content: 
+
+@ManagedAttribute(description="The number of times messages have been queued due to insufficient credits") public int getNumberOfQueuings(){
+
+  return ((NonBlockingCreditMap)credits).getEnqueuedMessages();
+
+}
+
+Location: MFC_NB.java
+
+Content: 
+
+@ManagedAttribute(description="The total size of all currently queued messages") public int getQueuedSize(){
+
+  return ((NonBlockingCreditMap)credits).getQueuedMessageSize();
+
+}
+
+Location: MFC_NB.java
+
+Content: 
+
+@Override protected Object handleDownMessage(final Message msg){
+
+  Address dest=msg.dest();
+
+  if (dest != null)   return down_prot.down(msg);
+
+  int length=msg.length();
+
+  if (running) {
+
+    if (credits.decrement(msg,length,0))     return down_prot.down(msg);
+
+    if (needToSendCreditRequest()) {
+
+      List<Tuple<Address,Long>> targets=credits.getMembersWithCreditsLessThan(min_credits);
+
+      for (      Tuple<Address,Long> tuple : targets)       sendCreditRequest(tuple.getVal1(),Math.min(max_credits,max_credits - tuple.getVal2()));
+
+    }
+
+    return null;
+
+  }
+
+  return down_prot.down(msg);
+
+}
+
+Location: MFC_NB.java
+
+Content: 
+
+/** 
+
+ * Checks the sent table: if some credits are in queueing mode and credits left are less than min_credits: send a credit request
+
+ */
+
+protected void sendCreditRequestsIfNeeded(){
+
+  if (credits.getMinCredits() < min_credits && needToSendCreditRequest()) {
+
+    List<Tuple<Address,Long>> targets=credits.getMembersWithCreditsLessThan(min_credits);
+
+    for (    Tuple<Address,Long> tuple : targets)     sendCreditRequest(tuple.getVal1(),Math.min(max_credits,max_credits - tuple.getVal2()));
+
+  }
+
+}
+
+Location: MFC_NB.java
+
+Content: 
+
+public MFC_NB setMaxQueueSize(int s){
+
+  this.max_queue_size=s;
+
+  return this;
+
+}
+

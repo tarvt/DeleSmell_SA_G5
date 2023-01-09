@@ -1,0 +1,320 @@
+Location: JarBuilder.java
+
+Content: 
+
+void addDirectory(JarOutputStream dst,String jarBaseName,File dir,int depth) throws IOException {
+
+  File[] contents=dir.listFiles();
+
+  if (contents != null) {
+
+    for (int i=0; i < contents.length; i++) {
+
+      File f=contents[i];
+
+      String fBaseName=(depth == 0) ? "" : dir.getName();
+
+      if (jarBaseName.length() > 0) {
+
+        fBaseName=jarBaseName + "/" + fBaseName;
+
+      }
+
+      if (f.isDirectory()) {
+
+        addDirectory(dst,fBaseName,f,depth + 1);
+
+      }
+
+ else {
+
+        addFileStream(dst,fBaseName + "/",f);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+void addFileStream(JarOutputStream dst,String jarBaseName,File file) throws IOException {
+
+  FileInputStream in=new FileInputStream(file);
+
+  try {
+
+    String name=jarBaseName + file.getName();
+
+    addNamedStream(dst,name,in);
+
+  }
+
+  finally {
+
+    in.close();
+
+  }
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+private void addJarEntries(JarOutputStream dst,JarFile src) throws IOException {
+
+  Enumeration entries=src.entries();
+
+  JarEntry entry=null;
+
+  while (entries.hasMoreElements()) {
+
+    entry=(JarEntry)entries.nextElement();
+
+    InputStream in=src.getInputStream(entry);
+
+    addNamedStream(dst,entry.getName(),in);
+
+  }
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+/** 
+
+ * @param name path in jar for this jar element. Must not start with '/' 
+
+ */
+
+void addNamedStream(JarOutputStream dst,String name,InputStream in) throws IOException {
+
+  if (verbose) {
+
+    System.err.println("JarBuilder.addNamedStream " + name);
+
+  }
+
+  try {
+
+    dst.putNextEntry(new JarEntry(name));
+
+    int bytesRead=0;
+
+    while ((bytesRead=in.read(buffer,0,BUFF_SIZE)) != -1) {
+
+      dst.write(buffer,0,bytesRead);
+
+    }
+
+  }
+
+ catch (  ZipException ze) {
+
+    if (ze.getMessage().indexOf("duplicate entry") >= 0) {
+
+      if (verbose) {
+
+        System.err.println(ze + " Skip duplicate entry " + name);
+
+      }
+
+    }
+
+ else {
+
+      throw ze;
+
+    }
+
+  }
+
+ finally {
+
+    in.close();
+
+    dst.flush();
+
+    dst.closeEntry();
+
+  }
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+protected String fileExtension(String file){
+
+  int leafPos=file.lastIndexOf('/');
+
+  if (leafPos == file.length() - 1)   return "";
+
+  String leafName=file.substring(leafPos + 1);
+
+  int dotPos=leafName.lastIndexOf('.');
+
+  if (dotPos == -1)   return "";
+
+  String ext=leafName.substring(dotPos + 1);
+
+  return ext;
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+/** 
+
+ * @return empty or a jar base path. Must not start with '/' 
+
+ */
+
+protected String getBasePathInJarOut(String sourceFile){
+
+  String ext=fileExtension(sourceFile);
+
+  if (ext.equals("class")) {
+
+    return "classes/";
+
+  }
+
+ else   if (ext.equals("jar") || ext.equals("zip")) {
+
+    return "lib/";
+
+  }
+
+ else {
+
+    return "";
+
+  }
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+public JarBuilder(){
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+public void merge(List srcNames,List srcUnjar,String dstJar) throws IOException {
+
+  String source=null;
+
+  JarOutputStream jarOut=null;
+
+  JarFile jarSource=null;
+
+  jarOut=new JarOutputStream(new FileOutputStream(dstJar));
+
+  boolean throwing=false;
+
+  try {
+
+    if (srcNames != null) {
+
+      Iterator iter=srcNames.iterator();
+
+      while (iter.hasNext()) {
+
+        source=(String)iter.next();
+
+        File fsource=new File(source);
+
+        String base=getBasePathInJarOut(source);
+
+        if (!fsource.exists()) {
+
+          throwing=true;
+
+          throw new FileNotFoundException(fsource.getAbsolutePath());
+
+        }
+
+        if (fsource.isDirectory()) {
+
+          addDirectory(jarOut,base,fsource,0);
+
+        }
+
+ else {
+
+          addFileStream(jarOut,base,fsource);
+
+        }
+
+      }
+
+    }
+
+    if (srcUnjar != null) {
+
+      Iterator iter=srcUnjar.iterator();
+
+      while (iter.hasNext()) {
+
+        source=(String)iter.next();
+
+        jarSource=new JarFile(source);
+
+        addJarEntries(jarOut,jarSource);
+
+        jarSource.close();
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    try {
+
+      jarOut.close();
+
+    }
+
+ catch (    ZipException z) {
+
+      if (!throwing) {
+
+        throw new IOException(z.toString());
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: JarBuilder.java
+
+Content: 
+
+public void setVerbose(boolean v){
+
+  this.verbose=v;
+
+}
+

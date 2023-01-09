@@ -1,0 +1,196 @@
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+/** 
+
+ * This sole constructor is purposefully private, so users or frameworks that want to work with instances will be forced to use the singleton instead of creating useless extra instance copies.
+
+ */
+
+private AuthBeanMultiplexer(){
+
+}
+
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+public static AuthBeanMultiplexer getSingleton(){
+
+  return singleton;
+
+}
+
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+protected static String getUniqueNameFor(Connection c) throws SQLException {
+
+  Statement st=c.createStatement();
+
+  ResultSet rs=null;
+
+  try {
+
+    rs=st.executeQuery("CALL database_name()");
+
+    if (!rs.next()) {
+
+      throw new SQLException("Engine did not reveal unique database name");
+
+    }
+
+    return rs.getString(1);
+
+  }
+
+  finally {
+
+    if (rs != null)     try {
+
+      rs.close();
+
+    }
+
+ catch (    SQLException se) {
+
+      logger.error("Failed to close ResultSet for retrieving db name");
+
+    }
+
+    rs=null;
+
+    try {
+
+      st.close();
+
+    }
+
+ catch (    SQLException se) {
+
+      logger.error("Failed to close Statement for retrieving db name");
+
+    }
+
+    st=null;
+
+  }
+
+}
+
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+/** 
+
+ * Wrapper for  {@code setAuthFunctionBeans(String, List<AuthFunctionBean>)}
+
+ * @param c  An open Connection to the desired database.
+
+ * @throws SQLException if failed to obtain unique name from givenConnection.
+
+ */
+
+public void setAuthFunctionBeans(Connection c,List<AuthFunctionBean> authFunctionBeans) throws SQLException {
+
+  setAuthFunctionBeans(getUniqueNameFor(c),authFunctionBeans);
+
+}
+
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+/** 
+
+ * Primary purpose of this class is to manage this static map. From dbNames to ordered-lists-of-AuthFunctionBeans. This is not an "adder" function, but a "setter" function, so do not use this to add to a partial set, but to assign the entire set. <P> The given entries are copied, to limit side-effects and concurrency issues. </P>
+
+ */
+
+public void setAuthFunctionBeans(Map<String,List<AuthFunctionBean>> authFunctionBeanMap){
+
+  if (AuthBeanMultiplexer.beans.size() > 0)   throw new IllegalStateException("Use setAuthFunctionBeans(Map) only when the set is empty");
+
+  AuthBeanMultiplexer.beans.putAll(authFunctionBeanMap);
+
+}
+
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+/** 
+
+ * This is not an "adder" function, but a "setter" function for the specified dbName , so do not use this to add to a database's FunctionBeans, but to assign the entire list for that database. <P> The given entries are copied, to limit side-effects and concurrency issues. </P> <P> Use this method instead of setAuthFunctionBean(String, AuthFunctionBean) in order to set up multiple authenticators for a single database for redundancy purposes. </P>
+
+ * @see #setAuthFunctionBeans(Map)
+
+ * @see #setAuthFunctionBean(String,AuthFunctionBean)
+
+ */
+
+public void setAuthFunctionBeans(String dbName,List<AuthFunctionBean> authFunctionBeans){
+
+  if (dbName == null || dbName.length() != 16) {
+
+    throw new IllegalArgumentException("Database name not exactly 16 characters long: " + dbName);
+
+  }
+
+  List<AuthFunctionBean> dbsBeans=AuthBeanMultiplexer.beans.get(dbName);
+
+  if (dbsBeans == null) {
+
+    dbsBeans=new ArrayList<AuthFunctionBean>();
+
+    AuthBeanMultiplexer.beans.put(dbName,dbsBeans);
+
+  }
+
+ else {
+
+    if (dbsBeans.size() > 0)     throw new IllegalStateException("Use setAuthFunctionBeans(String, List) only when the " + "db's AuthFunctionBean list is empty");
+
+  }
+
+  dbsBeans.addAll(authFunctionBeans);
+
+}
+
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+/** 
+
+ * Exactly the same as setAuthFunctionBeans(String, List) other than taking an open Connection to identify the database.
+
+ */
+
+public void setAuthFunctionBean(Connection c,AuthFunctionBean authFunctionBean) throws SQLException {
+
+  setAuthFunctionBeans(getUniqueNameFor(c),Collections.singletonList(authFunctionBean));
+
+}
+
+Location: AuthBeanMultiplexer.java
+
+Content: 
+
+/** 
+
+ * This is not an "adder" function, but a "setter" function for the specified dbName , so do not use this to add to a database's FunctionBeans, but to assign ths single given AuthFunctionBean as the specified database's authenticator. <P> To set up multiple authenticators for a single database for redundancy purposes, use the method setAuthFunctionBeans(String, List) instead. </P>
+
+ * @see #setAuthFunctionBeans(String,List)
+
+ */
+
+public void setAuthFunctionBean(String dbName,AuthFunctionBean authFunctionBean){
+
+  setAuthFunctionBeans(dbName,Collections.singletonList(authFunctionBean));
+
+}
+

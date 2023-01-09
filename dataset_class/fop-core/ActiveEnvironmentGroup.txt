@@ -1,0 +1,296 @@
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+/** 
+
+ * Constructor for the ActiveEnvironmentGroup, this takes a name parameter which must be 8 characters long.
+
+ * @param factory the object factory
+
+ * @param name the active environment group name
+
+ * @param width the page width
+
+ * @param height the page height
+
+ * @param widthRes the page width resolution
+
+ * @param heightRes the page height resolution
+
+ */
+
+public ActiveEnvironmentGroup(Factory factory,String name,int width,int height,int widthRes,int heightRes){
+
+  super(name);
+
+  this.factory=factory;
+
+  this.pageDescriptor=factory.createPageDescriptor(width,height,widthRes,heightRes);
+
+  this.objectAreaDescriptor=factory.createObjectAreaDescriptor(width,height,widthRes,heightRes);
+
+  this.presentationTextDataDescriptor=factory.createPresentationTextDataDescriptor(width,height,widthRes,heightRes);
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+/** 
+
+ * Add map page segment.
+
+ * @param name of segment to add
+
+ */
+
+public void addMapPageSegment(String name){
+
+  try {
+
+    needMapPageSegment().addPageSegment(name);
+
+  }
+
+ catch (  MaximumSizeExceededException e) {
+
+    throw new IllegalStateException("Internal error: " + e.getMessage());
+
+  }
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+/** 
+
+ * Method to create a map coded font object
+
+ * @param fontRef the font number used as the resource identifier
+
+ * @param font the font
+
+ * @param size the point size of the font
+
+ * @param orientation the orientation of the font (e.g. 0, 90, 180, 270)
+
+ */
+
+public void createFont(int fontRef,AFPFont font,int size,int orientation){
+
+  if (font.getFontType() == FontType.TRUETYPE) {
+
+    if (mdr == null) {
+
+      mdr=factory.createMapDataResource();
+
+      mapCodedFonts.add(mdr);
+
+    }
+
+    mdr.addTriplet(new EncodingTriplet(1200));
+
+    String name=font.getFontName();
+
+    if (((AFPFontConfig.AFPTrueTypeFont)font).getTTC() != null) {
+
+      name=((AFPFontConfig.AFPTrueTypeFont)font).getTTC();
+
+    }
+
+    mdr.setFullyQualifiedName(FullyQualifiedNameTriplet.TYPE_DATA_OBJECT_EXTERNAL_RESOURCE_REF,FullyQualifiedNameTriplet.FORMAT_CHARSTR,name,true);
+
+    mdr.addTriplet(new FontFullyQualifiedNameTriplet((byte)fontRef));
+
+    setupTruetypeMDR(mdr,false);
+
+    mdr.addTriplet(new DataObjectFontTriplet(size / 1000));
+
+    mdr.finishElement();
+
+  }
+
+ else {
+
+    MapCodedFont mapCodedFont=getCurrentMapCodedFont();
+
+    if (mapCodedFont == null) {
+
+      mapCodedFont=factory.createMapCodedFont();
+
+      mapCodedFonts.add(mapCodedFont);
+
+    }
+
+    try {
+
+      mapCodedFont.addFont(fontRef,font,size,orientation);
+
+    }
+
+ catch (    MaximumSizeExceededException msee) {
+
+      mapCodedFont=factory.createMapCodedFont();
+
+      mapCodedFonts.add(mapCodedFont);
+
+      try {
+
+        mapCodedFont.addFont(fontRef,font,size,orientation);
+
+      }
+
+ catch (      MaximumSizeExceededException ex) {
+
+        LOG.error("createFont():: resulted in a MaximumSizeExceededException");
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+/** 
+
+ * Getter method for the most recent MapCodedFont added to the Active Environment Group (returns null if no MapCodedFonts exist)
+
+ * @return the most recent Map Coded Font.
+
+ */
+
+private MapCodedFont getCurrentMapCodedFont(){
+
+  int size=mapCodedFonts.size();
+
+  if (size > 0) {
+
+    return (MapCodedFont)mapCodedFonts.get(size - 1);
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+private MapPageSegment getCurrentMapPageSegment(){
+
+  return (MapPageSegment)getLastElement(this.mapPageSegments);
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+/** 
+
+ * Accessor method to obtain the PageDescriptor object of the active environment group.
+
+ * @return the page descriptor object
+
+ */
+
+public PageDescriptor getPageDescriptor(){
+
+  return pageDescriptor;
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+/** 
+
+ * Accessor method to obtain the PresentationTextDataDescriptor object of the active environment group.
+
+ * @return the presentation text descriptor
+
+ */
+
+public PresentationTextDescriptor getPresentationTextDataDescriptor(){
+
+  return presentationTextDataDescriptor;
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+private MapPageSegment needMapPageSegment(){
+
+  if (this.mapPageSegments == null) {
+
+    this.mapPageSegments=new java.util.ArrayList();
+
+  }
+
+  MapPageSegment seg=getCurrentMapPageSegment();
+
+  if (seg == null || seg.isFull()) {
+
+    seg=new MapPageSegment();
+
+    this.mapPageSegments.add(seg);
+
+  }
+
+  return seg;
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+/** 
+
+ * Set the position of the object area
+
+ * @param x the x offset
+
+ * @param y the y offset
+
+ * @param rotation the rotation
+
+ */
+
+public void setObjectAreaPosition(int x,int y,int rotation){
+
+  this.objectAreaPosition=factory.createObjectAreaPosition(x,y,rotation);
+
+}
+
+Location: ActiveEnvironmentGroup.java
+
+Content: 
+
+public static void setupTruetypeMDR(AbstractTripletStructuredObject mdr,boolean res){
+
+  AFPDataObjectInfo dataInfo=new AFPDataObjectInfo();
+
+  dataInfo.setMimeType(MimeConstants.MIME_AFP_TRUETYPE);
+
+  mdr.setObjectClassification(ObjectClassificationTriplet.CLASS_DATA_OBJECT_FONT,dataInfo.getObjectType(),res,false,res);
+
+}
+

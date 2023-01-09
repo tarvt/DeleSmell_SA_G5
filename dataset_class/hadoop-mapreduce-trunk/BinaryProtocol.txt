@@ -1,0 +1,250 @@
+Location: BinaryProtocol.java
+
+Content: 
+
+public void authenticate(String digest,String challenge) throws IOException {
+
+  LOG.debug("Sending AUTHENTICATION_REQ, digest=" + digest + ", challenge="+ challenge);
+
+  WritableUtils.writeVInt(stream,MessageType.AUTHENTICATION_REQ.code);
+
+  Text.writeString(stream,digest);
+
+  Text.writeString(stream,challenge);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+/** 
+
+ * Create a proxy object that will speak the binary protocol on a socket. Upward messages are passed on the specified handler and downward downward messages are public methods on this object.
+
+ * @param sock The socket to communicate on.
+
+ * @param handler The handler for the received messages.
+
+ * @param key The object to read keys into.
+
+ * @param value The object to read values into.
+
+ * @param config The job's configuration
+
+ * @throws IOException
+
+ */
+
+public BinaryProtocol(Socket sock,UpwardProtocol<K2,V2> handler,K2 key,V2 value,JobConf config) throws IOException {
+
+  OutputStream raw=sock.getOutputStream();
+
+  if (Submitter.getKeepCommandFile(config)) {
+
+    raw=new TeeOutputStream("downlink.data",raw);
+
+  }
+
+  stream=new DataOutputStream(new BufferedOutputStream(raw,BUFFER_SIZE));
+
+  uplink=new UplinkReaderThread<K2,V2>(sock.getInputStream(),handler,key,value);
+
+  uplink.setName("pipe-uplink-handler");
+
+  uplink.start();
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void endOfInput() throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.CLOSE.code);
+
+  LOG.debug("Sent close command");
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void mapItem(WritableComparable key,Writable value) throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.MAP_ITEM.code);
+
+  writeObject(key);
+
+  writeObject(value);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void reduceKey(WritableComparable key) throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.REDUCE_KEY.code);
+
+  writeObject(key);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void reduceValue(Writable value) throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.REDUCE_VALUE.code);
+
+  writeObject(value);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void runMap(InputSplit split,int numReduces,boolean pipedInput) throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.RUN_MAP.code);
+
+  writeObject(split);
+
+  WritableUtils.writeVInt(stream,numReduces);
+
+  WritableUtils.writeVInt(stream,pipedInput ? 1 : 0);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void runReduce(int reduce,boolean pipedOutput) throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.RUN_REDUCE.code);
+
+  WritableUtils.writeVInt(stream,reduce);
+
+  WritableUtils.writeVInt(stream,pipedOutput ? 1 : 0);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void setInputTypes(String keyType,String valueType) throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.SET_INPUT_TYPES.code);
+
+  Text.writeString(stream,keyType);
+
+  Text.writeString(stream,valueType);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void setJobConf(JobConf job) throws IOException {
+
+  WritableUtils.writeVInt(stream,MessageType.SET_JOB_CONF.code);
+
+  List<String> list=new ArrayList<String>();
+
+  for (  Map.Entry<String,String> itm : job) {
+
+    list.add(itm.getKey());
+
+    list.add(itm.getValue());
+
+  }
+
+  WritableUtils.writeVInt(stream,list.size());
+
+  for (  String entry : list) {
+
+    Text.writeString(stream,entry);
+
+  }
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+public void start() throws IOException {
+
+  LOG.debug("starting downlink");
+
+  WritableUtils.writeVInt(stream,MessageType.START.code);
+
+  WritableUtils.writeVInt(stream,CURRENT_PROTOCOL_VERSION);
+
+}
+
+Location: BinaryProtocol.java
+
+Content: 
+
+/** 
+
+ * Write the given object to the stream. If it is a Text or BytesWritable, write it directly. Otherwise, write it to a buffer and then write the length and data to the stream.
+
+ * @param obj the object to write
+
+ * @throws IOException
+
+ */
+
+private void writeObject(Writable obj) throws IOException {
+
+  if (obj instanceof Text) {
+
+    Text t=(Text)obj;
+
+    int len=t.getLength();
+
+    WritableUtils.writeVInt(stream,len);
+
+    stream.write(t.getBytes(),0,len);
+
+  }
+
+ else   if (obj instanceof BytesWritable) {
+
+    BytesWritable b=(BytesWritable)obj;
+
+    int len=b.getLength();
+
+    WritableUtils.writeVInt(stream,len);
+
+    stream.write(b.getBytes(),0,len);
+
+  }
+
+ else {
+
+    buffer.reset();
+
+    obj.write(buffer);
+
+    int length=buffer.getLength();
+
+    WritableUtils.writeVInt(stream,length);
+
+    stream.write(buffer.getData(),0,length);
+
+  }
+
+}
+

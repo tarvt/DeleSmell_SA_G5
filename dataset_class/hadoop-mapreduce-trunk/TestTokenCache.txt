@@ -1,0 +1,284 @@
+Location: TestTokenCache.java
+
+Content: 
+
+private static void createTokenFileJson() throws IOException {
+
+  Map<String,String> map=new HashMap<String,String>();
+
+  try {
+
+    KeyGenerator kg=KeyGenerator.getInstance("HmacSHA1");
+
+    for (int i=0; i < NUM_OF_KEYS; i++) {
+
+      SecretKeySpec key=(SecretKeySpec)kg.generateKey();
+
+      byte[] enc_key=key.getEncoded();
+
+      map.put("alias" + i,new String(Base64.encodeBase64(enc_key)));
+
+    }
+
+  }
+
+ catch (  NoSuchAlgorithmException e) {
+
+    throw new IOException(e);
+
+  }
+
+  try {
+
+    File p=new File(tokenFileName.getParent().toString());
+
+    p.mkdirs();
+
+    mapper.writeValue(new File(tokenFileName.toString()),map);
+
+  }
+
+ catch (  Exception e) {
+
+    System.out.println("failed with :" + e.getLocalizedMessage());
+
+  }
+
+}
+
+Location: TestTokenCache.java
+
+Content: 
+
+@Test public void testGetTokensForHftpFS() throws IOException, URISyntaxException {
+
+  HftpFileSystem hfs=mock(HftpFileSystem.class);
+
+  DelegationTokenSecretManager dtSecretManager=dfsCluster.getNamesystem().getDelegationTokenSecretManager();
+
+  String renewer="renewer";
+
+  jConf.set(JTConfig.JT_USER_NAME,renewer);
+
+  DelegationTokenIdentifier dtId=new DelegationTokenIdentifier(new Text("user"),new Text(renewer),null);
+
+  final Token<DelegationTokenIdentifier> t=new Token<DelegationTokenIdentifier>(dtId,dtSecretManager);
+
+  final URI uri=new URI("hftp://host:2222/file1");
+
+  final String fs_addr=SecurityUtil.buildDTServiceName(uri,NameNode.DEFAULT_PORT);
+
+  t.setService(new Text(fs_addr));
+
+  Mockito.doAnswer(new Answer<URI>(){
+
+    @Override public URI answer(    InvocationOnMock invocation) throws Throwable {
+
+      return uri;
+
+    }
+
+  }
+
+).when(hfs).getUri();
+
+  Mockito.doAnswer(new Answer<Token<DelegationTokenIdentifier>>(){
+
+    @Override public Token<DelegationTokenIdentifier> answer(    InvocationOnMock invocation) throws Throwable {
+
+      return t;
+
+    }
+
+  }
+
+).when(hfs).getDelegationToken(renewer);
+
+  Mockito.doAnswer(new Answer<String>(){
+
+    @Override public String answer(    InvocationOnMock invocation) throws Throwable {
+
+      return fs_addr;
+
+    }
+
+  }
+
+).when(hfs).getCanonicalServiceName();
+
+  Credentials credentials=new Credentials();
+
+  Path p=new Path(uri.toString());
+
+  System.out.println("Path for hftp=" + p + "; fs_addr="+ fs_addr+ "; rn="+ renewer);
+
+  TokenCache.obtainTokensForNamenodesInternal(hfs,credentials,jConf);
+
+  Collection<Token<? extends TokenIdentifier>> tns=credentials.getAllTokens();
+
+  assertEquals("number of tokens is not 1",1,tns.size());
+
+  boolean found=false;
+
+  for (  Token<? extends TokenIdentifier> tt : tns) {
+
+    System.out.println("token=" + tt);
+
+    if (tt.getKind().equals(DelegationTokenIdentifier.HDFS_DELEGATION_KIND) && tt.getService().equals(new Text(fs_addr))) {
+
+      found=true;
+
+      assertEquals("different token",tt,t);
+
+    }
+
+    assertTrue("didn't find token for " + p,found);
+
+  }
+
+}
+
+Location: TestTokenCache.java
+
+Content: 
+
+@Test public void testGetTokensForNamenodes() throws IOException {
+
+  Credentials credentials=new Credentials();
+
+  TokenCache.obtainTokensForNamenodesInternal(credentials,new Path[]{p1,p2},jConf);
+
+  String fs_addr=SecurityUtil.buildDTServiceName(p1.toUri(),NameNode.DEFAULT_PORT);
+
+  Token<DelegationTokenIdentifier> nnt=TokenCache.getDelegationToken(credentials,fs_addr);
+
+  System.out.println("dt for " + p1 + "("+ fs_addr+ ")"+ " = "+ nnt);
+
+  assertNotNull("Token for nn is null",nnt);
+
+  Collection<Token<? extends TokenIdentifier>> tns=credentials.getAllTokens();
+
+  assertEquals("number of tokens is not 1",1,tns.size());
+
+  boolean found=false;
+
+  for (  Token<? extends TokenIdentifier> t : tns) {
+
+    if (t.getKind().equals(DelegationTokenIdentifier.HDFS_DELEGATION_KIND) && t.getService().equals(new Text(fs_addr))) {
+
+      found=true;
+
+    }
+
+    assertTrue("didn't find token for " + p1,found);
+
+  }
+
+}
+
+Location: TestTokenCache.java
+
+Content: 
+
+/** 
+
+ * run a local job and verify that TokenCache is available
+
+ * @throws NoSuchAlgorithmException
+
+ * @throws IOException
+
+ */
+
+@Test public void testLocalJobTokenCache() throws NoSuchAlgorithmException, IOException {
+
+  System.out.println("running local job");
+
+  String[] args={"-m","1","-r","1","-mt","1","-rt","1"};
+
+  jConf.set("mapreduce.job.credentials.json",tokenFileName.toString());
+
+  int res=-1;
+
+  try {
+
+    res=ToolRunner.run(jConf,new MySleepJob(),args);
+
+  }
+
+ catch (  Exception e) {
+
+    System.out.println("Job failed with" + e.getLocalizedMessage());
+
+    e.printStackTrace(System.out);
+
+    fail("local Job failed");
+
+  }
+
+  assertEquals("local job res is not 0",res,0);
+
+}
+
+Location: TestTokenCache.java
+
+Content: 
+
+/** 
+
+ * run a distributed job and verify that TokenCache is available
+
+ * @throws IOException
+
+ */
+
+@Test public void testTokenCache() throws IOException {
+
+  System.out.println("running dist job");
+
+  jConf=mrCluster.createJobConf();
+
+  String nnUri=dfsCluster.getURI().toString();
+
+  jConf.set(MRJobConfig.JOB_NAMENODES,nnUri + "," + nnUri);
+
+  jConf.set(JTConfig.JT_USER_NAME,"jt_id");
+
+  String[] args={"-tokenCacheFile",tokenFileName.toString(),"-m","1","-r","1","-mt","1","-rt","1"};
+
+  int res=-1;
+
+  try {
+
+    res=ToolRunner.run(jConf,new MySleepJob(),args);
+
+  }
+
+ catch (  Exception e) {
+
+    System.out.println("Job failed with" + e.getLocalizedMessage());
+
+    e.printStackTrace(System.out);
+
+    fail("Job failed");
+
+  }
+
+  assertEquals("dist job res is not 0",res,0);
+
+}
+
+Location: TestTokenCache.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private static void verifySecretKeysInJSONFile() throws IOException {
+
+  Map<String,String> map;
+
+  map=mapper.readValue(new File(tokenFileName.toString()),Map.class);
+
+  assertEquals("didn't read JSON correctly",map.size(),NUM_OF_KEYS);
+
+}
+

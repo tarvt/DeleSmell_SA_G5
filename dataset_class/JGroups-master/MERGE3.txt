@@ -1,0 +1,388 @@
+Location: MERGE3.java
+
+Content: 
+
+/** 
+
+ * Adds received INFO to views hashmap 
+
+ */
+
+protected void addInfo(Address sender,ViewId view_id,String logical_name,PhysicalAddress physical_addr){
+
+  if (logical_name != null && sender instanceof UUID)   NameCache.add(sender,logical_name);
+
+  if (physical_addr != null)   down(new Event(Event.ADD_PHYSICAL_ADDRESS,new Tuple<>(sender,physical_addr)));
+
+synchronized (views) {
+
+    ViewId existing=views.get(sender);
+
+    if (existing == null || existing.compareTo(view_id) < 0)     views.put(sender,view_id);
+
+  }
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+@ManagedOperation(description="Check views for inconsistencies") public void checkInconsistencies(){
+
+  new ViewConsistencyChecker().run();
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+@ManagedOperation(description="Clears the views cache") public void clearViews(){
+
+synchronized (views) {
+
+    views.clear();
+
+  }
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected long computeCheckInterval(){
+
+  return (long)(max_interval * 1.6);
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected Map<ViewId,Set<Address>> convertViews(){
+
+  Map<ViewId,Set<Address>> retval=new HashMap<>();
+
+synchronized (views) {
+
+    for (    Map.Entry<Address,ViewId> entry : views.entrySet()) {
+
+      Address key=entry.getKey();
+
+      ViewId view_id=entry.getValue();
+
+      Set<Address> existing=retval.get(view_id);
+
+      if (existing == null)       retval.put(view_id,existing=new ConcurrentSkipListSet<>());
+
+      existing.add(key);
+
+    }
+
+  }
+
+  return retval;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected MergeHeader createInfo(){
+
+  PhysicalAddress physical_addr=local_addr != null ? (PhysicalAddress)down_prot.down(new Event(Event.GET_PHYSICAL_ADDRESS,local_addr)) : null;
+
+  return MergeHeader.createInfo(view.getViewId(),NameCache.get(local_addr),physical_addr);
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected boolean differentViewIds(){
+
+  ViewId first=null;
+
+synchronized (views) {
+
+    for (    ViewId view_id : views.values()) {
+
+      if (first == null)       first=view_id;
+
+ else       if (!first.equals(view_id))       return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+@ManagedOperation(description="Lists the contents of the cached views") public String dumpViews(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Map.Entry<ViewId,Set<Address>> entry : convertViews().entrySet())   sb.append(entry.getKey()).append(": [").append(Util.printListWithDelimiter(entry.getValue(),", ",Util.MAX_LIST_PRINT_SIZE)).append("]\n");
+
+  return sb.toString();
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public long getCheckInterval(){
+
+  return check_interval;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public long getMaxInterval(){
+
+  return max_interval;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public long getMinInterval(){
+
+  return min_interval;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public int getNumMergeEvents(){
+
+  return num_merge_events;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+@ManagedAttribute(description="Number of cached ViewIds") public int getViews(){
+
+  return views.size();
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+@ManagedAttribute(description="Is the info sender task running") public synchronized boolean isInfoSenderRunning(){
+
+  return info_sender_future != null && !info_sender_future.isDone();
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected boolean isMergeRunning(){
+
+  Object retval=up_prot.up(new Event(Event.IS_MERGE_IN_PROGRESS));
+
+  return retval instanceof Boolean && (Boolean)retval;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+@ManagedAttribute(description="Is the view consistency checker task running") public synchronized boolean isViewConsistencyCheckerRunning(){
+
+  return view_consistency_checker != null && !view_consistency_checker.isDone();
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public static Buffer marshal(View view){
+
+  return Util.streamableToBuffer(view);
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected View readView(byte[] buffer,int offset,int length){
+
+  try {
+
+    return buffer != null ? Util.streamableFromBuffer(View::new,buffer,offset,length) : null;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading View from message: %s",local_addr,ex);
+
+    return null;
+
+  }
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+@ManagedOperation(description="Send INFO") public void sendInfo(){
+
+  new InfoSender().run();
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected void sendInfoMessage(PingData data){
+
+  if (data == null)   return;
+
+  Address target=data.getAddress();
+
+  if (local_addr.equals(target))   return;
+
+  Address dest=data.getPhysicalAddr();
+
+  if (dest == null) {
+
+    log.warn("%s: physical address for %s not found; dropping INFO message to %s",local_addr,target,target);
+
+    return;
+
+  }
+
+  MergeHeader hdr=createInfo();
+
+  Message info=new Message(dest).setFlag(Message.Flag.INTERNAL).putHeader(getId(),hdr);
+
+  down_prot.down(info);
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public MERGE3 setCheckInterval(long ci){
+
+  this.check_interval=ci;
+
+  return this;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public MERGE3 setMaxInterval(long val){
+
+  if (val <= 0)   throw new IllegalArgumentException("max_interval must be > 0");
+
+  max_interval=val;
+
+  check_interval=computeCheckInterval();
+
+  return this;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+public MERGE3 setMinInterval(long i){
+
+  if (min_interval < 0 || min_interval >= max_interval)   throw new IllegalArgumentException("min_interval (" + min_interval + ") has to be < max_interval ("+ max_interval+ ")");
+
+  min_interval=i;
+
+  return this;
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected synchronized void startInfoSender(){
+
+  if (info_sender_future == null || info_sender_future.isDone())   info_sender_future=timer.scheduleWithDynamicInterval(info_sender,getTransport() instanceof TCP);
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected synchronized void startViewConsistencyChecker(){
+
+  if (view_consistency_checker == null || view_consistency_checker.isDone())   view_consistency_checker=timer.scheduleWithDynamicInterval(new ViewConsistencyChecker());
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected synchronized void stopInfoSender(){
+
+  if (info_sender_future != null) {
+
+    info_sender_future.cancel(true);
+
+    info_sender_future=null;
+
+  }
+
+}
+
+Location: MERGE3.java
+
+Content: 
+
+protected synchronized void stopViewConsistencyChecker(){
+
+  if (view_consistency_checker != null) {
+
+    view_consistency_checker.cancel(true);
+
+    view_consistency_checker=null;
+
+  }
+
+}
+

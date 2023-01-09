@@ -1,0 +1,338 @@
+Location: WebGraph.java
+
+Content: 
+
+/** 
+
+ * Creates the three different WebGraph databases, Outlinks, Inlinks, and Node. If a current WebGraph exists then it is updated, if it doesn't exist then a new WebGraph database is created.
+
+ * @param webGraphDb The WebGraph to create or update.
+
+ * @param segments The array of segments used to update the WebGraph. Newer segments and fetch times will overwrite older segments.
+
+ * @param normalize whether to use URLNormalizers on URL's in the segment
+
+ * @param filter whether to use URLFilters on URL's in the segment
+
+ * @throws IOException If an error occurs while processing the WebGraph.
+
+ * @throws InterruptedException if the Job is interrupted during execution
+
+ * @throws ClassNotFoundException if classes required to run the Job cannot be located
+
+ */
+
+public void createWebGraph(Path webGraphDb,Path[] segments,boolean normalize,boolean filter) throws IOException, InterruptedException, ClassNotFoundException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("WebGraphDb: starting at " + sdf.format(start));
+
+    LOG.info("WebGraphDb: webgraphdb: " + webGraphDb);
+
+    LOG.info("WebGraphDb: URL normalize: " + normalize);
+
+    LOG.info("WebGraphDb: URL filter: " + filter);
+
+  }
+
+  FileSystem fs=webGraphDb.getFileSystem(getConf());
+
+  Path lock=new Path(webGraphDb,LOCK_NAME);
+
+  if (!fs.exists(webGraphDb)) {
+
+    fs.mkdirs(webGraphDb);
+
+  }
+
+  LockUtil.createLockFile(fs,lock,false);
+
+  Path outlinkDb=new Path(webGraphDb,OUTLINK_DIR);
+
+  Path oldOutlinkDb=new Path(webGraphDb,OLD_OUTLINK_DIR);
+
+  if (!fs.exists(outlinkDb)) {
+
+    fs.mkdirs(outlinkDb);
+
+  }
+
+  Path tempOutlinkDb=new Path(outlinkDb + "-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Job outlinkJob=NutchJob.getInstance(getConf());
+
+  Configuration outlinkJobConf=outlinkJob.getConfiguration();
+
+  outlinkJob.setJobName("Outlinkdb: " + outlinkDb);
+
+  boolean deleteGone=outlinkJobConf.getBoolean("link.delete.gone",false);
+
+  boolean preserveBackup=outlinkJobConf.getBoolean("db.preserve.backup",true);
+
+  if (deleteGone) {
+
+    LOG.info("OutlinkDb: deleting gone links");
+
+  }
+
+  if (segments != null) {
+
+    for (int i=0; i < segments.length; i++) {
+
+      FileSystem sfs=segments[i].getFileSystem(outlinkJobConf);
+
+      Path parseData=new Path(segments[i],ParseData.DIR_NAME);
+
+      if (sfs.exists(parseData)) {
+
+        LOG.info("OutlinkDb: adding input: " + parseData);
+
+        FileInputFormat.addInputPath(outlinkJob,parseData);
+
+      }
+
+      if (deleteGone) {
+
+        Path crawlFetch=new Path(segments[i],CrawlDatum.FETCH_DIR_NAME);
+
+        if (sfs.exists(crawlFetch)) {
+
+          LOG.info("OutlinkDb: adding input: " + crawlFetch);
+
+          FileInputFormat.addInputPath(outlinkJob,crawlFetch);
+
+        }
+
+      }
+
+    }
+
+  }
+
+  LOG.info("OutlinkDb: adding input: " + outlinkDb);
+
+  FileInputFormat.addInputPath(outlinkJob,outlinkDb);
+
+  outlinkJobConf.setBoolean(OutlinkDb.URL_NORMALIZING,normalize);
+
+  outlinkJobConf.setBoolean(OutlinkDb.URL_FILTERING,filter);
+
+  outlinkJob.setInputFormatClass(SequenceFileInputFormat.class);
+
+  outlinkJob.setJarByClass(OutlinkDb.class);
+
+  outlinkJob.setMapperClass(OutlinkDb.OutlinkDbMapper.class);
+
+  outlinkJob.setReducerClass(OutlinkDb.OutlinkDbReducer.class);
+
+  outlinkJob.setMapOutputKeyClass(Text.class);
+
+  outlinkJob.setMapOutputValueClass(NutchWritable.class);
+
+  outlinkJob.setOutputKeyClass(Text.class);
+
+  outlinkJob.setOutputValueClass(LinkDatum.class);
+
+  FileOutputFormat.setOutputPath(outlinkJob,tempOutlinkDb);
+
+  outlinkJob.setOutputFormatClass(MapFileOutputFormat.class);
+
+  outlinkJobConf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  try {
+
+    LOG.info("OutlinkDb: running");
+
+    boolean success=outlinkJob.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="OutlinkDb job did not succeed, job status:" + outlinkJob.getStatus().getState() + ", reason: "+ outlinkJob.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      NutchJob.cleanupAfterFailure(tempOutlinkDb,lock,fs);
+
+      throw new RuntimeException(message);
+
+    }
+
+    LOG.info("OutlinkDb: installing " + outlinkDb);
+
+    FSUtils.replace(fs,oldOutlinkDb,outlinkDb,true);
+
+    FSUtils.replace(fs,outlinkDb,tempOutlinkDb,true);
+
+    if (!preserveBackup && fs.exists(oldOutlinkDb))     fs.delete(oldOutlinkDb,true);
+
+    LOG.info("OutlinkDb: finished");
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("OutlinkDb failed:",e);
+
+    NutchJob.cleanupAfterFailure(tempOutlinkDb,lock,fs);
+
+    throw e;
+
+  }
+
+  Path inlinkDb=new Path(webGraphDb,INLINK_DIR);
+
+  Path tempInlinkDb=new Path(inlinkDb + "-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Job inlinkJob=NutchJob.getInstance(getConf());
+
+  Configuration inlinkJobConf=inlinkJob.getConfiguration();
+
+  inlinkJob.setJobName("Inlinkdb " + inlinkDb);
+
+  LOG.info("InlinkDb: adding input: " + outlinkDb);
+
+  FileInputFormat.addInputPath(inlinkJob,outlinkDb);
+
+  inlinkJob.setInputFormatClass(SequenceFileInputFormat.class);
+
+  inlinkJob.setJarByClass(InlinkDb.class);
+
+  inlinkJob.setMapperClass(InlinkDb.InlinkDbMapper.class);
+
+  inlinkJob.setMapOutputKeyClass(Text.class);
+
+  inlinkJob.setMapOutputValueClass(LinkDatum.class);
+
+  inlinkJob.setOutputKeyClass(Text.class);
+
+  inlinkJob.setOutputValueClass(LinkDatum.class);
+
+  FileOutputFormat.setOutputPath(inlinkJob,tempInlinkDb);
+
+  inlinkJob.setOutputFormatClass(MapFileOutputFormat.class);
+
+  inlinkJobConf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  try {
+
+    LOG.info("InlinkDb: running");
+
+    boolean success=inlinkJob.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="InlinkDb job did not succeed, job status:" + inlinkJob.getStatus().getState() + ", reason: "+ inlinkJob.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      NutchJob.cleanupAfterFailure(tempInlinkDb,lock,fs);
+
+      throw new RuntimeException(message);
+
+    }
+
+    LOG.info("InlinkDb: installing " + inlinkDb);
+
+    FSUtils.replace(fs,inlinkDb,tempInlinkDb,true);
+
+    LOG.info("InlinkDb: finished");
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("InlinkDb failed:",e);
+
+    NutchJob.cleanupAfterFailure(tempInlinkDb,lock,fs);
+
+    throw e;
+
+  }
+
+  Path nodeDb=new Path(webGraphDb,NODE_DIR);
+
+  Path tempNodeDb=new Path(nodeDb + "-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Job nodeJob=NutchJob.getInstance(getConf());
+
+  Configuration nodeJobConf=nodeJob.getConfiguration();
+
+  nodeJob.setJobName("NodeDb " + nodeDb);
+
+  LOG.info("NodeDb: adding input: " + outlinkDb);
+
+  LOG.info("NodeDb: adding input: " + inlinkDb);
+
+  FileInputFormat.addInputPath(nodeJob,outlinkDb);
+
+  FileInputFormat.addInputPath(nodeJob,inlinkDb);
+
+  nodeJob.setInputFormatClass(SequenceFileInputFormat.class);
+
+  nodeJob.setJarByClass(NodeDb.class);
+
+  nodeJob.setReducerClass(NodeDb.NodeDbReducer.class);
+
+  nodeJob.setMapOutputKeyClass(Text.class);
+
+  nodeJob.setMapOutputValueClass(LinkDatum.class);
+
+  nodeJob.setOutputKeyClass(Text.class);
+
+  nodeJob.setOutputValueClass(Node.class);
+
+  FileOutputFormat.setOutputPath(nodeJob,tempNodeDb);
+
+  nodeJob.setOutputFormatClass(MapFileOutputFormat.class);
+
+  nodeJobConf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  try {
+
+    LOG.info("NodeDb: running");
+
+    boolean success=nodeJob.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="NodeDb job did not succeed, job status:" + nodeJob.getStatus().getState() + ", reason: "+ nodeJob.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      NutchJob.cleanupAfterFailure(tempNodeDb,lock,fs);
+
+      throw new RuntimeException(message);
+
+    }
+
+    LOG.info("NodeDb: installing " + nodeDb);
+
+    FSUtils.replace(fs,nodeDb,tempNodeDb,true);
+
+    LOG.info("NodeDb: finished");
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("NodeDb failed:",e);
+
+    NutchJob.cleanupAfterFailure(tempNodeDb,lock,fs);
+
+    throw e;
+
+  }
+
+  LockUtil.removeLockFile(fs,lock);
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("WebGraphDb: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+

@@ -1,0 +1,272 @@
+Location: TestFileOwner.java
+
+Content: 
+
+@Test public void testFilePermission() throws Exception {
+
+  wovenClient=cluster.getJTClient().getProxy();
+
+  Configuration conf=new Configuration(cluster.getConf());
+
+  FinishTaskControlAction.configureControlActionForJob(conf);
+
+  SleepJob job=new SleepJob();
+
+  job.setConf(conf);
+
+  Job slpJob=job.createJob(1,0,100,100,100,100);
+
+  JobConf jconf=new JobConf(conf);
+
+  slpJob.submit();
+
+  RunningJob rJob=cluster.getJTClient().getClient().getJob(org.apache.hadoop.mapred.JobID.downgrade(slpJob.getJobID()));
+
+  taskController=conf.get(TTConfig.TT_TASK_CONTROLLER);
+
+  JobInfo info=wovenClient.getJobInfo(rJob.getID());
+
+  Assert.assertNotNull("JobInfo is null",info);
+
+  JobID id=rJob.getID();
+
+  while (info.runningMaps() != 1) {
+
+    Thread.sleep(1000);
+
+    info=wovenClient.getJobInfo(id);
+
+  }
+
+  TaskInfo[] myTaskInfos=wovenClient.getTaskInfo(id);
+
+  for (  TaskInfo tInfo : myTaskInfos) {
+
+    if (!tInfo.isSetupOrCleanup()) {
+
+      String[] taskTrackers=tInfo.getTaskTrackers();
+
+      for (      String taskTracker : taskTrackers) {
+
+        TTInfo ttInfo=wovenClient.getTTInfo(taskTracker);
+
+        TTClient ttCli=cluster.getTTClient(ttInfo.getStatus().getHost());
+
+        Assert.assertNotNull("TTClient instance is null",ttCli);
+
+        TTTaskInfo ttTaskInfo=ttCli.getProxy().getTask(tInfo.getTaskID());
+
+        Assert.assertNotNull("TTTaskInfo is null",ttTaskInfo);
+
+        while (ttTaskInfo.getTaskStatus().getRunState() != TaskStatus.State.RUNNING) {
+
+          Thread.sleep(100);
+
+          ttTaskInfo=ttCli.getProxy().getTask(tInfo.getTaskID());
+
+        }
+
+        testPermissionWithTaskController(ttCli,conf,info);
+
+        FinishTaskControlAction action=new FinishTaskControlAction(TaskID.downgrade(tInfo.getTaskID()));
+
+        for (        TTClient cli : cluster.getTTClients()) {
+
+          cli.getProxy().sendAction(action);
+
+        }
+
+      }
+
+    }
+
+  }
+
+  JobInfo jInfo=wovenClient.getJobInfo(id);
+
+  jInfo=cluster.getJTClient().getProxy().getJobInfo(id);
+
+  while (!jInfo.getStatus().isJobComplete()) {
+
+    Thread.sleep(100);
+
+    jInfo=cluster.getJTClient().getProxy().getJobInfo(id);
+
+  }
+
+}
+
+Location: TestFileOwner.java
+
+Content: 
+
+private void testPermissionWithTaskController(TTClient tClient,Configuration conf,JobInfo info){
+
+  Assert.assertNotNull("TTclient is null",tClient);
+
+  FsPermission fsPerm=null;
+
+  String[] pathInfo=conf.getStrings(MRConfig.LOCAL_DIR);
+
+  for (int i=0; i < pathInfo.length; i++) {
+
+    jobIdDir=new StringBuffer();
+
+    String userName=null;
+
+    try {
+
+      JobStatus[] jobStatus=cluster.getJTClient().getClient().getAllJobs();
+
+      userName=jobStatus[0].getUsername();
+
+    }
+
+ catch (    Exception ex) {
+
+      LOG.error("Failed to get user name");
+
+      boolean status=false;
+
+      Assert.assertTrue("Failed to get the userName",status);
+
+    }
+
+    jobIdDir.append(pathInfo[i]).append(Path.SEPARATOR);
+
+    jobIdDir.append(TaskTracker.getLocalJobDir(userName,info.getID().toString()));
+
+    FileStatus[] fs=null;
+
+    try {
+
+      fs=tClient.listStatus(jobIdDir.toString(),true);
+
+    }
+
+ catch (    Exception ex) {
+
+      LOG.error("Failed to get the jobIdDir files " + ex);
+
+    }
+
+    Assert.assertEquals("Filestatus length is zero",fs.length != 0,true);
+
+    for (    FileStatus file : fs) {
+
+      try {
+
+        String filename=file.getPath().getName();
+
+        if (filename.equals(TaskTracker.JOBFILE)) {
+
+          if (taskController == DefaultTaskController.class.getName()) {
+
+            fsPerm=file.getPermission();
+
+            Assert.assertTrue("FilePermission failed for " + filename,fsPerm.equals(PERM_777));
+
+          }
+
+        }
+
+        if (filename.startsWith("attempt")) {
+
+          StringBuffer attemptDir=new StringBuffer(jobIdDir);
+
+          attemptDir.append(Path.SEPARATOR).append(filename);
+
+          if (tClient.getFileStatus(attemptDir.toString(),true) != null) {
+
+            FileStatus[] attemptFs=tClient.listStatus(attemptDir.toString(),true,true);
+
+            for (            FileStatus attemptfz : attemptFs) {
+
+              Assert.assertNotNull("FileStatus is null",attemptfz);
+
+              fsPerm=attemptfz.getPermission();
+
+              Assert.assertNotNull("FsPermission is null",fsPerm);
+
+              if (taskController == DefaultTaskController.class.getName()) {
+
+                if (!attemptfz.isDir()) {
+
+                  Assert.assertTrue("FilePermission failed for " + filename,fsPerm.equals(PERM_777));
+
+                }
+
+ else {
+
+                  Assert.assertTrue("FilePermission failed for " + filename,fsPerm.equals(PERM_755));
+
+                }
+
+              }
+
+            }
+
+          }
+
+        }
+
+        if (filename.equals(TaskTracker.TASKJARDIR)) {
+
+          StringBuffer jarsDir=new StringBuffer(jobIdDir);
+
+          jarsDir.append(Path.SEPARATOR).append(filename);
+
+          FileStatus[] jarsFs=tClient.listStatus(jarsDir.toString(),true,true);
+
+          for (          FileStatus jarsfz : jarsFs) {
+
+            Assert.assertNotNull("FileStatus is null",jarsfz);
+
+            fsPerm=jarsfz.getPermission();
+
+            Assert.assertNotNull("File permission is null",fsPerm);
+
+            if (taskController == DefaultTaskController.class.getName()) {
+
+              if (!jarsfz.isDir()) {
+
+                if (jarsfz.getPath().getName().equals("job.jar")) {
+
+                  Assert.assertTrue("FilePermission failed for " + filename,fsPerm.equals(PERM_777));
+
+                }
+
+ else {
+
+                  Assert.assertTrue("FilePermission failed for " + filename,fsPerm.equals(PERM_644));
+
+                }
+
+              }
+
+ else {
+
+                Assert.assertTrue("FilePermission failed for " + filename,fsPerm.equals(PERM_755));
+
+              }
+
+            }
+
+          }
+
+        }
+
+      }
+
+ catch (      Exception ex) {
+
+        LOG.error("The exception occurred while searching for nonexsistent" + "file, ignoring and continuing. " + ex);
+
+      }
+
+    }
+
+  }
+
+}
+

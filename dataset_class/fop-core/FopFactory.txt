@@ -1,0 +1,274 @@
+Location: FopFactory.java
+
+Content: 
+
+private FopFactory(FopFactoryConfig config){
+
+  this.config=config;
+
+  this.resolver=ResourceResolverFactory.createInternalResourceResolver(config.getBaseURI(),config.getResourceResolver());
+
+  this.elementMappingRegistry=new ElementMappingRegistry(this);
+
+  this.colorSpaceCache=new ColorSpaceCache(resolver);
+
+  this.rendererFactory=new RendererFactory(config.preferRenderer());
+
+  this.xmlHandlers=new XMLHandlerRegistry();
+
+  this.imageHandlers=new ImageHandlerRegistry();
+
+  rendererConfig=new HashMap<String,RendererConfig>();
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * @see FopFactoryConfig#getIgnoredNamespaces() 
+
+ */
+
+public Set<String> getIgnoredNamespace(){
+
+  return config.getIgnoredNamespaces();
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns the renderer configuration object for a specific renderer given the parser and configuration to read. The renderer config is cached such that the  {@link Configuration} isonly parsed once per renderer, per FopFactory instance.
+
+ * @param userAgent the user agent
+
+ * @param cfg the configuration to be parsed
+
+ * @param configCreator the parser that creates the config object
+
+ * @return the config object
+
+ * @throws FOPException when an error occurs while creating the configuration object
+
+ */
+
+synchronized RendererConfig getRendererConfig(FOUserAgent userAgent,Configuration cfg,RendererConfigParser configCreator) throws FOPException {
+
+  RendererConfig config=rendererConfig.get(configCreator.getMimeType());
+
+  if (config == null) {
+
+    try {
+
+      config=configCreator.build(userAgent,cfg);
+
+      rendererConfig.put(configCreator.getMimeType(),config);
+
+    }
+
+ catch (    Exception e) {
+
+      throw new FOPException(e);
+
+    }
+
+  }
+
+  return config;
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns a new  {@link Fop} instance. Use this factory method if you want to supply yourown  {@link org.apache.fop.render.Renderer Renderer} or{@link org.apache.fop.fo.FOEventHandler FOEventHandler}instance instead of the default ones created internally by FOP.
+
+ * @param userAgent the user agent that will be used to control the rendering run
+
+ * @return the new Fop instance
+
+ * @throws FOPException when the constructor fails
+
+ */
+
+public Fop newFop(FOUserAgent userAgent) throws FOPException {
+
+  if (userAgent.getRendererOverride() == null && userAgent.getFOEventHandlerOverride() == null && userAgent.getDocumentHandlerOverride() == null) {
+
+    throw new IllegalStateException("An overriding renderer," + " FOEventHandler or IFDocumentHandler must be set on the user agent" + " when this factory method is used!");
+
+  }
+
+  return newFop(null,userAgent);
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns a new  {@link Fop} instance. Use this factory method if you want to configure thisvery rendering run, i.e. if you want to set some metadata like the title and author of the document you want to render. In that case, create a new  {@link FOUserAgent}instance using  {@link #newFOUserAgent()}. <p> MIME types are used to select the output format (ex. "application/pdf" for PDF). You can use the constants defined in  {@link MimeConstants}.
+
+ * @param outputFormat the MIME type of the output format to use (ex. "application/pdf").
+
+ * @param userAgent the user agent that will be used to control the rendering run
+
+ * @return the new Fop instance
+
+ * @throws FOPException  when the constructor fails
+
+ */
+
+public Fop newFop(String outputFormat,FOUserAgent userAgent) throws FOPException {
+
+  return userAgent.newFop(outputFormat,null);
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns a new  {@link Fop} instance. Use this factory method if your output typerequires an output stream and you want to configure this very rendering run, i.e. if you want to set some metadata like the title and author of the document you want to render. In that case, create a new  {@link FOUserAgent} instanceusing  {@link #newFOUserAgent()}. <p> MIME types are used to select the output format (ex. "application/pdf" for PDF). You can use the constants defined in  {@link MimeConstants}.
+
+ * @param outputFormat the MIME type of the output format to use (ex. "application/pdf").
+
+ * @param userAgent the user agent that will be used to control the rendering run
+
+ * @param stream the output stream
+
+ * @return the new Fop instance
+
+ * @throws FOPException when the constructor fails
+
+ */
+
+public Fop newFop(String outputFormat,FOUserAgent userAgent,OutputStream stream) throws FOPException {
+
+  return userAgent.newFop(outputFormat,stream);
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns a new FOUserAgent instance. Use the FOUserAgent to configure special values that are particular to a rendering run. Don't reuse instances over multiple rendering runs but instead create a new one each time and reuse the FopFactory.
+
+ * @return the newly created FOUserAgent instance initialized with default values
+
+ */
+
+public FOUserAgent newFOUserAgent(){
+
+  FOUserAgent userAgent=new FOUserAgent(this,resolver);
+
+  return userAgent;
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns a new FopFactory instance that is configured using the  {@link FopFactoryConfig} object thatis created when the fopConf is parsed.
+
+ * @param fopConf the fop conf configuration file to parse
+
+ * @return the requested FopFactory instance.
+
+ * @throws IOException
+
+ * @throws SAXException
+
+ */
+
+public static FopFactory newInstance(File fopConf) throws SAXException, IOException {
+
+  return new FopConfParser(fopConf).getFopFactoryBuilder().build();
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * FOP has the ability, for some FO's, to continue processing even if the input XSL violates that FO's content model.  This is the default behavior for FOP.  However, this flag, if set, provides the user the ability for FOP to halt on all content model violations if desired. Returns a new FopFactory instance that is configured using the  {@link FopFactoryConfig} object.
+
+ * @param config the fop configuration
+
+ * @return the requested FopFactory instance.
+
+ */
+
+public static FopFactory newInstance(FopFactoryConfig config){
+
+  return new FopFactory(config);
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns a new FopFactory instance that is configured only by the default configuration parameters.
+
+ * @param baseURI the base URI to resolve resource URIs against
+
+ * @return the requested FopFactory instance.
+
+ */
+
+public static FopFactory newInstance(URI baseURI){
+
+  return new FopFactoryBuilder(baseURI).build();
+
+}
+
+Location: FopFactory.java
+
+Content: 
+
+/** 
+
+ * Returns a new FopFactory instance that is configured using the  {@link FopFactoryConfig} object thatis created when the fopConf is parsed.
+
+ * @param baseURI the base URI to resolve resource URIs against
+
+ * @param confStream the fop conf configuration stream to parse
+
+ * @return the requested FopFactory instance.
+
+ * @throws SAXException
+
+ * @throws IOException
+
+ */
+
+public static FopFactory newInstance(URI baseURI,InputStream confStream) throws SAXException, IOException {
+
+  return new FopConfParser(confStream,baseURI).getFopFactoryBuilder().build();
+
+}
+

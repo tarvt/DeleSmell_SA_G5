@@ -1,0 +1,246 @@
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public ConcurrentLinkedBlockingQueue2(int capacity){
+
+  this.capacity=capacity;
+
+  Runtime.getRuntime().addShutdownHook(new Thread(){
+
+    public void run(){
+
+      System.out.println("** num_awaits=" + not_empty_awaits);
+
+    }
+
+  }
+
+);
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+protected void decrCount(){
+
+  count.getAndDecrement();
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public int drainTo(Collection<? super T> c){
+
+  int cnt=0;
+
+  if (c == null)   return cnt;
+
+  for (; ; ) {
+
+    T el=poll();
+
+    if (el == null)     break;
+
+    c.add(el);
+
+    cnt++;
+
+  }
+
+  count.set(0);
+
+  return cnt;
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public int drainTo(Collection<? super T> c,int maxElements){
+
+  return drainTo(c);
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+protected void incrCount(){
+
+  int prev_count=count.getAndIncrement();
+
+  if (prev_count == 0) {
+
+    not_empty_lock.lock();
+
+    try {
+
+      not_empty.signal();
+
+    }
+
+  finally {
+
+      not_empty_lock.unlock();
+
+    }
+
+  }
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+/** 
+
+ * Drops elements if capacity has been reached. That's OK for the ThreadPoolExecutor as dropped messages will get retransmitted
+
+ * @param t
+
+ * @return
+
+ */
+
+public boolean offer(T t){
+
+  boolean retval=super.offer(t);
+
+  if (retval)   count.incrementAndGet();
+
+  return retval;
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public boolean offer(T t,long timeout,TimeUnit unit) throws InterruptedException {
+
+  return offer(t);
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public T poll(){
+
+  T val=super.poll();
+
+  if (val != null)   decrCount();
+
+  return val;
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public T poll(long timeout,TimeUnit unit) throws InterruptedException {
+
+  return null;
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public void put(T t) throws InterruptedException {
+
+  if (super.offer(t))   incrCount();
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public int remainingCapacity(){
+
+  return capacity - size();
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public boolean remove(Object o){
+
+  boolean retval=super.remove(o);
+
+  if (retval)   decrCount();
+
+  return retval;
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+public T take() throws InterruptedException {
+
+  T val=super.poll();
+
+  if (val != null) {
+
+    decrCount();
+
+    return val;
+
+  }
+
+  waitForNotEmpty();
+
+  val=super.poll();
+
+  if (val != null)   decrCount();
+
+  return val;
+
+}
+
+Location: ConcurrentLinkedBlockingQueue2.java
+
+Content: 
+
+protected void waitForNotEmpty() throws InterruptedException {
+
+  while (count.get() == 0) {
+
+    not_empty_lock.lock();
+
+    try {
+
+      if (count.get() > 0)       return;
+
+      not_empty_awaits++;
+
+      not_empty.await();
+
+    }
+
+  finally {
+
+      not_empty_lock.unlock();
+
+    }
+
+  }
+
+}
+

@@ -1,0 +1,440 @@
+Location: ViewHandler.java
+
+Content: 
+
+public ViewHandler<R> add(Collection<R> reqs){
+
+  if (_add(reqs))   process(requests);
+
+  return this;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public ViewHandler<R> add(R... reqs){
+
+  if (_add(reqs))   process(requests);
+
+  return this;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public String dumpHistory(){
+
+  return String.join("\n",history);
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public String dumpQueue(){
+
+  return requests.stream().map(Object::toString).collect(Collectors.joining("\n"));
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+protected Log log(){
+
+  return gms.getLog();
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+/** 
+
+ * To be used by testing only! 
+
+ */
+
+public <T extends ViewHandler<R>>T processing(boolean flag){
+
+  lock.lock();
+
+  try {
+
+    setProcessing(flag);
+
+    return (T)this;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+/** 
+
+ * Removes requests as long as they match - breaks at the first non-matching request or when requests is empty This method must catch all exceptions; or else process() might return without setting processing to true again!
+
+ */
+
+protected void removeAndProcess(Collection<R> requests){
+
+  try {
+
+    Collection<R> removed=new ArrayList<>();
+
+    Iterator<R> it=requests.iterator();
+
+    R first_req=it.next();
+
+    removed.add(first_req);
+
+    it.remove();
+
+    while (it.hasNext()) {
+
+      R next=it.next();
+
+      if (req_matcher.test(first_req,next)) {
+
+        removed.add(next);
+
+        it.remove();
+
+      }
+
+ else       break;
+
+    }
+
+    req_processor.accept(removed);
+
+  }
+
+ catch (  Throwable t) {
+
+    log().error("failed processing requests",t);
+
+  }
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public BiPredicate<R,R> reqMatcher(){
+
+  return req_matcher;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public ViewHandler<R> reqMatcher(BiPredicate<R,R> m){
+
+  req_matcher=m;
+
+  return this;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public Consumer<Collection<R>> reqProcessor(){
+
+  return req_processor;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public ViewHandler<R> reqProcessor(Consumer<Collection<R>> p){
+
+  req_processor=p;
+
+  return this;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public void resume(){
+
+  suspended.compareAndSet(true,false);
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+@GuardedBy("lock") protected boolean setProcessing(boolean flag){
+
+  boolean do_signal=processing && !flag;
+
+  processing=flag;
+
+  if (do_signal)   processing_done.signalAll();
+
+  return flag;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+/** 
+
+ * Clears the queue and discards new requests from now on 
+
+ */
+
+public void suspend(){
+
+  if (suspended.compareAndSet(false,true))   requests.clear();
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+public boolean suspended(){
+
+  return suspended.get();
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+/** 
+
+ * Constructor
+
+ * @param gms The ref to GMS
+
+ * @param req_processor A request processor which processes a list of requests
+
+ * @param req_matcher The matcher which determines whether any given 2 requests can be processed together
+
+ */
+
+public ViewHandler(GMS gms,Consumer<Collection<R>> req_processor,BiPredicate<R,R> req_matcher){
+
+  if (req_processor == null)   throw new IllegalArgumentException("request processor cannot be null");
+
+  this.gms=gms;
+
+  this.req_processor=req_processor;
+
+  this.req_matcher=req_matcher != null ? req_matcher : (a,b) -> true;
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+/** 
+
+ * Blocks the caller until the <em>current</em> set of requests being processed have been completed. Returns immediately if no requests are currently being processed 
+
+ */
+
+public void waitUntilComplete(){
+
+  lock.lock();
+
+  try {
+
+    while (processing || count.get() > 0) {
+
+      try {
+
+        processing_done.await();
+
+      }
+
+ catch (      InterruptedException ignored) {
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+/** 
+
+ * Blocks the caller until the <em>current</em> set of requests being processed have been completed, or the timeout elapsed.<br/> Returns immediately if no requests are currently being processed
+
+ * @param timeout Max time to wait in milliseconds
+
+ */
+
+public void waitUntilComplete(long timeout){
+
+  long base=System.currentTimeMillis();
+
+  long now=0;
+
+  lock.lock();
+
+  try {
+
+    while (processing || count.get() > 0) {
+
+      long delay=timeout - now;
+
+      if (delay <= 0)       break;
+
+      try {
+
+        processing_done.await(delay,TimeUnit.MILLISECONDS);
+
+        now=System.currentTimeMillis() - base;
+
+      }
+
+ catch (      InterruptedException e) {
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+protected boolean _add(Collection<R> reqs){
+
+  if (reqs == null || reqs.isEmpty() || suspended.get()) {
+
+    log().trace("%s: queue is suspended; requests %s are discarded",gms.getLocalAddress(),reqs);
+
+    return false;
+
+  }
+
+  count.incrementAndGet();
+
+  lock.lock();
+
+  try {
+
+    for (    R req : reqs) {
+
+      if (!requests.contains(req)) {
+
+        requests.add(req);
+
+        history.add(new Date() + ": " + req.toString());
+
+      }
+
+    }
+
+    return count.decrementAndGet() == 0 && !processing && setProcessing(true);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: ViewHandler.java
+
+Content: 
+
+@SuppressWarnings("unchecked") protected boolean _add(R... reqs){
+
+  if (reqs == null || reqs.length == 0 || suspended.get()) {
+
+    log().trace("%s: queue is suspended; requests %s are discarded",gms.getLocalAddress(),Arrays.toString(reqs));
+
+    return false;
+
+  }
+
+  count.incrementAndGet();
+
+  lock.lock();
+
+  try {
+
+    for (    R req : reqs) {
+
+      if (!requests.contains(req)) {
+
+        requests.add(req);
+
+        history.add(new Date() + ": " + req.toString());
+
+      }
+
+    }
+
+    return count.decrementAndGet() == 0 && !processing && setProcessing(true);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+

@@ -1,0 +1,590 @@
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * @see org.w3c.dom.ls.LSParser#abort()
+
+ */
+
+public void abort(){
+
+  if (fBusy) {
+
+    fBusy=false;
+
+    if (currentThread != null) {
+
+      abortNow=true;
+
+      if (abortHandler == null) {
+
+        abortHandler=new AbortHandler();
+
+      }
+
+      fConfiguration.setDocumentHandler(abortHandler);
+
+      fConfiguration.setDTDHandler(abortHandler);
+
+      fConfiguration.setDTDContentModelHandler(abortHandler);
+
+      if (currentThread == Thread.currentThread()) {
+
+        throw Abort.INSTANCE;
+
+      }
+
+      currentThread.interrupt();
+
+    }
+
+  }
+
+  return;
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * NON-DOM: convert LSInput to XNIInputSource
+
+ * @param is
+
+ * @return
+
+ */
+
+XMLInputSource dom2xmlInputSource(LSInput is){
+
+  XMLInputSource xis=null;
+
+  if (is.getCharacterStream() != null) {
+
+    xis=new XMLInputSource(is.getPublicId(),is.getSystemId(),is.getBaseURI(),is.getCharacterStream(),"UTF-16");
+
+  }
+
+ else   if (is.getByteStream() != null) {
+
+    xis=new XMLInputSource(is.getPublicId(),is.getSystemId(),is.getBaseURI(),is.getByteStream(),is.getEncoding());
+
+  }
+
+ else   if (is.getStringData() != null && is.getStringData().length() > 0) {
+
+    xis=new XMLInputSource(is.getPublicId(),is.getSystemId(),is.getBaseURI(),new StringReader(is.getStringData()),"UTF-16");
+
+  }
+
+ else   if ((is.getSystemId() != null && is.getSystemId().length() > 0) || (is.getPublicId() != null && is.getPublicId().length() > 0)) {
+
+    xis=new XMLInputSource(is.getPublicId(),is.getSystemId(),is.getBaseURI());
+
+  }
+
+ else {
+
+    if (fErrorHandler != null) {
+
+      DOMErrorImpl error=new DOMErrorImpl();
+
+      error.fType="no-input-specified";
+
+      error.fMessage="no-input-specified";
+
+      error.fSeverity=DOMError.SEVERITY_FATAL_ERROR;
+
+      fErrorHandler.getErrorHandler().handleError(error);
+
+    }
+
+    throw new LSException(LSException.PARSE_ERR,"no-input-specified");
+
+  }
+
+  return xis;
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * Constructs a DOM Builder using the standard parser configuration.
+
+ */
+
+public DOMParserImpl(String configuration,String schemaType){
+
+  this((XMLParserConfiguration)ObjectFactory.createObject("org.apache.xerces.xni.parser.XMLParserConfiguration",configuration));
+
+  if (schemaType != null) {
+
+    if (schemaType.equals(Constants.NS_DTD)) {
+
+      fConfiguration.setProperty(Constants.JAXP_PROPERTY_PREFIX + Constants.SCHEMA_LANGUAGE,Constants.NS_DTD);
+
+      fSchemaType=Constants.NS_DTD;
+
+    }
+
+ else     if (schemaType.equals(Constants.NS_XMLSCHEMA)) {
+
+      fConfiguration.setProperty(Constants.JAXP_PROPERTY_PREFIX + Constants.SCHEMA_LANGUAGE,Constants.NS_XMLSCHEMA);
+
+    }
+
+  }
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * Constructs a DOM Builder using the specified symbol table.
+
+ */
+
+public DOMParserImpl(SymbolTable symbolTable){
+
+  this((XMLParserConfiguration)ObjectFactory.createObject("org.apache.xerces.xni.parser.XMLParserConfiguration","org.apache.xerces.parsers.XIncludeAwareParserConfiguration"));
+
+  fConfiguration.setProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.SYMBOL_TABLE_PROPERTY,symbolTable);
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * Constructs a DOM Builder using the specified symbol table and grammar pool.
+
+ */
+
+public DOMParserImpl(SymbolTable symbolTable,XMLGrammarPool grammarPool){
+
+  this((XMLParserConfiguration)ObjectFactory.createObject("org.apache.xerces.xni.parser.XMLParserConfiguration","org.apache.xerces.parsers.XIncludeAwareParserConfiguration"));
+
+  fConfiguration.setProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.SYMBOL_TABLE_PROPERTY,symbolTable);
+
+  fConfiguration.setProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.XMLGRAMMAR_POOL_PROPERTY,grammarPool);
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * Constructs a DOM Builder using the specified parser configuration.
+
+ */
+
+public DOMParserImpl(XMLParserConfiguration config){
+
+  super(config);
+
+  final String[] domRecognizedFeatures={Constants.DOM_CANONICAL_FORM,Constants.DOM_CDATA_SECTIONS,Constants.DOM_CHARSET_OVERRIDES_XML_ENCODING,Constants.DOM_INFOSET,Constants.DOM_NAMESPACE_DECLARATIONS,Constants.DOM_SPLIT_CDATA,Constants.DOM_SUPPORTED_MEDIATYPES_ONLY,Constants.DOM_CERTIFIED,Constants.DOM_WELLFORMED,Constants.DOM_IGNORE_UNKNOWN_CHARACTER_DENORMALIZATIONS};
+
+  fConfiguration.addRecognizedFeatures(domRecognizedFeatures);
+
+  fConfiguration.setFeature(DEFER_NODE_EXPANSION,false);
+
+  fConfiguration.setFeature(Constants.DOM_NAMESPACE_DECLARATIONS,true);
+
+  fConfiguration.setFeature(Constants.DOM_WELLFORMED,true);
+
+  fConfiguration.setFeature(INCLUDE_COMMENTS_FEATURE,true);
+
+  fConfiguration.setFeature(INCLUDE_IGNORABLE_WHITESPACE,true);
+
+  fConfiguration.setFeature(NAMESPACES,true);
+
+  fConfiguration.setFeature(DYNAMIC_VALIDATION,false);
+
+  fConfiguration.setFeature(CREATE_ENTITY_REF_NODES,false);
+
+  fConfiguration.setFeature(CREATE_CDATA_NODES_FEATURE,false);
+
+  fConfiguration.setFeature(Constants.DOM_CANONICAL_FORM,false);
+
+  fConfiguration.setFeature(Constants.DOM_CHARSET_OVERRIDES_XML_ENCODING,true);
+
+  fConfiguration.setFeature(Constants.DOM_SPLIT_CDATA,true);
+
+  fConfiguration.setFeature(Constants.DOM_SUPPORTED_MEDIATYPES_ONLY,false);
+
+  fConfiguration.setFeature(Constants.DOM_IGNORE_UNKNOWN_CHARACTER_DENORMALIZATIONS,true);
+
+  fConfiguration.setFeature(Constants.DOM_CERTIFIED,true);
+
+  try {
+
+    fConfiguration.setFeature(NORMALIZE_DATA,false);
+
+  }
+
+ catch (  XMLConfigurationException exc) {
+
+  }
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * @see org.w3c.dom.ls.LSParser#getAsync()
+
+ */
+
+public boolean getAsync(){
+
+  return false;
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * @see org.w3c.dom.ls.LSParser#getBusy()
+
+ */
+
+public boolean getBusy(){
+
+  return fBusy;
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+private static DOMException newFeatureNotFoundError(String name){
+
+  String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.DOM_DOMAIN,"FEATURE_NOT_FOUND",new Object[]{name});
+
+  return new DOMException(DOMException.NOT_FOUND_ERR,msg);
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+private static DOMException newFeatureNotSupportedError(String name){
+
+  String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.DOM_DOMAIN,"FEATURE_NOT_SUPPORTED",new Object[]{name});
+
+  return new DOMException(DOMException.NOT_SUPPORTED_ERR,msg);
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+private static DOMException newInvalidStateError(){
+
+  String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.DOM_DOMAIN,"INVALID_STATE_ERR",null);
+
+  throw new DOMException(DOMException.INVALID_STATE_ERR,msg);
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+private static DOMException newTypeMismatchError(String name){
+
+  String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.DOM_DOMAIN,"TYPE_MISMATCH_ERR",new Object[]{name});
+
+  return new DOMException(DOMException.TYPE_MISMATCH_ERR,msg);
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * Parse an XML document from a location identified by an URI reference. If the URI contains a fragment identifier (see section 4.1 in ), the behavior is not defined by this specification.
+
+ */
+
+public Document parseURI(String uri) throws LSException {
+
+  if (fBusy) {
+
+    throw newInvalidStateError();
+
+  }
+
+  XMLInputSource source=new XMLInputSource(null,uri,null);
+
+  try {
+
+    currentThread=Thread.currentThread();
+
+    fBusy=true;
+
+    parse(source);
+
+    fBusy=false;
+
+    if (abortNow && currentThread.isInterrupted()) {
+
+      abortNow=false;
+
+      Thread.interrupted();
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    fBusy=false;
+
+    if (abortNow && currentThread.isInterrupted()) {
+
+      Thread.interrupted();
+
+    }
+
+    if (abortNow) {
+
+      abortNow=false;
+
+      restoreHandlers();
+
+      return null;
+
+    }
+
+    if (e != Abort.INSTANCE) {
+
+      if (!(e instanceof XMLParseException) && fErrorHandler != null) {
+
+        DOMErrorImpl error=new DOMErrorImpl();
+
+        error.fException=e;
+
+        error.fMessage=e.getMessage();
+
+        error.fSeverity=DOMError.SEVERITY_FATAL_ERROR;
+
+        fErrorHandler.getErrorHandler().handleError(error);
+
+      }
+
+      if (DEBUG) {
+
+        e.printStackTrace();
+
+      }
+
+      throw (LSException)DOMUtil.createLSException(LSException.PARSE_ERR,e).fillInStackTrace();
+
+    }
+
+  }
+
+  Document doc=getDocument();
+
+  dropDocumentReferences();
+
+  return doc;
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * Parse an XML document or fragment from a resource identified by an <code>LSInput</code> and insert the content into an existing document at the position epcified with the <code>contextNode</code> and <code>action</code> arguments. When parsing the input stream the context node is used for resolving unbound namespace prefixes.
+
+ * @param is  The <code>LSInput</code> from which the sourcedocument is to be read.
+
+ * @param cnode  The <code>Node</code> that is used as the context forthe data that is being parsed.
+
+ * @param action This parameter describes which action should be takenbetween the new set of node being inserted and the existing children of the context node. The set of possible actions is defined above.
+
+ * @exception DOMException HIERARCHY_REQUEST_ERR: Thrown if this action results in an invalid hierarchy (i.e. a Document with more than one document element).
+
+ */
+
+public Node parseWithContext(LSInput is,Node cnode,short action) throws DOMException, LSException {
+
+  throw new DOMException(DOMException.NOT_SUPPORTED_ERR,"Not supported");
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * Parse an XML document from a resource identified by an <code>LSInput</code>.
+
+ */
+
+public Document parse(LSInput is) throws LSException {
+
+  XMLInputSource xmlInputSource=dom2xmlInputSource(is);
+
+  if (fBusy) {
+
+    throw newInvalidStateError();
+
+  }
+
+  try {
+
+    currentThread=Thread.currentThread();
+
+    fBusy=true;
+
+    parse(xmlInputSource);
+
+    fBusy=false;
+
+    if (abortNow && currentThread.isInterrupted()) {
+
+      abortNow=false;
+
+      Thread.interrupted();
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    fBusy=false;
+
+    if (abortNow && currentThread.isInterrupted()) {
+
+      Thread.interrupted();
+
+    }
+
+    if (abortNow) {
+
+      abortNow=false;
+
+      restoreHandlers();
+
+      return null;
+
+    }
+
+    if (e != Abort.INSTANCE) {
+
+      if (!(e instanceof XMLParseException) && fErrorHandler != null) {
+
+        DOMErrorImpl error=new DOMErrorImpl();
+
+        error.fException=e;
+
+        error.fMessage=e.getMessage();
+
+        error.fSeverity=DOMError.SEVERITY_FATAL_ERROR;
+
+        fErrorHandler.getErrorHandler().handleError(error);
+
+      }
+
+      if (DEBUG) {
+
+        e.printStackTrace();
+
+      }
+
+      throw (LSException)DOMUtil.createLSException(LSException.PARSE_ERR,e).fillInStackTrace();
+
+    }
+
+  }
+
+  Document doc=getDocument();
+
+  dropDocumentReferences();
+
+  return doc;
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+private void restoreHandlers(){
+
+  fConfiguration.setDocumentHandler(this);
+
+  fConfiguration.setDTDHandler(this);
+
+  fConfiguration.setDTDContentModelHandler(this);
+
+}
+
+Location: DOMParserImpl.java
+
+Content: 
+
+/** 
+
+ * When a filter is provided, the implementation will call out to the  filter as it is constructing the DOM tree structure. The filter can  choose to remove elements from the document being constructed, or to  terminate the parsing early.  <br> The filter is invoked after the operations requested by the  <code>DOMConfiguration</code> parameters have been applied. For  example, if "<a href='http://www.w3.org/TR/DOM-Level-3-Core/core.html#parameter-validate'> validate</a>" is set to <code>true</code>, the validation is done before invoking the  filter. 
+
+ */
+
+public void setFilter(LSParserFilter filter){
+
+  if (fBusy && filter == null && fDOMFilter != null) {
+
+    fNullFilterInUse=true;
+
+    fDOMFilter=NullLSParserFilter.INSTANCE;
+
+  }
+
+ else {
+
+    fDOMFilter=filter;
+
+  }
+
+  if (fSkippedElemStack == null) {
+
+    fSkippedElemStack=new Stack();
+
+  }
+
+}
+

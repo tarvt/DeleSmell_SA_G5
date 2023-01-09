@@ -1,0 +1,6258 @@
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * AbbreviatedNodeTestStep ::= '@'? NodeTest Predicate
+
+ * @param isLeadingSlashPermitted a boolean indicating whether a slash canappear at the start of this step
+
+ * @return boolean indicating whether a slash following the step was consumed
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected boolean AbbreviatedNodeTestStep(boolean isLeadingSlashPermitted) throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  int axesType;
+
+  int matchTypePos=-1;
+
+  if (tokenIs('@')) {
+
+    axesType=OpCodes.MATCH_ATTRIBUTE;
+
+    appendOp(2,axesType);
+
+    nextToken();
+
+  }
+
+ else   if (this.lookahead("::",1)) {
+
+    if (tokenIs("attribute")) {
+
+      axesType=OpCodes.MATCH_ATTRIBUTE;
+
+      appendOp(2,axesType);
+
+    }
+
+ else     if (tokenIs("child")) {
+
+      matchTypePos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+      axesType=OpCodes.MATCH_IMMEDIATE_ANCESTOR;
+
+      appendOp(2,axesType);
+
+    }
+
+ else {
+
+      axesType=-1;
+
+      this.error(XPATHErrorResources.ER_AXES_NOT_ALLOWED,new Object[]{this.m_token});
+
+    }
+
+    nextToken();
+
+    nextToken();
+
+  }
+
+ else   if (tokenIs('/')) {
+
+    if (!isLeadingSlashPermitted) {
+
+      error(XPATHErrorResources.ER_EXPECTED_STEP_PATTERN,null);
+
+    }
+
+    axesType=OpCodes.MATCH_ANY_ANCESTOR;
+
+    appendOp(2,axesType);
+
+    nextToken();
+
+  }
+
+ else {
+
+    matchTypePos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+    axesType=OpCodes.MATCH_IMMEDIATE_ANCESTOR;
+
+    appendOp(2,axesType);
+
+  }
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  NodeTest(axesType);
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH + 1,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+  while (tokenIs('[')) {
+
+    Predicate();
+
+  }
+
+  boolean trailingSlashConsumed;
+
+  if ((matchTypePos > -1) && tokenIs('/') && lookahead('/',1)) {
+
+    m_ops.setOp(matchTypePos,OpCodes.MATCH_ANY_ANCESTOR);
+
+    nextToken();
+
+    trailingSlashConsumed=true;
+
+  }
+
+ else {
+
+    trailingSlashConsumed=false;
+
+  }
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+  return trailingSlashConsumed;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Access to parse-action table. 
+
+ */
+
+public short[][] action_table(){
+
+  return _action_table;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+public final void addError(ErrorMsg error){
+
+  _parser.reportError(Constants.ERROR,error);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * This has to handle construction of the operations so that they are evaluated in pre-fix order. So, for 9+7-6, instead of |+|9|-|7|6|, this needs to be evaluated as |-|+|9|7|6|. AdditiveExpr ::= MultiplicativeExpr | AdditiveExpr '+' MultiplicativeExpr | AdditiveExpr '-' MultiplicativeExpr
+
+ * @param addPos Position where expression is to be added, or -1 for append.
+
+ * @return the position at the end of the equality expression.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected int AdditiveExpr(int addPos) throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  if (-1 == addPos)   addPos=opPos;
+
+  MultiplicativeExpr(-1);
+
+  if (null != m_token) {
+
+    if (tokenIs('+')) {
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_PLUS);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=AdditiveExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+ else     if (tokenIs('-')) {
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_MINUS);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=AdditiveExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+  }
+
+  return addPos;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * AndExpr ::= EqualityExpr | AndExpr 'and' EqualityExpr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void AndExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  EqualityExpr(-1);
+
+  if ((null != m_token) && tokenIs("and")) {
+
+    nextToken();
+
+    insertOp(opPos,2,OpCodes.OP_AND);
+
+    AndExpr();
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Insert room for operation. This WILL set the length value of the operation, and will update the length value for the total expression.
+
+ * @param length The length of the operation.
+
+ * @param op     The op code to the inserted.
+
+ */
+
+void appendOp(int length,int op){
+
+  int totalLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  m_ops.setOp(totalLen,op);
+
+  m_ops.setOp(totalLen + OpMap.MAPINDEX_LENGTH,length);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,totalLen + length);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Argument ::= Expr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void Argument() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  appendOp(2,OpCodes.OP_ARGUMENT);
+
+  Expr();
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Notify the user of an assertion error, and probably throw an exception.
+
+ * @param b   If false, a runtime exception will be thrown.
+
+ * @param msg The assertion message, which should be informative.
+
+ * @throws RuntimeException if the b argument is false.
+
+ */
+
+private void assertion(boolean b,String msg){
+
+  if (!b) {
+
+    String fMsg=XSLMessages.createXPATHMessage(XPATHErrorResources.ER_INCORRECT_PROGRAMMER_ASSERTION,new Object[]{msg});
+
+    throw new RuntimeException(fMsg);
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Basis ::= AxisName '::' NodeTest | AbbreviatedBasis
+
+ * @return FROM_XXX axes type, found in{@link org.apache.xpath.compiler.Keywords}.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected int AxisName() throws javax.xml.transform.TransformerException {
+
+  Object val=Keywords.getAxisName(m_token);
+
+  if (null == val) {
+
+    error(XPATHErrorResources.ER_ILLEGAL_AXIS_NAME,new Object[]{m_token});
+
+  }
+
+  int axesType=((Integer)val).intValue();
+
+  appendOp(2,axesType);
+
+  return axesType;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Basis ::= AxisName '::' NodeTest | AbbreviatedBasis
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void Basis() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  int axesType;
+
+  if (lookahead("::",1)) {
+
+    axesType=AxisName();
+
+    nextToken();
+
+    nextToken();
+
+  }
+
+ else   if (tokenIs('@')) {
+
+    axesType=OpCodes.FROM_ATTRIBUTES;
+
+    appendOp(2,axesType);
+
+    nextToken();
+
+  }
+
+ else {
+
+    axesType=OpCodes.FROM_CHILDREN;
+
+    appendOp(2,axesType);
+
+  }
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  NodeTest(axesType);
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH + 1,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * StringExpr ::= Expr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void BooleanExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  appendOp(2,OpCodes.OP_BOOL);
+
+  Expr();
+
+  int opLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos;
+
+  if (opLen == 2) {
+
+    error(XPATHErrorResources.ER_BOOLEAN_ARG_NO_LONGER_OPTIONAL,null);
+
+  }
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,opLen);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Consume an expected token, throwing an exception if it isn't there.
+
+ * @param expected the character to be expected.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+private final void consumeExpected(char expected) throws javax.xml.transform.TransformerException {
+
+  if (tokenIs(expected)) {
+
+    nextToken();
+
+  }
+
+ else {
+
+    error(XPATHErrorResources.ER_EXPECTED_BUT_FOUND,new Object[]{String.valueOf(expected),m_token});
+
+    throw new XPathProcessorException(CONTINUE_AFTER_FATAL_ERROR);
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Consume an expected token, throwing an exception if it isn't there.
+
+ * @param expected The string to be expected.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+private final void consumeExpected(String expected) throws javax.xml.transform.TransformerException {
+
+  if (tokenIs(expected)) {
+
+    nextToken();
+
+  }
+
+ else {
+
+    error(XPATHErrorResources.ER_EXPECTED_BUT_FOUND,new Object[]{expected,m_token});
+
+    throw new XPathProcessorException(CONTINUE_AFTER_FATAL_ERROR);
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * This method is similar to findNodeType(int, Object) except that it creates a StepPattern instead of just returning a node type. It also differs in the way it handles "{uri}:*" and "{uri}:@*". The last two patterns are expanded as "*[namespace-uri() = 'uri']" and "@*[namespace-uri() = 'uri']", respectively. This expansion considerably simplifies the grouping of patterns in the Mode class. For this expansion to be correct, the priority of the pattern/template must be set to -0.25 (when no other predicates are present).
+
+ */
+
+public StepPattern createStepPattern(int axis,Object test,Vector predicates){
+
+  int nodeType;
+
+  if (test == null) {
+
+    nodeType=(axis == Axis.ATTRIBUTE) ? NodeTest.ATTRIBUTE : (axis == Axis.NAMESPACE) ? -1 : NodeTest.ELEMENT;
+
+    return new StepPattern(axis,nodeType,predicates);
+
+  }
+
+ else   if (test instanceof Integer) {
+
+    nodeType=((Integer)test).intValue();
+
+    return new StepPattern(axis,nodeType,predicates);
+
+  }
+
+ else {
+
+    QName name=(QName)test;
+
+    boolean setPriority=false;
+
+    if (axis == Axis.NAMESPACE) {
+
+      nodeType=(name.toString().equals("*")) ? -1 : _xsltc.registerNamespacePrefix(name);
+
+      ;
+
+    }
+
+ else {
+
+      final String uri=name.getNamespace();
+
+      final String local=name.getLocalPart();
+
+      final QName namespace_uri=_parser.getQNameIgnoreDefaultNs("namespace-uri");
+
+      if (uri != null && (local.equals("*") || local.equals("@*"))) {
+
+        if (predicates == null) {
+
+          predicates=new Vector(2);
+
+        }
+
+        setPriority=(predicates.size() == 0);
+
+        predicates.add(new Predicate(new EqualityExpr(Operators.EQ,new NamespaceUriCall(namespace_uri),new LiteralExpr(uri))));
+
+      }
+
+      if (local.equals("*")) {
+
+        nodeType=(axis == Axis.ATTRIBUTE) ? NodeTest.ATTRIBUTE : NodeTest.ELEMENT;
+
+      }
+
+ else       if (local.equals("@*")) {
+
+        nodeType=NodeTest.ATTRIBUTE;
+
+      }
+
+ else {
+
+        nodeType=(axis == Axis.ATTRIBUTE) ? _xsltc.registerAttribute(name) : _xsltc.registerElement(name);
+
+      }
+
+    }
+
+    final StepPattern result=new StepPattern(axis,nodeType,predicates);
+
+    if (setPriority) {
+
+      result.setPriority(-0.25);
+
+    }
+
+    return result;
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Constructor 
+
+ */
+
+CUP$XPathParser$actions(XPathParser parser){
+
+  this.parser=parser;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Method with the actual generated action code. 
+
+ */
+
+public final java_cup.runtime.Symbol CUP$XPathParser$do_action(int CUP$XPathParser$act_num,java_cup.runtime.lr_parser CUP$XPathParser$parser,java.util.Stack CUP$XPathParser$stack,int CUP$XPathParser$top) throws java.lang.Exception {
+
+  java_cup.runtime.Symbol CUP$XPathParser$result;
+
+switch (CUP$XPathParser$act_num) {
+
+case 140:
+
+{
+
+      QName RESULT=null;
+
+      RESULT=parser.getQNameIgnoreDefaultNs("id");
+
+      CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+    }
+
+  return CUP$XPathParser$result;
+
+case 139:
+
+{
+
+  QName RESULT=null;
+
+  RESULT=parser.getQNameIgnoreDefaultNs("self");
+
+  CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 138:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("preceding-sibling");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 137:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("preceding");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 136:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("parent");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 135:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("namespace");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 134:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("following-sibling");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 133:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("following");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 132:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("decendant-or-self");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 131:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("decendant");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 130:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("child");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 129:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("attribute");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 128:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("ancestor-or-self");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 127:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("child");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 126:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("key");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 125:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("mod");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 124:
+
+{
+
+QName RESULT=null;
+
+RESULT=parser.getQNameIgnoreDefaultNs("div");
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 123:
+
+{
+
+QName RESULT=null;
+
+int qnameleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int qnameright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+String qname=(String)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=parser.getQNameIgnoreDefaultNs(qname);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(37,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 122:
+
+{
+
+Object RESULT=null;
+
+int qnleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int qnright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+QName qn=(QName)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=qn;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(26,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 121:
+
+{
+
+Object RESULT=null;
+
+RESULT=null;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(26,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 120:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.PI);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(25,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 119:
+
+{
+
+Object RESULT=null;
+
+int lleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int lright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+String l=(String)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+QName name=parser.getQNameIgnoreDefaultNs("name");
+
+Expression exp=new EqualityExpr(Operators.EQ,new NameCall(name),new LiteralExpr(l));
+
+Vector predicates=new Vector();
+
+predicates.addElement(new Predicate(exp));
+
+RESULT=new Step(Axis.CHILD,NodeTest.PI,predicates);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(25,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 118:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.COMMENT);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(25,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 117:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.TEXT);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(25,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 116:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.ANODE);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(25,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 115:
+
+{
+
+Object RESULT=null;
+
+int ntleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ntright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Object nt=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=nt;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(25,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 114:
+
+{
+
+Expression RESULT=null;
+
+int exleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int exright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ex=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=ex;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(3,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 113:
+
+{
+
+QName RESULT=null;
+
+int vnameleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int vnameright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+QName vname=(QName)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=vname;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(39,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 112:
+
+{
+
+QName RESULT=null;
+
+int fnameleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int fnameright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+QName fname=(QName)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=fname;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(38,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 111:
+
+{
+
+Vector RESULT=null;
+
+int argleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int argright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression arg=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int arglleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int arglright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector argl=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+argl.insertElementAt(arg,0);
+
+RESULT=argl;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(36,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 110:
+
+{
+
+Vector RESULT=null;
+
+int argleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int argright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression arg=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+Vector temp=new Vector();
+
+temp.addElement(arg);
+
+RESULT=temp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(36,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 109:
+
+{
+
+Expression RESULT=null;
+
+int fnameleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).left;
+
+int fnameright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).right;
+
+QName fname=(QName)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).value;
+
+int arglleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int arglright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Vector argl=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+if (parser.getQNameIgnoreDefaultNs("concat").equals(fname)) {
+
+RESULT=new ConcatCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("number").equals(fname)) {
+
+RESULT=new NumberCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("document").equals(fname)) {
+
+parser.setMultiDocument(true);
+
+RESULT=new DocumentCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("string").equals(fname)) {
+
+RESULT=new StringCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("boolean").equals(fname)) {
+
+RESULT=new BooleanCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("name").equals(fname)) {
+
+RESULT=new NameCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("generate-id").equals(fname)) {
+
+RESULT=new GenerateIdCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("not").equals(fname)) {
+
+RESULT=new NotCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("format-number").equals(fname)) {
+
+RESULT=new FormatNumberCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("unparsed-entity-uri").equals(fname)) {
+
+RESULT=new UnparsedEntityUriCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("key").equals(fname)) {
+
+RESULT=new KeyCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("id").equals(fname)) {
+
+RESULT=new KeyCall(fname,argl);
+
+parser.setHasIdCall(true);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("ceiling").equals(fname)) {
+
+RESULT=new CeilingCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("round").equals(fname)) {
+
+RESULT=new RoundCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("floor").equals(fname)) {
+
+RESULT=new FloorCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("contains").equals(fname)) {
+
+RESULT=new ContainsCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("string-length").equals(fname)) {
+
+RESULT=new StringLengthCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("starts-with").equals(fname)) {
+
+RESULT=new StartsWithCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("function-available").equals(fname)) {
+
+RESULT=new FunctionAvailableCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("element-available").equals(fname)) {
+
+RESULT=new ElementAvailableCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("local-name").equals(fname)) {
+
+RESULT=new LocalNameCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("lang").equals(fname)) {
+
+RESULT=new LangCall(fname,argl);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("namespace-uri").equals(fname)) {
+
+RESULT=new NamespaceUriCall(fname,argl);
+
+}
+
+ else if (parser.getQName(Constants.TRANSLET_URI,"xsltc","cast").equals(fname)) {
+
+RESULT=new CastCall(fname,argl);
+
+}
+
+ else if (fname.getLocalPart().equals("nodeset") || fname.getLocalPart().equals("node-set")) {
+
+parser.setCallsNodeset(true);
+
+RESULT=new FunctionCall(fname,argl);
+
+}
+
+ else {
+
+RESULT=new FunctionCall(fname,argl);
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(16,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 108:
+
+{
+
+Expression RESULT=null;
+
+int fnameleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int fnameright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+QName fname=(QName)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+if (parser.getQNameIgnoreDefaultNs("current").equals(fname)) {
+
+RESULT=new CurrentCall(fname);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("number").equals(fname)) {
+
+RESULT=new NumberCall(fname,parser.EmptyArgs);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("string").equals(fname)) {
+
+RESULT=new StringCall(fname,parser.EmptyArgs);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("concat").equals(fname)) {
+
+RESULT=new ConcatCall(fname,parser.EmptyArgs);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("true").equals(fname)) {
+
+RESULT=new BooleanExpr(true);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("false").equals(fname)) {
+
+RESULT=new BooleanExpr(false);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("name").equals(fname)) {
+
+RESULT=new NameCall(fname);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("generate-id").equals(fname)) {
+
+RESULT=new GenerateIdCall(fname,parser.EmptyArgs);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("string-length").equals(fname)) {
+
+RESULT=new StringLengthCall(fname,parser.EmptyArgs);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("position").equals(fname)) {
+
+RESULT=new PositionCall(fname);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("last").equals(fname)) {
+
+RESULT=new LastCall(fname);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("local-name").equals(fname)) {
+
+RESULT=new LocalNameCall(fname);
+
+}
+
+ else if (parser.getQNameIgnoreDefaultNs("namespace-uri").equals(fname)) {
+
+RESULT=new NamespaceUriCall(fname);
+
+}
+
+ else {
+
+RESULT=new FunctionCall(fname,parser.EmptyArgs);
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(16,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 107:
+
+{
+
+Expression RESULT=null;
+
+int varNameleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int varNameright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+QName varName=(QName)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+SyntaxTreeNode node=parser.lookupName(varName);
+
+if (node != null) {
+
+if (node instanceof Variable) {
+
+RESULT=new VariableRef((Variable)node);
+
+}
+
+ else if (node instanceof Param) {
+
+RESULT=new ParameterRef((Param)node);
+
+}
+
+ else {
+
+RESULT=new UnresolvedRef(varName);
+
+}
+
+}
+
+if (node == null) {
+
+RESULT=new UnresolvedRef(varName);
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(15,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 106:
+
+{
+
+Expression RESULT=null;
+
+int fcleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int fcright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression fc=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=fc;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(17,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 105:
+
+{
+
+Expression RESULT=null;
+
+int numleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int numright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Double num=(Double)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new RealExpr(num.doubleValue());
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(17,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 104:
+
+{
+
+Expression RESULT=null;
+
+int numleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int numright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Long num=(Long)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+long value=num.longValue();
+
+if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+
+RESULT=new RealExpr(value);
+
+}
+
+ else {
+
+if (num.doubleValue() == -0) RESULT=new RealExpr(num.doubleValue());
+
+ else if (num.intValue() == 0) RESULT=new IntExpr(num.intValue());
+
+ else if (num.doubleValue() == 0.0) RESULT=new RealExpr(num.doubleValue());
+
+ else RESULT=new IntExpr(num.intValue());
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(17,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 103:
+
+{
+
+Expression RESULT=null;
+
+int stringleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int stringright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+String string=(String)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+String namespace=null;
+
+final int index=string.lastIndexOf(':');
+
+if (index > 0) {
+
+final String prefix=string.substring(0,index);
+
+namespace=parser._symbolTable.lookupNamespace(prefix);
+
+}
+
+RESULT=(namespace == null) ? new LiteralExpr(string) : new LiteralExpr(string,namespace);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(17,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 102:
+
+{
+
+Expression RESULT=null;
+
+int exleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int exright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Expression ex=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+RESULT=ex;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(17,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 101:
+
+{
+
+Expression RESULT=null;
+
+int vrleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int vrright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression vr=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=vr;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(17,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 100:
+
+{
+
+Expression RESULT=null;
+
+int primaryleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int primaryright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Expression primary=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new FilterExpr(primary,pp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(6,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 99:
+
+{
+
+Expression RESULT=null;
+
+int primaryleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int primaryright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression primary=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=primary;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(6,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 98:
+
+{
+
+Expression RESULT=null;
+
+RESULT=new Step(Axis.PARENT,NodeTest.ANODE,null);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(20,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 97:
+
+{
+
+Expression RESULT=null;
+
+RESULT=new Step(Axis.SELF,NodeTest.ANODE,null);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(20,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 96:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.SELF);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 95:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.PRECEDINGSIBLING);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 94:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.PRECEDING);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 93:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.PARENT);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 92:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.NAMESPACE);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 91:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.FOLLOWINGSIBLING);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 90:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.FOLLOWING);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 89:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.DESCENDANTORSELF);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 88:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.DESCENDANT);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 87:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.CHILD);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 86:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.ATTRIBUTE);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 85:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.ANCESTORORSELF);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 84:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.ANCESTOR);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(40,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 83:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.ATTRIBUTE);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(41,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 82:
+
+{
+
+Integer RESULT=null;
+
+int anleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int anright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Integer an=(Integer)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+RESULT=an;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(41,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 81:
+
+{
+
+Expression RESULT=null;
+
+int abbrevleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int abbrevright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression abbrev=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=abbrev;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(7,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 80:
+
+{
+
+Expression RESULT=null;
+
+int axisleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int axisright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Integer axis=(Integer)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ntestleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ntestright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Object ntest=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new Step(axis.intValue(),parser.findNodeType(axis.intValue(),ntest),null);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(7,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 79:
+
+{
+
+Expression RESULT=null;
+
+int axisleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int axisright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Integer axis=(Integer)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int ntestleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int ntestright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Object ntest=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new Step(axis.intValue(),parser.findNodeType(axis.intValue(),ntest),pp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(7,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 78:
+
+{
+
+Expression RESULT=null;
+
+int ntestleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int ntestright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Object ntest=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+if (ntest instanceof Step) {
+
+Step step=(Step)ntest;
+
+step.addPredicates(pp);
+
+RESULT=(Step)ntest;
+
+}
+
+ else {
+
+RESULT=new Step(Axis.CHILD,parser.findNodeType(Axis.CHILD,ntest),pp);
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(7,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 77:
+
+{
+
+Expression RESULT=null;
+
+int ntestleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ntestright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Object ntest=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+if (ntest instanceof Step) {
+
+RESULT=(Step)ntest;
+
+}
+
+ else {
+
+RESULT=new Step(Axis.CHILD,parser.findNodeType(Axis.CHILD,ntest),null);
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(7,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 76:
+
+{
+
+Expression RESULT=null;
+
+int rlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression rlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+int nodeType=DOM.NO_TYPE;
+
+if (rlp instanceof Step && parser.isElementAxis(((Step)rlp).getAxis())) {
+
+nodeType=DTM.ELEMENT_NODE;
+
+}
+
+final Step step=new Step(Axis.DESCENDANTORSELF,nodeType,null);
+
+RESULT=new AbsoluteLocationPath(parser.insertStep(step,(RelativeLocationPath)rlp));
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(24,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 75:
+
+{
+
+Expression RESULT=null;
+
+int rlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int rlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression rlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int stepleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int stepright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression step=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+final Step right=(Step)step;
+
+final int axis=right.getAxis();
+
+final int type=right.getNodeType();
+
+final Vector predicates=right.getPredicates();
+
+if ((axis == Axis.CHILD) && (type != NodeTest.ATTRIBUTE)) {
+
+if (predicates == null) {
+
+right.setAxis(Axis.DESCENDANT);
+
+if (rlp instanceof Step && ((Step)rlp).isAbbreviatedDot()) {
+
+RESULT=right;
+
+}
+
+ else {
+
+RelativeLocationPath left=(RelativeLocationPath)rlp;
+
+RESULT=new ParentLocationPath(left,right);
+
+}
+
+}
+
+ else {
+
+if (rlp instanceof Step && ((Step)rlp).isAbbreviatedDot()) {
+
+Step left=new Step(Axis.DESCENDANTORSELF,DTM.ELEMENT_NODE,null);
+
+RESULT=new ParentLocationPath(left,right);
+
+}
+
+ else {
+
+RelativeLocationPath left=(RelativeLocationPath)rlp;
+
+Step mid=new Step(Axis.DESCENDANTORSELF,DTM.ELEMENT_NODE,null);
+
+ParentLocationPath ppl=new ParentLocationPath(mid,right);
+
+RESULT=new ParentLocationPath(left,ppl);
+
+}
+
+}
+
+}
+
+ else if ((axis == Axis.ATTRIBUTE) || (type == NodeTest.ATTRIBUTE)) {
+
+RelativeLocationPath left=(RelativeLocationPath)rlp;
+
+Step middle=new Step(Axis.DESCENDANTORSELF,DTM.ELEMENT_NODE,null);
+
+ParentLocationPath ppl=new ParentLocationPath(middle,right);
+
+RESULT=new ParentLocationPath(left,ppl);
+
+}
+
+ else {
+
+RelativeLocationPath left=(RelativeLocationPath)rlp;
+
+Step middle=new Step(Axis.DESCENDANTORSELF,DOM.NO_TYPE,null);
+
+ParentLocationPath ppl=new ParentLocationPath(middle,right);
+
+RESULT=new ParentLocationPath(left,ppl);
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(22,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 74:
+
+{
+
+Expression RESULT=null;
+
+int aalpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aalpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression aalp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=aalp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(23,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 73:
+
+{
+
+Expression RESULT=null;
+
+int rlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression rlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new AbsoluteLocationPath(rlp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(23,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 72:
+
+{
+
+Expression RESULT=null;
+
+RESULT=new AbsoluteLocationPath();
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(23,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 71:
+
+{
+
+Expression RESULT=null;
+
+int arlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int arlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression arlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=arlp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(21,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 70:
+
+{
+
+Expression RESULT=null;
+
+int rlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int rlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression rlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int stepleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int stepright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression step=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+if (rlp instanceof Step && ((Step)rlp).isAbbreviatedDot()) {
+
+RESULT=step;
+
+}
+
+ else if (((Step)step).isAbbreviatedDot()) {
+
+RESULT=rlp;
+
+}
+
+ else {
+
+RESULT=new ParentLocationPath((RelativeLocationPath)rlp,step);
+
+}
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(21,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 69:
+
+{
+
+Expression RESULT=null;
+
+int stepleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int stepright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression step=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=step;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(21,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 68:
+
+{
+
+Expression RESULT=null;
+
+int alpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int alpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression alp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=alp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(4,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 67:
+
+{
+
+Expression RESULT=null;
+
+int rlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression rlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=rlp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(4,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 66:
+
+{
+
+Expression RESULT=null;
+
+int fexpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int fexpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression fexp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int rlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression rlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+int nodeType=DOM.NO_TYPE;
+
+if (rlp instanceof Step && parser.isElementAxis(((Step)rlp).getAxis())) {
+
+nodeType=DTM.ELEMENT_NODE;
+
+}
+
+final Step step=new Step(Axis.DESCENDANTORSELF,nodeType,null);
+
+FilterParentPath fpp=new FilterParentPath(fexp,step);
+
+fpp=new FilterParentPath(fpp,rlp);
+
+if (fexp instanceof KeyCall == false) {
+
+fpp.setDescendantAxis();
+
+}
+
+RESULT=fpp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(19,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 65:
+
+{
+
+Expression RESULT=null;
+
+int fexpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int fexpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression fexp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int rlpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rlpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression rlp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new FilterParentPath(fexp,rlp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(19,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 64:
+
+{
+
+Expression RESULT=null;
+
+int fexpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int fexpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression fexp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=fexp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(19,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 63:
+
+{
+
+Expression RESULT=null;
+
+int lpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int lpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression lp=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=lp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(19,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 62:
+
+{
+
+Expression RESULT=null;
+
+int peleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int peright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression pe=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int restleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int restright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression rest=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new UnionPathExpr(pe,rest);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(18,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 61:
+
+{
+
+Expression RESULT=null;
+
+int peleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int peright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression pe=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=pe;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(18,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 60:
+
+{
+
+Expression RESULT=null;
+
+int ueleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ueright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ue=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new UnaryOpExpr(ue);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(14,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 59:
+
+{
+
+Expression RESULT=null;
+
+int ueleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ueright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ue=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=ue;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(14,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 58:
+
+{
+
+Expression RESULT=null;
+
+int meleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int meright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression me=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int ueleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ueright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ue=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new BinOpExpr(BinOpExpr.MOD,me,ue);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(13,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 57:
+
+{
+
+Expression RESULT=null;
+
+int meleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int meright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression me=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int ueleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ueright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ue=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new BinOpExpr(BinOpExpr.DIV,me,ue);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(13,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 56:
+
+{
+
+Expression RESULT=null;
+
+int meleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int meright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression me=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int ueleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ueright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ue=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new BinOpExpr(BinOpExpr.TIMES,me,ue);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(13,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 55:
+
+{
+
+Expression RESULT=null;
+
+int ueleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ueright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ue=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=ue;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(13,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 54:
+
+{
+
+Expression RESULT=null;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int meleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int meright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression me=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new BinOpExpr(BinOpExpr.MINUS,ae,me);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(12,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 53:
+
+{
+
+Expression RESULT=null;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int meleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int meright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression me=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new BinOpExpr(BinOpExpr.PLUS,ae,me);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(12,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 52:
+
+{
+
+Expression RESULT=null;
+
+int meleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int meright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression me=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=me;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(12,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 51:
+
+{
+
+Expression RESULT=null;
+
+int releft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int reright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression re=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new RelationalExpr(Operators.GE,re,ae);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(11,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 50:
+
+{
+
+Expression RESULT=null;
+
+int releft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int reright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression re=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new RelationalExpr(Operators.LE,re,ae);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(11,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 49:
+
+{
+
+Expression RESULT=null;
+
+int releft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int reright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression re=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new RelationalExpr(Operators.GT,re,ae);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(11,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 48:
+
+{
+
+Expression RESULT=null;
+
+int releft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int reright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression re=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new RelationalExpr(Operators.LT,re,ae);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(11,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 47:
+
+{
+
+Expression RESULT=null;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=ae;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(11,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 46:
+
+{
+
+Expression RESULT=null;
+
+int eeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int eeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression ee=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int releft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int reright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression re=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new EqualityExpr(Operators.NE,ee,re);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(10,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 45:
+
+{
+
+Expression RESULT=null;
+
+int eeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int eeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression ee=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int releft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int reright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression re=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new EqualityExpr(Operators.EQ,ee,re);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(10,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 44:
+
+{
+
+Expression RESULT=null;
+
+int releft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int reright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression re=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=re;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(10,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 43:
+
+{
+
+Expression RESULT=null;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int eeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int eeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ee=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new LogicalExpr(LogicalExpr.AND,ae,ee);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(9,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 42:
+
+{
+
+Expression RESULT=null;
+
+int eleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int eright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression e=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=e;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(9,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 41:
+
+{
+
+Expression RESULT=null;
+
+int oeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int oeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Expression oe=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new LogicalExpr(LogicalExpr.OR,oe,ae);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(8,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 40:
+
+{
+
+Expression RESULT=null;
+
+int aeleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int aeright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ae=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=ae;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(8,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 39:
+
+{
+
+Expression RESULT=null;
+
+int exleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int exright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression ex=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=ex;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(2,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 38:
+
+{
+
+Expression RESULT=null;
+
+int eleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int eright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Expression e=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+RESULT=new Predicate(e);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(5,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 37:
+
+{
+
+Vector RESULT=null;
+
+int pleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int pright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Expression p=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+pp.insertElementAt(p,0);
+
+RESULT=pp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(35,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 36:
+
+{
+
+Vector RESULT=null;
+
+int pleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int pright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression p=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+Vector temp=new Vector();
+
+temp.addElement(p);
+
+RESULT=temp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(35,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 35:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.ATTRIBUTE);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(42,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 34:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.CHILD);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(42,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 33:
+
+{
+
+Integer RESULT=null;
+
+RESULT=new Integer(Axis.ATTRIBUTE);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(42,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 32:
+
+{
+
+Object RESULT=null;
+
+int qnleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int qnright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+QName qn=(QName)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=qn;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(34,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 31:
+
+{
+
+Object RESULT=null;
+
+RESULT=null;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(34,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 30:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.PI);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(33,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 29:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.COMMENT);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(33,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 28:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.TEXT);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(33,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 27:
+
+{
+
+Object RESULT=null;
+
+RESULT=new Integer(NodeTest.ANODE);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(33,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 26:
+
+{
+
+Object RESULT=null;
+
+int ntleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ntright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Object nt=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=nt;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(33,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 25:
+
+{
+
+StepPattern RESULT=null;
+
+int axisleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int axisright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Integer axis=(Integer)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int pipleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int pipright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+StepPattern pip=(StepPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=(ProcessingInstructionPattern)pip.setPredicates(pp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 24:
+
+{
+
+StepPattern RESULT=null;
+
+int axisleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int axisright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Integer axis=(Integer)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int pipleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int pipright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+StepPattern pip=(StepPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=pip;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 23:
+
+{
+
+StepPattern RESULT=null;
+
+int axisleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int axisright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Integer axis=(Integer)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int ntleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int ntright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Object nt=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=parser.createStepPattern(axis.intValue(),nt,pp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 22:
+
+{
+
+StepPattern RESULT=null;
+
+int axisleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int axisright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Integer axis=(Integer)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ntleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ntright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Object nt=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=parser.createStepPattern(axis.intValue(),nt,null);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 21:
+
+{
+
+StepPattern RESULT=null;
+
+int pipleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int pipright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+StepPattern pip=(StepPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=(ProcessingInstructionPattern)pip.setPredicates(pp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 20:
+
+{
+
+StepPattern RESULT=null;
+
+int pipleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int pipright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+StepPattern pip=(StepPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=pip;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 19:
+
+{
+
+StepPattern RESULT=null;
+
+int ntleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int ntright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+Object nt=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+int ppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Vector pp=(Vector)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=parser.createStepPattern(Axis.CHILD,nt,pp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 18:
+
+{
+
+StepPattern RESULT=null;
+
+int ntleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ntright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Object nt=(Object)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=parser.createStepPattern(Axis.CHILD,nt,null);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(32,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 17:
+
+{
+
+RelativePathPattern RESULT=null;
+
+int spleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int spright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+StepPattern sp=(StepPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int rppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+RelativePathPattern rpp=(RelativePathPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new AncestorPattern(sp,rpp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(31,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 16:
+
+{
+
+RelativePathPattern RESULT=null;
+
+int spleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int spright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+StepPattern sp=(StepPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int rppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+RelativePathPattern rpp=(RelativePathPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new ParentPattern(sp,rpp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(31,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 15:
+
+{
+
+RelativePathPattern RESULT=null;
+
+int spleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int spright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+StepPattern sp=(StepPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=sp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(31,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 14:
+
+{
+
+StepPattern RESULT=null;
+
+int lleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int lright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+String l=(String)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+RESULT=new ProcessingInstructionPattern(l);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(30,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 13:
+
+{
+
+IdKeyPattern RESULT=null;
+
+int l1left=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).left;
+
+int l1right=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).right;
+
+String l1=(String)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).value;
+
+int l2left=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int l2right=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+String l2=(String)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+RESULT=new KeyPattern(l1,l2);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(27,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 5)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 12:
+
+{
+
+IdKeyPattern RESULT=null;
+
+int lleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int lright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+String l=(String)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+RESULT=new IdPattern(l);
+
+parser.setHasIdCall(true);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(27,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 3)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 11:
+
+{
+
+Pattern RESULT=null;
+
+int rppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+RelativePathPattern rpp=(RelativePathPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=rpp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(29,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 10:
+
+{
+
+Pattern RESULT=null;
+
+int rppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+RelativePathPattern rpp=(RelativePathPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new AncestorPattern(rpp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(29,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 9:
+
+{
+
+Pattern RESULT=null;
+
+int ikpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int ikpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+IdKeyPattern ikp=(IdKeyPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int rppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+RelativePathPattern rpp=(RelativePathPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new AncestorPattern(ikp,rpp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(29,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 8:
+
+{
+
+Pattern RESULT=null;
+
+int ikpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int ikpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+IdKeyPattern ikp=(IdKeyPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int rppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+RelativePathPattern rpp=(RelativePathPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new ParentPattern(ikp,rpp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(29,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 7:
+
+{
+
+Pattern RESULT=null;
+
+int ikpleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int ikpright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+IdKeyPattern ikp=(IdKeyPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=ikp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(29,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 6:
+
+{
+
+Pattern RESULT=null;
+
+int rppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int rppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+RelativePathPattern rpp=(RelativePathPattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new AbsolutePathPattern(rpp);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(29,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 5:
+
+{
+
+Pattern RESULT=null;
+
+RESULT=new AbsolutePathPattern(null);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(29,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 4:
+
+{
+
+Pattern RESULT=null;
+
+int lppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left;
+
+int lppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).right;
+
+Pattern lpp=(Pattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).value;
+
+int pleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int pright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Pattern p=(Pattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=new AlternativePattern(lpp,p);
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(28,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 2)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 3:
+
+{
+
+Pattern RESULT=null;
+
+int lppleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int lppright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Pattern lpp=(Pattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=lpp;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(28,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 2:
+
+{
+
+SyntaxTreeNode RESULT=null;
+
+int exprleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int exprright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Expression expr=(Expression)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=expr;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(1,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 1:
+
+{
+
+SyntaxTreeNode RESULT=null;
+
+int patternleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).left;
+
+int patternright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right;
+
+Pattern pattern=(Pattern)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).value;
+
+RESULT=pattern;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(1,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+return CUP$XPathParser$result;
+
+case 0:
+
+{
+
+Object RESULT=null;
+
+int start_valleft=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left;
+
+int start_valright=((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).right;
+
+SyntaxTreeNode start_val=(SyntaxTreeNode)((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).value;
+
+RESULT=start_val;
+
+CUP$XPathParser$result=new java_cup.runtime.Symbol(0,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 1)).left,((java_cup.runtime.Symbol)CUP$XPathParser$stack.elementAt(CUP$XPathParser$top - 0)).right,RESULT);
+
+}
+
+CUP$XPathParser$parser.done_parsing();
+
+return CUP$XPathParser$result;
+
+default :
+
+throw new Exception("Invalid action number found in internal parse table");
+
+}
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Invoke a user supplied parse action. 
+
+ */
+
+public java_cup.runtime.Symbol do_action(int act_num,java_cup.runtime.lr_parser parser,java.util.Stack stack,int top) throws java.lang.Exception {
+
+  return action_obj.CUP$XPathParser$do_action(act_num,parser,stack,top);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Dump the remaining token queue. Thanks to Craig for this.
+
+ * @return A dump of the remaining token queue, which may be appended to anerror message.
+
+ */
+
+protected String dumpRemainingTokenQueue(){
+
+  int q=m_queueMark;
+
+  String returnMsg;
+
+  if (q < m_ops.getTokenQueueSize()) {
+
+    String msg="\n Remaining tokens: (";
+
+    while (q < m_ops.getTokenQueueSize()) {
+
+      String t=(String)m_ops.m_tokenQueue.elementAt(q++);
+
+      msg+=(" '" + t + "'");
+
+    }
+
+    returnMsg=msg + ")";
+
+  }
+
+ else {
+
+    returnMsg="";
+
+  }
+
+  return returnMsg;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * <code>EOF</code> Symbol index. 
+
+ */
+
+public int EOF_sym(){
+
+  return 0;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * @returns an Object which is either a String, a Number, a Boolean, or a vectorof nodes. EqualityExpr ::= RelationalExpr | EqualityExpr '=' RelationalExpr
+
+ * @param addPos Position where expression is to be added, or -1 for append.
+
+ * @return the position at the end of the equality expression.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected int EqualityExpr(int addPos) throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  if (-1 == addPos)   addPos=opPos;
+
+  RelationalExpr(-1);
+
+  if (null != m_token) {
+
+    if (tokenIs('!') && lookahead('=',1)) {
+
+      nextToken();
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_NOTEQUALS);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=EqualityExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+ else     if (tokenIs('=')) {
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_EQUALS);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=EqualityExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+  }
+
+  return addPos;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * This method is added to support DOM 3 XPath API. <p> This method is exactly like error(String, Object[]); except that the underlying TransformerException is XpathStylesheetDOM3Exception (which extends TransformerException). <p> So older XPath code in Xalan is not affected by this. To older XPath code the behavior of whether error() or errorForDOM3() is called because it is always catching TransformerException objects and is oblivious to the new subclass of XPathStylesheetDOM3Exception. Older XPath code runs as before. <p> However, newer DOM3 XPath code upon catching a TransformerException can can check if the exception is an instance of XPathStylesheetDOM3Exception and take appropriate action.
+
+ * @param msg  An error msgkey that corresponds to one of the constants found in{@link org.apache.xpath.res.XPATHErrorResources}, which is a key for a format string.
+
+ * @param args An array of arguments represented in the format string, which maybe null.
+
+ * @throws TransformerException if the current ErrorListoner determines to throwan exception.
+
+ */
+
+void errorForDOM3(String msg,Object[] args) throws TransformerException {
+
+  String fmsg=XSLMessages.createXPATHMessage(msg,args);
+
+  ErrorListener ehandler=this.getErrorListener();
+
+  TransformerException te=new XPathStylesheetDOM3Exception(fmsg,m_sourceLocator);
+
+  if (null != ehandler) {
+
+    ehandler.fatalError(te);
+
+  }
+
+ else {
+
+    throw te;
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * <code>error</code> Symbol index. 
+
+ */
+
+public int error_sym(){
+
+  return 1;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Expr ::= OrExpr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void Expr() throws javax.xml.transform.TransformerException {
+
+  OrExpr();
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * FilterExpr ::= PrimaryExpr | FilterExpr Predicate
+
+ * @throws XSLProcessorException thrown if the active ProblemListener andXPathContext decide the error condition is severe enough to halt processing.
+
+ * @return FILTER_MATCH_PREDICATES, if this method successfully matched aFilterExpr with one or more Predicates; FILTER_MATCH_PRIMARY, if this method successfully matched a FilterExpr that was just a PrimaryExpr; or FILTER_MATCH_FAILED, if this method did not match a FilterExpr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected int FilterExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  int filterMatch;
+
+  if (PrimaryExpr()) {
+
+    if (tokenIs('[')) {
+
+      insertOp(opPos,2,OpCodes.OP_LOCATIONPATH);
+
+      while (tokenIs('[')) {
+
+        Predicate();
+
+      }
+
+      filterMatch=FILTER_MATCH_PREDICATES;
+
+    }
+
+ else {
+
+      filterMatch=FILTER_MATCH_PRIMARY;
+
+    }
+
+  }
+
+ else {
+
+    filterMatch=FILTER_MATCH_FAILED;
+
+  }
+
+  return filterMatch;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+public int findNodeType(int axis,Object test){
+
+  if (test == null) {
+
+    return (axis == Axis.ATTRIBUTE) ? NodeTest.ATTRIBUTE : (axis == Axis.NAMESPACE) ? -1 : NodeTest.ELEMENT;
+
+  }
+
+ else   if (test instanceof Integer) {
+
+    return ((Integer)test).intValue();
+
+  }
+
+ else {
+
+    QName name=(QName)test;
+
+    if (axis == Axis.NAMESPACE) {
+
+      return (name.toString().equals("*")) ? -1 : _xsltc.registerNamespacePrefix(name);
+
+    }
+
+    if (name.getNamespace() == null) {
+
+      final String local=name.getLocalPart();
+
+      if (local.equals("*")) {
+
+        return (axis == Axis.ATTRIBUTE) ? NodeTest.ATTRIBUTE : NodeTest.ELEMENT;
+
+      }
+
+ else       if (local.equals("@*")) {
+
+        return NodeTest.ATTRIBUTE;
+
+      }
+
+    }
+
+    return (axis == Axis.ATTRIBUTE) ? _xsltc.registerAttribute(name) : _xsltc.registerElement(name);
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * FunctionCall ::= FunctionName '(' ( Argument ( ',' Argument)*)? ')'
+
+ * @return true if, and only if, a FunctionCall was matched
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected boolean FunctionCall() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  if (lookahead(':',1)) {
+
+    appendOp(4,OpCodes.OP_EXTFUNCTION);
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH + 1,m_queueMark - 1);
+
+    nextToken();
+
+    consumeExpected(':');
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH + 2,m_queueMark - 1);
+
+    nextToken();
+
+  }
+
+ else {
+
+    int funcTok=getFunctionToken(m_token);
+
+    if (-1 == funcTok) {
+
+      error(XPATHErrorResources.ER_COULDNOT_FIND_FUNCTION,new Object[]{m_token});
+
+    }
+
+switch (funcTok) {
+
+case OpCodes.NODETYPE_PI:
+
+case OpCodes.NODETYPE_COMMENT:
+
+case OpCodes.NODETYPE_TEXT:
+
+case OpCodes.NODETYPE_NODE:
+
+      return false;
+
+default :
+
+    appendOp(3,OpCodes.OP_FUNCTION);
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH + 1,funcTok);
+
+}
+
+nextToken();
+
+}
+
+consumeExpected('(');
+
+while (!tokenIs(')') && m_token != null) {
+
+if (tokenIs(',')) {
+
+error(XPATHErrorResources.ER_FOUND_COMMA_BUT_NO_PRECEDING_ARG,null);
+
+}
+
+Argument();
+
+if (!tokenIs(')')) {
+
+consumeExpected(',');
+
+if (tokenIs(')')) {
+
+  error(XPATHErrorResources.ER_FOUND_COMMA_BUT_NO_FOLLOWING_ARG,null);
+
+}
+
+}
+
+}
+
+consumeExpected(')');
+
+m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.ENDOP);
+
+m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+return true;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Return the current error listener.
+
+ * @return The error listener, which should not normally be null, but may be.
+
+ */
+
+public ErrorListener getErrorListener(){
+
+  return m_errorListener;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Given a string, return the corresponding function token.
+
+ * @param key A local name of a function.
+
+ * @return The function ID, which may correspond to one of the FUNC_XXX valuesfound in  {@link org.apache.xpath.compiler.FunctionTable}, but may be a value installed by an external module.
+
+ */
+
+final int getFunctionToken(String key){
+
+  int tok;
+
+  Object id;
+
+  try {
+
+    id=Keywords.lookupNodeTest(key);
+
+    if (null == id)     id=m_functionTable.getFunctionID(key);
+
+    tok=((Integer)id).intValue();
+
+  }
+
+ catch (  NullPointerException npe) {
+
+    tok=-1;
+
+  }
+
+catch (  ClassCastException cce) {
+
+    tok=-1;
+
+  }
+
+  return tok;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Retrieve a token relative to the current token.
+
+ * @param i Position relative to current token.
+
+ * @return The string at the given index, or null if the index is out of range.
+
+ */
+
+private final String getTokenRelative(int i){
+
+  String tok;
+
+  int relative=m_queueMark + i;
+
+  if ((relative > 0) && (relative < m_ops.getTokenQueueSize())) {
+
+    tok=(String)m_ops.m_tokenQueue.elementAt(relative);
+
+  }
+
+ else {
+
+    tok=null;
+
+  }
+
+  return tok;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * IdKeyPattern ::= 'id' '(' Literal ')' | 'key' '(' Literal ',' Literal ')' (Also handle doc())
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void IdKeyPattern() throws javax.xml.transform.TransformerException {
+
+  FunctionCall();
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Given an string, init an XPath object for pattern matches, in order that a parse doesn't have to be done each time the expression is evaluated.
+
+ * @param compiler         The XPath object to be initialized.
+
+ * @param expression       A String representing the XPath.
+
+ * @param namespaceContext An object that is able to resolve prefixes in theXPath to namespaces.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+public void initMatchPattern(Compiler compiler,String expression,PrefixResolver namespaceContext) throws javax.xml.transform.TransformerException {
+
+  m_ops=compiler;
+
+  m_namespaceContext=namespaceContext;
+
+  m_functionTable=compiler.getFunctionTable();
+
+  Lexer lexer=new Lexer(compiler,namespaceContext,this);
+
+  lexer.tokenize(expression);
+
+  m_ops.setOp(0,OpCodes.OP_MATCHPATTERN);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,2);
+
+  nextToken();
+
+  Pattern();
+
+  if (null != m_token) {
+
+    String extraTokens="";
+
+    while (null != m_token) {
+
+      extraTokens+="'" + m_token + "'";
+
+      nextToken();
+
+      if (null != m_token)       extraTokens+=", ";
+
+    }
+
+    error(XPATHErrorResources.ER_EXTRA_ILLEGAL_TOKENS,new Object[]{extraTokens});
+
+  }
+
+  m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.ENDOP);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  m_ops.shrink();
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Given an string, init an XPath object for selections, in order that a parse doesn't have to be done each time the expression is evaluated.
+
+ * @param compiler         The compiler object.
+
+ * @param expression       A string conforming to the XPath grammar.
+
+ * @param namespaceContext An object that is able to resolve prefixes in theXPath to namespaces.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+public void initXPath(Compiler compiler,String expression,PrefixResolver namespaceContext) throws javax.xml.transform.TransformerException {
+
+  m_ops=compiler;
+
+  m_namespaceContext=namespaceContext;
+
+  m_functionTable=compiler.getFunctionTable();
+
+  Lexer lexer=new Lexer(compiler,namespaceContext,this);
+
+  lexer.tokenize(expression);
+
+  m_ops.setOp(0,OpCodes.OP_XPATH);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,2);
+
+  try {
+
+    nextToken();
+
+    Expr();
+
+    if (null != m_token) {
+
+      String extraTokens="";
+
+      while (null != m_token) {
+
+        extraTokens+="'" + m_token + "'";
+
+        nextToken();
+
+        if (null != m_token)         extraTokens+=", ";
+
+      }
+
+      error(XPATHErrorResources.ER_EXTRA_ILLEGAL_TOKENS,new Object[]{extraTokens});
+
+    }
+
+  }
+
+ catch (  org.apache.xpath.XPathProcessorException e) {
+
+    if (CONTINUE_AFTER_FATAL_ERROR.equals(e.getMessage())) {
+
+      initXPath(compiler,"/..",namespaceContext);
+
+    }
+
+ else     throw e;
+
+  }
+
+  compiler.shrink();
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Action encapsulation object initializer. 
+
+ */
+
+protected void init_actions(){
+
+  action_obj=new CUP$XPathParser$actions(this);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Insert room for operation. This will NOT set the length value of the operation, but will update the length value for the total expression.
+
+ * @param pos    The position where the op is to be inserted.
+
+ * @param length The length of the operation space in the op map.
+
+ * @param op     The op code to the inserted.
+
+ */
+
+void insertOp(int pos,int length,int op){
+
+  int totalLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  for (int i=totalLen - 1; i >= pos; i--) {
+
+    m_ops.setOp(i + length,m_ops.getOp(i));
+
+  }
+
+  m_ops.setOp(pos,op);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,totalLen + length);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+public RelativeLocationPath insertStep(Step step,RelativeLocationPath rlp){
+
+  if (rlp instanceof Step) {
+
+    return new ParentLocationPath(step,(Step)rlp);
+
+  }
+
+ else   if (rlp instanceof ParentLocationPath) {
+
+    final ParentLocationPath plp=(ParentLocationPath)rlp;
+
+    final RelativeLocationPath newrlp=insertStep(step,plp.getPath());
+
+    return new ParentLocationPath(newrlp,plp.getStep());
+
+  }
+
+ else {
+
+    addError(new ErrorMsg(ErrorMsg.INTERNAL_ERR,"XPathParser.insertStep"));
+
+    return rlp;
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Returns true if the axis applies to elements only. The axes child, attribute, namespace, descendant result in non-empty nodesets only if the context node is of type element.
+
+ */
+
+public boolean isElementAxis(int axis){
+
+  return (axis == Axis.CHILD || axis == Axis.ATTRIBUTE || axis == Axis.NAMESPACE || axis == Axis.DESCENDANT);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * The value of the Literal is the sequence of characters inside the " or ' characters>. Literal ::= '"' [^"]* '"' | "'" [^']* "'"
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void Literal() throws javax.xml.transform.TransformerException {
+
+  int last=m_token.length() - 1;
+
+  char c0=m_tokenChar;
+
+  char cX=m_token.charAt(last);
+
+  if (((c0 == '\"') && (cX == '\"')) || ((c0 == '\'') && (cX == '\''))) {
+
+    int tokenQueuePos=m_queueMark - 1;
+
+    m_ops.m_tokenQueue.setElementAt(null,tokenQueuePos);
+
+    Object obj=new XString(m_token.substring(1,last));
+
+    m_ops.m_tokenQueue.setElementAt(obj,tokenQueuePos);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),tokenQueuePos);
+
+    m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+    nextToken();
+
+  }
+
+ else {
+
+    error(XPATHErrorResources.ER_PATTERN_LITERAL_NEEDS_BE_QUOTED,new Object[]{m_token});
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * LocationPath ::= RelativeLocationPath | AbsoluteLocationPath
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void LocationPath() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  appendOp(2,OpCodes.OP_LOCATIONPATH);
+
+  boolean seenSlash=tokenIs('/');
+
+  if (seenSlash) {
+
+    appendOp(4,OpCodes.FROM_ROOT);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 2,4);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 1,OpCodes.NODETYPE_ROOT);
+
+    nextToken();
+
+  }
+
+ else   if (m_token == null) {
+
+    error(XPATHErrorResources.ER_EXPECTED_LOC_PATH_AT_END_EXPR,null);
+
+  }
+
+  if (m_token != null) {
+
+    if (!RelativeLocationPath() && !seenSlash) {
+
+      error(XPATHErrorResources.ER_EXPECTED_LOC_PATH,new Object[]{m_token});
+
+    }
+
+  }
+
+  m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.ENDOP);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * LocationPathPattern ::= '/' RelativePathPattern? | IdKeyPattern (('/' | '//') RelativePathPattern)? | '//'? RelativePathPattern
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void LocationPathPattern() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  final int RELATIVE_PATH_NOT_PERMITTED=0;
+
+  final int RELATIVE_PATH_PERMITTED=1;
+
+  final int RELATIVE_PATH_REQUIRED=2;
+
+  int relativePathStatus=RELATIVE_PATH_NOT_PERMITTED;
+
+  appendOp(2,OpCodes.OP_LOCATIONPATHPATTERN);
+
+  if (lookahead('(',1) && (tokenIs(Keywords.FUNC_ID_STRING) || tokenIs(Keywords.FUNC_KEY_STRING))) {
+
+    IdKeyPattern();
+
+    if (tokenIs('/')) {
+
+      nextToken();
+
+      if (tokenIs('/')) {
+
+        appendOp(4,OpCodes.MATCH_ANY_ANCESTOR);
+
+        nextToken();
+
+      }
+
+ else {
+
+        appendOp(4,OpCodes.MATCH_IMMEDIATE_ANCESTOR);
+
+      }
+
+      m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 2,4);
+
+      m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 1,OpCodes.NODETYPE_FUNCTEST);
+
+      relativePathStatus=RELATIVE_PATH_REQUIRED;
+
+    }
+
+  }
+
+ else   if (tokenIs('/')) {
+
+    if (lookahead('/',1)) {
+
+      appendOp(4,OpCodes.MATCH_ANY_ANCESTOR);
+
+      nextToken();
+
+      relativePathStatus=RELATIVE_PATH_REQUIRED;
+
+    }
+
+ else {
+
+      appendOp(4,OpCodes.FROM_ROOT);
+
+      relativePathStatus=RELATIVE_PATH_PERMITTED;
+
+    }
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 2,4);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 1,OpCodes.NODETYPE_ROOT);
+
+    nextToken();
+
+  }
+
+ else {
+
+    relativePathStatus=RELATIVE_PATH_REQUIRED;
+
+  }
+
+  if (relativePathStatus != RELATIVE_PATH_NOT_PERMITTED) {
+
+    if (!tokenIs('|') && (null != m_token)) {
+
+      RelativePathPattern();
+
+    }
+
+ else     if (relativePathStatus == RELATIVE_PATH_REQUIRED) {
+
+      error(XPATHErrorResources.ER_EXPECTED_REL_PATH_PATTERN,null);
+
+    }
+
+  }
+
+  m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.ENDOP);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Look ahead of the current token in order to make a branching decision.
+
+ * @param c the character to be tested for.
+
+ * @param n number of tokens to look ahead. Must be greater than 1.
+
+ * @return true if the next token matches the character argument.
+
+ */
+
+final boolean lookahead(char c,int n){
+
+  int pos=(m_queueMark + n);
+
+  boolean b;
+
+  if ((pos <= m_ops.getTokenQueueSize()) && (pos > 0) && (m_ops.getTokenQueueSize() != 0)) {
+
+    String tok=((String)m_ops.m_tokenQueue.elementAt(pos - 1));
+
+    b=(tok.length() == 1) ? (tok.charAt(0) == c) : false;
+
+  }
+
+ else {
+
+    b=false;
+
+  }
+
+  return b;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Look ahead of the current token in order to make a branching decision.
+
+ * @param s the string to compare it to.
+
+ * @param n number of tokens to lookahead. Must be greater than 1.
+
+ * @return true if the token behind the current token matches the stringargument.
+
+ */
+
+private final boolean lookahead(String s,int n){
+
+  boolean isToken;
+
+  if ((m_queueMark + n) <= m_ops.getTokenQueueSize()) {
+
+    String lookahead=(String)m_ops.m_tokenQueue.elementAt(m_queueMark + (n - 1));
+
+    isToken=(lookahead != null) ? lookahead.equals(s) : (s == null);
+
+  }
+
+ else {
+
+    isToken=(null == s);
+
+  }
+
+  return isToken;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * look behind the current token in order to see if there is a useable token.
+
+ * @param n number of tokens to look behind. Must be greater than 1. Note thatthe look behind terminates at either the beginning of the string or on a '|' character. Because of this, this method should only be used for pattern matching.
+
+ * @return true if look behind has a token, false otherwise.
+
+ */
+
+private final boolean lookbehindHasToken(int n){
+
+  boolean hasToken;
+
+  if ((m_queueMark - n) > 0) {
+
+    String lookbehind=(String)m_ops.m_tokenQueue.elementAt(m_queueMark - (n - 1));
+
+    char c0=(lookbehind == null) ? '|' : lookbehind.charAt(0);
+
+    hasToken=(c0 == '|') ? false : true;
+
+  }
+
+ else {
+
+    hasToken=false;
+
+  }
+
+  return hasToken;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Look behind the first character of the current token in order to make a branching decision.
+
+ * @param c the character to compare it to.
+
+ * @param n number of tokens to look behind. Must be greater than 1. Note thatthe look behind terminates at either the beginning of the string or on a '|' character. Because of this, this method should only be used for pattern matching.
+
+ * @return true if the token behind the current token matches the characterargument.
+
+ */
+
+private final boolean lookbehind(char c,int n){
+
+  boolean isToken;
+
+  int lookBehindPos=m_queueMark - (n + 1);
+
+  if (lookBehindPos >= 0) {
+
+    String lookbehind=(String)m_ops.m_tokenQueue.elementAt(lookBehindPos);
+
+    if (lookbehind.length() == 1) {
+
+      char c0=(lookbehind == null) ? '|' : lookbehind.charAt(0);
+
+      isToken=(c0 == '|') ? false : (c0 == c);
+
+    }
+
+ else {
+
+      isToken=false;
+
+    }
+
+  }
+
+ else {
+
+    isToken=false;
+
+  }
+
+  return isToken;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * This has to handle construction of the operations so that they are evaluated in pre-fix order. So, for 9+7-6, instead of |+|9|-|7|6|, this needs to be evaluated as |-|+|9|7|6|. MultiplicativeExpr ::= UnaryExpr | MultiplicativeExpr MultiplyOperator UnaryExpr | MultiplicativeExpr 'div' UnaryExpr | MultiplicativeExpr 'mod' UnaryExpr | MultiplicativeExpr 'quo' UnaryExpr
+
+ * @param addPos Position where expression is to be added, or -1 for append.
+
+ * @return the position at the end of the equality expression.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected int MultiplicativeExpr(int addPos) throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  if (-1 == addPos)   addPos=opPos;
+
+  UnaryExpr();
+
+  if (null != m_token) {
+
+    if (tokenIs('*')) {
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_MULT);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=MultiplicativeExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+ else     if (tokenIs("div")) {
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_DIV);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=MultiplicativeExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+ else     if (tokenIs("mod")) {
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_MOD);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=MultiplicativeExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+ else     if (tokenIs("quo")) {
+
+      nextToken();
+
+      insertOp(addPos,2,OpCodes.OP_QUO);
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=MultiplicativeExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+  }
+
+  return addPos;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * NCName ::= (Letter | '_') (NCNameChar) NCNameChar ::= Letter | Digit | '.' | '-' | '_' | CombiningChar | Extender
+
+ */
+
+protected void NCName(){
+
+  m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),m_queueMark - 1);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  nextToken();
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Retrieve the next token from the command and store it in m_token string.
+
+ */
+
+private final void nextToken(){
+
+  if (m_queueMark < m_ops.getTokenQueueSize()) {
+
+    m_token=(String)m_ops.m_tokenQueue.elementAt(m_queueMark++);
+
+    m_tokenChar=m_token.charAt(0);
+
+  }
+
+ else {
+
+    m_token=null;
+
+    m_tokenChar=0;
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Number ::= [0-9]+('.'[0-9]+)? | '.'[0-9]+
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void Number() throws javax.xml.transform.TransformerException {
+
+  if (null != m_token) {
+
+    double num;
+
+    try {
+
+      if ((m_token.indexOf('e') > -1) || (m_token.indexOf('E') > -1))       throw new NumberFormatException();
+
+      num=Double.valueOf(m_token).doubleValue();
+
+    }
+
+ catch (    NumberFormatException nfe) {
+
+      num=0.0;
+
+      error(XPATHErrorResources.ER_COULDNOT_BE_FORMATTED_TO_NUMBER,new Object[]{m_token});
+
+    }
+
+    m_ops.m_tokenQueue.setElementAt(new XNumber(num),m_queueMark - 1);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),m_queueMark - 1);
+
+    m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+    nextToken();
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * NumberExpr ::= Expr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void NumberExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  appendOp(2,OpCodes.OP_NUMBER);
+
+  Expr();
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * OrExpr ::= AndExpr | OrExpr 'or' AndExpr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void OrExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  AndExpr();
+
+  if ((null != m_token) && tokenIs("or")) {
+
+    nextToken();
+
+    insertOp(opPos,2,OpCodes.OP_OR);
+
+    OrExpr();
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Parse the expression passed to the current scanner. If this expression contains references to local variables and it will be compiled in an external module (not in the main class) request the current template to create a new variable stack frame.
+
+ * @param lineNumber Line where the current expression is defined.
+
+ * @param external   Set to <tt>true</tt> if this expression is compiled in aseparate module.
+
+ */
+
+public Symbol parse(String expression,int lineNumber) throws Exception {
+
+  try {
+
+    _expression=expression;
+
+    _lineNumber=lineNumber;
+
+    return super.parse();
+
+  }
+
+ catch (  IllegalCharException e) {
+
+    ErrorMsg err=new ErrorMsg(ErrorMsg.ILLEGAL_CHAR_ERR,lineNumber,e.getMessage());
+
+    _parser.reportError(Constants.FATAL,err);
+
+  }
+
+  return null;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * PathExpr ::= LocationPath | FilterExpr | FilterExpr '/' RelativeLocationPath | FilterExpr '//' RelativeLocationPath
+
+ * @throws XSLProcessorException                    thrown if the activeProblemListener and XPathContext decide the error condition is severe enough to halt processing.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void PathExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  int filterExprMatch=FilterExpr();
+
+  if (filterExprMatch != FILTER_MATCH_FAILED) {
+
+    boolean locationPathStarted=(filterExprMatch == FILTER_MATCH_PREDICATES);
+
+    if (tokenIs('/')) {
+
+      nextToken();
+
+      if (!locationPathStarted) {
+
+        insertOp(opPos,2,OpCodes.OP_LOCATIONPATH);
+
+        locationPathStarted=true;
+
+      }
+
+      if (!RelativeLocationPath()) {
+
+        error(XPATHErrorResources.ER_EXPECTED_REL_LOC_PATH,null);
+
+      }
+
+    }
+
+    if (locationPathStarted) {
+
+      m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.ENDOP);
+
+      m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+      m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+    }
+
+  }
+
+ else {
+
+    LocationPath();
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Pattern ::= LocationPathPattern | Pattern '|' LocationPathPattern
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void Pattern() throws javax.xml.transform.TransformerException {
+
+  while (true) {
+
+    LocationPathPattern();
+
+    if (tokenIs('|')) {
+
+      nextToken();
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Predicate ::= '[' PredicateExpr ']'
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void Predicate() throws javax.xml.transform.TransformerException {
+
+  if (tokenIs('[')) {
+
+    nextToken();
+
+    PredicateExpr();
+
+    consumeExpected(']');
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * PredicateExpr ::= Expr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void PredicateExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  appendOp(2,OpCodes.OP_PREDICATE);
+
+  Expr();
+
+  m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.ENDOP);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Retrieve the previous token from the command and store it in m_token string.
+
+ */
+
+private final void prevToken(){
+
+  if (m_queueMark > 0) {
+
+    m_queueMark--;
+
+    m_token=(String)m_ops.m_tokenQueue.elementAt(m_queueMark);
+
+    m_tokenChar=m_token.charAt(0);
+
+  }
+
+ else {
+
+    m_token=null;
+
+    m_tokenChar=0;
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * PrimaryExpr ::= VariableReference | '(' Expr ')' | Literal | Number | FunctionCall
+
+ * @return true if this method successfully matched a PrimaryExpr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected boolean PrimaryExpr() throws javax.xml.transform.TransformerException {
+
+  boolean matchFound;
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  if ((m_tokenChar == '\'') || (m_tokenChar == '"')) {
+
+    appendOp(2,OpCodes.OP_LITERAL);
+
+    Literal();
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+    matchFound=true;
+
+  }
+
+ else   if (m_tokenChar == '$') {
+
+    nextToken();
+
+    appendOp(2,OpCodes.OP_VARIABLE);
+
+    QName();
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+    matchFound=true;
+
+  }
+
+ else   if (m_tokenChar == '(') {
+
+    nextToken();
+
+    appendOp(2,OpCodes.OP_GROUP);
+
+    Expr();
+
+    consumeExpected(')');
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+    matchFound=true;
+
+  }
+
+ else   if ((null != m_token) && ((('.' == m_tokenChar) && (m_token.length() > 1) && Character.isDigit(m_token.charAt(1))) || Character.isDigit(m_tokenChar))) {
+
+    appendOp(2,OpCodes.OP_NUMBERLIT);
+
+    Number();
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+    matchFound=true;
+
+  }
+
+ else   if (lookahead('(',1) || (lookahead(':',1) && lookahead('(',3))) {
+
+    matchFound=FunctionCall();
+
+  }
+
+ else {
+
+    matchFound=false;
+
+  }
+
+  return matchFound;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Access to production table. 
+
+ */
+
+public short[][] production_table(){
+
+  return _production_table;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * QName ::= (Prefix ':')? LocalPart Prefix ::= NCName LocalPart ::= NCName
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void QName() throws javax.xml.transform.TransformerException {
+
+  if (lookahead(':',1)) {
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),m_queueMark - 1);
+
+    m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+    nextToken();
+
+    consumeExpected(':');
+
+  }
+
+ else {
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.EMPTY);
+
+    m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  }
+
+  m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),m_queueMark - 1);
+
+  m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+  nextToken();
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Access to <code>reduce_goto</code> table. 
+
+ */
+
+public short[][] reduce_table(){
+
+  return _reduce_table;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * .
+
+ * @returns an Object which is either a String, a Number, a Boolean, or a vectorof nodes. RelationalExpr ::= AdditiveExpr | RelationalExpr '<' AdditiveExpr | RelationalExpr '>' AdditiveExpr | RelationalExpr '<=' AdditiveExpr | RelationalExpr '>=' AdditiveExpr
+
+ * @param addPos Position where expression is to be added, or -1 for append.
+
+ * @return the position at the end of the relational expression.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected int RelationalExpr(int addPos) throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  if (-1 == addPos)   addPos=opPos;
+
+  AdditiveExpr(-1);
+
+  if (null != m_token) {
+
+    if (tokenIs('<')) {
+
+      nextToken();
+
+      if (tokenIs('=')) {
+
+        nextToken();
+
+        insertOp(addPos,2,OpCodes.OP_LTE);
+
+      }
+
+ else {
+
+        insertOp(addPos,2,OpCodes.OP_LT);
+
+      }
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=RelationalExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+ else     if (tokenIs('>')) {
+
+      nextToken();
+
+      if (tokenIs('=')) {
+
+        nextToken();
+
+        insertOp(addPos,2,OpCodes.OP_GTE);
+
+      }
+
+ else {
+
+        insertOp(addPos,2,OpCodes.OP_GT);
+
+      }
+
+      int opPlusLeftHandLen=m_ops.getOp(OpMap.MAPINDEX_LENGTH) - addPos;
+
+      addPos=RelationalExpr(addPos);
+
+      m_ops.setOp(addPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(addPos + opPlusLeftHandLen + 1) + opPlusLeftHandLen);
+
+      addPos+=2;
+
+    }
+
+  }
+
+  return addPos;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * RelativeLocationPath ::= Step | RelativeLocationPath '/' Step | AbbreviatedRelativeLocationPath
+
+ * @returns true if, and only if, a RelativeLocationPath was matched
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected boolean RelativeLocationPath() throws javax.xml.transform.TransformerException {
+
+  if (!Step()) {
+
+    return false;
+
+  }
+
+  while (tokenIs('/')) {
+
+    nextToken();
+
+    if (!Step()) {
+
+      error(XPATHErrorResources.ER_EXPECTED_LOC_STEP,null);
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * RelativePathPattern ::= StepPattern | RelativePathPattern '/' StepPattern | RelativePathPattern '//' StepPattern
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void RelativePathPattern() throws javax.xml.transform.TransformerException {
+
+  boolean trailingSlashConsumed=StepPattern(false);
+
+  while (tokenIs('/')) {
+
+    nextToken();
+
+    trailingSlashConsumed=StepPattern(!trailingSlashConsumed);
+
+  }
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+public void report_error(String message,Object info){
+
+  final ErrorMsg err=new ErrorMsg(ErrorMsg.SYNTAX_ERR,_lineNumber,_expression);
+
+  _parser.reportError(Constants.FATAL,err);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+public void report_fatal_error(String message,Object info){
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Allow an application to register an error event handler, where syntax errors will be sent. If the error listener is not set, syntax errors will be sent to System.err.
+
+ * @param handler Reference to error listener where syntax errors will be sent.
+
+ */
+
+public void setErrorHandler(ErrorListener handler){
+
+  m_errorListener=handler;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Indicates start production. 
+
+ */
+
+public int start_production(){
+
+  return 0;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Indicates start state. 
+
+ */
+
+public int start_state(){
+
+  return 0;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Step ::= Basis Predicate | AbbreviatedStep
+
+ * @returns false if step was empty (or only a '/'); true, otherwise
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected boolean Step() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  boolean doubleSlash=tokenIs('/');
+
+  if (doubleSlash) {
+
+    nextToken();
+
+    appendOp(2,OpCodes.FROM_DESCENDANTS_OR_SELF);
+
+    m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH),OpCodes.NODETYPE_NODE);
+
+    m_ops.setOp(OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) + 1);
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH + 1,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+    opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  }
+
+  if (tokenIs(".")) {
+
+    nextToken();
+
+    if (tokenIs('[')) {
+
+      error(XPATHErrorResources.ER_PREDICATE_ILLEGAL_SYNTAX,null);
+
+    }
+
+    appendOp(4,OpCodes.FROM_SELF);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 2,4);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 1,OpCodes.NODETYPE_NODE);
+
+  }
+
+ else   if (tokenIs("..")) {
+
+    nextToken();
+
+    appendOp(4,OpCodes.FROM_PARENT);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 2,4);
+
+    m_ops.setOp(m_ops.getOp(OpMap.MAPINDEX_LENGTH) - 1,OpCodes.NODETYPE_NODE);
+
+  }
+
+ else   if (tokenIs('*') || tokenIs('@') || tokenIs('_')|| (m_token != null && Character.isLetter(m_token.charAt(0)))) {
+
+    Basis();
+
+    while (tokenIs('[')) {
+
+      Predicate();
+
+    }
+
+    m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+  }
+
+ else {
+
+    if (doubleSlash) {
+
+      error(XPATHErrorResources.ER_EXPECTED_LOC_STEP,null);
+
+    }
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * StepPattern ::= AbbreviatedNodeTestStep
+
+ * @param isLeadingSlashPermitted a boolean indicating whether a slash canappear at the start of this step
+
+ * @return boolean indicating whether a slash following the step was consumed
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected boolean StepPattern(boolean isLeadingSlashPermitted) throws javax.xml.transform.TransformerException {
+
+  return AbbreviatedNodeTestStep(isLeadingSlashPermitted);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * StringExpr ::= Expr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void StringExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  appendOp(2,OpCodes.OP_STRING);
+
+  Expr();
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Check whether m_tokenChar==c.
+
+ * @param c A character to be tested.
+
+ * @return If m_token is null, returns false, or return true if c matches thecurrent token.
+
+ */
+
+final boolean tokenIs(char c){
+
+  return (m_token != null) ? (m_tokenChar == c) : false;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Check whether m_token matches the target string.
+
+ * @param s A string reference or null.
+
+ * @return If m_token is null, returns false (or true if s is also null), orreturn true if the current token matches the string, else false.
+
+ */
+
+final boolean tokenIs(String s){
+
+  return (m_token != null) ? (m_token.equals(s)) : (s == null);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * UnaryExpr ::= UnionExpr | '-' UnaryExpr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void UnaryExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  boolean isNeg=false;
+
+  if (m_tokenChar == '-') {
+
+    nextToken();
+
+    appendOp(2,OpCodes.OP_NEG);
+
+    isNeg=true;
+
+  }
+
+  UnionExpr();
+
+  if (isNeg)   m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * The context of the right hand side expressions is the context of the left hand side expression. The results of the right hand side expressions are node sets. The result of the left hand side UnionExpr is the union of the results of the right hand side expressions. UnionExpr ::= PathExpr | UnionExpr '|' PathExpr
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void UnionExpr() throws javax.xml.transform.TransformerException {
+
+  int opPos=m_ops.getOp(OpMap.MAPINDEX_LENGTH);
+
+  boolean continueOrLoop=true;
+
+  boolean foundUnion=false;
+
+  do {
+
+    PathExpr();
+
+    if (tokenIs('|')) {
+
+      if (false == foundUnion) {
+
+        foundUnion=true;
+
+        insertOp(opPos,2,OpCodes.OP_UNION);
+
+      }
+
+      nextToken();
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+ while (continueOrLoop);
+
+  m_ops.setOp(opPos + OpMap.MAPINDEX_LENGTH,m_ops.getOp(OpMap.MAPINDEX_LENGTH) - opPos);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Default constructor. 
+
+ */
+
+public XPathParser(){
+
+  super();
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * The parser constructor.
+
+ */
+
+public XPathParser(ErrorListener errorListener,javax.xml.transform.SourceLocator sourceLocator){
+
+  m_errorListener=errorListener;
+
+  m_sourceLocator=sourceLocator;
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+/** 
+
+ * Constructor which sets the default scanner. 
+
+ */
+
+public XPathParser(java_cup.runtime.Scanner s){
+
+  super(s);
+
+}
+
+Location: XPathParser.java
+
+Content: 
+
+public XPathParser(Parser parser){
+
+  _parser=parser;
+
+  _xsltc=parser.getXSLTC();
+
+  _symbolTable=parser.getSymbolTable();
+
+}
+

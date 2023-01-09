@@ -1,0 +1,218 @@
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Clear any record of which writables have been written to, without releasing storage.
+
+ */
+
+void clearWritten(){
+
+  written.clear();
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Record that the tuple does not contain an element at the position provided.
+
+ */
+
+void clearWritten(int i){
+
+  written.clear(i);
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Get ith Writable from Tuple.
+
+ */
+
+public Writable get(int i){
+
+  return values[i];
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Return true if tuple has an element at the position provided.
+
+ */
+
+public boolean has(int i){
+
+  return written.get(i);
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Reads a bitset from the stream that has been written with {@link #writeBitSet(DataOutput,int,BitSet)}.
+
+ */
+
+private static final void readBitSet(DataInput stream,int nbits,BitSet bitSet) throws IOException {
+
+  bitSet.clear();
+
+  long initialBits=WritableUtils.readVLong(stream);
+
+  long last=0L;
+
+  while (0L != initialBits) {
+
+    last=Long.lowestOneBit(initialBits);
+
+    initialBits^=last;
+
+    bitSet.set(Long.numberOfTrailingZeros(last));
+
+  }
+
+  for (int offset=Long.SIZE; offset < nbits; offset+=Byte.SIZE) {
+
+    byte bits=stream.readByte();
+
+    while (0 != bits) {
+
+      last=Long.lowestOneBit(bits);
+
+      bits^=last;
+
+      bitSet.set(Long.numberOfTrailingZeros(last) + offset);
+
+    }
+
+  }
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Record that the tuple contains an element at the position provided.
+
+ */
+
+void setWritten(int i){
+
+  written.set(i);
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Create an empty tuple with no allocated storage for writables.
+
+ */
+
+public TupleWritable(){
+
+  written=new BitSet(0);
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Initialize tuple with storage; unknown whether any of them contain &quot;written&quot; values.
+
+ */
+
+public TupleWritable(Writable[] vals){
+
+  written=new BitSet(vals.length);
+
+  values=vals;
+
+}
+
+Location: TupleWritable.java
+
+Content: 
+
+/** 
+
+ * Writes the bit set to the stream. The first 64 bit-positions of the bit set are written as a VLong for backwards-compatibility with older  versions of TupleWritable. All bit-positions >= 64 are encoded as a byte for every 8 bit-positions.
+
+ */
+
+private static final void writeBitSet(DataOutput stream,int nbits,BitSet bitSet) throws IOException {
+
+  long bits=0L;
+
+  int bitSetIndex=bitSet.nextSetBit(0);
+
+  for (; bitSetIndex >= 0 && bitSetIndex < Long.SIZE; bitSetIndex=bitSet.nextSetBit(bitSetIndex + 1)) {
+
+    bits|=1L << bitSetIndex;
+
+  }
+
+  WritableUtils.writeVLong(stream,bits);
+
+  if (nbits > Long.SIZE) {
+
+    bits=0L;
+
+    for (int lastWordWritten=0; bitSetIndex >= 0 && bitSetIndex < nbits; bitSetIndex=bitSet.nextSetBit(bitSetIndex + 1)) {
+
+      int bitsIndex=bitSetIndex % Byte.SIZE;
+
+      int word=(bitSetIndex - Long.SIZE) / Byte.SIZE;
+
+      if (word > lastWordWritten) {
+
+        stream.writeByte((byte)bits);
+
+        bits=0L;
+
+        for (lastWordWritten++; lastWordWritten < word; lastWordWritten++) {
+
+          stream.writeByte((byte)bits);
+
+        }
+
+      }
+
+      bits|=1L << bitsIndex;
+
+    }
+
+    stream.writeByte((byte)bits);
+
+  }
+
+}
+

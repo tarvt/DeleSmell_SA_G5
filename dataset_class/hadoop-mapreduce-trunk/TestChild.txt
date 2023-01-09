@@ -1,0 +1,78 @@
+Location: TestChild.java
+
+Content: 
+
+private Job submitAndValidateJob(JobConf conf,int numMaps,int numReds,boolean oldConfigs) throws IOException, InterruptedException, ClassNotFoundException {
+
+  conf.setBoolean(OLD_CONFIGS,oldConfigs);
+
+  if (oldConfigs) {
+
+    conf.set(JobConf.MAPRED_TASK_JAVA_OPTS,TASK_OPTS_VAL);
+
+  }
+
+ else {
+
+    conf.set(JobConf.MAPRED_MAP_TASK_JAVA_OPTS,MAP_OPTS_VAL);
+
+    conf.set(JobConf.MAPRED_REDUCE_TASK_JAVA_OPTS,REDUCE_OPTS_VAL);
+
+  }
+
+  conf.set(JobConf.MAPRED_MAP_TASK_LOG_LEVEL,Level.OFF.toString());
+
+  conf.set(JobConf.MAPRED_REDUCE_TASK_LOG_LEVEL,Level.OFF.toString());
+
+  Job job=MapReduceTestUtil.createJob(conf,inDir,outDir,numMaps,numReds);
+
+  job.setMapperClass(MyMapper.class);
+
+  job.setReducerClass(MyReducer.class);
+
+  assertFalse("Job already has a job tracker connection, before it's submitted",job.isConnected());
+
+  job.submit();
+
+  assertTrue("Job doesn't have a job tracker connection, even though it's been submitted",job.isConnected());
+
+  job.waitForCompletion(true);
+
+  assertTrue(job.isSuccessful());
+
+  FileSystem fs=FileSystem.get(conf);
+
+  assertTrue("Job output directory doesn't exit!",fs.exists(outDir));
+
+  FileStatus[] list=fs.listStatus(outDir,new OutputFilter());
+
+  int numPartFiles=numReds == 0 ? numMaps : numReds;
+
+  assertTrue("Number of part-files is " + list.length + " and not "+ numPartFiles,list.length == numPartFiles);
+
+  return job;
+
+}
+
+Location: TestChild.java
+
+Content: 
+
+public void testChild() throws Exception {
+
+  try {
+
+    submitAndValidateJob(createJobConf(),1,1,true);
+
+    submitAndValidateJob(createJobConf(),1,1,false);
+
+  }
+
+  finally {
+
+    tearDown();
+
+  }
+
+}
+

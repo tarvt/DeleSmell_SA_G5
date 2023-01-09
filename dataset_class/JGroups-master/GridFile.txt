@@ -1,0 +1,486 @@
+Location: GridFile.java
+
+Content: 
+
+/** 
+
+ * Checks whether the parent directories are present (and are directories). If create_if_absent is true, creates missing dirs
+
+ * @param path
+
+ * @param create_if_absent
+
+ * @return
+
+ */
+
+protected boolean checkParentDirs(String path,boolean create_if_absent) throws IOException {
+
+  String[] components=Util.components(path,File.separator);
+
+  if (components == null)   return false;
+
+  if (components.length == 1)   return true;
+
+  StringBuilder sb=new StringBuilder();
+
+  boolean first=true;
+
+  for (int i=0; i < components.length - 1; i++) {
+
+    String tmp=components[i];
+
+    if (!tmp.equals(File.separator)) {
+
+      if (first)       first=false;
+
+ else       sb.append(File.separator);
+
+    }
+
+    sb.append(tmp);
+
+    String comp=sb.toString();
+
+    if (exists(comp)) {
+
+      if (isFile(comp))       throw new IOException("cannot create " + path + " as component "+ comp+ " is a file");
+
+    }
+
+ else {
+
+      if (create_if_absent)       cache.put(comp,new Metadata(0,System.currentTimeMillis(),chunk_size,Metadata.DIR),(short)-1,0);
+
+ else       return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean createNewFile() throws IOException {
+
+  if (exists())   return true;
+
+  if (!checkParentDirs(getPath(),false))   return false;
+
+  cache.put(getPath(),new Metadata(0,System.currentTimeMillis(),chunk_size,Metadata.FILE),(short)-1,0,true);
+
+  return true;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean delete(){
+
+  return delete(false);
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean delete(boolean synchronous){
+
+  if (!exists())   return false;
+
+  if (isFile()) {
+
+    fs.remove(getPath(),synchronous);
+
+    cache.remove(getPath(),synchronous);
+
+    return true;
+
+  }
+
+  if (isDirectory()) {
+
+    File[] files=listFiles();
+
+    if (files != null && files.length > 0)     return false;
+
+    fs.remove(getPath(),synchronous);
+
+    cache.remove(getPath(),synchronous);
+
+  }
+
+  return true;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean exists(){
+
+  return cache.get(getPath()) != null;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+protected static String filename(String full_path){
+
+  String[] comps=Util.components(full_path,File.separator);
+
+  return comps != null ? comps[comps.length - 1] : null;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public int getChunkSize(){
+
+  return chunk_size;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public String getPath(){
+
+  String my_path=super.getPath();
+
+  if (my_path != null && my_path.endsWith(File.separator)) {
+
+    int index=my_path.lastIndexOf(File.separator);
+
+    if (index != -1)     my_path=my_path.substring(0,index);
+
+  }
+
+  return my_path;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+GridFile(File parent,String child,ReplCache<String,Metadata> cache,int chunk_size,GridFilesystem fs){
+
+  super(parent,child);
+
+  this.fs=fs;
+
+  this.name=trim(parent.getAbsolutePath() + File.separator + child);
+
+  this.cache=cache;
+
+  this.chunk_size=chunk_size;
+
+  initMetadata();
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+GridFile(String pathname,ReplCache<String,Metadata> cache,int chunk_size,GridFilesystem fs){
+
+  super(pathname);
+
+  this.fs=fs;
+
+  this.name=trim(pathname);
+
+  this.cache=cache;
+
+  this.chunk_size=chunk_size;
+
+  initMetadata();
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+GridFile(String parent,String child,ReplCache<String,Metadata> cache,int chunk_size,GridFilesystem fs){
+
+  super(parent,child);
+
+  this.fs=fs;
+
+  this.name=trim(parent + File.separator + child);
+
+  this.cache=cache;
+
+  this.chunk_size=chunk_size;
+
+  initMetadata();
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+protected void initMetadata(){
+
+  Metadata metadata=cache.get(getPath());
+
+  if (metadata != null)   this.chunk_size=metadata.getChunkSize();
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+/** 
+
+ * Verifies whether child is a child (dir or file) of parent
+
+ * @param parent
+
+ * @param child
+
+ * @return True if child is a child, false otherwise
+
+ */
+
+protected static boolean isChildOf(String parent,String child){
+
+  if (parent == null || child == null)   return false;
+
+  if (!child.startsWith(parent))   return false;
+
+  if (child.length() <= parent.length())   return false;
+
+  int from=parent.equals(File.separator) ? parent.length() : parent.length() + 1;
+
+  String[] comps=Util.components(child.substring(from),File.separator);
+
+  return comps != null && comps.length <= 1;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean isDirectory(){
+
+  Metadata val=cache.get(getPath());
+
+  return val.isDirectory();
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean isFile(){
+
+  Metadata val=cache.get(getPath());
+
+  return val.isFile();
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+private boolean isFile(String key){
+
+  Metadata val=cache.get(key);
+
+  return val.isFile();
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public File[] listFiles(){
+
+  return listFiles((FilenameFilter)null);
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public File[] listFiles(FileFilter filter){
+
+  return _listFiles(filter);
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public File[] listFiles(FilenameFilter filter){
+
+  return _listFiles(filter);
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public String[] list(FilenameFilter filter){
+
+  return _list(filter);
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean mkdir(){
+
+  try {
+
+    boolean parents_exist=checkParentDirs(getPath(),false);
+
+    if (!parents_exist)     return false;
+
+    cache.put(getPath(),new Metadata(0,System.currentTimeMillis(),chunk_size,Metadata.DIR),(short)-1,0,true);
+
+    return true;
+
+  }
+
+ catch (  IOException e) {
+
+    e.printStackTrace();
+
+    return false;
+
+  }
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+public boolean mkdirs(){
+
+  try {
+
+    boolean parents_exist=checkParentDirs(getPath(),true);
+
+    if (!parents_exist)     return false;
+
+    cache.put(getPath(),new Metadata(0,System.currentTimeMillis(),chunk_size,Metadata.DIR),(short)-1,0,true);
+
+    return true;
+
+  }
+
+ catch (  IOException e) {
+
+    return false;
+
+  }
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+void setLength(int new_length){
+
+  Metadata metadata=cache.get(getPath());
+
+  if (metadata != null) {
+
+    metadata.length=new_length;
+
+    metadata.setModificationTime(System.currentTimeMillis());
+
+    cache.put(getPath(),metadata,(short)-1,0,false);
+
+  }
+
+ else   System.err.println("metadata for " + getPath() + " not found !");
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+protected File[] _listFiles(Object filter){
+
+  String[] files=_list(filter);
+
+  File[] retval=new File[files.length];
+
+  for (int i=0; i < files.length; i++)   retval[i]=new GridFile(files[i],cache,chunk_size,fs);
+
+  return retval;
+
+}
+
+Location: GridFile.java
+
+Content: 
+
+protected String[] _list(Object filter){
+
+  Cache<String,ReplCache.Value<Metadata>> internal_cache=cache.getL2Cache();
+
+  Set<String> keys=internal_cache.getInternalMap().keySet();
+
+  if (keys == null)   return null;
+
+  Collection<String> list=new ArrayList<>(keys.size());
+
+  for (  String str : keys) {
+
+    if (isChildOf(getPath(),str)) {
+
+      if (filter instanceof FilenameFilter && !((FilenameFilter)filter).accept(new File(name),filename(str)))       continue;
+
+ else       if (filter instanceof FileFilter && !((FileFilter)filter).accept(new File(str)))       continue;
+
+      list.add(str);
+
+    }
+
+  }
+
+  String[] retval=new String[list.size()];
+
+  int index=0;
+
+  for (  String tmp : list)   retval[index++]=tmp;
+
+  return retval;
+
+}
+

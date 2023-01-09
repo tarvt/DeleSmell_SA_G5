@@ -1,0 +1,302 @@
+Location: PSImageHandlerSVG.java
+
+Content: 
+
+private MaskedImage convertToRGB(BufferedImage alphaImage){
+
+  int[] red=new int[256];
+
+  int[] green=new int[256];
+
+  int[] blue=new int[256];
+
+  BufferedImage rgbImage=new BufferedImage(alphaImage.getWidth(),alphaImage.getHeight(),BufferedImage.TYPE_INT_RGB);
+
+  for (int cx=0; cx < alphaImage.getWidth(); cx++) {
+
+    for (int cy=0; cy < alphaImage.getHeight(); cy++) {
+
+      int pixelValue=alphaImage.getRGB(cx,cy);
+
+      Color pixelColor=new Color(pixelValue);
+
+      red[pixelColor.getRed()]++;
+
+      green[pixelColor.getGreen()]++;
+
+      blue[pixelColor.getBlue()]++;
+
+    }
+
+  }
+
+  Color alphaSwap=null;
+
+  for (int i=0; i < 256; i++) {
+
+    if (red[i] == 0) {
+
+      alphaSwap=new Color(i,0,0);
+
+      break;
+
+    }
+
+ else     if (green[i] == 0) {
+
+      alphaSwap=new Color(0,i,0);
+
+      break;
+
+    }
+
+ else     if (blue[i] == 0) {
+
+      alphaSwap=new Color(0,0,i);
+
+      break;
+
+    }
+
+  }
+
+  if (alphaSwap == null) {
+
+    alphaSwap=FALLBACK_COLOR;
+
+  }
+
+  for (int cx=0; cx < alphaImage.getWidth(); cx++) {
+
+    for (int cy=0; cy < alphaImage.getHeight(); cy++) {
+
+      int pixelValue=alphaImage.getRGB(cx,cy);
+
+      if (pixelValue == 0) {
+
+        rgbImage.setRGB(cx,cy,alphaSwap.getRGB());
+
+      }
+
+ else {
+
+        rgbImage.setRGB(cx,cy,alphaImage.getRGB(cx,cy));
+
+      }
+
+    }
+
+  }
+
+  return new MaskedImage(rgbImage,alphaSwap);
+
+}
+
+Location: PSImageHandlerSVG.java
+
+Content: 
+
+private Float getDimension(Document document,String dimension){
+
+  if (document.getFirstChild().getAttributes().getNamedItem(dimension) != null) {
+
+    String width=document.getFirstChild().getAttributes().getNamedItem(dimension).getNodeValue();
+
+    width=width.replaceAll("[^\\d.]","");
+
+    return Float.parseFloat(width);
+
+  }
+
+  return null;
+
+}
+
+Location: PSImageHandlerSVG.java
+
+Content: 
+
+private boolean recurseSVGElements(NodeList childNodes,List<String> gradMatches,boolean isMatched){
+
+  boolean opacityFound=false;
+
+  for (int i=0; i < childNodes.getLength(); i++) {
+
+    Node curNode=childNodes.item(i);
+
+    if (isMatched && curNode.getLocalName() != null && curNode.getLocalName().equals("stop")) {
+
+      if (curNode.getAttributes().getNamedItem("style") != null) {
+
+        String[] stylePairs=curNode.getAttributes().getNamedItem("style").getNodeValue().split(";");
+
+        for (        String stylePair : stylePairs) {
+
+          String[] style=stylePair.split(":");
+
+          if (style[0].equalsIgnoreCase("stop-opacity")) {
+
+            if (Double.parseDouble(style[1]) < 1) {
+
+              return true;
+
+            }
+
+          }
+
+        }
+
+      }
+
+      if (curNode.getAttributes().getNamedItem("stop-opacity") != null) {
+
+        String opacityValue=curNode.getAttributes().getNamedItem("stop-opacity").getNodeValue();
+
+        if (Double.parseDouble(opacityValue) < 1) {
+
+          return true;
+
+        }
+
+      }
+
+    }
+
+    String nodeName=curNode.getLocalName();
+
+    boolean inMatch=false;
+
+    if (!isMatched) {
+
+      inMatch=nodeName != null && gradMatches.contains(nodeName);
+
+      if (inMatch) {
+
+        gradientsFound.put(curNode.getAttributes().getNamedItem("id").getNodeValue(),nodeName);
+
+      }
+
+    }
+
+ else {
+
+      inMatch=true;
+
+    }
+
+    opacityFound=recurseSVGElements(curNode.getChildNodes(),gradMatches,inMatch);
+
+    if (opacityFound) {
+
+      return true;
+
+    }
+
+  }
+
+  return opacityFound;
+
+}
+
+Location: PSImageHandlerSVG.java
+
+Content: 
+
+private InputStream renderSVGToInputStream(RenderingContext context,ImageXMLDOM imageSVG) throws IOException {
+
+  PNGTranscoder png=new PNGTranscoder();
+
+  Float width=getDimension(imageSVG.getDocument(),"width") * 8;
+
+  png.addTranscodingHint(SVGAbstractTranscoder.KEY_WIDTH,width);
+
+  Float height=getDimension(imageSVG.getDocument(),"height") * 8;
+
+  png.addTranscodingHint(SVGAbstractTranscoder.KEY_HEIGHT,height);
+
+  TranscoderInput input=new TranscoderInput(imageSVG.getDocument());
+
+  ByteArrayOutputStream os=new ByteArrayOutputStream();
+
+  TranscoderOutput output=new TranscoderOutput(os);
+
+  try {
+
+    png.transcode(input,output);
+
+  }
+
+ catch (  TranscoderException ex) {
+
+    SVGEventProducer eventProducer=SVGEventProducer.Provider.get(context.getUserAgent().getEventBroadcaster());
+
+    eventProducer.svgRenderingError(this,ex,imageSVG.getInfo().getOriginalURI());
+
+  }
+
+ finally {
+
+    os.flush();
+
+    os.close();
+
+  }
+
+  return new ByteArrayInputStream(os.toByteArray());
+
+}
+
+Location: PSImageHandlerSVG.java
+
+Content: 
+
+private boolean shouldRaster(ImageXMLDOM image){
+
+  try {
+
+    List<String> gradMatches=new ArrayList<String>();
+
+    gradMatches.add("radialGradient");
+
+    gradMatches.add("linearGradient");
+
+    return recurseSVGElements(image.getDocument().getChildNodes(),gradMatches,false);
+
+  }
+
+  finally {
+
+    gradientsFound.clear();
+
+  }
+
+}
+
+Location: PSImageHandlerSVG.java
+
+Content: 
+
+public static boolean shouldStrokeText(NodeList childNodes){
+
+  for (int i=0; i < childNodes.getLength(); i++) {
+
+    Node curNode=childNodes.item(i);
+
+    if (shouldStrokeText(curNode.getChildNodes())) {
+
+      return true;
+
+    }
+
+    if ("text".equals(curNode.getLocalName())) {
+
+      return curNode.getAttributes().getNamedItem("filter") != null;
+
+    }
+
+  }
+
+  return false;
+
+}
+

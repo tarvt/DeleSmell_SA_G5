@@ -1,0 +1,374 @@
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+void addGroup(StringBuffer pat,String escapedGroup){
+
+  if (pat.length() > 0) {
+
+    pat.append("|");
+
+  }
+
+  pat.append("(");
+
+  pat.append(escapedGroup);
+
+  pat.append(")");
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+String checkJobGet(String prop) throws IOException {
+
+  String val=job_.get(prop);
+
+  if (val == null) {
+
+    throw new IOException("JobConf: missing required property: " + prop);
+
+  }
+
+  return val;
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+boolean fastReadUntilMatch(String textPat,boolean includePat,DataOutputBuffer outBufOrNull) throws IOException {
+
+  byte[] cpat=textPat.getBytes("UTF-8");
+
+  int m=0;
+
+  boolean match=false;
+
+  int msup=cpat.length;
+
+  int LL=120000 * 10;
+
+  bin_.mark(LL);
+
+  while (true) {
+
+    int b=bin_.read();
+
+    if (b == -1)     break;
+
+    byte c=(byte)b;
+
+    if (c == cpat[m]) {
+
+      m++;
+
+      if (m == msup) {
+
+        match=true;
+
+        break;
+
+      }
+
+    }
+
+ else {
+
+      bin_.mark(LL);
+
+      if (outBufOrNull != null) {
+
+        outBufOrNull.write(cpat,0,m);
+
+        outBufOrNull.write(c);
+
+      }
+
+      pos_+=m + 1;
+
+      m=0;
+
+    }
+
+  }
+
+  if (!includePat && match) {
+
+    bin_.reset();
+
+  }
+
+ else   if (outBufOrNull != null) {
+
+    outBufOrNull.write(cpat);
+
+    pos_+=msup;
+
+  }
+
+  return match;
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+Pattern makePatternCDataOrMark(String escapedMark){
+
+  StringBuffer pat=new StringBuffer();
+
+  addGroup(pat,StreamUtil.regexpEscape("CDATA["));
+
+  addGroup(pat,StreamUtil.regexpEscape("]]>"));
+
+  addGroup(pat,escapedMark);
+
+  return Pattern.compile(pat.toString());
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+int nextState(int state,int input,int bufPos){
+
+switch (state) {
+
+case CDATA_UNK:
+
+case CDATA_OUT:
+
+switch (input) {
+
+case CDATA_BEGIN:
+
+      return CDATA_IN;
+
+case CDATA_END:
+
+    if (state == CDATA_OUT) {
+
+    }
+
+  return CDATA_OUT;
+
+case RECORD_MAYBE:
+
+return (state == CDATA_UNK) ? CDATA_UNK : RECORD_ACCEPT;
+
+}
+
+break;
+
+case CDATA_IN:
+
+return (input == CDATA_END) ? CDATA_OUT : CDATA_IN;
+
+}
+
+throw new IllegalStateException(state + " " + input+ " "+ bufPos+ " "+ splitName_);
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+boolean readUntilMatchBegin() throws IOException {
+
+  if (slowMatch_) {
+
+    return slowReadUntilMatch(beginPat_,false,null);
+
+  }
+
+ else {
+
+    return fastReadUntilMatch(beginMark_,false,null);
+
+  }
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+private boolean readUntilMatchEnd(DataOutputBuffer buf) throws IOException {
+
+  if (slowMatch_) {
+
+    return slowReadUntilMatch(endPat_,true,buf);
+
+  }
+
+ else {
+
+    return fastReadUntilMatch(endMark_,true,buf);
+
+  }
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+public void seekNextRecordBoundary() throws IOException {
+
+  readUntilMatchBegin();
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+private boolean slowReadUntilMatch(Pattern markPattern,boolean includePat,DataOutputBuffer outBufOrNull) throws IOException {
+
+  byte[] buf=new byte[Math.max(lookAhead_,maxRecSize_)];
+
+  int read=0;
+
+  bin_.mark(Math.max(lookAhead_,maxRecSize_) + 2);
+
+  read=bin_.read(buf);
+
+  if (read == -1)   return false;
+
+  String sbuf=new String(buf,0,read,"UTF-8");
+
+  Matcher match=markPattern.matcher(sbuf);
+
+  firstMatchStart_=NA;
+
+  firstMatchEnd_=NA;
+
+  int bufPos=0;
+
+  int state=synched_ ? CDATA_OUT : CDATA_UNK;
+
+  int s=0;
+
+  while (match.find(bufPos)) {
+
+    int input;
+
+    if (match.group(1) != null) {
+
+      input=CDATA_BEGIN;
+
+    }
+
+ else     if (match.group(2) != null) {
+
+      input=CDATA_END;
+
+      firstMatchStart_=NA;
+
+    }
+
+ else {
+
+      input=RECORD_MAYBE;
+
+    }
+
+    if (input == RECORD_MAYBE) {
+
+      if (firstMatchStart_ == NA) {
+
+        firstMatchStart_=match.start();
+
+        firstMatchEnd_=match.end();
+
+      }
+
+    }
+
+    state=nextState(state,input,match.start());
+
+    if (state == RECORD_ACCEPT) {
+
+      break;
+
+    }
+
+    bufPos=match.end();
+
+    s++;
+
+  }
+
+  if (state != CDATA_UNK) {
+
+    synched_=true;
+
+  }
+
+  boolean matched=(firstMatchStart_ != NA) && (state == RECORD_ACCEPT || state == CDATA_UNK);
+
+  if (matched) {
+
+    int endPos=includePat ? firstMatchEnd_ : firstMatchStart_;
+
+    bin_.reset();
+
+    for (long skiplen=endPos; skiplen > 0; ) {
+
+      skiplen-=bin_.skip(skiplen);
+
+    }
+
+    pos_+=endPos;
+
+    if (outBufOrNull != null) {
+
+      outBufOrNull.writeBytes(sbuf.substring(0,endPos));
+
+    }
+
+  }
+
+  return matched;
+
+}
+
+Location: StreamXmlRecordReader.java
+
+Content: 
+
+public StreamXmlRecordReader(FSDataInputStream in,FileSplit split,Reporter reporter,JobConf job,FileSystem fs) throws IOException {
+
+  super(in,split,reporter,job,fs);
+
+  beginMark_=checkJobGet(CONF_NS + "begin");
+
+  endMark_=checkJobGet(CONF_NS + "end");
+
+  maxRecSize_=job_.getInt(CONF_NS + "maxrec",50 * 1000);
+
+  lookAhead_=job_.getInt(CONF_NS + "lookahead",2 * maxRecSize_);
+
+  synched_=false;
+
+  slowMatch_=job_.getBoolean(CONF_NS + "slowmatch",false);
+
+  if (slowMatch_) {
+
+    beginPat_=makePatternCDataOrMark(beginMark_);
+
+    endPat_=makePatternCDataOrMark(endMark_);
+
+  }
+
+  init();
+
+}
+

@@ -1,0 +1,502 @@
+Location: TransactionManager.java
+
+Content: 
+
+public int[] buildDeck(){
+
+  int real_deck[]=new int[33];
+
+  int cross_deck[]=new int[33];
+
+  int rand_val;
+
+  int i;
+
+  for (i=0; i < 33; i++)   cross_deck[i]=i;
+
+  for (i=0; i < 10; i++) {
+
+    rand_val=(int)JBButil.random(0,33 - 1 - i,warehouseId);
+
+    real_deck[cross_deck[rand_val]]=new_order;
+
+    cross_deck[rand_val]=cross_deck[33 - 1 - i];
+
+  }
+
+  for (i=0; i < 10; i++) {
+
+    rand_val=(int)JBButil.random(0,23 - 1 - i,warehouseId);
+
+    real_deck[cross_deck[rand_val]]=payment;
+
+    cross_deck[rand_val]=cross_deck[23 - 1 - i];
+
+  }
+
+  rand_val=(int)JBButil.random(0,13 - 1,warehouseId);
+
+  real_deck[cross_deck[rand_val]]=order_status;
+
+  cross_deck[rand_val]=cross_deck[13 - 1];
+
+  rand_val=(int)JBButil.random(0,12 - 1,warehouseId);
+
+  real_deck[cross_deck[rand_val]]=delivery;
+
+  cross_deck[rand_val]=cross_deck[12 - 1];
+
+  rand_val=(int)JBButil.random(0,11 - 1,warehouseId);
+
+  real_deck[cross_deck[rand_val]]=stock_level;
+
+  cross_deck[rand_val]=cross_deck[11 - 1];
+
+  for (i=0; i < 10; i++) {
+
+    rand_val=(int)JBButil.random(0,10 - 1 - i,warehouseId);
+
+    real_deck[cross_deck[rand_val]]=cust_report;
+
+  }
+
+  return real_deck;
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+private void createTxnInstances(){
+
+  transactionInstance=new Transaction[maxTxnTypes];
+
+  for (int i=0; i < maxTxnTypes; ++i) {
+
+    transactionInstance[i]=Transaction.getInstance(Transaction.transactionClasses[i],company,warehouseId);
+
+  }
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+public synchronized Company.runModes getrunMode(){
+
+  return mode;
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+public void go(){
+
+  byte co=0;
+
+  int deck[]=new int[33];
+
+  long elapsed_time;
+
+  long txntime;
+
+  int txntype;
+
+  boolean timed=false;
+
+  boolean signaled_done=false;
+
+  int i=0;
+
+  TimerData warehouseTimerDataPtr=company.getTimerDataPtr(warehouseId);
+
+  long rampup_time=warehouseTimerDataPtr.getRampUpTime();
+
+  long measurement_time=warehouseTimerDataPtr.getMeasurementTime();
+
+  TimerData myTimerData=new TimerData();
+
+  myTimerData.setWaitTimes(warehouseTimerDataPtr.getWaitTimes());
+
+  deck=buildDeck();
+
+  Warehouse warehousePtr=company.getWarehousePtr(warehouseId,false);
+
+  createTxnInstances();
+
+synchronized (company.initThreadsCountMonitor) {
+
+synchronized (company.initThreadsStateChange) {
+
+      company.initThreadsCount++;
+
+      company.initThreadsStateChange.notify();
+
+    }
+
+    try {
+
+      company.initThreadsCountMonitor.wait();
+
+    }
+
+ catch (    InterruptedException e) {
+
+    }
+
+  }
+
+  if ((rampup_time > 0) || (measurement_time > 0)) {
+
+    timed=true;
+
+  }
+
+  if (JBButil.getLog().isLoggable(Level.FINEST)) {
+
+    JBButil.getLog().finest("Benchmark " + JBBmain.Version + ": warehouse "+ warehouseId);
+
+  }
+
+  while (this.getrunMode() != Company.runModes.STOP) {
+
+    if ((!timed) && (this.getrunMode() == Company.runModes.DEFAULT_MODE)) {
+
+      hongshuai();
+
+      int i;
+
+      System.out.println("Select transaction type");
+
+      System.out.println();
+
+      for (i=0; i < maxTxnTypes; ++i) {
+
+        try {
+
+          System.out.println((i + 1) + ". " + Transaction.transactionClasses[i].getMethod("getMenuName",(Class[])null).invoke(null,(Object[])null));
+
+        }
+
+ catch (        Exception e) {
+
+          JBButil.getLog().log(Level.WARNING,"TransactionManager.manualSelection - " + "NoSuchMethodException, or IllegalAccessException",e);
+
+        }
+
+      }
+
+      System.out.println(multiple_orders + 1 + ". Create NewOrders");
+
+      System.out.println(pgm_exit + 1 + ". Exit");
+
+      System.out.println();
+
+      System.out.println("Enter selection here: ");
+
+      txntype=(new Integer(readUserValue()).intValue()) - 1;
+
+    }
+
+ else {
+
+      txntype=deck[i];
+
+      i++;
+
+      if (i == 33) {
+
+        deck=buildDeck();
+
+        i=0;
+
+      }
+
+    }
+
+    txntime=goManual(txntype,myTimerData);
+
+    if (this.getrunMode() == Company.runModes.RECORDING)     myTimerData.updateTimerData(txntype,txntime);
+
+    if (timed) {
+
+      if ((this.getrunMode() == Company.runModes.RAMP_DOWN) && (!signaled_done)) {
+
+synchronized (company.threadsDoneCountMonitor) {
+
+          company.threadsDoneCount++;
+
+          company.threadsDoneCountMonitor.notify();
+
+          signaled_done=true;
+
+        }
+
+      }
+
+    }
+
+ else {
+
+      if (txntype == pgm_exit) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  if (timed && (this.getrunMode() == Company.runModes.STOP)) {
+
+    elapsed_time=company.getElapsedTime();
+
+    myTimerData.calculateResponseTimeStats();
+
+    double tpmc=myTimerData.updateTPMC(elapsed_time);
+
+    double btps=myTimerData.updateBTPS(elapsed_time);
+
+    long totalTransactions=0;
+
+    for (txntype=0; txntype < maxTxnTypes; txntype++) {
+
+      warehouseTimerDataPtr.rollupTimerData(txntype,myTimerData.getTransactionCount(txntype),myTimerData.getTotalTime(txntype),myTimerData.getTotalTimeSquare(txntype),myTimerData.getMinimumTime(txntype),myTimerData.getMaximumTime(txntype));
+
+      company.getTimerDataPtr(co).rollupTimerData(txntype,myTimerData.getTransactionCount(txntype),myTimerData.getTotalTime(txntype),myTimerData.getTotalTimeSquare(txntype),myTimerData.getMinimumTime(txntype),myTimerData.getMaximumTime(txntype));
+
+      totalTransactions+=myTimerData.getTransactionCount(txntype);
+
+    }
+
+    company.getTimerDataPtr(co).accumulateTransactionStats(totalTransactions);
+
+    warehouseTimerDataPtr.updateTPMC(tpmc);
+
+    warehouseTimerDataPtr.updateBTPS(btps);
+
+    company.getTimerDataPtr(co).updateTPMC(tpmc);
+
+    company.getTimerDataPtr(co).updateBTPS(btps);
+
+synchronized (company.stopThreadsCountMonitor) {
+
+      company.stopThreadsCount++;
+
+      company.stopThreadsCountMonitor.notify();
+
+    }
+
+  }
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+private long goManual(int selection,TimerData myTimerData){
+
+  long menuWaitTime=0;
+
+  long typingWaitTime=0;
+
+  double thinkingWaitTime=0.0;
+
+  if (isMultiple(selection)) {
+
+    long numOrders=0;
+
+    int i;
+
+    System.out.println("How many orders to be created? ");
+
+    numOrders=new Integer(readUserValue()).intValue();
+
+    System.out.println("Creating New Orders...");
+
+    for (i=0; i < numOrders; ++i) {
+
+      transactionInstance[0].init();
+
+      transactionInstance[0].process();
+
+    }
+
+    return 0;
+
+  }
+
+ else {
+
+    if (selection < maxTxnTypes) {
+
+      menuWaitTime=myTimerData.getMenuWaitTime(selection);
+
+      typingWaitTime=myTimerData.getTypingWaitTime(selection);
+
+      thinkingWaitTime=JBButil.negativeExpDistribution(((double)myTimerData.getThinkingWaitTime(selection)) / 1000.0D,warehouseId);
+
+    }
+
+    return runTxn(transactionInstance[selection],menuWaitTime,typingWaitTime,thinkingWaitTime);
+
+  }
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+public boolean goValidate(){
+
+  Transaction t[];
+
+  t=new Transaction[maxTxnTypes];
+
+  int i;
+
+  Transaction.validateRun();
+
+  for (i=0; i < maxTxnTypes; ++i) {
+
+    t[i]=Transaction.getInstance(Transaction.transactionClasses[i],company,warehouseId);
+
+  }
+
+  for (i=0; i < maxTxnTypes; ++i) {
+
+    t[i].init();
+
+    t[i].initializeTransactionLog();
+
+    t[i].process();
+
+    t[i].processTransactionLog();
+
+  }
+
+  return Transaction.isRunValid();
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+public void initTransactionManager(Company inCompany,short warehouseId){
+
+  company=inCompany;
+
+  this.warehouseId=warehouseId;
+
+  JBButil.random(1,company.getMaxDistrictsPerWarehouse(),warehouseId);
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+boolean isMultiple(int selection){
+
+  if (selection == multiple_orders) {
+
+    return true;
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+private String readUserValue(){
+
+  BufferedReader keyboard_input;
+
+  String s="";
+
+  try {
+
+    keyboard_input=new BufferedReader(new InputStreamReader(System.in));
+
+    s=keyboard_input.readLine();
+
+  }
+
+ catch (  IOException exception) {
+
+  }
+
+  return s;
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+private long runTxn(Transaction txn,long menuWaitTime,long typingWaitTime,double thinkingWaitTime){
+
+  long start;
+
+  long end;
+
+  txn.init();
+
+  if (menuWaitTime > 0) {
+
+    JBButil.milliSecondsToSleep(menuWaitTime);
+
+  }
+
+  txn.initializeTransactionLog();
+
+  if (typingWaitTime > 0) {
+
+    JBButil.milliSecondsToSleep(typingWaitTime);
+
+  }
+
+  start=System.currentTimeMillis();
+
+  txn.process();
+
+  txn.processTransactionLog();
+
+  end=System.currentTimeMillis();
+
+  if (thinkingWaitTime > 0.0) {
+
+    JBButil.SecondsToSleep(thinkingWaitTime);
+
+  }
+
+  return (end - start);
+
+}
+
+Location: TransactionManager.java
+
+Content: 
+
+public synchronized void setrunMode(Company.runModes inmode){
+
+  mode=inmode;
+
+}
+

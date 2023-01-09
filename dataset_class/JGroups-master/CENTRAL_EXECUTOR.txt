@@ -1,0 +1,190 @@
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+public CENTRAL_EXECUTOR(){
+
+  super();
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+protected void copyQueueTo(List<Address> new_joiners){
+
+  Set<Owner> copyRequests;
+
+  Set<Owner> copyConsumers;
+
+  _consumerLock.lock();
+
+  try {
+
+    copyRequests=new HashSet<>(_runRequests);
+
+    copyConsumers=new HashSet<>(_consumersAvailable);
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+  if (log.isTraceEnabled())   log.trace("copying queue to " + new_joiners);
+
+  for (  Address joiner : new_joiners) {
+
+    for (    Owner address : copyRequests) {
+
+      sendRequest(joiner,Type.CREATE_RUN_REQUEST,address.getRequestId(),address.getAddress());
+
+    }
+
+    for (    Owner address : copyConsumers) {
+
+      sendRequest(joiner,Type.CREATE_CONSUMER_READY,address.getRequestId(),address.getAddress());
+
+    }
+
+  }
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+@ManagedAttribute public String getBackups(){
+
+  return backups != null ? backups.toString() : null;
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+public Address getCoord(){
+
+  return coord;
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+public int getNumberOfBackups(){
+
+  return num_backups;
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+@Override protected void sendNewConsumerRequest(Owner sender){
+
+  if (is_coord)   updateBackups(Type.CREATE_CONSUMER_READY,sender);
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+@Override protected void sendNewRunRequest(Owner sender){
+
+  if (is_coord)   updateBackups(Type.CREATE_RUN_REQUEST,sender);
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+@Override protected void sendRemoveConsumerRequest(Owner sender){
+
+  if (is_coord)   updateBackups(Type.DELETE_CONSUMER_READY,sender);
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+@Override protected void sendRemoveRunRequest(Owner sender){
+
+  if (is_coord)   updateBackups(Type.DELETE_RUN_REQUEST,sender);
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+@Override protected void sendToCoordinator(Type type,final long requestId,final Address value){
+
+  if (is_coord) {
+
+    if (log.isTraceEnabled())     log.trace("[redirect] <--> [" + local_addr + "] "+ type.name()+ " ["+ value+ (requestId != -1 ? " request id: " + requestId : "")+ "]");
+
+switch (type) {
+
+case RUN_REQUEST:
+
+      handleTaskRequest(requestId,value);
+
+    break;
+
+case CONSUMER_READY:
+
+  handleConsumerReadyRequest(requestId,value);
+
+break;
+
+case CONSUMER_UNREADY:
+
+handleConsumerUnreadyRequest(requestId,value);
+
+break;
+
+}
+
+;
+
+}
+
+ else sendRequest(coord,type,requestId,value);
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+public void setNumberOfBackups(int num_backups){
+
+  this.num_backups=num_backups;
+
+}
+
+Location: CENTRAL_EXECUTOR.java
+
+Content: 
+
+protected void updateBackups(Type type,Owner obj){
+
+synchronized (backups) {
+
+    for (    Address backup : backups)     sendRequest(backup,type,obj.getRequestId(),obj.getAddress());
+
+  }
+
+}
+

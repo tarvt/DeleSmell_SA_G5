@@ -1,0 +1,274 @@
+Location: DBOutputFormat.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void checkOutputSpecs(FileSystem filesystem,JobConf job) throws IOException {
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Constructs the query used as the prepared statement to insert data.
+
+ * @param table the table to insert into
+
+ * @param fieldNames the fields to insert into. If field names are unknown, supply an array of nulls.
+
+ */
+
+public String constructQuery(String table,String[] fieldNames){
+
+  if (fieldNames == null) {
+
+    throw new IllegalArgumentException("Field names may not be null");
+
+  }
+
+  StringBuilder query=new StringBuilder();
+
+  query.append("INSERT INTO ").append(table);
+
+  if (fieldNames.length > 0 && fieldNames[0] != null) {
+
+    query.append(" (");
+
+    for (int i=0; i < fieldNames.length; i++) {
+
+      query.append(fieldNames[i]);
+
+      if (i != fieldNames.length - 1) {
+
+        query.append(",");
+
+      }
+
+    }
+
+    query.append(")");
+
+  }
+
+  query.append(" VALUES (");
+
+  for (int i=0; i < fieldNames.length; i++) {
+
+    query.append("?");
+
+    if (i != fieldNames.length - 1) {
+
+      query.append(",");
+
+    }
+
+  }
+
+  query.append(");");
+
+  return query.toString();
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public RecordWriter<K,V> getRecordWriter(FileSystem filesystem,JobConf job,String name,Progressable progress) throws IOException {
+
+  org.apache.hadoop.mapreduce.RecordWriter<K,V> w=super.getRecordWriter(new TaskAttemptContextImpl(job,TaskAttemptID.forName(job.get(MRJobConfig.TASK_ATTEMPT_ID))));
+
+  org.apache.hadoop.mapreduce.lib.db.DBOutputFormat.DBRecordWriter writer=(org.apache.hadoop.mapreduce.lib.db.DBOutputFormat.DBRecordWriter)w;
+
+  try {
+
+    return new DBRecordWriter(writer.getConnection(),writer.getStatement());
+
+  }
+
+ catch (  SQLException se) {
+
+    throw new IOException(se);
+
+  }
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+private static DBConfiguration setOutput(JobConf job,String tableName){
+
+  job.setOutputFormat(DBOutputFormat.class);
+
+  job.setReduceSpeculativeExecution(false);
+
+  DBConfiguration dbConf=new DBConfiguration(job);
+
+  dbConf.setOutputTableName(tableName);
+
+  return dbConf;
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Initializes the reduce-part of the job with the appropriate output settings
+
+ * @param job The job
+
+ * @param tableName The table to insert data into
+
+ * @param fieldCount the number of fields in the table.
+
+ */
+
+public static void setOutput(JobConf job,String tableName,int fieldCount){
+
+  DBConfiguration dbConf=setOutput(job,tableName);
+
+  dbConf.setOutputFieldCount(fieldCount);
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Initializes the reduce-part of the job with the appropriate output settings
+
+ * @param job The job
+
+ * @param tableName The table to insert data into
+
+ * @param fieldNames The field names in the table.
+
+ */
+
+public static void setOutput(JobConf job,String tableName,String... fieldNames){
+
+  if (fieldNames.length > 0 && fieldNames[0] != null) {
+
+    DBConfiguration dbConf=setOutput(job,tableName);
+
+    dbConf.setOutputFieldNames(fieldNames);
+
+  }
+
+ else {
+
+    if (fieldNames.length > 0)     setOutput(job,tableName,fieldNames.length);
+
+ else     throw new IllegalArgumentException("Field names must be greater than 0");
+
+  }
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+private static DBConfiguration setOutput(Job job,String tableName) throws IOException {
+
+  job.setOutputFormatClass(DBOutputFormat.class);
+
+  job.setReduceSpeculativeExecution(false);
+
+  DBConfiguration dbConf=new DBConfiguration(job.getConfiguration());
+
+  dbConf.setOutputTableName(tableName);
+
+  return dbConf;
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Initializes the reduce-part of the job  with the appropriate output settings
+
+ * @param job The job
+
+ * @param tableName The table to insert data into
+
+ * @param fieldCount the number of fields in the table.
+
+ */
+
+public static void setOutput(Job job,String tableName,int fieldCount) throws IOException {
+
+  DBConfiguration dbConf=setOutput(job,tableName);
+
+  dbConf.setOutputFieldCount(fieldCount);
+
+}
+
+Location: DBOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Initializes the reduce-part of the job with  the appropriate output settings
+
+ * @param job The job
+
+ * @param tableName The table to insert data into
+
+ * @param fieldNames The field names in the table.
+
+ */
+
+public static void setOutput(Job job,String tableName,String... fieldNames) throws IOException {
+
+  if (fieldNames.length > 0 && fieldNames[0] != null) {
+
+    DBConfiguration dbConf=setOutput(job,tableName);
+
+    dbConf.setOutputFieldNames(fieldNames);
+
+  }
+
+ else {
+
+    if (fieldNames.length > 0) {
+
+      setOutput(job,tableName,fieldNames.length);
+
+    }
+
+ else {
+
+      throw new IllegalArgumentException("Field names must be greater than 0");
+
+    }
+
+  }
+
+}
+

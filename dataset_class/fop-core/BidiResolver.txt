@@ -1,0 +1,336 @@
+Location: BidiResolver.java
+
+Content: 
+
+private BidiResolver(){
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static List collectRuns(List inlines,List runs){
+
+  for (  Object inline : inlines) {
+
+    InlineArea ia=(InlineArea)inline;
+
+    runs=ia.collectInlineRuns(runs);
+
+  }
+
+  return runs;
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static int[] computeMinMaxLevel(List runs,int[] mm){
+
+  if (mm == null) {
+
+    mm=new int[]{Integer.MAX_VALUE,Integer.MIN_VALUE};
+
+  }
+
+  for (  Object run : runs) {
+
+    InlineRun ir=(InlineRun)run;
+
+    ir.updateMinMax(mm);
+
+  }
+
+  return mm;
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static void dumpRanges(String header,List ranges){
+
+  log.debug(header);
+
+  for (  Object range : ranges) {
+
+    DelimitedTextRange r=(DelimitedTextRange)range;
+
+    log.debug(r);
+
+  }
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static void dumpRuns(String header,List runs){
+
+  log.debug(header);
+
+  for (  Object run : runs) {
+
+    InlineRun ir=(InlineRun)run;
+
+    log.debug(ir);
+
+  }
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static List pruneEmptyRanges(List ranges){
+
+  Vector rv=new Vector();
+
+  for (  Object range : ranges) {
+
+    DelimitedTextRange r=(DelimitedTextRange)range;
+
+    if (!r.isEmpty()) {
+
+      rv.add(r);
+
+    }
+
+  }
+
+  return rv;
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+/** 
+
+ * Reorder line area.
+
+ * @param la a line area instance
+
+ */
+
+public static void reorder(LineArea la){
+
+  List runs=collectRuns(la.getInlineAreas(),new Vector());
+
+  if (log.isDebugEnabled()) {
+
+    dumpRuns("BD: REORDER: INPUT:",runs);
+
+  }
+
+  runs=splitRuns(runs);
+
+  if (log.isDebugEnabled()) {
+
+    dumpRuns("BD: REORDER: SPLIT INLINES:",runs);
+
+  }
+
+  int[] mm=computeMinMaxLevel(runs,null);
+
+  if (log.isDebugEnabled()) {
+
+    log.debug("BD: REORDER: { min = " + mm[0] + ", max = "+ mm[1]+ "}");
+
+  }
+
+  int mn=mm[0];
+
+  int mx=mm[1];
+
+  if (mx > 0) {
+
+    for (int l1=mx, l2=((mn & 1) == 0) ? (mn + 1) : mn; l1 >= l2; l1--) {
+
+      runs=reorderRuns(runs,l1);
+
+    }
+
+  }
+
+  if (log.isDebugEnabled()) {
+
+    dumpRuns("BD: REORDER: REORDERED RUNS:",runs);
+
+  }
+
+  boolean mirror=true;
+
+  reverseWords(runs,mirror);
+
+  if (log.isDebugEnabled()) {
+
+    dumpRuns("BD: REORDER: REORDERED WORDS:",runs);
+
+  }
+
+  replaceInlines(la,replicateSplitWords(runs));
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static void replaceInlines(LineArea la,List runs){
+
+  List<InlineArea> inlines=new ArrayList<InlineArea>();
+
+  for (  Object run : runs) {
+
+    InlineRun ir=(InlineRun)run;
+
+    inlines.add(ir.getInline());
+
+  }
+
+  la.setInlineAreas(unflattenInlines(inlines));
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static List replicateSplitWords(List runs){
+
+  return runs;
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static void resolveInlineDirectionality(List ranges){
+
+  for (  Object range : ranges) {
+
+    DelimitedTextRange r=(DelimitedTextRange)range;
+
+    r.resolve();
+
+    if (log.isDebugEnabled()) {
+
+      log.debug(r);
+
+    }
+
+  }
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+/** 
+
+ * Resolve inline directionality.
+
+ * @param ps a page sequence FO instance
+
+ */
+
+public static void resolveInlineDirectionality(PageSequence ps){
+
+  if (log.isDebugEnabled()) {
+
+    log.debug("BD: RESOLVE: " + ps);
+
+  }
+
+  List ranges=ps.collectDelimitedTextRanges(new Stack());
+
+  if (log.isDebugEnabled()) {
+
+    dumpRanges("BD: RESOLVE: RANGES:",ranges);
+
+  }
+
+  ranges=pruneEmptyRanges(ranges);
+
+  if (log.isDebugEnabled()) {
+
+    dumpRanges("BD: RESOLVE: PRUNED RANGES:",ranges);
+
+  }
+
+  resolveInlineDirectionality(ranges);
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static void reverseWords(List runs,boolean mirror){
+
+  for (  Object run : runs) {
+
+    InlineRun ir=(InlineRun)run;
+
+    ir.maybeReverseWord(mirror);
+
+  }
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static List splitRuns(List runs){
+
+  List runsNew=new Vector();
+
+  for (  Object run : runs) {
+
+    InlineRun ir=(InlineRun)run;
+
+    if (ir.isHomogenous()) {
+
+      runsNew.add(ir);
+
+    }
+
+ else {
+
+      runsNew.addAll(ir.split());
+
+    }
+
+  }
+
+  if (!runsNew.equals(runs)) {
+
+    runs=runsNew;
+
+  }
+
+  return runs;
+
+}
+
+Location: BidiResolver.java
+
+Content: 
+
+private static List unflattenInlines(List<InlineArea> inlines){
+
+  return new UnflattenProcessor(inlines).unflatten();
+
+}
+

@@ -1,0 +1,182 @@
+Location: TestStreamingBadRecords.java
+
+Content: 
+
+public void testNarrowDown() throws Exception {
+
+  hongshuai();
+
+  OutputStream os=getFileSystem().create(new Path(getInputDir(),"text.txt"));
+
+  Writer wr=new OutputStreamWriter(os);
+
+  String prefix=new String(new byte[20 * 1024]);
+
+  for (int i=1; i <= INPUTSIZE; i++) {
+
+    String str="" + i;
+
+    int zerosToPrepend=3 - str.length();
+
+    for (int j=0; j < zerosToPrepend; j++) {
+
+      str="0" + str;
+
+    }
+
+    wr.write(prefix + "hey" + str+ "\n");
+
+  }
+
+  wr.close();
+
+  JobConf clusterConf=createJobConf();
+
+  String[] args=new String[]{"-input",(new Path(getInputDir(),"text.txt")).toString(),"-output",getOutputDir().toString(),"-mapper",badMapper,"-reducer",badReducer,"-verbose","-inputformat","org.apache.hadoop.mapred.KeyValueTextInputFormat","-jobconf","mapreduce.task.skip.start.attempts=1","-jobconf","mapreduce.map.maxattempts=20","-jobconf","mapreduce.reduce.maxattempts=15","-jobconf","mapreduce.map.skip.maxrecords=1","-jobconf","mapreduce.reduce.skip.maxgroups=1","-jobconf","mapreduce.job.maps=1","-jobconf","mapreduce.job.reduces=1","-jobconf","fs.default.name=" + clusterConf.get("fs.default.name"),"-jobconf","mapreduce.jobtracker.address=" + clusterConf.get(JTConfig.JT_IPC_ADDRESS),"-jobconf","mapreduce.jobtracker.http.address=" + clusterConf.get(JTConfig.JT_HTTP_ADDRESS),"-jobconf","mapreduce.task.files.preserve.failedtasks=true","-jobconf","stream.tmpdir=" + System.getProperty("test.build.data","/tmp")};
+
+  StreamJob job=new StreamJob(args,false);
+
+  job.go();
+
+  validateOutput(job.running_,true);
+
+  assertTrue(SkipBadRecords.getSkipOutputPath(job.jobConf_) != null);
+
+}
+
+Location: TestStreamingBadRecords.java
+
+Content: 
+
+public void testSkip() throws Exception {
+
+  JobConf clusterConf=createJobConf();
+
+  createInput();
+
+  int attSkip=0;
+
+  SkipBadRecords.setAttemptsToStartSkipping(clusterConf,attSkip);
+
+  int mapperAttempts=attSkip + 1 + MAPPER_BAD_RECORDS.size();
+
+  int reducerAttempts=attSkip + 1 + REDUCER_BAD_RECORDS.size();
+
+  String[] args=new String[]{"-input",(new Path(getInputDir(),"text.txt")).toString(),"-output",getOutputDir().toString(),"-mapper",badMapper,"-reducer",badReducer,"-verbose","-inputformat","org.apache.hadoop.mapred.KeyValueTextInputFormat","-jobconf","mapreduce.task.skip.start.attempts=" + attSkip,"-jobconf","mapreduce.job.skip.outdir=none","-jobconf","mapreduce.map.maxattempts=" + mapperAttempts,"-jobconf","mapreduce.reduce.maxattempts=" + reducerAttempts,"-jobconf","mapreduce.map.skip.maxrecords=" + Long.MAX_VALUE,"-jobconf","mapreduce.reduce.skip.maxgroups=" + Long.MAX_VALUE,"-jobconf","mapreduce.job.maps=1","-jobconf","mapreduce.job.reduces=1","-jobconf","fs.default.name=" + clusterConf.get("fs.default.name"),"-jobconf","mapreduce.jobtracker.address=" + clusterConf.get(JTConfig.JT_IPC_ADDRESS),"-jobconf","mapreduce.jobtracker.http.address=" + clusterConf.get(JTConfig.JT_HTTP_ADDRESS),"-jobconf","mapreduce.task.files.preserve.failedtasks=true","-jobconf","stream.tmpdir=" + System.getProperty("test.build.data","/tmp")};
+
+  StreamJob job=new StreamJob(args,false);
+
+  job.go();
+
+  validateOutput(job.running_,false);
+
+  assertTrue(SkipBadRecords.getSkipOutputPath(job.jobConf_) == null);
+
+}
+
+Location: TestStreamingBadRecords.java
+
+Content: 
+
+public TestStreamingBadRecords() throws IOException {
+
+  UtilTest utilTest=new UtilTest(getClass().getName());
+
+  utilTest.checkUserDir();
+
+  utilTest.redirectIfAntJunit();
+
+}
+
+Location: TestStreamingBadRecords.java
+
+Content: 
+
+private void validateOutput(RunningJob runningJob,boolean validateCount) throws Exception {
+
+  LOG.info(runningJob.getCounters().toString());
+
+  assertTrue(runningJob.isSuccessful());
+
+  if (validateCount) {
+
+    String counterGrp="org.apache.hadoop.mapred.Task$Counter";
+
+    Counters counters=runningJob.getCounters();
+
+    assertEquals(counters.findCounter(counterGrp,"MAP_SKIPPED_RECORDS").getCounter(),MAPPER_BAD_RECORDS.size());
+
+    int mapRecs=INPUTSIZE - MAPPER_BAD_RECORDS.size();
+
+    assertEquals(counters.findCounter(counterGrp,"MAP_INPUT_RECORDS").getCounter(),mapRecs);
+
+    assertEquals(counters.findCounter(counterGrp,"MAP_OUTPUT_RECORDS").getCounter(),mapRecs);
+
+    int redRecs=mapRecs - REDUCER_BAD_RECORDS.size();
+
+    assertEquals(counters.findCounter(counterGrp,"REDUCE_SKIPPED_RECORDS").getCounter(),REDUCER_BAD_RECORDS.size());
+
+    assertEquals(counters.findCounter(counterGrp,"REDUCE_SKIPPED_GROUPS").getCounter(),REDUCER_BAD_RECORDS.size());
+
+    assertEquals(counters.findCounter(counterGrp,"REDUCE_INPUT_GROUPS").getCounter(),redRecs);
+
+    assertEquals(counters.findCounter(counterGrp,"REDUCE_INPUT_RECORDS").getCounter(),redRecs);
+
+    assertEquals(counters.findCounter(counterGrp,"REDUCE_OUTPUT_RECORDS").getCounter(),redRecs);
+
+  }
+
+  List<String> badRecs=new ArrayList<String>();
+
+  badRecs.addAll(MAPPER_BAD_RECORDS);
+
+  badRecs.addAll(REDUCER_BAD_RECORDS);
+
+  Path[] outputFiles=FileUtil.stat2Paths(getFileSystem().listStatus(getOutputDir(),new Utils.OutputFileUtils.OutputFilesFilter()));
+
+  if (outputFiles.length > 0) {
+
+    InputStream is=getFileSystem().open(outputFiles[0]);
+
+    BufferedReader reader=new BufferedReader(new InputStreamReader(is));
+
+    String line=reader.readLine();
+
+    int counter=0;
+
+    while (line != null) {
+
+      counter++;
+
+      StringTokenizer tokeniz=new StringTokenizer(line,"\t");
+
+      String value=tokeniz.nextToken();
+
+      int index=value.indexOf("hey");
+
+      assertTrue(index > -1);
+
+      if (index > -1) {
+
+        String heyStr=value.substring(index);
+
+        assertTrue(!badRecs.contains(heyStr));
+
+      }
+
+      line=reader.readLine();
+
+    }
+
+    reader.close();
+
+    if (validateCount) {
+
+      assertEquals(INPUTSIZE - badRecs.size(),counter);
+
+    }
+
+  }
+
+}
+

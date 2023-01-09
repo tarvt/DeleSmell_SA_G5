@@ -1,0 +1,376 @@
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * Adds a node to the node list for a given value. Nodes will always be added in document order.
+
+ */
+
+public void add(Object value,int node,int rootNode){
+
+  if (_currentDocumentNode != rootNode) {
+
+    _currentDocumentNode=rootNode;
+
+    _index=new Hashtable();
+
+    _rootToIndexMap.put(new Integer(rootNode),_index);
+
+  }
+
+  IntegerArray nodes=(IntegerArray)_index.get(value);
+
+  if (nodes == null) {
+
+    nodes=new IntegerArray();
+
+    _index.put(value,nodes);
+
+    nodes.add(node);
+
+  }
+
+ else   if (node != nodes.at(nodes.cardinality() - 1)) {
+
+    nodes.add(node);
+
+  }
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * Given a context node and the argument to the XPath <code>id</code> function, checks whether the context node is in the set of nodes that results from that reference to the <code>id</code> function. This is used in the implementation of <code>id</code> patterns.
+
+ * @param node  The context node
+
+ * @param value The argument to the <code>id</code> function
+
+ * @return <code>1</code> if the context node is in the set of nodes returned bythe reference to the <code>id</code> function; <code>0</code>, otherwise
+
+ */
+
+public int containsID(int node,Object value){
+
+  final String string=(String)value;
+
+  int rootHandle=_dom.getAxisIterator(Axis.ROOT).setStartNode(node).next();
+
+  Hashtable index=(Hashtable)_rootToIndexMap.get(new Integer(rootHandle));
+
+  final StringTokenizer values=new StringTokenizer(string," \n\t");
+
+  while (values.hasMoreElements()) {
+
+    final String token=(String)values.nextElement();
+
+    IntegerArray nodes=null;
+
+    if (index != null) {
+
+      nodes=(IntegerArray)index.get(token);
+
+    }
+
+    if (nodes == null && _enhancedDOM != null && _enhancedDOM.hasDOMSource()) {
+
+      nodes=getDOMNodeById(token);
+
+    }
+
+    if (nodes != null && nodes.indexOf(node) >= 0) {
+
+      return 1;
+
+    }
+
+  }
+
+  return 0;
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * <p> Given a context node and the second argument to the XSLT <code>key</code> function, checks whether the context node is in the set of nodes that results from that reference to the <code>key</code> function. This is used in the implementation of key patterns. </p> <p> This particular  {@link KeyIndex} object is the result evaluating the firstargument to the <code>key</code> function, so it's not taken into any further account. </p>
+
+ * @param node  The context node
+
+ * @param value The second argument to the <code>key</code> function
+
+ * @return <code>1</code> if and only if the context node is in the set of nodesreturned by the reference to the <code>key</code> function; <code>0</code>, otherwise
+
+ */
+
+public int containsKey(int node,Object value){
+
+  int rootHandle=_dom.getAxisIterator(Axis.ROOT).setStartNode(node).next();
+
+  Hashtable index=(Hashtable)_rootToIndexMap.get(new Integer(rootHandle));
+
+  if (index != null) {
+
+    final IntegerArray nodes=(IntegerArray)index.get(value);
+
+    return (nodes != null && nodes.indexOf(node) >= 0) ? 1 : 0;
+
+  }
+
+  return 0;
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * Return an IntegerArray for the DOM Node which has the given id.
+
+ * @param id The id
+
+ * @return A IntegerArray representing the Node whose id is the given value.
+
+ */
+
+public IntegerArray getDOMNodeById(String id){
+
+  IntegerArray nodes=null;
+
+  if (_enhancedDOM != null) {
+
+    int ident=_enhancedDOM.getElementById(id);
+
+    if (ident != DTM.NULL) {
+
+      Integer root=new Integer(_enhancedDOM.getDocument());
+
+      Hashtable index=(Hashtable)_rootToIndexMap.get(root);
+
+      if (index == null) {
+
+        index=new Hashtable();
+
+        _rootToIndexMap.put(root,index);
+
+      }
+
+ else {
+
+        nodes=(IntegerArray)index.get(id);
+
+      }
+
+      if (nodes == null) {
+
+        nodes=new IntegerArray();
+
+        index.put(id,nodes);
+
+      }
+
+      nodes.add(_enhancedDOM.getNodeHandle(ident));
+
+    }
+
+  }
+
+  return nodes;
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * Create a  {@link KeyIndexIterator} that iterates over the nodes that resultfrom a reference to the XSLT <code>key</code> function or XPath <code>id</code> function.
+
+ * @param keyValue  An iterator representing the key values or id references
+
+ * @param isKeyCall A <code>boolean</code> indicating whether the iterator isbeing created for a reference <code>key</code> or <code>id</code>
+
+ */
+
+public KeyIndexIterator getKeyIndexIterator(DTMAxisIterator keyValue,boolean isKeyCall){
+
+  return new KeyIndexIterator(keyValue,isKeyCall);
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * Create a  {@link KeyIndexIterator} that iterates over the nodes that resultfrom a reference to the XSLT <code>key</code> function or XPath <code>id</code> function.
+
+ * @param keyValue  A string or iterator representing the key values or idreferences
+
+ * @param isKeyCall A <code>boolean</code> indicating whether the iterator isbeing created for a reference <code>key</code> or <code>id</code>
+
+ */
+
+public KeyIndexIterator getKeyIndexIterator(Object keyValue,boolean isKeyCall){
+
+  if (keyValue instanceof DTMAxisIterator) {
+
+    return getKeyIndexIterator((DTMAxisIterator)keyValue,isKeyCall);
+
+  }
+
+ else {
+
+    return getKeyIndexIterator(BasisLibrary.stringF(keyValue,_dom),isKeyCall);
+
+  }
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * Create a  {@link KeyIndexIterator} that iterates over the nodes that resultfrom a reference to the XSLT <code>key</code> function or XPath <code>id</code> function.
+
+ * @param keyValue  A string representing the key values or id references
+
+ * @param isKeyCall A <code>boolean</code> indicating whether the iterator isbeing created for a reference <code>key</code> or <code>id</code>
+
+ */
+
+public KeyIndexIterator getKeyIndexIterator(String keyValue,boolean isKeyCall){
+
+  return new KeyIndexIterator(keyValue,isKeyCall);
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+public KeyIndex(int dummy){
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * This method must be called by the code generated by the id() function prior to returning the node iterator. The lookup code for key() and id() differ in the way the lookup value can be whitespace separated list of tokens for the id() function, but a single string for the key() function.
+
+ * @deprecated
+
+ */
+
+public void lookupId(Object value){
+
+  _nodes=null;
+
+  final StringTokenizer values=new StringTokenizer((String)value," \n\t");
+
+  while (values.hasMoreElements()) {
+
+    final String token=(String)values.nextElement();
+
+    IntegerArray nodes=(IntegerArray)_index.get(token);
+
+    if (nodes == null && _enhancedDOM != null && _enhancedDOM.hasDOMSource()) {
+
+      nodes=getDOMNodeById(token);
+
+    }
+
+    if (nodes == null)     continue;
+
+    if (_nodes == null) {
+
+      nodes=(IntegerArray)nodes.clone();
+
+      _nodes=nodes;
+
+    }
+
+ else {
+
+      _nodes.merge(nodes);
+
+    }
+
+  }
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * <p> This method must be called by the code generated by the key() function prior to returning the node iterator. </p> <p> <em>Use of an instance of this class as a  {@link DTMAxisIterator} is<b>deprecated.</b></em> </p>
+
+ * @deprecated
+
+ */
+
+public void lookupKey(Object value){
+
+  IntegerArray nodes=(IntegerArray)_index.get(value);
+
+  _nodes=(nodes != null) ? (IntegerArray)nodes.clone() : null;
+
+  _position=0;
+
+}
+
+Location: KeyIndex.java
+
+Content: 
+
+/** 
+
+ * Merge the current value's nodeset set by lookupKey() with _nodes.
+
+ * @deprecated
+
+ */
+
+public void merge(KeyIndex other){
+
+  if (other == null)   return;
+
+  if (other._nodes != null) {
+
+    if (_nodes == null) {
+
+      _nodes=(IntegerArray)other._nodes.clone();
+
+    }
+
+ else {
+
+      _nodes.merge(other._nodes);
+
+    }
+
+  }
+
+}
+

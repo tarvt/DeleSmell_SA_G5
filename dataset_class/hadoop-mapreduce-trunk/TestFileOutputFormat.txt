@@ -1,0 +1,114 @@
+Location: TestFileOutputFormat.java
+
+Content: 
+
+public void testCustomFile() throws Exception {
+
+  Path inDir=new Path("testing/fileoutputformat/input");
+
+  Path outDir=new Path("testing/fileoutputformat/output");
+
+  if (isLocalFS()) {
+
+    String localPathRoot=System.getProperty("test.build.data","/tmp").replace(' ','+');
+
+    inDir=new Path(localPathRoot,inDir);
+
+    outDir=new Path(localPathRoot,outDir);
+
+  }
+
+  JobConf conf=createJobConf();
+
+  FileSystem fs=FileSystem.get(conf);
+
+  fs.delete(outDir,true);
+
+  if (!fs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+  DataOutputStream file=fs.create(new Path(inDir,"part-0"));
+
+  file.writeBytes("a\nb\n\nc\nd\ne");
+
+  file.close();
+
+  file=fs.create(new Path(inDir,"part-1"));
+
+  file.writeBytes("a\nb\n\nc\nd\ne");
+
+  file.close();
+
+  conf.setJobName("fof");
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setMapOutputKeyClass(LongWritable.class);
+
+  conf.setMapOutputValueClass(Text.class);
+
+  conf.setOutputFormat(TextOutputFormat.class);
+
+  conf.setOutputKeyClass(LongWritable.class);
+
+  conf.setOutputValueClass(Text.class);
+
+  conf.setMapperClass(TestMap.class);
+
+  conf.setReducerClass(TestReduce.class);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  JobClient jc=new JobClient(conf);
+
+  RunningJob job=jc.submitJob(conf);
+
+  while (!job.isComplete()) {
+
+    Thread.sleep(100);
+
+  }
+
+  assertTrue(job.isSuccessful());
+
+  boolean map0=false;
+
+  boolean map1=false;
+
+  boolean reduce=false;
+
+  FileStatus[] statuses=fs.listStatus(outDir);
+
+  for (  FileStatus status : statuses) {
+
+    map0=map0 || status.getPath().getName().equals("test-m-00000");
+
+    map1=map1 || status.getPath().getName().equals("test-m-00001");
+
+    reduce=reduce || status.getPath().getName().equals("test-r-00000");
+
+  }
+
+  assertTrue(map0);
+
+  assertTrue(map1);
+
+  assertTrue(reduce);
+
+}
+
+Location: TestFileOutputFormat.java
+
+Content: 
+
+public TestFileOutputFormat() throws IOException {
+
+  super(HadoopTestCase.LOCAL_MR,HadoopTestCase.LOCAL_FS,1,1);
+
+}
+

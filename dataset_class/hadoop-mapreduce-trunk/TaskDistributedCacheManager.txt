@@ -1,0 +1,202 @@
+Location: TaskDistributedCacheManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves class paths (as local references) to add.  Should be called after setup().
+
+ */
+
+public List<String> getClassPaths() throws IOException {
+
+  if (!setupCalled) {
+
+    throw new IllegalStateException("getClassPaths() should be called after setup()");
+
+  }
+
+  return classPaths;
+
+}
+
+Location: TaskDistributedCacheManager.java
+
+Content: 
+
+/** 
+
+ * Creates a class loader that includes the designated files and archives.
+
+ */
+
+public ClassLoader makeClassLoader(final ClassLoader parent) throws MalformedURLException {
+
+  final URL[] urls=new URL[classPaths.size()];
+
+  for (int i=0; i < classPaths.size(); ++i) {
+
+    urls[i]=new File(classPaths.get(i)).toURI().toURL();
+
+  }
+
+  return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>(){
+
+    @Override public ClassLoader run(){
+
+      return new URLClassLoader(urls,parent);
+
+    }
+
+  }
+
+);
+
+}
+
+Location: TaskDistributedCacheManager.java
+
+Content: 
+
+/** 
+
+ * Releases the cached files/archives, so that space can be reclaimed by the  {@link TrackerDistributedCacheManager}.
+
+ */
+
+public void release() throws IOException {
+
+  for (  CacheFile c : cacheFiles) {
+
+    if (c.getLocalized()) {
+
+      distributedCacheManager.releaseCache(c.uri,taskConf,c.timestamp,c.owner);
+
+    }
+
+  }
+
+}
+
+Location: TaskDistributedCacheManager.java
+
+Content: 
+
+/** 
+
+ * Retrieve files into the local cache and updates the task configuration  (which has been passed in via the constructor). It is the caller's responsibility to re-write the task configuration XML file, if necessary.
+
+ */
+
+public void setup(LocalDirAllocator lDirAlloc,File workDir,String privateCacheSubdir,String publicCacheSubDir) throws IOException {
+
+  setupCalled=true;
+
+  if (cacheFiles.isEmpty()) {
+
+    return;
+
+  }
+
+  ArrayList<Path> localArchives=new ArrayList<Path>();
+
+  ArrayList<Path> localFiles=new ArrayList<Path>();
+
+  Path workdirPath=new Path(workDir.getAbsolutePath());
+
+  for (  CacheFile cacheFile : cacheFiles) {
+
+    URI uri=cacheFile.uri;
+
+    FileSystem fileSystem=FileSystem.get(uri,taskConf);
+
+    FileStatus fileStatus=fileSystem.getFileStatus(new Path(uri.getPath()));
+
+    String cacheSubdir=publicCacheSubDir;
+
+    if (!cacheFile.isPublic) {
+
+      cacheSubdir=privateCacheSubdir;
+
+    }
+
+    Path p=distributedCacheManager.getLocalCache(uri,taskConf,cacheSubdir,fileStatus,cacheFile.type == CacheFile.FileType.ARCHIVE,cacheFile.timestamp,workdirPath,false,cacheFile.isPublic);
+
+    cacheFile.setLocalized(true);
+
+    if (cacheFile.type == CacheFile.FileType.ARCHIVE) {
+
+      localArchives.add(p);
+
+    }
+
+ else {
+
+      localFiles.add(p);
+
+    }
+
+    if (cacheFile.shouldBeAddedToClassPath) {
+
+      classPaths.add(p.toString());
+
+    }
+
+  }
+
+  if (!localArchives.isEmpty()) {
+
+    TrackerDistributedCacheManager.setLocalArchives(taskConf,stringifyPathList(localArchives));
+
+  }
+
+  if (!localFiles.isEmpty()) {
+
+    TrackerDistributedCacheManager.setLocalFiles(taskConf,stringifyPathList(localFiles));
+
+  }
+
+}
+
+Location: TaskDistributedCacheManager.java
+
+Content: 
+
+private static String stringifyPathList(List<Path> p){
+
+  if (p == null || p.isEmpty()) {
+
+    return null;
+
+  }
+
+  StringBuilder str=new StringBuilder(p.get(0).toString());
+
+  for (int i=1; i < p.size(); i++) {
+
+    str.append(",");
+
+    str.append(p.get(i).toString());
+
+  }
+
+  return str.toString();
+
+}
+
+Location: TaskDistributedCacheManager.java
+
+Content: 
+
+TaskDistributedCacheManager(TrackerDistributedCacheManager distributedCacheManager,Configuration taskConf) throws IOException {
+
+  this.distributedCacheManager=distributedCacheManager;
+
+  this.taskConf=taskConf;
+
+  this.cacheFiles.addAll(CacheFile.makeCacheFiles(DistributedCache.getCacheFiles(taskConf),DistributedCache.getFileTimestamps(taskConf),TrackerDistributedCacheManager.getFileVisibilities(taskConf),DistributedCache.getFileClassPaths(taskConf),CacheFile.FileType.REGULAR));
+
+  this.cacheFiles.addAll(CacheFile.makeCacheFiles(DistributedCache.getCacheArchives(taskConf),DistributedCache.getArchiveTimestamps(taskConf),TrackerDistributedCacheManager.getArchiveVisibilities(taskConf),DistributedCache.getArchiveClassPaths(taskConf),CacheFile.FileType.ARCHIVE));
+
+}
+

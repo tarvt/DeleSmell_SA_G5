@@ -1,0 +1,336 @@
+Location: DirectoryTraversal.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ * @param fs The filesystem to use.
+
+ * @param startPaths A list of paths that need to be traversed
+
+ */
+
+public DirectoryTraversal(FileSystem fs,List<FileStatus> startPaths){
+
+  this(fs,startPaths,1);
+
+}
+
+Location: DirectoryTraversal.java
+
+Content: 
+
+public DirectoryTraversal(FileSystem fs,List<FileStatus> startPaths,int numThreads){
+
+  this.fs=fs;
+
+  paths=startPaths;
+
+  pathIdx=0;
+
+  this.numThreads=numThreads;
+
+  executor=Executors.newFixedThreadPool(numThreads);
+
+}
+
+Location: DirectoryTraversal.java
+
+Content: 
+
+public boolean doneTraversal(){
+
+  return paths.isEmpty() && stack.isEmpty();
+
+}
+
+Location: DirectoryTraversal.java
+
+Content: 
+
+public List<FileStatus> getFilteredFiles(FileFilter filter,int limit){
+
+  List<FileStatus> filtered=new ArrayList<FileStatus>();
+
+  Semaphore slots=new Semaphore(numThreads);
+
+  while (true) {
+
+synchronized (filtered) {
+
+      if (filtered.size() >= limit)       break;
+
+    }
+
+    FilterFileWorkItem work=null;
+
+    try {
+
+      Node next=getNextDirectoryNode();
+
+      if (next == null) {
+
+        break;
+
+      }
+
+      work=new FilterFileWorkItem(filter,next,filtered,slots);
+
+      slots.acquire();
+
+    }
+
+ catch (    InterruptedException ie) {
+
+      break;
+
+    }
+
+catch (    IOException e) {
+
+      break;
+
+    }
+
+    executor.execute(work);
+
+  }
+
+  try {
+
+    slots.acquire(numThreads);
+
+    if (doneTraversal()) {
+
+      executor.shutdown();
+
+      executor.awaitTermination(1,TimeUnit.HOURS);
+
+    }
+
+  }
+
+ catch (  InterruptedException ie) {
+
+  }
+
+  return filtered;
+
+}
+
+Location: DirectoryTraversal.java
+
+Content: 
+
+/** 
+
+ * Gets the next directory in the tree. The algorithm returns deeper directories first.
+
+ * @return A FileStatus representing the directory.
+
+ * @throws IOException
+
+ */
+
+public FileStatus getNextDirectory() throws IOException {
+
+  Node dirNode=getNextDirectoryNode();
+
+  if (dirNode != null) {
+
+    return dirNode.path;
+
+  }
+
+  return null;
+
+}
+
+Location: DirectoryTraversal.java
+
+Content: 
+
+private Node getNextDirectoryNode() throws IOException {
+
+  while (!doneTraversal()) {
+
+    while (!stack.isEmpty()) {
+
+      Node node=stack.peek();
+
+      if (node.hasNext()) {
+
+        FileStatus element=node.next();
+
+        if (element.isDir()) {
+
+          try {
+
+            pushNewNode(element);
+
+          }
+
+ catch (          FileNotFoundException e) {
+
+          }
+
+          continue;
+
+        }
+
+      }
+
+ else {
+
+        stack.pop();
+
+        return node;
+
+      }
+
+    }
+
+    while (!paths.isEmpty()) {
+
+      FileStatus next=paths.remove(0);
+
+      pathIdx++;
+
+      if (next.isDir()) {
+
+        try {
+
+          pushNewNode(next);
+
+        }
+
+ catch (        FileNotFoundException e) {
+
+          continue;
+
+        }
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: DirectoryTraversal.java
+
+Content: 
+
+/** 
+
+ * Return the next file.
+
+ * @throws IOException
+
+ */
+
+public FileStatus getNextFile() throws IOException {
+
+  while (!doneTraversal()) {
+
+    while (!stack.isEmpty()) {
+
+      Node node=stack.peek();
+
+      if (node.hasNext()) {
+
+        FileStatus element=node.next();
+
+        if (!element.isDir()) {
+
+          return element;
+
+        }
+
+        try {
+
+          pushNewNode(element);
+
+        }
+
+ catch (        FileNotFoundException e) {
+
+        }
+
+        continue;
+
+      }
+
+ else {
+
+        stack.pop();
+
+        continue;
+
+      }
+
+    }
+
+    while (!paths.isEmpty()) {
+
+      FileStatus next=paths.remove(0);
+
+      pathIdx++;
+
+      if (!next.isDir()) {
+
+        return next;
+
+      }
+
+      try {
+
+        pushNewNode(next);
+
+      }
+
+ catch (      FileNotFoundException e) {
+
+        continue;
+
+      }
+
+      break;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: DirectoryTraversal.java
+
+Content: 
+
+private void pushNewNode(FileStatus stat) throws IOException {
+
+  if (!stat.isDir()) {
+
+    return;
+
+  }
+
+  Path p=stat.getPath();
+
+  FileStatus[] elements=fs.listStatus(p);
+
+  Node newNode=new Node(stat,(elements == null ? new FileStatus[0] : elements));
+
+  stack.push(newNode);
+
+}
+

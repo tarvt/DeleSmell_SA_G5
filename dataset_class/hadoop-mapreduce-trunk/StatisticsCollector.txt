@@ -1,0 +1,128 @@
+Location: StatisticsCollector.java
+
+Content: 
+
+synchronized Stat createStat(String name){
+
+  return createStat(name,DEFAULT_COLLECT_WINDOWS);
+
+}
+
+Location: StatisticsCollector.java
+
+Content: 
+
+synchronized Stat createStat(String name,TimeWindow[] windows){
+
+  if (statistics.get(name) != null) {
+
+    throw new RuntimeException("Stat with name " + name + " is already defined");
+
+  }
+
+  Map<TimeWindow,TimeStat> timeStats=new LinkedHashMap<TimeWindow,TimeStat>();
+
+  for (  TimeWindow window : windows) {
+
+    StatUpdater collector=updaters.get(window);
+
+    if (collector == null) {
+
+      if (SINCE_START.equals(window)) {
+
+        collector=new StatUpdater();
+
+      }
+
+ else {
+
+        collector=new TimeWindowStatUpdater(window,period);
+
+      }
+
+      updaters.put(window,collector);
+
+    }
+
+    TimeStat timeStat=new TimeStat();
+
+    collector.addTimeStat(name,timeStat);
+
+    timeStats.put(window,timeStat);
+
+  }
+
+  Stat stat=new Stat(name,timeStats);
+
+  statistics.put(name,stat);
+
+  return stat;
+
+}
+
+Location: StatisticsCollector.java
+
+Content: 
+
+Map<TimeWindow,StatUpdater> getUpdaters(){
+
+  return Collections.unmodifiableMap(updaters);
+
+}
+
+Location: StatisticsCollector.java
+
+Content: 
+
+synchronized Stat removeStat(String name){
+
+  Stat stat=statistics.remove(name);
+
+  if (stat != null) {
+
+    for (    StatUpdater collector : updaters.values()) {
+
+      collector.removeTimeStat(name);
+
+    }
+
+  }
+
+  return stat;
+
+}
+
+Location: StatisticsCollector.java
+
+Content: 
+
+StatisticsCollector(){
+
+  this(DEFAULT_PERIOD);
+
+}
+
+Location: StatisticsCollector.java
+
+Content: 
+
+StatisticsCollector(int period){
+
+  this.period=period;
+
+}
+
+Location: StatisticsCollector.java
+
+Content: 
+
+protected synchronized void update(){
+
+  for (  StatUpdater c : updaters.values()) {
+
+    c.update();
+
+  }
+
+}
+

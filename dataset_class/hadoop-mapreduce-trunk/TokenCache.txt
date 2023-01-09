@@ -1,0 +1,236 @@
+Location: TokenCache.java
+
+Content: 
+
+/** 
+
+ * @param namenode
+
+ * @return delegation token
+
+ */
+
+@SuppressWarnings("unchecked") @InterfaceAudience.Private public static Token<DelegationTokenIdentifier> getDelegationToken(Credentials credentials,String namenode){
+
+  return (Token<DelegationTokenIdentifier>)credentials.getToken(new Text(namenode));
+
+}
+
+Location: TokenCache.java
+
+Content: 
+
+/** 
+
+ * @return job token
+
+ */
+
+@SuppressWarnings("unchecked") @InterfaceAudience.Private public static Token<JobTokenIdentifier> getJobToken(Credentials credentials){
+
+  return (Token<JobTokenIdentifier>)credentials.getToken(JOB_TOKEN);
+
+}
+
+Location: TokenCache.java
+
+Content: 
+
+/** 
+
+ * auxiliary method to get user's secret keys..
+
+ * @param alias
+
+ * @return secret key from the storage
+
+ */
+
+public static byte[] getSecretKey(Credentials credentials,Text alias){
+
+  if (credentials == null)   return null;
+
+  return credentials.getSecretKey(alias);
+
+}
+
+Location: TokenCache.java
+
+Content: 
+
+/** 
+
+ * load job token from a file
+
+ * @param conf
+
+ * @throws IOException
+
+ */
+
+@InterfaceAudience.Private public static Credentials loadTokens(String jobTokenFile,JobConf conf) throws IOException {
+
+  Path localJobTokenFile=new Path("file:///" + jobTokenFile);
+
+  Credentials ts=Credentials.readTokenStorageFile(localJobTokenFile,conf);
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("Task: Loaded jobTokenFile from: " + localJobTokenFile.toUri().getPath() + "; num of sec keys  = "+ ts.numberOfSecretKeys()+ " Number of tokens "+ ts.numberOfTokens());
+
+  }
+
+  return ts;
+
+}
+
+Location: TokenCache.java
+
+Content: 
+
+static void obtainTokensForNamenodesInternal(Credentials credentials,Path[] ps,Configuration conf) throws IOException {
+
+  for (  Path p : ps) {
+
+    FileSystem fs=FileSystem.get(p.toUri(),conf);
+
+    obtainTokensForNamenodesInternal(fs,credentials,conf);
+
+  }
+
+}
+
+Location: TokenCache.java
+
+Content: 
+
+/** 
+
+ * get delegation token for a specific FS
+
+ * @param fs
+
+ * @param credentials
+
+ * @param p
+
+ * @param conf
+
+ * @throws IOException
+
+ */
+
+static void obtainTokensForNamenodesInternal(FileSystem fs,Credentials credentials,Configuration conf) throws IOException {
+
+  KerberosName jtKrbName=new KerberosName(conf.get(JTConfig.JT_USER_NAME,""));
+
+  String delegTokenRenewer=jtKrbName.getShortName();
+
+  boolean readFile=true;
+
+  String fsName=fs.getCanonicalServiceName();
+
+  if (TokenCache.getDelegationToken(credentials,fsName) == null) {
+
+    if (readFile) {
+
+      readFile=false;
+
+      String binaryTokenFilename=conf.get("mapreduce.job.credentials.binary");
+
+      if (binaryTokenFilename != null) {
+
+        Credentials binary;
+
+        try {
+
+          binary=Credentials.readTokenStorageFile(new Path("file:///" + binaryTokenFilename),conf);
+
+        }
+
+ catch (        IOException e) {
+
+          throw new RuntimeException(e);
+
+        }
+
+        credentials.addAll(binary);
+
+      }
+
+      if (TokenCache.getDelegationToken(credentials,fsName) != null) {
+
+        LOG.debug("DT for " + fsName + " is already present");
+
+        return;
+
+      }
+
+    }
+
+    Token<?> token=fs.getDelegationToken(delegTokenRenewer);
+
+    if (token != null) {
+
+      Text fsNameText=new Text(fsName);
+
+      token.setService(fsNameText);
+
+      credentials.addToken(fsNameText,token);
+
+      LOG.info("Got dt for " + fs.getUri() + ";uri="+ fsName+ ";t.service="+ token.getService());
+
+    }
+
+  }
+
+}
+
+Location: TokenCache.java
+
+Content: 
+
+/** 
+
+ * Convenience method to obtain delegation tokens from namenodes  corresponding to the paths passed.
+
+ * @param credentials
+
+ * @param ps array of paths
+
+ * @param conf configuration
+
+ * @throws IOException
+
+ */
+
+public static void obtainTokensForNamenodes(Credentials credentials,Path[] ps,Configuration conf) throws IOException {
+
+  if (!UserGroupInformation.isSecurityEnabled()) {
+
+    return;
+
+  }
+
+  obtainTokensForNamenodesInternal(credentials,ps,conf);
+
+}
+
+Location: TokenCache.java
+
+Content: 
+
+/** 
+
+ * store job token
+
+ * @param t
+
+ */
+
+@InterfaceAudience.Private public static void setJobToken(Token<? extends TokenIdentifier> t,Credentials credentials){
+
+  credentials.addToken(JOB_TOKEN,t);
+
+}
+

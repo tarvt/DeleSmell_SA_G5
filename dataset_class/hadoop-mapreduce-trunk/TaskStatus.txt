@@ -1,0 +1,472 @@
+Location: TaskStatus.java
+
+Content: 
+
+static TaskStatus createTaskStatus(boolean isMap){
+
+  return (isMap) ? new MapTaskStatus() : new ReduceTaskStatus();
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+static TaskStatus createTaskStatus(boolean isMap,TaskAttemptID taskId,float progress,int numSlots,State runState,String diagnosticInfo,String stateString,String taskTracker,Phase phase,Counters counters){
+
+  return (isMap) ? new MapTaskStatus(taskId,progress,numSlots,runState,diagnosticInfo,stateString,taskTracker,phase,counters) : new ReduceTaskStatus(taskId,progress,numSlots,runState,diagnosticInfo,stateString,taskTracker,phase,counters);
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+static TaskStatus createTaskStatus(DataInput in,TaskAttemptID taskId,float progress,int numSlots,State runState,String diagnosticInfo,String stateString,String taskTracker,Phase phase,Counters counters) throws IOException {
+
+  boolean isMap=in.readBoolean();
+
+  return createTaskStatus(isMap,taskId,progress,numSlots,runState,diagnosticInfo,stateString,taskTracker,phase,counters);
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public String getDiagnosticInfo(){
+
+  return diagnosticInfo;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public boolean getIncludeCounters(){
+
+  return includeCounters;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Testcases can override  {@link #getMaxStringSize()} to control the max-size of strings in  {@link TaskStatus}. Note that the  {@link TaskStatus} is neverexposed to clients or users (i.e Map or Reduce) and hence users cannot  override this api to pass large strings in  {@link TaskStatus}.
+
+ */
+
+protected int getMaxStringSize(){
+
+  return MAX_STRING_SIZE;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Get the next record range which is going to be processed by Task.
+
+ * @return nextRecordRange
+
+ */
+
+public SortedRanges.Range getNextRecordRange(){
+
+  return nextRecordRange;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public int getNumSlots(){
+
+  return numSlots;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Returns the number of bytes of output from this map.
+
+ */
+
+public long getOutputSize(){
+
+  return outputSize;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public String getStateString(){
+
+  return stateString;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public String getTaskTracker(){
+
+  return taskTracker;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+boolean inTaskCleanupPhase(){
+
+  return (this.phase == TaskStatus.Phase.CLEANUP && (this.runState == TaskStatus.State.FAILED_UNCLEAN || this.runState == TaskStatus.State.KILLED_UNCLEAN));
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+static TaskStatus readTaskStatus(DataInput in) throws IOException {
+
+  boolean isMap=in.readBoolean();
+
+  TaskStatus taskStatus=createTaskStatus(isMap);
+
+  taskStatus.readFields(in);
+
+  return taskStatus;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Set the task's counters.
+
+ * @param counters
+
+ */
+
+public void setCounters(Counters counters){
+
+  this.counters=counters;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public void setDiagnosticInfo(String info){
+
+  if (diagnosticInfo != null && diagnosticInfo.length() == getMaxStringSize()) {
+
+    LOG.info("task-diagnostic-info for task " + taskid + " : "+ info);
+
+    return;
+
+  }
+
+  diagnosticInfo=((diagnosticInfo == null) ? info : diagnosticInfo.concat(info));
+
+  if (diagnosticInfo != null && diagnosticInfo.length() > getMaxStringSize()) {
+
+    LOG.info("task-diagnostic-info for task " + taskid + " : "+ diagnosticInfo);
+
+    diagnosticInfo=diagnosticInfo.substring(0,getMaxStringSize());
+
+  }
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public void setIncludeCounters(boolean send){
+
+  includeCounters=send;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Set the next record range which is going to be processed by Task.
+
+ * @param nextRecordRange
+
+ */
+
+public void setNextRecordRange(SortedRanges.Range nextRecordRange){
+
+  this.nextRecordRange=nextRecordRange;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Set the size on disk of this task's output.
+
+ * @param l the number of map output bytes
+
+ */
+
+void setOutputSize(long l){
+
+  outputSize=l;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Set current phase of this task.  
+
+ * @param phase phase of this task
+
+ */
+
+public void setPhase(Phase phase){
+
+  TaskStatus.Phase oldPhase=getPhase();
+
+  if (oldPhase != phase) {
+
+    if (phase == TaskStatus.Phase.SORT) {
+
+      if (oldPhase == TaskStatus.Phase.MAP) {
+
+        setMapFinishTime(System.currentTimeMillis());
+
+      }
+
+ else {
+
+        setShuffleFinishTime(System.currentTimeMillis());
+
+      }
+
+    }
+
+ else     if (phase == TaskStatus.Phase.REDUCE) {
+
+      setSortFinishTime(System.currentTimeMillis());
+
+    }
+
+    this.phase=phase;
+
+  }
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public void setProgress(float progress){
+
+  this.progress=progress;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public void setRunState(State runState){
+
+  this.runState=runState;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Set the state of the  {@link TaskStatus}.
+
+ */
+
+public void setStateString(String stateString){
+
+  if (stateString != null) {
+
+    if (stateString.length() <= getMaxStringSize()) {
+
+      this.stateString=stateString;
+
+    }
+
+ else {
+
+      LOG.info("state-string for task " + taskid + " : "+ stateString);
+
+      this.stateString=stateString.substring(0,getMaxStringSize());
+
+    }
+
+  }
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public void setTaskTracker(String tracker){
+
+  this.taskTracker=tracker;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Update the status of the task. This update is done by ping thread before sending the status. 
+
+ * @param progress
+
+ * @param state
+
+ * @param counters
+
+ */
+
+synchronized void statusUpdate(float progress,String state,Counters counters){
+
+  setProgress(progress);
+
+  setStateString(state);
+
+  setCounters(counters);
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+/** 
+
+ * Update specific fields of task status This update is done in JobTracker when a cleanup attempt of task reports its status. Then update only specific fields, not all.
+
+ * @param runState
+
+ * @param progress
+
+ * @param state
+
+ * @param phase
+
+ * @param finishTime
+
+ */
+
+synchronized void statusUpdate(State runState,float progress,String state,Phase phase,long finishTime){
+
+  setRunState(runState);
+
+  setProgress(progress);
+
+  setStateString(state);
+
+  setPhase(phase);
+
+  if (finishTime > 0) {
+
+    setFinishTime(finishTime);
+
+  }
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public TaskStatus(){
+
+  taskid=new TaskAttemptID();
+
+  numSlots=0;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+public TaskStatus(TaskAttemptID taskid,float progress,int numSlots,State runState,String diagnosticInfo,String stateString,String taskTracker,Phase phase,Counters counters){
+
+  this.taskid=taskid;
+
+  this.progress=progress;
+
+  this.numSlots=numSlots;
+
+  this.runState=runState;
+
+  setDiagnosticInfo(diagnosticInfo);
+
+  setStateString(stateString);
+
+  this.taskTracker=taskTracker;
+
+  this.phase=phase;
+
+  this.counters=counters;
+
+  this.includeCounters=true;
+
+}
+
+Location: TaskStatus.java
+
+Content: 
+
+static void writeTaskStatus(DataOutput out,TaskStatus taskStatus) throws IOException {
+
+  out.writeBoolean(taskStatus.getIsMap());
+
+  taskStatus.write(out);
+
+}
+

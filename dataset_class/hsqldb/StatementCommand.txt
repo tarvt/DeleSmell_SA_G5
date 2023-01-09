@@ -1,0 +1,416 @@
+Location: StatementCommand.java
+
+Content: 
+
+Result getTruncateResult(Session session){
+
+  try {
+
+    HsqlName name=(HsqlName)arguments[0];
+
+    boolean restartIdentity=(Boolean)arguments[1];
+
+    boolean noCheck=(Boolean)arguments[2];
+
+    Table[] tables;
+
+    if (name.type == SchemaObject.TABLE) {
+
+      Table table=session.database.schemaManager.getUserTable(name);
+
+      tables=new Table[]{table};
+
+      session.getGrantee().checkDelete(table);
+
+      if (!noCheck) {
+
+        for (int i=0; i < table.fkMainConstraints.length; i++) {
+
+          if (table.fkMainConstraints[i].getRef() != table) {
+
+            HsqlName tableName=table.fkMainConstraints[i].getRef().getName();
+
+            Table refTable=session.database.schemaManager.getUserTable(tableName);
+
+            if (!refTable.isEmpty(session)) {
+
+              throw Error.error(ErrorCode.X_23504,refTable.getName().name);
+
+            }
+
+          }
+
+        }
+
+      }
+
+    }
+
+ else {
+
+      session.database.schemaManager.getSchemaHsqlName(name.name);
+
+      HashMappedList list=session.database.schemaManager.getTables(name.name);
+
+      tables=new Table[list.size()];
+
+      list.toValuesArray(tables);
+
+      StatementSchema.checkSchemaUpdateAuthorisation(session,name);
+
+      if (!noCheck) {
+
+        OrderedHashSet set=new OrderedHashSet();
+
+        session.database.schemaManager.getCascadingReferencesToSchema(name,set);
+
+        for (int i=0; i < set.size(); i++) {
+
+          HsqlName objectName=(HsqlName)set.get(i);
+
+          if (objectName.type == SchemaObject.CONSTRAINT) {
+
+            if (objectName.parent.type == SchemaObject.TABLE) {
+
+              Table refTable=session.database.schemaManager.getUserTable(objectName.parent);
+
+              if (!refTable.isEmpty(session)) {
+
+                throw Error.error(ErrorCode.X_23504,refTable.getName().name);
+
+              }
+
+            }
+
+          }
+
+        }
+
+      }
+
+      if (restartIdentity) {
+
+        Iterator it=session.database.schemaManager.databaseObjectIterator(name.name,SchemaObject.SEQUENCE);
+
+        while (it.hasNext()) {
+
+          NumberSequence sequence=(NumberSequence)it.next();
+
+          sequence.reset();
+
+        }
+
+      }
+
+    }
+
+    for (int i=0; i < tables.length; i++) {
+
+      Table table=tables[i];
+
+      PersistentStore store=table.getRowStore(session);
+
+      store.removeAll();
+
+      if (restartIdentity && table.identitySequence != null) {
+
+        table.identitySequence.reset();
+
+      }
+
+    }
+
+    return Result.updateZeroResult;
+
+  }
+
+ catch (  HsqlException e) {
+
+    return Result.newErrorResult(e,sql);
+
+  }
+
+}
+
+Location: StatementCommand.java
+
+Content: 
+
+StatementCommand(int type,Object[] args){
+
+  this(type,args,null,null);
+
+}
+
+Location: StatementCommand.java
+
+Content: 
+
+StatementCommand(int type,Object[] args,HsqlName[] readNames,HsqlName[] writeNames){
+
+  super(type);
+
+  this.isTransactionStatement=true;
+
+  this.arguments=args;
+
+  if (readNames != null) {
+
+    this.readTableNames=readNames;
+
+  }
+
+  if (writeNames != null) {
+
+    this.writeTableNames=writeNames;
+
+  }
+
+switch (type) {
+
+case StatementTypes.TRUNCATE:
+
+    group=StatementTypes.X_HSQLDB_DATABASE_OPERATION;
+
+  break;
+
+case StatementTypes.EXPLAIN_PLAN:
+
+case StatementTypes.EXPLAIN_REFERENCES:
+
+group=StatementTypes.X_SQL_DIAGNOSTICS;
+
+statementReturnType=StatementTypes.RETURN_RESULT;
+
+isTransactionStatement=false;
+
+isLogged=false;
+
+break;
+
+case StatementTypes.DATABASE_CHECKPOINT:
+
+group=StatementTypes.X_HSQLDB_DATABASE_OPERATION;
+
+isLogged=false;
+
+break;
+
+case StatementTypes.DATABASE_SCRIPT:
+
+{
+
+String name=(String)arguments[0];
+
+if (name == null) {
+
+statementReturnType=StatementTypes.RETURN_RESULT;
+
+}
+
+group=StatementTypes.X_HSQLDB_DATABASE_OPERATION;
+
+isLogged=false;
+
+break;
+
+}
+
+case StatementTypes.CHECK_INDEX:
+
+{
+
+statementReturnType=StatementTypes.RETURN_RESULT;
+
+group=StatementTypes.X_HSQLDB_DATABASE_OPERATION;
+
+isLogged=false;
+
+break;
+
+}
+
+case StatementTypes.DATABASE_BACKUP:
+
+group=StatementTypes.X_HSQLDB_DATABASE_OPERATION;
+
+if (writeNames.length == 0) {
+
+group=StatementTypes.X_HSQLDB_NONBLOCK_OPERATION;
+
+}
+
+isLogged=false;
+
+break;
+
+case StatementTypes.SET_DATABASE_TRANSACTION_CONTROL:
+
+group=StatementTypes.X_HSQLDB_DATABASE_OPERATION;
+
+break;
+
+case StatementTypes.SET_DATABASE_UNIQUE_NAME:
+
+case StatementTypes.SET_DATABASE_FILES_WRITE_DELAY:
+
+case StatementTypes.SET_DATABASE_FILES_TEMP_PATH:
+
+case StatementTypes.SET_DATABASE_FILES_EVENT_LOG:
+
+isTransactionStatement=false;
+
+group=StatementTypes.X_HSQLDB_SETTING;
+
+break;
+
+case StatementTypes.SET_DATABASE_DEFAULT_INITIAL_SCHEMA:
+
+case StatementTypes.SET_DATABASE_DEFAULT_TABLE_TYPE:
+
+case StatementTypes.SET_DATABASE_FILES_CACHE_ROWS:
+
+case StatementTypes.SET_DATABASE_FILES_CACHE_SIZE:
+
+case StatementTypes.SET_DATABASE_FILES_SCALE:
+
+case StatementTypes.SET_DATABASE_FILES_SPACE:
+
+case StatementTypes.SET_DATABASE_FILES_DEFRAG:
+
+case StatementTypes.SET_DATABASE_FILES_LOBS_SCALE:
+
+case StatementTypes.SET_DATABASE_FILES_LOBS_COMPRESSED:
+
+case StatementTypes.SET_DATABASE_FILES_LOG:
+
+case StatementTypes.SET_DATABASE_FILES_LOG_SIZE:
+
+case StatementTypes.SET_DATABASE_FILES_NIO:
+
+case StatementTypes.SET_DATABASE_FILES_SCRIPT_FORMAT:
+
+case StatementTypes.SET_DATABASE_AUTHENTICATION:
+
+case StatementTypes.SET_DATABASE_PASSWORD_CHECK:
+
+case StatementTypes.SET_DATABASE_PASSWORD_DIGEST:
+
+case StatementTypes.SET_DATABASE_PROPERTY:
+
+case StatementTypes.SET_DATABASE_RESULT_MEMORY_ROWS:
+
+case StatementTypes.SET_DATABASE_SQL_REFERENTIAL_INTEGRITY:
+
+case StatementTypes.SET_DATABASE_SQL:
+
+case StatementTypes.SET_DATABASE_DEFAULT_ISOLATION_LEVEL:
+
+case StatementTypes.SET_DATABASE_TRANSACTION_CONFLICT:
+
+case StatementTypes.SET_DATABASE_GC:
+
+case StatementTypes.SET_DATABASE_SQL_COLLATION:
+
+case StatementTypes.SET_DATABASE_FILES_BACKUP_INCREMENT:
+
+case StatementTypes.SET_DATABASE_TEXT_SOURCE:
+
+group=StatementTypes.X_HSQLDB_SETTING;
+
+break;
+
+case StatementTypes.SET_DATABASE_FILES_CHECK:
+
+group=StatementTypes.X_HSQLDB_SETTING;
+
+isLogged=false;
+
+break;
+
+case StatementTypes.SET_TABLE_CLUSTERED:
+
+case StatementTypes.SET_TABLE_NEW_TABLESPACE:
+
+case StatementTypes.SET_TABLE_SET_TABLESPACE:
+
+group=StatementTypes.X_HSQLDB_SCHEMA_MANIPULATION;
+
+break;
+
+case StatementTypes.SET_TABLE_SOURCE_HEADER:
+
+group=StatementTypes.X_HSQLDB_SCHEMA_MANIPULATION;
+
+isLogged=false;
+
+break;
+
+case StatementTypes.SET_TABLE_SOURCE:
+
+group=StatementTypes.X_HSQLDB_SCHEMA_MANIPULATION;
+
+break;
+
+case StatementTypes.SET_TABLE_READONLY:
+
+group=StatementTypes.X_HSQLDB_SCHEMA_MANIPULATION;
+
+break;
+
+case StatementTypes.DATABASE_SHUTDOWN:
+
+group=StatementTypes.X_HSQLDB_DATABASE_OPERATION;
+
+isTransactionStatement=false;
+
+isLogged=false;
+
+break;
+
+case StatementTypes.SET_TABLE_TYPE:
+
+group=StatementTypes.X_HSQLDB_SCHEMA_MANIPULATION;
+
+break;
+
+case StatementTypes.SET_TABLE_INDEX:
+
+group=StatementTypes.X_HSQLDB_SETTING;
+
+isTransactionStatement=false;
+
+isLogged=false;
+
+break;
+
+case StatementTypes.SET_USER_LOCAL:
+
+case StatementTypes.SET_USER_INITIAL_SCHEMA:
+
+case StatementTypes.SET_USER_PASSWORD:
+
+group=StatementTypes.X_HSQLDB_SETTING;
+
+isTransactionStatement=false;
+
+break;
+
+case StatementTypes.ALTER_SESSION:
+
+group=StatementTypes.X_HSQLDB_SESSION;
+
+isTransactionStatement=false;
+
+isLogged=false;
+
+break;
+
+default :
+
+throw Error.runtimeError(ErrorCode.U_S0500,"StatementCommand");
+
+}
+
+}
+

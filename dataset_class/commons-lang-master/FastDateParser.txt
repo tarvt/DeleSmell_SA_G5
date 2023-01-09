@@ -1,0 +1,466 @@
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * Adjusts dates to be within appropriate century
+
+ * @param twoDigitYear The year to adjust
+
+ * @return A value between centuryStart(inclusive) to centuryStart+100(exclusive)
+
+ */
+
+private int adjustYear(final int twoDigitYear){
+
+  final int trial=century + twoDigitYear;
+
+  return twoDigitYear >= startYear ? trial : trial + 100;
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * Gets the short and long values displayed for a field
+
+ * @param calendar The calendar to obtain the short and long values
+
+ * @param locale The locale of display names
+
+ * @param field The field of interest
+
+ * @param regex The regular expression to build
+
+ * @return The map of string display names to field values
+
+ */
+
+private static Map<String,Integer> appendDisplayNames(final Calendar calendar,Locale locale,final int field,final StringBuilder regex){
+
+  final Map<String,Integer> values=new HashMap<>();
+
+  locale=LocaleUtils.toLocale(locale);
+
+  final Map<String,Integer> displayNames=calendar.getDisplayNames(field,Calendar.ALL_STYLES,locale);
+
+  final TreeSet<String> sorted=new TreeSet<>(LONGER_FIRST_LOWERCASE);
+
+  for (  final Map.Entry<String,Integer> displayName : displayNames.entrySet()) {
+
+    final String key=displayName.getKey().toLowerCase(locale);
+
+    if (sorted.add(key)) {
+
+      values.put(key,displayName.getValue());
+
+    }
+
+  }
+
+  for (  final String symbol : sorted) {
+
+    simpleQuote(regex,symbol).append('|');
+
+  }
+
+  return values;
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * <p>Constructs a new FastDateParser.</p> Use  {@link FastDateFormat#getInstance(String,TimeZone,Locale)} or another variation of thefactory methods of  {@link FastDateFormat} to get a cached FastDateParser instance.
+
+ * @param pattern non-null {@link java.text.SimpleDateFormat} compatiblepattern
+
+ * @param timeZone non-null time zone to use
+
+ * @param locale non-null locale
+
+ */
+
+protected FastDateParser(final String pattern,final TimeZone timeZone,final Locale locale){
+
+  this(pattern,timeZone,locale,null);
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * <p>Constructs a new FastDateParser.</p>
+
+ * @param pattern non-null {@link java.text.SimpleDateFormat} compatiblepattern
+
+ * @param timeZone non-null time zone to use
+
+ * @param locale non-null locale
+
+ * @param centuryStart The start of the century for 2 digit year parsing
+
+ * @since 3.5
+
+ */
+
+protected FastDateParser(final String pattern,final TimeZone timeZone,final Locale locale,final Date centuryStart){
+
+  this.pattern=pattern;
+
+  this.timeZone=timeZone;
+
+  this.locale=LocaleUtils.toLocale(locale);
+
+  final Calendar definingCalendar=Calendar.getInstance(timeZone,this.locale);
+
+  final int centuryStartYear;
+
+  if (centuryStart != null) {
+
+    definingCalendar.setTime(centuryStart);
+
+    centuryStartYear=definingCalendar.get(Calendar.YEAR);
+
+  }
+
+ else   if (this.locale.equals(JAPANESE_IMPERIAL)) {
+
+    centuryStartYear=0;
+
+  }
+
+ else {
+
+    definingCalendar.setTime(new Date());
+
+    centuryStartYear=definingCalendar.get(Calendar.YEAR) - 80;
+
+  }
+
+  century=centuryStartYear / 100 * 100;
+
+  startYear=centuryStartYear - century;
+
+  init(definingCalendar);
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * Gets a cache of Strategies for a particular field
+
+ * @param field The Calendar field
+
+ * @return a cache of Locale to Strategy
+
+ */
+
+private static ConcurrentMap<Locale,Strategy> getCache(final int field){
+
+synchronized (caches) {
+
+    if (caches[field] == null) {
+
+      caches[field]=new ConcurrentHashMap<>(3);
+
+    }
+
+    return caches[field];
+
+  }
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * Constructs a Strategy that parses a Text field
+
+ * @param field The Calendar field
+
+ * @param definingCalendar The calendar to obtain the short and long values
+
+ * @return a TextStrategy for the field and Locale
+
+ */
+
+private Strategy getLocaleSpecificStrategy(final int field,final Calendar definingCalendar){
+
+  final ConcurrentMap<Locale,Strategy> cache=getCache(field);
+
+  Strategy strategy=cache.get(locale);
+
+  if (strategy == null) {
+
+    strategy=field == Calendar.ZONE_OFFSET ? new TimeZoneStrategy(locale) : new CaseInsensitiveTextStrategy(field,definingCalendar,locale);
+
+    final Strategy inCache=cache.putIfAbsent(locale,strategy);
+
+    if (inCache != null) {
+
+      return inCache;
+
+    }
+
+  }
+
+  return strategy;
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * Gets a Strategy given a field from a SimpleDateFormat pattern
+
+ * @param f A sub-sequence of the SimpleDateFormat pattern
+
+ * @param definingCalendar The calendar to obtain the short and long values
+
+ * @return The Strategy that will handle parsing for the field
+
+ */
+
+private Strategy getStrategy(final char f,final int width,final Calendar definingCalendar){
+
+switch (f) {
+
+default :
+
+    throw new IllegalArgumentException("Format '" + f + "' not supported");
+
+case 'D':
+
+  return DAY_OF_YEAR_STRATEGY;
+
+case 'E':
+
+return getLocaleSpecificStrategy(Calendar.DAY_OF_WEEK,definingCalendar);
+
+case 'F':
+
+return DAY_OF_WEEK_IN_MONTH_STRATEGY;
+
+case 'G':
+
+return getLocaleSpecificStrategy(Calendar.ERA,definingCalendar);
+
+case 'H':
+
+return HOUR_OF_DAY_STRATEGY;
+
+case 'K':
+
+return HOUR_STRATEGY;
+
+case 'M':
+
+return width >= 3 ? getLocaleSpecificStrategy(Calendar.MONTH,definingCalendar) : NUMBER_MONTH_STRATEGY;
+
+case 'S':
+
+return MILLISECOND_STRATEGY;
+
+case 'W':
+
+return WEEK_OF_MONTH_STRATEGY;
+
+case 'a':
+
+return getLocaleSpecificStrategy(Calendar.AM_PM,definingCalendar);
+
+case 'd':
+
+return DAY_OF_MONTH_STRATEGY;
+
+case 'h':
+
+return HOUR12_STRATEGY;
+
+case 'k':
+
+return HOUR24_OF_DAY_STRATEGY;
+
+case 'm':
+
+return MINUTE_STRATEGY;
+
+case 's':
+
+return SECOND_STRATEGY;
+
+case 'u':
+
+return DAY_OF_WEEK_STRATEGY;
+
+case 'w':
+
+return WEEK_OF_YEAR_STRATEGY;
+
+case 'y':
+
+case 'Y':
+
+return width > 2 ? LITERAL_YEAR_STRATEGY : ABBREVIATED_YEAR_STRATEGY;
+
+case 'X':
+
+return ISO8601TimeZoneStrategy.getStrategy(width);
+
+case 'Z':
+
+if (width == 2) {
+
+return ISO8601TimeZoneStrategy.ISO_8601_3_STRATEGY;
+
+}
+
+case 'z':
+
+return getLocaleSpecificStrategy(Calendar.ZONE_OFFSET,definingCalendar);
+
+}
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * Initializes derived fields from defining fields. This is called from constructor and from readObject (de-serialization)
+
+ * @param definingCalendar the {@link java.util.Calendar} instance used to initialize this FastDateParser
+
+ */
+
+private void init(final Calendar definingCalendar){
+
+  patterns=new ArrayList<>();
+
+  final StrategyParser fm=new StrategyParser(definingCalendar);
+
+  for (; ; ) {
+
+    final StrategyAndWidth field=fm.getNextStrategy();
+
+    if (field == null) {
+
+      break;
+
+    }
+
+    patterns.add(field);
+
+  }
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+private static boolean isFormatLetter(final char c){
+
+  return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z';
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+private static StringBuilder simpleQuote(final StringBuilder sb,final String value){
+
+  for (int i=0; i < value.length(); ++i) {
+
+    final char c=value.charAt(i);
+
+switch (c) {
+
+case '\\':
+
+case '^':
+
+case '$':
+
+case '.':
+
+case '|':
+
+case '?':
+
+case '*':
+
+case '+':
+
+case '(':
+
+case ')':
+
+case '[':
+
+case '{':
+
+      sb.append('\\');
+
+default :
+
+    sb.append(c);
+
+}
+
+}
+
+if (sb.charAt(sb.length() - 1) == '.') {
+
+sb.append('?');
+
+}
+
+return sb;
+
+}
+
+Location: FastDateParser.java
+
+Content: 
+
+/** 
+
+ * Converts all state of this instance to a String handy for debugging.
+
+ * @return a string.
+
+ * @since 3.12.0
+
+ */
+
+public String toStringAll(){
+
+  return "FastDateParser [pattern=" + pattern + ", timeZone="+ timeZone+ ", locale="+ locale+ ", century="+ century+ ", startYear="+ startYear+ ", patterns="+ patterns+ "]";
+
+}
+

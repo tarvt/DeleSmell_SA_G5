@@ -1,0 +1,192 @@
+Location: ShardWriter.java
+
+Content: 
+
+private void moveFromTempToPerm() throws IOException {
+
+  try {
+
+    FileStatus[] fileStatus=localFs.listStatus(temp,LuceneIndexFileNameFilter.getFilter());
+
+    Path segmentsPath=null;
+
+    Path segmentsGenPath=null;
+
+    for (int i=0; i < fileStatus.length; i++) {
+
+      Path path=fileStatus[i].getPath();
+
+      String name=path.getName();
+
+      if (LuceneUtil.isSegmentsGenFile(name)) {
+
+        assert (segmentsGenPath == null);
+
+        segmentsGenPath=path;
+
+      }
+
+ else       if (LuceneUtil.isSegmentsFile(name)) {
+
+        assert (segmentsPath == null);
+
+        segmentsPath=path;
+
+      }
+
+ else {
+
+        fs.completeLocalOutput(new Path(perm,name),path);
+
+      }
+
+    }
+
+    if (segmentsPath != null) {
+
+      fs.completeLocalOutput(new Path(perm,segmentsPath.getName()),segmentsPath);
+
+    }
+
+    if (segmentsGenPath != null) {
+
+      fs.completeLocalOutput(new Path(perm,segmentsGenPath.getName()),segmentsGenPath);
+
+    }
+
+  }
+
+  finally {
+
+    localFs.delete(temp,true);
+
+  }
+
+}
+
+Location: ShardWriter.java
+
+Content: 
+
+private void restoreGeneration(FileSystem fs,Path perm,long startGen) throws IOException {
+
+  FileStatus[] fileStatus=fs.listStatus(perm,new PathFilter(){
+
+    public boolean accept(    Path path){
+
+      return LuceneUtil.isSegmentsFile(path.getName());
+
+    }
+
+  }
+
+);
+
+  for (int i=0; i < fileStatus.length; i++) {
+
+    Path path=fileStatus[i].getPath();
+
+    if (startGen < LuceneUtil.generationFromSegmentsFileName(path.getName())) {
+
+      fs.delete(path,true);
+
+    }
+
+  }
+
+  Path segmentsGenFile=new Path(LuceneUtil.IndexFileNames.SEGMENTS_GEN);
+
+  if (fs.exists(segmentsGenFile)) {
+
+    fs.delete(segmentsGenFile,true);
+
+  }
+
+}
+
+Location: ShardWriter.java
+
+Content: 
+
+private void setParameters(IndexUpdateConfiguration iconf){
+
+  int maxFieldLength=iconf.getIndexMaxFieldLength();
+
+  if (maxFieldLength > 0) {
+
+    writer.setMaxFieldLength(maxFieldLength);
+
+  }
+
+  writer.setUseCompoundFile(iconf.getIndexUseCompoundFile());
+
+  maxNumSegments=iconf.getIndexMaxNumSegments();
+
+  if (maxFieldLength > 0) {
+
+    LOG.info("sea.max.field.length = " + writer.getMaxFieldLength());
+
+  }
+
+  LOG.info("sea.use.compound.file = " + writer.getUseCompoundFile());
+
+  LOG.info("sea.max.num.segments = " + maxNumSegments);
+
+}
+
+Location: ShardWriter.java
+
+Content: 
+
+/** 
+
+ * Constructor
+
+ * @param fs
+
+ * @param shard
+
+ * @param tempDir
+
+ * @param iconf
+
+ * @throws IOException
+
+ */
+
+public ShardWriter(FileSystem fs,Shard shard,String tempDir,IndexUpdateConfiguration iconf) throws IOException {
+
+  LOG.info("Construct a shard writer");
+
+  this.fs=fs;
+
+  localFs=FileSystem.getLocal(iconf.getConfiguration());
+
+  perm=new Path(shard.getDirectory());
+
+  temp=new Path(tempDir);
+
+  long initGeneration=shard.getGeneration();
+
+  if (!fs.exists(perm)) {
+
+    assert (initGeneration < 0);
+
+    fs.mkdirs(perm);
+
+  }
+
+ else {
+
+    restoreGeneration(fs,perm,initGeneration);
+
+  }
+
+  dir=new MixedDirectory(fs,perm,localFs,fs.startLocalOutput(perm,temp),iconf.getConfiguration());
+
+  writer=new IndexWriter(dir,false,null,initGeneration < 0 ? new KeepOnlyLastCommitDeletionPolicy() : new MixedDeletionPolicy());
+
+  setParameters(iconf);
+
+}
+

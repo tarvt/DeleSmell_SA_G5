@@ -1,0 +1,232 @@
+Location: BackupStore.java
+
+Content: 
+
+public BackupStore(Configuration conf,TaskAttemptID taskid) throws IOException {
+
+  final float bufferPercent=conf.getFloat(JobContext.REDUCE_MARKRESET_BUFFER_PERCENT,0f);
+
+  if (bufferPercent > 1.0 || bufferPercent < 0.0) {
+
+    throw new IOException(JobContext.REDUCE_MARKRESET_BUFFER_PERCENT + bufferPercent);
+
+  }
+
+  int maxSize=(int)Math.min(Runtime.getRuntime().maxMemory() * bufferPercent,Integer.MAX_VALUE);
+
+  int tmp=conf.getInt(JobContext.REDUCE_MARKRESET_BUFFER_SIZE,0);
+
+  if (tmp > 0) {
+
+    maxSize=tmp;
+
+  }
+
+  memCache=new MemoryCache(maxSize);
+
+  fileCache=new FileCache(conf);
+
+  tid=taskid;
+
+  LOG.info("Created a new BackupStore with a memory of " + maxSize);
+
+}
+
+Location: BackupStore.java
+
+Content: 
+
+private void clearSegmentList() throws IOException {
+
+  for (  Segment<K,V> segment : segmentList) {
+
+    long len=segment.getLength();
+
+    segment.close();
+
+    if (segment.inMemory()) {
+
+      memCache.unreserve(len);
+
+    }
+
+  }
+
+  segmentList.clear();
+
+}
+
+Location: BackupStore.java
+
+Content: 
+
+/** 
+
+ * This function is called the ValuesIterator when a mark is called outside of a reset zone.  
+
+ */
+
+public void exitResetMode() throws IOException {
+
+  inReset=false;
+
+  if (clearMarkFlag) {
+
+    hongshuai();
+
+    spillNumber=0;
+
+    writer=null;
+
+    isActive=false;
+
+    return;
+
+  }
+
+  if (!fileCache.isActive) {
+
+    memCache.reinitialize(false);
+
+  }
+
+}
+
+Location: BackupStore.java
+
+Content: 
+
+/** 
+
+ * For writing the first key and value bytes directly from the value iterators, pass the current underlying output stream
+
+ * @param length The length of the impending write
+
+ */
+
+public DataOutputStream getOutputStream(int length) throws IOException {
+
+  if (memCache.reserveSpace(length)) {
+
+    return memCache.dataOut;
+
+  }
+
+ else {
+
+    fileCache.activate();
+
+    return fileCache.writer.getOutputStream();
+
+  }
+
+}
+
+Location: BackupStore.java
+
+Content: 
+
+public DataInputBuffer nextValue(){
+
+  return currentValue;
+
+}
+
+Location: BackupStore.java
+
+Content: 
+
+public void reinitialize() throws IOException {
+
+  if (segmentList.size() != 0) {
+
+    clearSegmentList();
+
+  }
+
+  memCache.reinitialize(true);
+
+  fileCache.reinitialize();
+
+  readSegmentIndex=firstSegmentOffset=0;
+
+  currentKVOffset=0;
+
+  nextKVOffset=-1;
+
+  hasMore=inReset=clearMarkFlag=false;
+
+}
+
+Location: BackupStore.java
+
+Content: 
+
+/** 
+
+ * This method is called by the valueIterators after writing the first key and value bytes to the BackupStore
+
+ * @param length 
+
+ */
+
+public void updateCounters(int length){
+
+  if (fileCache.isActive) {
+
+    fileCache.writer.updateCountersForExternalAppend(length);
+
+  }
+
+ else {
+
+    memCache.usedSize+=length;
+
+  }
+
+}
+
+Location: BackupStore.java
+
+Content: 
+
+/** 
+
+ * Write the given K,V to the cache.  Write to memcache if space is available, else write to the filecache
+
+ * @param key
+
+ * @param value
+
+ * @throws IOException
+
+ */
+
+public void write(DataInputBuffer key,DataInputBuffer value) throws IOException {
+
+  assert (key != null && value != null);
+
+  if (fileCache.isActive()) {
+
+    fileCache.write(key,value);
+
+    return;
+
+  }
+
+  if (memCache.reserveSpace(key,value)) {
+
+    memCache.write(key,value);
+
+  }
+
+ else {
+
+    fileCache.activate();
+
+    fileCache.write(key,value);
+
+  }
+
+}
+

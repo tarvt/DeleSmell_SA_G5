@@ -1,0 +1,504 @@
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Applies a new Paint object.
+
+ * @param paint Paint object to use
+
+ * @throws IOException In case of an I/O problem
+
+ */
+
+protected void applyPaint(Paint paint) throws IOException {
+
+  if (paint instanceof Color) {
+
+    Color col=(Color)paint;
+
+    int shade=gen.convertToPCLShade(col);
+
+    gen.writeText("TR0;FT10," + shade + ";");
+
+  }
+
+ else {
+
+    handleUnsupportedFeature("Unsupported Paint: " + paint.getClass().getName());
+
+  }
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+private void bezierAbsolute(double x1,double y1,double x2,double y2,double x3,double y3,StringBuffer sb){
+
+  sb.append("BZ").append(gen.formatDouble4(x1));
+
+  sb.append(",").append(gen.formatDouble4(y1));
+
+  sb.append(",").append(gen.formatDouble4(x2));
+
+  sb.append(",").append(gen.formatDouble4(y2));
+
+  sb.append(",").append(gen.formatDouble4(x3));
+
+  sb.append(",").append(gen.formatDouble4(y3)).append(";");
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void drawString(AttributedCharacterIterator iterator,float x,float y){
+
+  handleUnsupportedFeature("drawString NYI");
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+private void fillPolygon(int windingRule,StringBuffer sb){
+
+  int fillMethod=(windingRule == PathIterator.WIND_EVEN_ODD ? 0 : 1);
+
+  sb.append("FP").append(fillMethod).append(";");
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Raises an UnsupportedOperationException if this instance is configured to do so and an unsupported feature has been requested. Clients can make use of this to fall back to a more compatible way of painting a PCL graphic.
+
+ * @param msg the error message to be displayed
+
+ */
+
+protected void handleUnsupportedFeature(String msg){
+
+  if (FAIL_ON_UNSUPPORTED_FEATURE) {
+
+    throw new UnsupportedOperationException(msg);
+
+  }
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Create a new PCLGraphics2D.
+
+ * @param gen the PCL Generator to paint with
+
+ */
+
+public PCLGraphics2D(PCLGenerator gen){
+
+  super(true);
+
+  this.gen=gen;
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Copy constructor
+
+ * @param g parent PCLGraphics2D
+
+ */
+
+public PCLGraphics2D(PCLGraphics2D g){
+
+  super(true);
+
+  this.gen=g.gen;
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+private void penDown(StringBuffer sb){
+
+  sb.append("PD;");
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+private void penUp(StringBuffer sb){
+
+  sb.append("PU;");
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+private void plotAbsolute(double x,double y,StringBuffer sb){
+
+  sb.append("PA").append(gen.formatDouble4(x));
+
+  sb.append(",").append(gen.formatDouble4(y)).append(";");
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Processes a path iterator generating the nexessary painting operations.
+
+ * @param iter PathIterator to process
+
+ * @throws IOException In case of an I/O problem.
+
+ */
+
+public void processPathIteratorFill(PathIterator iter) throws IOException {
+
+  gen.writeText("\n");
+
+  double[] vals=new double[6];
+
+  boolean penDown=false;
+
+  double x=0;
+
+  double y=0;
+
+  boolean pendingPM0=true;
+
+  StringBuffer sb=new StringBuffer(256);
+
+  penUp(sb);
+
+  while (!iter.isDone()) {
+
+    int type=iter.currentSegment(vals);
+
+    if (type == PathIterator.SEG_CLOSE) {
+
+      sb.append("PM1;");
+
+      iter.next();
+
+      continue;
+
+    }
+
+ else     if (type == PathIterator.SEG_MOVETO) {
+
+      if (penDown) {
+
+        penUp(sb);
+
+        penDown=false;
+
+      }
+
+    }
+
+ else {
+
+      if (!penDown) {
+
+        penDown(sb);
+
+        penDown=true;
+
+      }
+
+    }
+
+switch (type) {
+
+case PathIterator.SEG_MOVETO:
+
+      x=vals[0];
+
+    y=vals[1];
+
+  plotAbsolute(x,y,sb);
+
+break;
+
+case PathIterator.SEG_LINETO:
+
+x=vals[0];
+
+y=vals[1];
+
+plotAbsolute(x,y,sb);
+
+break;
+
+case PathIterator.SEG_CUBICTO:
+
+x=vals[4];
+
+y=vals[5];
+
+bezierAbsolute(vals[0],vals[1],vals[2],vals[3],x,y,sb);
+
+break;
+
+case PathIterator.SEG_QUADTO:
+
+double originX=x;
+
+double originY=y;
+
+x=vals[2];
+
+y=vals[3];
+
+quadraticBezierAbsolute(originX,originY,vals[0],vals[1],x,y,sb);
+
+break;
+
+default :
+
+throw new IllegalStateException("Must not get here");
+
+}
+
+if (pendingPM0) {
+
+pendingPM0=false;
+
+sb.append("PM;");
+
+}
+
+iter.next();
+
+}
+
+sb.append("PM2;");
+
+fillPolygon(iter.getWindingRule(),sb);
+
+sb.append("\n");
+
+gen.writeText(sb.toString());
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Processes a path iterator generating the nexessary painting operations.
+
+ * @param iter PathIterator to process
+
+ * @throws IOException In case of an I/O problem.
+
+ */
+
+public void processPathIteratorStroke(PathIterator iter) throws IOException {
+
+  gen.writeText("\n");
+
+  double[] vals=new double[6];
+
+  boolean penDown=false;
+
+  double x=0;
+
+  double y=0;
+
+  StringBuffer sb=new StringBuffer(256);
+
+  penUp(sb);
+
+  while (!iter.isDone()) {
+
+    int type=iter.currentSegment(vals);
+
+    if (type == PathIterator.SEG_CLOSE) {
+
+      gen.writeText("PM;");
+
+      gen.writeText(sb.toString());
+
+      gen.writeText("PM2;EP;");
+
+      sb.setLength(0);
+
+      iter.next();
+
+      continue;
+
+    }
+
+ else     if (type == PathIterator.SEG_MOVETO) {
+
+      gen.writeText(sb.toString());
+
+      sb.setLength(0);
+
+      if (penDown) {
+
+        penUp(sb);
+
+        penDown=false;
+
+      }
+
+    }
+
+ else {
+
+      if (!penDown) {
+
+        penDown(sb);
+
+        penDown=true;
+
+      }
+
+    }
+
+switch (type) {
+
+case PathIterator.SEG_CLOSE:
+
+      break;
+
+case PathIterator.SEG_MOVETO:
+
+    x=vals[0];
+
+  y=vals[1];
+
+plotAbsolute(x,y,sb);
+
+gen.writeText(sb.toString());
+
+sb.setLength(0);
+
+break;
+
+case PathIterator.SEG_LINETO:
+
+x=vals[0];
+
+y=vals[1];
+
+plotAbsolute(x,y,sb);
+
+break;
+
+case PathIterator.SEG_CUBICTO:
+
+x=vals[4];
+
+y=vals[5];
+
+bezierAbsolute(vals[0],vals[1],vals[2],vals[3],x,y,sb);
+
+break;
+
+case PathIterator.SEG_QUADTO:
+
+double originX=x;
+
+double originY=y;
+
+x=vals[2];
+
+y=vals[3];
+
+quadraticBezierAbsolute(originX,originY,vals[0],vals[1],x,y,sb);
+
+break;
+
+default :
+
+break;
+
+}
+
+iter.next();
+
+}
+
+sb.append("\n");
+
+gen.writeText(sb.toString());
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+private void quadraticBezierAbsolute(double originX,double originY,double x1,double y1,double x2,double y2,StringBuffer sb){
+
+  double nx1=originX + (2.0 / 3.0) * (x1 - originX);
+
+  double ny1=originY + (2.0 / 3.0) * (y1 - originY);
+
+  double nx2=nx1 + (1.0 / 3.0) * (x2 - originX);
+
+  double ny2=ny1 + (1.0 / 3.0) * (y2 - originY);
+
+  bezierAbsolute(nx1,ny1,nx2,ny2,x2,y2,sb);
+
+}
+
+Location: PCLGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Allows to disable all clipping operations.
+
+ * @param value true if clipping should be disabled.
+
+ */
+
+public void setClippingDisabled(boolean value){
+
+  this.clippingDisabled=value;
+
+}
+

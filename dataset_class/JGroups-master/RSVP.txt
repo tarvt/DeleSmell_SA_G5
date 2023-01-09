@@ -1,0 +1,102 @@
+Location: RSVP.java
+
+Content: 
+
+protected synchronized short getNextId(){
+
+  return current_id++;
+
+}
+
+Location: RSVP.java
+
+Content: 
+
+@ManagedAttribute(description="Number of pending RSVP requests") public int getPendingRsvpRequests(){
+
+  return ids.size();
+
+}
+
+Location: RSVP.java
+
+Content: 
+
+protected void handleResponse(Address member,short id){
+
+  Entry entry=ids.get(id);
+
+  if (entry != null) {
+
+    entry.ack(member);
+
+    if (entry.size() == 0) {
+
+      entry.destroy();
+
+      ids.remove(id);
+
+    }
+
+  }
+
+}
+
+Location: RSVP.java
+
+Content: 
+
+@ManagedAttribute(description="Is the resend task running") protected synchronized boolean isResendTaskRunning(){
+
+  return resend_task != null && !resend_task.isDone();
+
+}
+
+Location: RSVP.java
+
+Content: 
+
+protected void sendResponse(Address dest,short id){
+
+  try {
+
+    RsvpHeader hdr=new RsvpHeader(RsvpHeader.RSP,id);
+
+    Message msg=new Message(dest).putHeader(this.id,hdr).setFlag(Message.Flag.RSVP,Message.Flag.INTERNAL,Message.Flag.DONT_BUNDLE,Message.Flag.OOB);
+
+    if (log.isTraceEnabled())     log.trace(local_addr + ": " + hdr.typeToString()+ " --> "+ dest);
+
+    down_prot.down(msg);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(Util.getMessage("FailedSendingResponse"),t);
+
+  }
+
+}
+
+Location: RSVP.java
+
+Content: 
+
+protected synchronized void startResendTask(){
+
+  if (resend_task == null || resend_task.isDone())   resend_task=timer.scheduleWithFixedDelay(new ResendTask(),resend_interval,resend_interval,TimeUnit.MILLISECONDS,getTransport() instanceof TCP);
+
+}
+
+Location: RSVP.java
+
+Content: 
+
+protected synchronized void stopResendTask(){
+
+  if (resend_task != null)   resend_task.cancel(false);
+
+  resend_task=null;
+
+}
+

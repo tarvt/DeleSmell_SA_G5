@@ -1,0 +1,88 @@
+Location: TestTaskLauncher.java
+
+Content: 
+
+/** 
+
+ * Tests the case "task waiting to be launched is killed externally". Launches a task which will wait for ever to get slots. Kill the task and see if launcher is able to come out of the wait and pickup a another task.
+
+ * @throws IOException
+
+ */
+
+@Test public void testExternalKillForLaunchTask() throws IOException {
+
+  JobConf ttConf=new JobConf();
+
+  ttConf.setInt(TTConfig.TT_MAP_SLOTS,4);
+
+  TaskTracker tt=new MyTaskTracker();
+
+  tt.runningTasks=new LinkedHashMap<TaskAttemptID,TaskInProgress>();
+
+  tt.setConf(ttConf);
+
+  tt.setIndexCache(new IndexCache(ttConf));
+
+  tt.setTaskMemoryManagerEnabledFlag();
+
+  tt.setTaskTrackerInstrumentation(TaskTracker.createInstrumentation(tt,tt.getJobConf()));
+
+  TaskLauncher mapLauncher=tt.new TaskLauncher(TaskType.MAP,4);
+
+  mapLauncher.start();
+
+  String jtId="test";
+
+  TaskAttemptID attemptID=new TaskAttemptID(jtId,1,TaskType.MAP,0,0);
+
+  Task task=new MapTask(null,attemptID,0,null,5);
+
+  mapLauncher.addToTaskQueue(new LaunchTaskAction(task));
+
+  TaskInProgress killTip=tt.runningTasks.get(attemptID);
+
+  assertNotNull(killTip);
+
+  for (int i=0; i < 300; i++) {
+
+    if (mapLauncher.getNumWaitingTasksToLaunch() == 0) {
+
+      break;
+
+    }
+
+    UtilsForTests.waitFor(100);
+
+  }
+
+  assertEquals("Launcher didnt pick up the task " + attemptID + "to launch",0,mapLauncher.getNumWaitingTasksToLaunch());
+
+  tt.processKillTaskAction(new KillTaskAction(attemptID));
+
+  assertEquals(TaskStatus.State.KILLED,killTip.getRunState());
+
+  TaskAttemptID runningAttemptID=new TaskAttemptID(jtId,1,TaskType.MAP,0,expectedLaunchAttemptId);
+
+  mapLauncher.addToTaskQueue(new LaunchTaskAction(new MapTask(null,runningAttemptID,0,null,1)));
+
+  TaskInProgress runningTip=tt.runningTasks.get(runningAttemptID);
+
+  assertNotNull(runningTip);
+
+  for (int i=0; i < 300; i++) {
+
+    if (runningTip.getRunState().equals(TaskStatus.State.RUNNING)) {
+
+      break;
+
+    }
+
+    UtilsForTests.waitFor(100);
+
+  }
+
+  assertEquals(TaskStatus.State.RUNNING,runningTip.getRunState());
+
+}
+

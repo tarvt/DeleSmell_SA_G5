@@ -1,0 +1,1134 @@
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void checkAccessToCommonServlet(String url) throws IOException {
+
+  url=url + "?a=b";
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,mrAdminUser,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,mrAdminGroupMember,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,mrOwner,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,superGroupMember,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,jobSubmitter,"GET"));
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Make sure that the given user can do killJob using jobdetails.jsp url
+
+ * @param cluster
+
+ * @param conf
+
+ * @param jtURL
+
+ * @param jobTrackerJSP
+
+ * @param user
+
+ * @throws Exception
+
+ */
+
+private void confirmJobDetailsJSPKillJobAsUser(MiniMRCluster cluster,JobConf conf,String jtURL,String jobTrackerJSP,String user) throws Exception {
+
+  Job job=startSleepJobAsUser(jobSubmitter,conf);
+
+  org.apache.hadoop.mapreduce.JobID jobid=job.getJobID();
+
+  getTIPId(cluster,jobid);
+
+  String url=jtURL + "/jobdetails.jsp?" + "action=kill&jobid="+ jobid.toString();
+
+  try {
+
+    assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,user,"POST"));
+
+  }
+
+  finally {
+
+    if (!job.isComplete()) {
+
+      LOG.info("Killing job " + jobid + " from finally block");
+
+      assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP + "&killJobs=true&jobCheckBox=" + jobid.toString(),jobSubmitter,"GET"));
+
+    }
+
+  }
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Make sure that the given user can do killJob using jobtracker.jsp url
+
+ * @param cluster
+
+ * @param conf
+
+ * @param jtURL
+
+ * @param user
+
+ * @throws Exception
+
+ */
+
+private void confirmJobTrackerJSPKillJobAsUser(MiniMRCluster cluster,JobConf conf,String jtURL,String user) throws Exception {
+
+  String jobTrackerJSP=jtURL + "/jobtracker.jsp?a=b";
+
+  Job job=startSleepJobAsUser(jobSubmitter,conf);
+
+  org.apache.hadoop.mapreduce.JobID jobid=job.getJobID();
+
+  getTIPId(cluster,jobid);
+
+  String url=jobTrackerJSP + "&killJobs=true&jobCheckBox=" + jobid.toString();
+
+  try {
+
+    assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,user,"POST"));
+
+  }
+
+  finally {
+
+    if (!job.isComplete()) {
+
+      LOG.info("Killing job " + jobid + " from finally block");
+
+      assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP + "&killJobs=true&jobCheckBox=" + jobid.toString(),jobSubmitter,"GET"));
+
+    }
+
+  }
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * access a url, ignoring some IOException such as the page does not exist 
+
+ */
+
+static int getHttpStatusCode(String urlstring,String userName,String method) throws IOException {
+
+  LOG.info("Accessing " + urlstring + " as user "+ userName);
+
+  URL url=new URL(urlstring + "&user.name=" + userName);
+
+  HttpURLConnection connection=(HttpURLConnection)url.openConnection();
+
+  connection.setRequestMethod(method);
+
+  if (method.equals("POST")) {
+
+    String encodedData="action=kill&user.name=" + userName;
+
+    connection.setRequestProperty("Content-Type","application/x-www-form-urlencoded");
+
+    connection.setRequestProperty("Content-Length",Integer.toString(encodedData.length()));
+
+    connection.setDoOutput(true);
+
+    OutputStream os=connection.getOutputStream();
+
+    os.write(encodedData.getBytes());
+
+  }
+
+  connection.connect();
+
+  return connection.getResponseCode();
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private TaskID getTIPId(MiniMRCluster cluster,org.apache.hadoop.mapreduce.JobID jobid) throws Exception {
+
+  JobClient client=new JobClient(cluster.createJobConf());
+
+  JobID jobId=JobID.downgrade(jobid);
+
+  TaskReport[] mapReports=null;
+
+  TaskID tipId=null;
+
+  do {
+
+    Thread.sleep(200);
+
+    mapReports=client.getMapTaskReports(jobId);
+
+  }
+
+ while (mapReports.length == 0);
+
+  for (  TaskReport r : mapReports) {
+
+    tipId=r.getTaskID();
+
+    break;
+
+  }
+
+  return tipId;
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+static void setupGroupsProvider() throws IOException {
+
+  Configuration conf=new Configuration();
+
+  conf.set(CommonConfigurationKeys.HADOOP_SECURITY_GROUP_MAPPING,MyGroupsProvider.class.getName());
+
+  Groups.getUserToGroupsMappingService(conf);
+
+  MyGroupsProvider.mapping.put(jobSubmitter,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(viewColleague,Arrays.asList("group2"));
+
+  MyGroupsProvider.mapping.put(modifyColleague,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(unauthorizedUser,Arrays.asList("evilSociety"));
+
+  MyGroupsProvider.mapping.put(superGroupMember,Arrays.asList("superGroup"));
+
+  MyGroupsProvider.mapping.put(mrAdminGroupMember,Arrays.asList(mrAdminGroup));
+
+  MyGroupsProvider.mapping.put(viewAndModifyColleague,Arrays.asList("group3"));
+
+  MyGroupsProvider.mapping.put(qAdmin,Arrays.asList("group4"));
+
+  mrOwner=UserGroupInformation.getCurrentUser().getShortUserName();
+
+  MyGroupsProvider.mapping.put(mrOwner,Arrays.asList(new String[]{"group5","group6"}));
+
+  MyGroupsProvider.mapping.put(jobSubmitter1,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter2,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter3,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(mrAdminUser,Arrays.asList("group8"));
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Creates queues configuration file with the given queues and acls and starts cluster with that queues configuration file.
+
+ * @param props   configuration properties to inject to the mini cluster
+
+ * @param queueNames   the job queues on the cluster 
+
+ * @param submitAclStrings acl-submit-job acls for all queues
+
+ * @param adminsAclStrings acl-administer-jobs acls for all queues
+
+ * @throws Exception
+
+ */
+
+private void startCluster(Properties props,String[] queueNames,String[] submitAclStrings,String[] adminsAclStrings) throws Exception {
+
+  createQueuesConfigFile(queueNames,submitAclStrings,adminsAclStrings);
+
+  startCluster(true,props);
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private Job startSleepJobAsUser(String user,JobConf conf) throws Exception {
+
+  final SleepJob sleepJob=new SleepJob();
+
+  sleepJob.setConf(conf);
+
+  UserGroupInformation jobSubmitterUGI=UserGroupInformation.createRemoteUser(user);
+
+  Job job=jobSubmitterUGI.doAs(new PrivilegedExceptionAction<Job>(){
+
+    public Job run() throws Exception {
+
+      Job job=sleepJob.createJob(1,0,900000,1,0,0);
+
+      job.submit();
+
+      return job;
+
+    }
+
+  }
+
+);
+
+  return job;
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+public void testAuthorizationForJobHistoryPages() throws Exception {
+
+  hongshuai();
+
+  Configuration conf=new Configuration();
+
+  conf.set(CommonConfigurationKeys.HADOOP_SECURITY_GROUP_MAPPING,MyGroupsProvider.class.getName());
+
+  Groups.getUserToGroupsMappingService(conf);
+
+  MyGroupsProvider.mapping.put(jobSubmitter,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(viewColleague,Arrays.asList("group2"));
+
+  MyGroupsProvider.mapping.put(modifyColleague,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(unauthorizedUser,Arrays.asList("evilSociety"));
+
+  MyGroupsProvider.mapping.put(superGroupMember,Arrays.asList("superGroup"));
+
+  MyGroupsProvider.mapping.put(mrAdminGroupMember,Arrays.asList(mrAdminGroup));
+
+  MyGroupsProvider.mapping.put(viewAndModifyColleague,Arrays.asList("group3"));
+
+  MyGroupsProvider.mapping.put(qAdmin,Arrays.asList("group4"));
+
+  mrOwner=UserGroupInformation.getCurrentUser().getShortUserName();
+
+  MyGroupsProvider.mapping.put(mrOwner,Arrays.asList(new String[]{"group5","group6"}));
+
+  MyGroupsProvider.mapping.put(jobSubmitter1,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter2,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter3,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(mrAdminUser,Arrays.asList("group8"));
+
+  Properties props=new Properties();
+
+  props.setProperty("hadoop.http.filter.initializers",DummyFilterInitializer.class.getName());
+
+  props.setProperty(MRConfig.MR_ACLS_ENABLED,String.valueOf(true));
+
+  props.setProperty("dfs.permissions.enabled","false");
+
+  props.setProperty("mapred.job.tracker.history.completed.location","historyDoneFolderOnHDFS");
+
+  props.setProperty(MRJobConfig.SETUP_CLEANUP_NEEDED,"false");
+
+  props.setProperty(MRConfig.MR_SUPERGROUP,"superGroup");
+
+  props.setProperty(MRConfig.MR_ADMINS,mrAdminUser + " " + mrAdminGroup);
+
+  props.setProperty(JTConfig.JT_RETIREJOBS,"true");
+
+  String[] queueNames={"default"};
+
+  String[] submitAclStrings=new String[]{jobSubmitter};
+
+  String[] adminsAclStrings=new String[]{qAdmin};
+
+  startCluster(props,queueNames,submitAclStrings,adminsAclStrings);
+
+  MiniMRCluster cluster=getMRCluster();
+
+  int infoPort=cluster.getJobTrackerRunner().getJobTrackerInfoPort();
+
+  JobConf conf=new JobConf(cluster.createJobConf());
+
+  conf.set(MRJobConfig.JOB_ACL_VIEW_JOB,viewColleague + " group3");
+
+  conf.set(MRJobConfig.JOB_ACL_MODIFY_JOB," group1,group3");
+
+  final SleepJob sleepJob=new SleepJob();
+
+  sleepJob.setConf(conf);
+
+  UserGroupInformation jobSubmitterUGI=UserGroupInformation.createRemoteUser(jobSubmitter);
+
+  Job job=jobSubmitterUGI.doAs(new PrivilegedExceptionAction<Job>(){
+
+    public Job run() throws Exception {
+
+      Job job=sleepJob.createJob(1,0,1000,1,0,0);
+
+      job.waitForCompletion(true);
+
+      return job;
+
+    }
+
+  }
+
+);
+
+  org.apache.hadoop.mapreduce.JobID jobid=job.getJobID();
+
+  for (int i=0; i < 10 && !job.isRetired(); i++) {
+
+    UtilsForTests.waitFor(1000);
+
+    LOG.info("waiting for the job " + jobid + " to retire");
+
+  }
+
+  assertTrue("Job did not retire",job.isRetired());
+
+  String historyFileName=job.getStatus().getHistoryFile();
+
+  String jtURL="http://localhost:" + infoPort;
+
+  String jobDetailsJSP=jtURL + "/jobdetailshistory.jsp?logFile=" + historyFileName;
+
+  validateViewJob(jobDetailsJSP,"GET");
+
+  String jobTasksJSP=jtURL + "/jobtaskshistory.jsp?logFile=" + historyFileName;
+
+  String[] taskTypes=new String[]{"JOb_SETUP","MAP","REDUCE","JOB_CLEANUP"};
+
+  String[] states=new String[]{"all","SUCCEEDED","FAILED","KILLED"};
+
+  for (  String taskType : taskTypes) {
+
+    for (    String state : states) {
+
+      validateViewJob(jobTasksJSP + "&taskType=" + taskType+ "&status="+ state,"GET");
+
+    }
+
+  }
+
+  JobHistoryParser parser=new JobHistoryParser(new Path(historyFileName).getFileSystem(conf),historyFileName);
+
+  JobInfo jobInfo=parser.parse();
+
+  Map<TaskID,TaskInfo> tipsMap=jobInfo.getAllTasks();
+
+  for (  TaskID tip : tipsMap.keySet()) {
+
+    validateViewJob(jtURL + "/taskdetailshistory.jsp?logFile=" + historyFileName+ "&tipid="+ tip.toString(),"GET");
+
+    Map<TaskAttemptID,TaskAttemptInfo> attemptsMap=tipsMap.get(tip).getAllTaskAttempts();
+
+    for (    TaskAttemptID attempt : attemptsMap.keySet()) {
+
+      validateViewJob(jtURL + "/taskstatshistory.jsp?attemptid=" + attempt.toString()+ "&logFile="+ historyFileName,"GET");
+
+      String stdoutURL=TaskLogServlet.getTaskLogUrl("localhost",Integer.toString(attemptsMap.get(attempt).getHttpPort()),attempt.toString()) + "&filter=" + TaskLog.LogName.STDOUT;
+
+      validateViewJob(stdoutURL,"GET");
+
+      String stderrURL=TaskLogServlet.getTaskLogUrl("localhost",Integer.toString(attemptsMap.get(attempt).getHttpPort()),attempt.toString()) + "&filter=" + TaskLog.LogName.STDERR;
+
+      validateViewJob(stderrURL,"GET");
+
+    }
+
+  }
+
+  Path jobACLsFilePath=new Path(TaskLog.getJobDir(jobid).toString(),TaskTracker.jobACLsFile);
+
+  assertTrue("Could not delete job-acls.xml file.",new File(jobACLsFilePath.toUri().getPath()).delete());
+
+  for (  TaskID tip : tipsMap.keySet()) {
+
+    Map<TaskAttemptID,TaskAttemptInfo> attemptsMap=tipsMap.get(tip).getAllTaskAttempts();
+
+    for (    TaskAttemptID attempt : attemptsMap.keySet()) {
+
+      String stdoutURL=TaskLogServlet.getTaskLogUrl("localhost",Integer.toString(attemptsMap.get(attempt).getHttpPort()),attempt.toString()) + "&filter=" + TaskLog.LogName.STDOUT;
+
+      ;
+
+      String stderrURL=TaskLogServlet.getTaskLogUrl("localhost",Integer.toString(attemptsMap.get(attempt).getHttpPort()),attempt.toString()) + "&filter=" + TaskLog.LogName.STDERR;
+
+      assertEquals("Incorrect return code for " + unauthorizedUser,HttpURLConnection.HTTP_OK,getHttpStatusCode(stdoutURL,unauthorizedUser,"GET"));
+
+      assertEquals("Incorrect return code for " + unauthorizedUser,HttpURLConnection.HTTP_OK,getHttpStatusCode(stderrURL,unauthorizedUser,"GET"));
+
+      File attemptLogDir=TaskLog.getAttemptDir(org.apache.hadoop.mapred.TaskAttemptID.downgrade(attempt),false);
+
+      FileUtil.fullyDelete(attemptLogDir);
+
+      assertEquals("Incorrect return code for " + jobSubmitter,HttpURLConnection.HTTP_GONE,getHttpStatusCode(stdoutURL,jobSubmitter,"GET"));
+
+      assertEquals("Incorrect return code for " + jobSubmitter,HttpURLConnection.HTTP_GONE,getHttpStatusCode(stderrURL,jobSubmitter,"GET"));
+
+    }
+
+  }
+
+  String analyseJobHistoryJSP=jtURL + "/analysejobhistory.jsp?logFile=" + historyFileName;
+
+  validateViewJob(analyseJobHistoryJSP,"GET");
+
+  String jobConfJSP=jtURL + "/jobconf_history.jsp?logFile=" + historyFileName;
+
+  validateViewJob(jobConfJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Run a job and validate if JSPs/Servlets are going through authentication and authorization.
+
+ * @throws Exception 
+
+ */
+
+@Test public void testWebUIAuthorization() throws Exception {
+
+  hongshuai();
+
+  Configuration conf=new Configuration();
+
+  conf.set(CommonConfigurationKeys.HADOOP_SECURITY_GROUP_MAPPING,MyGroupsProvider.class.getName());
+
+  Groups.getUserToGroupsMappingService(conf);
+
+  MyGroupsProvider.mapping.put(jobSubmitter,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(viewColleague,Arrays.asList("group2"));
+
+  MyGroupsProvider.mapping.put(modifyColleague,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(unauthorizedUser,Arrays.asList("evilSociety"));
+
+  MyGroupsProvider.mapping.put(superGroupMember,Arrays.asList("superGroup"));
+
+  MyGroupsProvider.mapping.put(mrAdminGroupMember,Arrays.asList(mrAdminGroup));
+
+  MyGroupsProvider.mapping.put(viewAndModifyColleague,Arrays.asList("group3"));
+
+  MyGroupsProvider.mapping.put(qAdmin,Arrays.asList("group4"));
+
+  mrOwner=UserGroupInformation.getCurrentUser().getShortUserName();
+
+  MyGroupsProvider.mapping.put(mrOwner,Arrays.asList(new String[]{"group5","group6"}));
+
+  MyGroupsProvider.mapping.put(jobSubmitter1,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter2,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter3,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(mrAdminUser,Arrays.asList("group8"));
+
+  Properties props=new Properties();
+
+  props.setProperty("hadoop.http.filter.initializers",DummyFilterInitializer.class.getName());
+
+  props.setProperty(MRConfig.MR_ACLS_ENABLED,String.valueOf(true));
+
+  props.setProperty("dfs.permissions.enabled","false");
+
+  props.setProperty(JTConfig.PRIVATE_ACTIONS_KEY,"true");
+
+  props.setProperty(MRJobConfig.SETUP_CLEANUP_NEEDED,"false");
+
+  props.setProperty(MRConfig.MR_SUPERGROUP,"superGroup");
+
+  props.setProperty(MRConfig.MR_ADMINS,mrAdminUser + " " + mrAdminGroup);
+
+  String[] queueNames={"default"};
+
+  String[] submitAclStrings={jobSubmitter + "," + jobSubmitter1+ ","+ jobSubmitter2+ ","+ jobSubmitter3};
+
+  String[] adminsAclStrings=new String[]{qAdmin};
+
+  startCluster(props,queueNames,submitAclStrings,adminsAclStrings);
+
+  MiniMRCluster cluster=getMRCluster();
+
+  int infoPort=cluster.getJobTrackerRunner().getJobTrackerInfoPort();
+
+  JobConf clusterConf=cluster.createJobConf();
+
+  JobConf conf=new JobConf(clusterConf);
+
+  conf.set(MRJobConfig.JOB_ACL_VIEW_JOB,viewColleague + " group3");
+
+  conf.set(MRJobConfig.JOB_ACL_MODIFY_JOB," group1,group3");
+
+  Job job=startSleepJobAsUser(jobSubmitter,conf);
+
+  org.apache.hadoop.mapreduce.JobID jobid=job.getJobID();
+
+  String jtURL="http://localhost:" + infoPort;
+
+  String jobTrackerJSP=jtURL + "/jobtracker.jsp?a=b";
+
+  try {
+
+    validateJobTrackerJSPAccess(jtURL);
+
+    validateJobDetailsJSPAccess(jobid,jtURL);
+
+    validateTaskGraphServletAccess(jobid,jtURL);
+
+    validateJobTasksJSPAccess(jobid,jtURL);
+
+    validateJobConfJSPAccess(jobid,jtURL);
+
+    validateJobFailuresJSPAccess(jobid,jtURL);
+
+    valiateJobBlacklistedTrackerJSPAccess(jobid,jtURL);
+
+    validateJobTrackerJSPSetPriorityAction(jobid,jtURL);
+
+    TaskID tipId=getTIPId(cluster,jobid);
+
+    validateTaskStatsJSPAccess(jobid,jtURL,tipId);
+
+    validateTaskDetailsJSPAccess(jobid,jtURL,tipId);
+
+    validateJobTrackerJSPKillJobAction(jobid,jtURL);
+
+  }
+
+  finally {
+
+    if (!job.isComplete()) {
+
+      LOG.info("Killing job " + jobid + " from finally block");
+
+      assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP + "&killJobs=true&jobCheckBox=" + jobid.toString(),jobSubmitter,"GET"));
+
+    }
+
+  }
+
+  validateJobDetailsJSPKillJob(cluster,clusterConf,jtURL);
+
+  confirmJobTrackerJSPKillJobAsUser(cluster,conf,jtURL,viewAndModifyColleague);
+
+  confirmJobTrackerJSPKillJobAsUser(cluster,conf,jtURL,jobSubmitter);
+
+  confirmJobTrackerJSPKillJobAsUser(cluster,conf,jtURL,mrOwner);
+
+  confirmJobTrackerJSPKillJobAsUser(cluster,conf,jtURL,superGroupMember);
+
+  confirmJobTrackerJSPKillJobAsUser(cluster,conf,jtURL,mrAdminUser);
+
+  confirmJobTrackerJSPKillJobAsUser(cluster,conf,jtURL,mrAdminGroupMember);
+
+  confirmJobTrackerJSPKillJobAsUser(cluster,conf,jtURL,qAdmin);
+
+  validateKillMultipleJobs(cluster,conf,jtURL);
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+public void testWebUIAuthorizationForCommonServlets() throws Exception {
+
+  hongshuai();
+
+  Configuration conf=new Configuration();
+
+  conf.set(CommonConfigurationKeys.HADOOP_SECURITY_GROUP_MAPPING,MyGroupsProvider.class.getName());
+
+  Groups.getUserToGroupsMappingService(conf);
+
+  MyGroupsProvider.mapping.put(jobSubmitter,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(viewColleague,Arrays.asList("group2"));
+
+  MyGroupsProvider.mapping.put(modifyColleague,Arrays.asList("group1"));
+
+  MyGroupsProvider.mapping.put(unauthorizedUser,Arrays.asList("evilSociety"));
+
+  MyGroupsProvider.mapping.put(superGroupMember,Arrays.asList("superGroup"));
+
+  MyGroupsProvider.mapping.put(mrAdminGroupMember,Arrays.asList(mrAdminGroup));
+
+  MyGroupsProvider.mapping.put(viewAndModifyColleague,Arrays.asList("group3"));
+
+  MyGroupsProvider.mapping.put(qAdmin,Arrays.asList("group4"));
+
+  mrOwner=UserGroupInformation.getCurrentUser().getShortUserName();
+
+  MyGroupsProvider.mapping.put(mrOwner,Arrays.asList(new String[]{"group5","group6"}));
+
+  MyGroupsProvider.mapping.put(jobSubmitter1,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter2,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(jobSubmitter3,Arrays.asList("group7"));
+
+  MyGroupsProvider.mapping.put(mrAdminUser,Arrays.asList("group8"));
+
+  Properties props=new Properties();
+
+  props.setProperty("hadoop.http.filter.initializers",DummyFilterInitializer.class.getName());
+
+  props.setProperty(CommonConfigurationKeys.HADOOP_SECURITY_AUTHORIZATION,"true");
+
+  props.setProperty(MRConfig.MR_SUPERGROUP,"superGroup");
+
+  props.setProperty(MRConfig.MR_ADMINS,mrAdminUser + " " + mrAdminGroup);
+
+  startCluster(true,props);
+
+  validateCommonServlets(getMRCluster());
+
+  stopCluster();
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void valiateJobBlacklistedTrackerJSPAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String jobBlacklistedTrackersJSP=jtURL + "/jobblacklistedtrackers.jsp?jobid=" + jobid.toString();
+
+  validateViewJob(jobBlacklistedTrackersJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateCommonServlets(MiniMRCluster cluster) throws IOException {
+
+  int infoPort=cluster.getJobTrackerRunner().getJobTrackerInfoPort();
+
+  String jtURL="http://localhost:" + infoPort;
+
+  for (  String servlet : new String[]{"logs","stacks","logLevel"}) {
+
+    String url=jtURL + "/" + servlet;
+
+    checkAccessToCommonServlet(url);
+
+  }
+
+  String ttURL="http://localhost:" + cluster.getTaskTrackerRunner(0).getTaskTracker().getHttpPort();
+
+  for (  String servlet : new String[]{"logs","stacks","logLevel"}) {
+
+    String url=ttURL + "/" + servlet;
+
+    checkAccessToCommonServlet(url);
+
+  }
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateJobConfJSPAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String jobConfJSP=jtURL + "/jobconf.jsp?jobid=" + jobid.toString();
+
+  validateViewJob(jobConfJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateJobDetailsJSPAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String jobDetailsJSP=jtURL + "/jobdetails.jsp?jobid=" + jobid.toString();
+
+  validateViewJob(jobDetailsJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Starts a sleep job and tries to kill the job using jobdetails.jsp as (1) viewColleague (2) unauthorizedUser (3) modifyColleague (4) viewAndModifyColleague (5) mrOwner (6) deprecated superGroupMember (7) mrAdmin and (8) jobSubmitter Validates the given jsp/servlet against different user names who can(or cannot) do both view and modify on the job. (1) jobSubmitter, mrOwner, mrAdmin and deprecated superGroupMember can do both view and modify on the job. But we are not validating this in this method. Let the caller explicitly validate this, if needed. (2) user mentioned in job-view-acls and job-modify-acls can do this (3) user mentioned in job-view-acls but not in job-modify-acls cannot do this (4) user mentioned in job-modify-acls but not in job-view-acls cannot do this (5) qAdmin cannot do this because he doesn't have view access to the job (6) other unauthorized users cannot do this
+
+ * @throws Exception
+
+ */
+
+private void validateJobDetailsJSPKillJob(MiniMRCluster cluster,JobConf clusterConf,String jtURL) throws Exception {
+
+  JobConf conf=new JobConf(cluster.createJobConf());
+
+  conf.set(MRJobConfig.JOB_ACL_VIEW_JOB,viewColleague + " group3");
+
+  conf.set(MRJobConfig.JOB_ACL_MODIFY_JOB," group1,group3");
+
+  String jobTrackerJSP=jtURL + "/jobtracker.jsp?a=b";
+
+  Job job=startSleepJobAsUser(jobSubmitter,conf);
+
+  org.apache.hadoop.mapreduce.JobID jobid=job.getJobID();
+
+  getTIPId(cluster,jobid);
+
+  String url=jtURL + "/jobdetails.jsp?" + "action=kill&jobid="+ jobid.toString();
+
+  try {
+
+    assertEquals(HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,viewColleague,"POST"));
+
+    assertEquals(HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,unauthorizedUser,"POST"));
+
+    assertEquals(HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,modifyColleague,"POST"));
+
+    assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,viewAndModifyColleague,"POST"));
+
+    assertTrue("killJob using jobdetails.jsp failed for a job for which " + "user has job-view and job-modify permissions",job.isComplete());
+
+  }
+
+  finally {
+
+    if (!job.isComplete()) {
+
+      LOG.info("Killing job " + jobid + " from finally block");
+
+      assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP + "&killJobs=true&jobCheckBox=" + jobid.toString(),jobSubmitter,"GET"));
+
+    }
+
+  }
+
+  confirmJobDetailsJSPKillJobAsUser(cluster,conf,jtURL,jobTrackerJSP,jobSubmitter);
+
+  confirmJobDetailsJSPKillJobAsUser(cluster,conf,jtURL,jobTrackerJSP,mrOwner);
+
+  confirmJobDetailsJSPKillJobAsUser(cluster,conf,jtURL,jobTrackerJSP,superGroupMember);
+
+  confirmJobDetailsJSPKillJobAsUser(cluster,conf,jtURL,jobTrackerJSP,mrAdminGroupMember);
+
+  confirmJobDetailsJSPKillJobAsUser(cluster,conf,jtURL,jobTrackerJSP,mrAdminUser);
+
+  confirmJobDetailsJSPKillJobAsUser(cluster,conf,jtURL,jobTrackerJSP,qAdmin);
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateJobFailuresJSPAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String jobFailuresJSP=jtURL + "/jobfailures.jsp?jobid=" + jobid.toString();
+
+  validateViewJob(jobFailuresJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateJobTasksJSPAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String jobTasksJSP=jtURL + "/jobtasks.jsp?jobid=" + jobid.toString()+ "&type=map&pagenum=1&state=running";
+
+  validateViewJob(jobTasksJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateJobTrackerJSPAccess(String jtURL) throws IOException {
+
+  String jobTrackerJSP=jtURL + "/jobtracker.jsp?a=b";
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,jobSubmitter,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,viewColleague,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,unauthorizedUser,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,modifyColleague,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,viewAndModifyColleague,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,mrOwner,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,qAdmin,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,superGroupMember,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,mrAdminUser,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSP,mrAdminGroupMember,"GET"));
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateJobTrackerJSPKillJobAction(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String jobTrackerJSP=jtURL + "/jobtracker.jsp?a=b";
+
+  String jobTrackerJSPKillJobAction=jobTrackerJSP + "&killJobs=true&jobCheckBox=" + jobid.toString();
+
+  validateModifyJob(jobTrackerJSPKillJobAction,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateJobTrackerJSPSetPriorityAction(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String jobTrackerJSP=jtURL + "/jobtracker.jsp?a=b";
+
+  String jobTrackerJSPSetJobPriorityAction=jobTrackerJSP + "&changeJobPriority=true&setJobPriority=" + "HIGH"+ "&jobCheckBox="+ jobid.toString();
+
+  validateModifyJob(jobTrackerJSPSetJobPriorityAction,"GET");
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSPSetJobPriorityAction,jobSubmitter,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSPSetJobPriorityAction,superGroupMember,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSPSetJobPriorityAction,mrAdminUser,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSPSetJobPriorityAction,mrAdminGroupMember,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSPSetJobPriorityAction,qAdmin,"GET"));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(jobTrackerJSPSetJobPriorityAction,mrOwner,"GET"));
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Make sure that multiple jobs get killed using jobtracker.jsp url when user has modify access on only some of those jobs.
+
+ * @param cluster
+
+ * @param conf
+
+ * @param jtURL
+
+ * @param user
+
+ * @throws Exception
+
+ */
+
+private void validateKillMultipleJobs(MiniMRCluster cluster,JobConf conf,String jtURL) throws Exception {
+
+  String jobTrackerJSP=jtURL + "/jobtracker.jsp?a=b";
+
+  String url=jobTrackerJSP + "&killJobs=true";
+
+  conf.set(MRJobConfig.JOB_ACL_VIEW_JOB," ");
+
+  conf.set(MRJobConfig.JOB_ACL_MODIFY_JOB," ");
+
+  Job job1=startSleepJobAsUser(jobSubmitter,conf);
+
+  org.apache.hadoop.mapreduce.JobID jobid=job1.getJobID();
+
+  getTIPId(cluster,jobid);
+
+  url=url.concat("&jobCheckBox=" + jobid.toString());
+
+  Job job2=startSleepJobAsUser(jobSubmitter1,conf);
+
+  jobid=job2.getJobID();
+
+  getTIPId(cluster,jobid);
+
+  url=url.concat("&jobCheckBox=" + jobid.toString());
+
+  Job job3=startSleepJobAsUser(jobSubmitter2,conf);
+
+  jobid=job3.getJobID();
+
+  getTIPId(cluster,jobid);
+
+  url=url.concat("&jobCheckBox=" + jobid.toString());
+
+  conf.set(MRJobConfig.JOB_ACL_MODIFY_JOB,jobSubmitter1);
+
+  Job job4=startSleepJobAsUser(jobSubmitter3,conf);
+
+  jobid=job4.getJobID();
+
+  getTIPId(cluster,jobid);
+
+  url=url.concat("&jobCheckBox=" + jobid.toString());
+
+  try {
+
+    assertEquals(HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,jobSubmitter1,"POST"));
+
+    assertFalse("killJob succeeded for a job for which user doesnot " + " have job-modify permission",job1.isComplete());
+
+    assertFalse("killJob succeeded for a job for which user doesnot " + " have job-modify permission",job3.isComplete());
+
+    assertTrue("killJob failed for a job for which user has " + "job-modify permission",job2.isComplete());
+
+    assertTrue("killJob failed for a job for which user has " + "job-modify permission",job4.isComplete());
+
+  }
+
+  finally {
+
+    assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,mrOwner,"GET"));
+
+  }
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Validates the given jsp/servlet against different user names who can(or cannot) modify the job. (1) jobSubmitter, mrOwner, qAdmin, mrAdmin and deprecated superGroupMember can modify the job. But we are not validating this in this method. Let the caller explicitly validate this, if needed. (2) user mentioned in job-view-acl but not in job-modify-acl cannot modify the job (3) user mentioned in job-modify-acl (irrespective of job-view-acl) can modify the job (4) other unauthorized users cannot modify the job
+
+ */
+
+private void validateModifyJob(String url,String method) throws IOException {
+
+  assertEquals(HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,viewColleague,method));
+
+  assertEquals(HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,unauthorizedUser,method));
+
+  assertEquals(HttpURLConnection.HTTP_OK,getHttpStatusCode(url,modifyColleague,method));
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateTaskDetailsJSPAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL,TaskID tipId) throws IOException {
+
+  String taskDetailsJSP=jtURL + "/taskdetails.jsp?jobid=" + jobid.toString()+ "&tipid="+ tipId;
+
+  validateViewJob(taskDetailsJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateTaskGraphServletAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL) throws IOException {
+
+  String taskGraphServlet=jtURL + "/taskgraph?type=map&jobid=" + jobid.toString();
+
+  validateViewJob(taskGraphServlet,"GET");
+
+  taskGraphServlet=jtURL + "/taskgraph?type=reduce&jobid=" + jobid.toString();
+
+  validateViewJob(taskGraphServlet,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+private void validateTaskStatsJSPAccess(org.apache.hadoop.mapreduce.JobID jobid,String jtURL,TaskID tipId) throws IOException {
+
+  String taskStatsJSP=jtURL + "/taskstats.jsp?jobid=" + jobid.toString()+ "&tipid="+ tipId;
+
+  validateViewJob(taskStatsJSP,"GET");
+
+}
+
+Location: TestWebUIAuthorization.java
+
+Content: 
+
+/** 
+
+ * Validates the given jsp/servlet against different user names who can(or cannot) view the job. (1) jobSubmitter can view the job (2) mrAdmin and deprecated superGroupMember can view any job (3) mrOwner can view any job (4) qAdmins of the queue to which job is submitted to can view any job in that queue. (5) user mentioned in job-view-acl should be able to view the job irrespective of job-modify-acl. (6) user mentioned in job-modify-acl but not in job-view-acl cannot view the job (7) other unauthorized users cannot view the job
+
+ */
+
+private void validateViewJob(String url,String method) throws IOException {
+
+  assertEquals("Incorrect return code for job submitter " + jobSubmitter,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,jobSubmitter,method));
+
+  assertEquals("Incorrect return code for supergroup-member " + superGroupMember,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,superGroupMember,method));
+
+  assertEquals("Incorrect return code for admin user " + mrAdminUser,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,mrAdminUser,method));
+
+  assertEquals("Incorrect return code for admingroup-member " + mrAdminGroupMember,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,mrAdminGroupMember,method));
+
+  assertEquals("Incorrect return code for MR-owner " + mrOwner,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,mrOwner,method));
+
+  assertEquals("Incorrect return code for queue admin " + qAdmin,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,qAdmin,method));
+
+  assertEquals("Incorrect return code for user in job-view-acl " + viewColleague,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,viewColleague,method));
+
+  assertEquals("Incorrect return code for user in job-view-acl and " + "job-modify-acl " + viewAndModifyColleague,HttpURLConnection.HTTP_OK,getHttpStatusCode(url,viewAndModifyColleague,method));
+
+  assertEquals("Incorrect return code for user in job-modify-acl " + modifyColleague,HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,modifyColleague,method));
+
+  assertEquals("Incorrect return code for unauthorizedUser " + unauthorizedUser,HttpURLConnection.HTTP_UNAUTHORIZED,getHttpStatusCode(url,unauthorizedUser,method));
+
+}
+

@@ -1,0 +1,270 @@
+Location: TestJobInProgressListener.java
+
+Content: 
+
+private void testFailedJob(JobConf job,MyListener myListener) throws IOException {
+
+  LOG.info("Testing job-fail");
+
+  Path inDir=new Path(TEST_ROOT_DIR + "/jiplistenerfailjob/input");
+
+  Path outDir=new Path(TEST_ROOT_DIR + "/jiplistenerfailjob/output");
+
+  job.setNumMapTasks(1);
+
+  job.setNumReduceTasks(0);
+
+  job.setMaxMapAttempts(1);
+
+  RunningJob rJob=UtilsForTests.runJobFail(job,inDir,outDir);
+
+  JobID id=rJob.getID();
+
+  assertFalse("Missing event notification on failing a running job",myListener.contains(id));
+
+  assertEquals("Job failed!",JobStatus.FAILED,rJob.getJobState());
+
+}
+
+Location: TestJobInProgressListener.java
+
+Content: 
+
+/** 
+
+ * Check the queue status upon - failed job - killed job - successful job
+
+ */
+
+public void testJobCompletion() throws Exception {
+
+  MyListener mainListener=new MyListener();
+
+  jobtracker.addJobInProgressListener(mainListener);
+
+  myScheduler.stopInitializer();
+
+  testQueuedJobKill(conf,mainListener);
+
+  myScheduler.startInitializer();
+
+  testFailedJob(conf,mainListener);
+
+  testKilledJob(conf,mainListener);
+
+  testSuccessfulJob(conf,mainListener);
+
+}
+
+Location: TestJobInProgressListener.java
+
+Content: 
+
+/** 
+
+ * This test case tests if external updates to JIP do not result into  undesirable effects Test is as follows - submit 2 jobs of normal priority. job1 is a waiting job which waits and blocks the cluster - change one parameter of job2 such that the job bumps up in the queue - check if the queue looks ok
+
+ */
+
+public void testJobQueueChanges() throws IOException {
+
+  LOG.info("Testing job queue changes");
+
+  myScheduler.stopInitializer();
+
+  JobQueueJobInProgressListener myListener=new JobQueueJobInProgressListener();
+
+  jobtracker.addJobInProgressListener(myListener);
+
+  Path inDir=new Path(testDir,"input");
+
+  Path outputDir1=new Path(testDir,"output1");
+
+  Path outputDir2=new Path(testDir,"output2");
+
+  RunningJob rJob1=UtilsForTests.runJob(conf,inDir,outputDir1,1,0);
+
+  LOG.info("Running job " + rJob1.getID().toString());
+
+  RunningJob rJob2=UtilsForTests.runJob(conf,inDir,outputDir2,1,0);
+
+  LOG.info("Running job " + rJob2.getID().toString());
+
+  LOG.info("Testing job priority changes");
+
+  LOG.info("Increasing job2's priority to HIGH");
+
+  rJob2.setJobPriority("HIGH");
+
+  assertTrue("Priority change garbles the queue",myListener.getJobQueue().size() == 2);
+
+  JobInProgress[] queue=myListener.getJobQueue().toArray(new JobInProgress[0]);
+
+  assertTrue("Priority change failed to bump up job2 in the queue",queue[0].getJobID().equals(rJob2.getID()));
+
+  assertTrue("Priority change failed to bump down job1 in the queue",queue[1].getJobID().equals(rJob1.getID()));
+
+  assertEquals("Priority change has garbled the queue",2,queue.length);
+
+  LOG.info("Testing job start-time changes");
+
+  LOG.info("Increasing job2's priority to NORMAL");
+
+  rJob2.setJobPriority("NORMAL");
+
+  JobInProgress jip2=jobtracker.getJob(rJob2.getID());
+
+  JobInProgress jip1=jobtracker.getJob(rJob1.getID());
+
+  JobStatus prevStatus=(JobStatus)jip2.getStatus().clone();
+
+  jip2.startTime=jip1.startTime - 1;
+
+  jip2.status.setStartTime(jip2.startTime);
+
+  JobStatus newStatus=(JobStatus)jip2.getStatus().clone();
+
+  LOG.info("Updating the listener about job2's start-time change");
+
+  JobStatusChangeEvent event=new JobStatusChangeEvent(jip2,EventType.START_TIME_CHANGED,prevStatus,newStatus);
+
+  myListener.jobUpdated(event);
+
+  assertTrue("Start time change garbles the queue",myListener.getJobQueue().size() == 2);
+
+  queue=myListener.getJobQueue().toArray(new JobInProgress[0]);
+
+  assertTrue("Start time change failed to bump up job2 in the queue",queue[0].getJobID().equals(rJob2.getID()));
+
+  assertTrue("Start time change failed to bump down job1 in the queue",queue[1].getJobID().equals(rJob1.getID()));
+
+  assertEquals("Start time change has garbled the queue",2,queue.length);
+
+}
+
+Location: TestJobInProgressListener.java
+
+Content: 
+
+private void testKilledJob(JobConf job,MyListener myListener) throws IOException {
+
+  LOG.info("Testing job-kill");
+
+  Path inDir=new Path(TEST_ROOT_DIR + "/jiplistenerkilljob/input");
+
+  Path outDir=new Path(TEST_ROOT_DIR + "/jiplistenerkilljob/output");
+
+  job.setNumMapTasks(1);
+
+  job.setNumReduceTasks(0);
+
+  RunningJob rJob=UtilsForTests.runJobKill(job,inDir,outDir);
+
+  JobID id=rJob.getID();
+
+  assertFalse("Missing event notification on killing a running job",myListener.contains(id));
+
+  assertEquals("Job failed!",JobStatus.KILLED,rJob.getJobState());
+
+}
+
+Location: TestJobInProgressListener.java
+
+Content: 
+
+private void testQueuedJobKill(JobConf conf,MyListener myListener) throws IOException {
+
+  LOG.info("Testing queued-job-kill");
+
+  Path inDir=new Path(TEST_ROOT_DIR + "/jiplistenerqueuedjob/input");
+
+  Path outDir=new Path(TEST_ROOT_DIR + "/jiplistener1ueuedjob/output");
+
+  conf.setMapperClass(IdentityMapper.class);
+
+  conf.setReducerClass(IdentityReducer.class);
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(0);
+
+  RunningJob rJob=UtilsForTests.runJob(conf,inDir,outDir);
+
+  JobID id=rJob.getID();
+
+  LOG.info("Job : " + id.toString() + " submitted");
+
+  assertTrue("Missing event notification on submiting a job",myListener.contains(id,true));
+
+  LOG.info("Killing job : " + id.toString());
+
+  rJob.killJob();
+
+  assertEquals("Job status doesnt reflect the kill-job action",JobStatus.KILLED,rJob.getJobState());
+
+  assertFalse("Missing event notification on killing a waiting job",myListener.contains(id,true));
+
+}
+
+Location: TestJobInProgressListener.java
+
+Content: 
+
+private void testSuccessfulJob(JobConf job,MyListener myListener) throws Exception {
+
+  LOG.info("Testing job-success");
+
+  Path inDir=new Path(TEST_ROOT_DIR + "/jiplistenerjob/input");
+
+  Path outDir=new Path(TEST_ROOT_DIR + "/jiplistenerjob/output");
+
+  job.setNumMapTasks(1);
+
+  job.setNumReduceTasks(0);
+
+  RunningJob rJob=UtilsForTests.runJobSucceed(job,inDir,outDir);
+
+  rJob.waitForCompletion();
+
+  assertFalse("Missing event notification for a successful job",myListener.contains(rJob.getID()));
+
+  assertEquals("Job failed!",JobStatus.SUCCEEDED,rJob.getJobState());
+
+  LOG.info("Testing job with no task job with setup and cleanup");
+
+  job.setNumMapTasks(0);
+
+  job.setNumReduceTasks(0);
+
+  outDir=new Path(TEST_ROOT_DIR + "/jiplistenerjob/output-no-tasks");
+
+  rJob=UtilsForTests.runJobSucceed(job,inDir,outDir);
+
+  rJob.waitForCompletion();
+
+  assertFalse("Missing event notification for a successful job with no tasks",myListener.contains(rJob.getID(),true));
+
+  assertEquals("Job failed!",JobStatus.SUCCEEDED,rJob.getJobState());
+
+  LOG.info("Testing job with no-set-cleanup no task");
+
+  outDir=new Path(TEST_ROOT_DIR + "/jiplistenerjob/output-no-tasks-no-set");
+
+  Job j=MapReduceTestUtil.createJob(mr.createJobConf(),inDir,outDir,0,0);
+
+  j.setJobSetupCleanupNeeded(false);
+
+  j.setOutputFormatClass(TestNoJobSetupCleanup.MyOutputFormat.class);
+
+  j.submit();
+
+  j.waitForCompletion(true);
+
+  JobID id=JobID.downgrade(j.getJobID());
+
+  assertFalse("Missing event notification on no-set-cleanup no task job",myListener.contains(id,true));
+
+  assertEquals("Job status doesnt reflect success",JobStatus.SUCCEEDED,rJob.getJobState());
+
+}
+

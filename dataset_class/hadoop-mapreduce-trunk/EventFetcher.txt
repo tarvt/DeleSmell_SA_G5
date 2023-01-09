@@ -1,0 +1,134 @@
+Location: EventFetcher.java
+
+Content: 
+
+public EventFetcher(TaskAttemptID reduce,TaskUmbilicalProtocol umbilical,ShuffleScheduler<K,V> scheduler,ExceptionReporter reporter){
+
+  setName("EventFetcher for fetching Map Completion Events");
+
+  setDaemon(true);
+
+  this.reduce=reduce;
+
+  this.umbilical=umbilical;
+
+  this.scheduler=scheduler;
+
+  exceptionReporter=reporter;
+
+}
+
+Location: EventFetcher.java
+
+Content: 
+
+private URI getBaseURI(String url){
+
+  StringBuffer baseUrl=new StringBuffer(url);
+
+  if (!url.endsWith("/")) {
+
+    baseUrl.append("/");
+
+  }
+
+  baseUrl.append("mapOutput?job=");
+
+  baseUrl.append(reduce.getJobID());
+
+  baseUrl.append("&reduce=");
+
+  baseUrl.append(reduce.getTaskID().getId());
+
+  baseUrl.append("&map=");
+
+  URI u=URI.create(baseUrl.toString());
+
+  return u;
+
+}
+
+Location: EventFetcher.java
+
+Content: 
+
+/** 
+
+ * Queries the  {@link TaskTracker} for a set of map-completion events from a given event ID.
+
+ * @throws IOException
+
+ */
+
+private int getMapCompletionEvents() throws IOException {
+
+  int numNewMaps=0;
+
+  MapTaskCompletionEventsUpdate update=umbilical.getMapCompletionEvents((org.apache.hadoop.mapred.JobID)reduce.getJobID(),fromEventId,MAX_EVENTS_TO_FETCH,(org.apache.hadoop.mapred.TaskAttemptID)reduce);
+
+  TaskCompletionEvent events[]=update.getMapTaskCompletionEvents();
+
+  LOG.debug("Got " + events.length + " map completion events from "+ fromEventId);
+
+  if (update.shouldReset()) {
+
+    fromEventId=0;
+
+    scheduler.resetKnownMaps();
+
+  }
+
+  fromEventId+=events.length;
+
+  for (  TaskCompletionEvent event : events) {
+
+switch (event.getTaskStatus()) {
+
+case SUCCEEDED:
+
+      URI u=getBaseURI(event.getTaskTrackerHttp());
+
+    scheduler.addKnownMapOutput(u.getHost() + ":" + u.getPort(),u.toString(),event.getTaskAttemptId());
+
+  numNewMaps++;
+
+int duration=event.getTaskRunTime();
+
+if (duration > maxMapRuntime) {
+
+maxMapRuntime=duration;
+
+scheduler.informMaxMapRunTime(maxMapRuntime);
+
+}
+
+break;
+
+case FAILED:
+
+case KILLED:
+
+case OBSOLETE:
+
+scheduler.obsoleteMapOutput(event.getTaskAttemptId());
+
+LOG.info("Ignoring obsolete output of " + event.getTaskStatus() + " map-task: '"+ event.getTaskAttemptId()+ "'");
+
+break;
+
+case TIPFAILED:
+
+scheduler.tipFailed(event.getTaskAttemptId().getTaskID());
+
+LOG.info("Ignoring output of failed map TIP: '" + event.getTaskAttemptId() + "'");
+
+break;
+
+}
+
+}
+
+return numNewMaps;
+
+}
+

@@ -1,0 +1,158 @@
+Location: DomainStatistics.java
+
+Content: 
+
+@Override public int run(String[] args) throws Exception {
+
+  if (args.length < 3) {
+
+    System.err.println("Usage: DomainStatistics inputDirs outDir mode [numOfReducer]");
+
+    System.err.println("\tinputDirs\tComma separated list of crawldb input directories");
+
+    System.err.println("\t\t\tE.g.: crawl/crawldb/");
+
+    System.err.println("\toutDir\t\tOutput directory where results should be dumped");
+
+    System.err.println("\tmode\t\tSet statistics gathering mode");
+
+    System.err.println("\t\t\t\thost\tGather statistics by host");
+
+    System.err.println("\t\t\t\tdomain\tGather statistics by domain");
+
+    System.err.println("\t\t\t\tsuffix\tGather statistics by suffix");
+
+    System.err.println("\t\t\t\ttld\tGather statistics by top level directory");
+
+    System.err.println("\t[numOfReducers]\tOptional number of reduce jobs to use. Defaults to 1.");
+
+    return 1;
+
+  }
+
+  String inputDir=args[0];
+
+  String outputDir=args[1];
+
+  int numOfReducers=1;
+
+  if (args.length > 3) {
+
+    numOfReducers=Integer.parseInt(args[3]);
+
+  }
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("DomainStatistics: starting at " + sdf.format(start));
+
+  int mode=0;
+
+  String jobName="DomainStatistics";
+
+  if (args[2].equals("host")) {
+
+    jobName="Host statistics";
+
+    mode=MODE_HOST;
+
+  }
+
+ else   if (args[2].equals("domain")) {
+
+    jobName="Domain statistics";
+
+    mode=MODE_DOMAIN;
+
+  }
+
+ else   if (args[2].equals("suffix")) {
+
+    jobName="Suffix statistics";
+
+    mode=MODE_SUFFIX;
+
+  }
+
+ else   if (args[2].equals("tld")) {
+
+    jobName="TLD statistics";
+
+    mode=MODE_TLD;
+
+  }
+
+  Configuration conf=getConf();
+
+  conf.setInt("domain.statistics.mode",mode);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  Job job=Job.getInstance(conf,jobName);
+
+  job.setJarByClass(DomainStatistics.class);
+
+  String[] inputDirsSpecs=inputDir.split(",");
+
+  for (int i=0; i < inputDirsSpecs.length; i++) {
+
+    FileInputFormat.addInputPath(job,new Path(inputDirsSpecs[i],"current"));
+
+  }
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  FileOutputFormat.setOutputPath(job,new Path(outputDir));
+
+  job.setOutputFormatClass(TextOutputFormat.class);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(LongWritable.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(LongWritable.class);
+
+  job.setMapperClass(DomainStatisticsMapper.class);
+
+  job.setReducerClass(DomainStatisticsReducer.class);
+
+  job.setCombinerClass(DomainStatisticsCombiner.class);
+
+  job.setNumReduceTasks(numOfReducers);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Injector job did not succeed, job status: " + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error(jobName + " job failed",e);
+
+    throw e;
+
+  }
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("DomainStatistics: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+  return 0;
+
+}
+

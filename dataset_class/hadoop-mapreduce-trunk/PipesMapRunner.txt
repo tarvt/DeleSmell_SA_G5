@@ -1,0 +1,86 @@
+Location: PipesMapRunner.java
+
+Content: 
+
+/** 
+
+ * Run the map task.
+
+ * @param input the set of inputs
+
+ * @param output the object to collect the outputs of the map
+
+ * @param reporter the object to update with status
+
+ */
+
+@SuppressWarnings("unchecked") public void run(RecordReader<K1,V1> input,OutputCollector<K2,V2> output,Reporter reporter) throws IOException {
+
+  Application<K1,V1,K2,V2> application=null;
+
+  try {
+
+    RecordReader<FloatWritable,NullWritable> fakeInput=(!Submitter.getIsJavaRecordReader(job) && !Submitter.getIsJavaMapper(job)) ? (RecordReader<FloatWritable,NullWritable>)input : null;
+
+    application=new Application<K1,V1,K2,V2>(job,fakeInput,output,reporter,(Class<? extends K2>)job.getOutputKeyClass(),(Class<? extends V2>)job.getOutputValueClass());
+
+  }
+
+ catch (  InterruptedException ie) {
+
+    throw new RuntimeException("interrupted",ie);
+
+  }
+
+  DownwardProtocol<K1,V1> downlink=application.getDownlink();
+
+  boolean isJavaInput=Submitter.getIsJavaRecordReader(job);
+
+  downlink.runMap(reporter.getInputSplit(),job.getNumReduceTasks(),isJavaInput);
+
+  boolean skipping=job.getBoolean(MRJobConfig.SKIP_RECORDS,false);
+
+  try {
+
+    if (isJavaInput) {
+
+      K1 key=input.createKey();
+
+      V1 value=input.createValue();
+
+      downlink.setInputTypes(key.getClass().getName(),value.getClass().getName());
+
+      while (input.next(key,value)) {
+
+        downlink.mapItem(key,value);
+
+        if (skipping) {
+
+          downlink.flush();
+
+        }
+
+      }
+
+      downlink.endOfInput();
+
+    }
+
+    application.waitForFinish();
+
+  }
+
+ catch (  Throwable t) {
+
+    application.abort(t);
+
+  }
+
+ finally {
+
+    application.cleanup();
+
+  }
+
+}
+

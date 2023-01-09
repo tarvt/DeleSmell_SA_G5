@@ -1,0 +1,180 @@
+Location: XMLDTDLoader.java
+
+Content: 
+
+protected XMLDTDScannerImpl createDTDScanner(SymbolTable symbolTable,XMLErrorReporter errorReporter,XMLEntityManager entityManager){
+
+  return new XMLDTDScannerImpl(symbolTable,errorReporter,entityManager);
+
+}
+
+Location: XMLDTDLoader.java
+
+Content: 
+
+protected short getScannerVersion(){
+
+  return Constants.XML_VERSION_1_0;
+
+}
+
+Location: XMLDTDLoader.java
+
+Content: 
+
+/** 
+
+ * Parse a DTD internal and/or external subset and insert the content into the existing DTD grammar owned by the given DTDValidator.
+
+ */
+
+public void loadGrammarWithContext(XMLDTDValidator validator,String rootName,String publicId,String systemId,String baseSystemId,String internalSubset) throws IOException, XNIException {
+
+  final DTDGrammarBucket grammarBucket=validator.getGrammarBucket();
+
+  final DTDGrammar activeGrammar=grammarBucket.getActiveGrammar();
+
+  if (activeGrammar != null && !activeGrammar.isImmutable()) {
+
+    fGrammarBucket=grammarBucket;
+
+    fEntityManager.setScannerVersion(getScannerVersion());
+
+    reset();
+
+    try {
+
+      if (internalSubset != null) {
+
+        StringBuffer buffer=new StringBuffer(internalSubset.length() + 2);
+
+        buffer.append(internalSubset).append("]>");
+
+        XMLInputSource is=new XMLInputSource(null,baseSystemId,null,new StringReader(buffer.toString()),null);
+
+        fEntityManager.startDocumentEntity(is);
+
+        fDTDScanner.scanDTDInternalSubset(true,false,systemId != null);
+
+      }
+
+      if (systemId != null) {
+
+        XMLDTDDescription desc=new XMLDTDDescription(publicId,systemId,baseSystemId,null,rootName);
+
+        XMLInputSource source=fEntityManager.resolveEntity(desc);
+
+        fDTDScanner.setInputSource(source);
+
+        fDTDScanner.scanDTDExternalSubset(true);
+
+      }
+
+    }
+
+ catch (    EOFException e) {
+
+    }
+
+ finally {
+
+      fEntityManager.closeReaders();
+
+    }
+
+  }
+
+}
+
+Location: XMLDTDLoader.java
+
+Content: 
+
+/** 
+
+ * Deny default construction; we need a SymtolTable! 
+
+ */
+
+public XMLDTDLoader(){
+
+  this(new SymbolTable());
+
+}
+
+Location: XMLDTDLoader.java
+
+Content: 
+
+public XMLDTDLoader(SymbolTable symbolTable){
+
+  this(symbolTable,null);
+
+}
+
+Location: XMLDTDLoader.java
+
+Content: 
+
+public XMLDTDLoader(SymbolTable symbolTable,XMLGrammarPool grammarPool){
+
+  this(symbolTable,grammarPool,null,new XMLEntityManager());
+
+}
+
+Location: XMLDTDLoader.java
+
+Content: 
+
+XMLDTDLoader(SymbolTable symbolTable,XMLGrammarPool grammarPool,XMLErrorReporter errorReporter,XMLEntityResolver entityResolver){
+
+  fSymbolTable=symbolTable;
+
+  fGrammarPool=grammarPool;
+
+  if (errorReporter == null) {
+
+    errorReporter=new XMLErrorReporter();
+
+    errorReporter.setProperty(ERROR_HANDLER,new DefaultErrorHandler());
+
+  }
+
+  fErrorReporter=errorReporter;
+
+  if (fErrorReporter.getMessageFormatter(XMLMessageFormatter.XML_DOMAIN) == null) {
+
+    XMLMessageFormatter xmft=new XMLMessageFormatter();
+
+    fErrorReporter.putMessageFormatter(XMLMessageFormatter.XML_DOMAIN,xmft);
+
+    fErrorReporter.putMessageFormatter(XMLMessageFormatter.XMLNS_DOMAIN,xmft);
+
+  }
+
+  fEntityResolver=entityResolver;
+
+  if (fEntityResolver instanceof XMLEntityManager) {
+
+    fEntityManager=(XMLEntityManager)fEntityResolver;
+
+  }
+
+ else {
+
+    fEntityManager=new XMLEntityManager();
+
+  }
+
+  fEntityManager.setProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.ERROR_REPORTER_PROPERTY,errorReporter);
+
+  fDTDScanner=createDTDScanner(fSymbolTable,fErrorReporter,fEntityManager);
+
+  fDTDScanner.setDTDHandler(this);
+
+  fDTDScanner.setDTDContentModelHandler(this);
+
+  reset();
+
+}
+

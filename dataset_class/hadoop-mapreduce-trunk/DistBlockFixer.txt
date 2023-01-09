@@ -1,0 +1,472 @@
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * checks for corrupt blocks and fixes them (if any)
+
+ */
+
+private void checkAndFixBlocks(long startTime) throws IOException, InterruptedException, ClassNotFoundException {
+
+  hongshuai();
+
+  Iterator<Job> jobIter=jobIndex.keySet().iterator();
+
+  while (jobIter.hasNext()) {
+
+    Job job=jobIter.next();
+
+    try {
+
+      if (job.isComplete()) {
+
+        long filesSucceeded=job.getCounters().findCounter(Counter.FILES_SUCCEEDED).getValue();
+
+        long filesFailed=job.getCounters().findCounter(Counter.FILES_FAILED).getValue();
+
+        long filesNoAction=job.getCounters().findCounter(Counter.FILES_NOACTION).getValue();
+
+        int files=jobIndex.get(job).size();
+
+        if (job.isSuccessful() && (filesSucceeded + filesFailed + filesNoAction == ((long)files))) {
+
+          succeedJob(job,filesSucceeded,filesFailed);
+
+        }
+
+ else {
+
+          failJob(job);
+
+        }
+
+        jobIter.remove();
+
+      }
+
+ else {
+
+        LOG.info("job " + job.getJobName() + " still running");
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.error(StringUtils.stringifyException(e));
+
+      failJob(job);
+
+      try {
+
+        job.killJob();
+
+      }
+
+ catch (      Exception ee) {
+
+        LOG.error(StringUtils.stringifyException(ee));
+
+      }
+
+      jobIter.remove();
+
+    }
+
+  }
+
+  purgeFileIndex();
+
+  if (pendingFiles >= maxPendingFiles) {
+
+    return;
+
+  }
+
+  List<Path> corruptFiles=getCorruptFiles();
+
+  filterUnfixableSourceFiles(corruptFiles.iterator());
+
+  String startTimeStr=dateFormat.format(new Date(startTime));
+
+  LOG.info("found " + corruptFiles.size() + " corrupt files");
+
+  if (corruptFiles.size() > 0) {
+
+    String jobName="blockfixer." + startTime;
+
+    startJob(jobName,corruptFiles);
+
+  }
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * creates the input file (containing the names of the files to be fixed
+
+ */
+
+private List<Path> createInputFile(String jobName,Path inDir,List<Path> corruptFiles) throws IOException {
+
+  Path file=new Path(inDir,jobName + IN_FILE_SUFFIX);
+
+  FileSystem fs=file.getFileSystem(getConf());
+
+  SequenceFile.Writer fileOut=SequenceFile.createWriter(fs,getConf(),file,LongWritable.class,Text.class);
+
+  long index=0L;
+
+  List<Path> filesAdded=new LinkedList<Path>();
+
+  for (  Path corruptFile : corruptFiles) {
+
+    if (pendingFiles >= maxPendingFiles) {
+
+      break;
+
+    }
+
+    String corruptFileName=corruptFile.toString();
+
+    fileOut.append(new LongWritable(index++),new Text(corruptFileName));
+
+    filesAdded.add(corruptFile);
+
+    pendingFiles++;
+
+    if (index % filesPerTask == 0) {
+
+      fileOut.sync();
+
+    }
+
+  }
+
+  fileOut.close();
+
+  return filesAdded;
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+public DistBlockFixer(Configuration conf){
+
+  super(conf);
+
+  filesPerTask=DistBlockFixer.filesPerTask(getConf());
+
+  maxPendingFiles=DistBlockFixer.maxPendingFiles(getConf());
+
+  pendingFiles=0L;
+
+  poolName=conf.get(BLOCKFIX_POOL);
+
+  lastCheckTime=System.currentTimeMillis() - blockFixInterval;
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * Handle a failed job.
+
+ */
+
+private void failJob(Job job) throws IOException {
+
+  LOG.error("DistBlockFixer job " + job.getJobID() + "("+ job.getJobName()+ ") finished (failed)");
+
+  for (  CorruptFileInfo fileInfo : jobIndex.get(job)) {
+
+    fileInfo.fail();
+
+  }
+
+  numJobsRunning--;
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * determines how many files to fix in a single task
+
+ */
+
+protected static long filesPerTask(Configuration conf){
+
+  return conf.getLong(BLOCKFIX_FILES_PER_TASK,DEFAULT_BLOCKFIX_FILES_PER_TASK);
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * determines which files have failed for a given job
+
+ */
+
+private Set<String> getFailedFiles(Job job) throws IOException {
+
+  Set<String> failedFiles=new HashSet<String>();
+
+  Path outDir=SequenceFileOutputFormat.getOutputPath(job);
+
+  FileSystem fs=outDir.getFileSystem(getConf());
+
+  if (!fs.getFileStatus(outDir).isDir()) {
+
+    throw new IOException(outDir.toString() + " is not a directory");
+
+  }
+
+  FileStatus[] files=fs.listStatus(outDir);
+
+  for (  FileStatus f : files) {
+
+    Path fPath=f.getPath();
+
+    if ((!f.isDir()) && (fPath.getName().startsWith(PART_PREFIX))) {
+
+      LOG.info("opening " + fPath.toString());
+
+      SequenceFile.Reader reader=new SequenceFile.Reader(fs,fPath,getConf());
+
+      Text key=new Text();
+
+      Text value=new Text();
+
+      while (reader.next(key,value)) {
+
+        failedFiles.add(key.toString());
+
+      }
+
+      reader.close();
+
+    }
+
+  }
+
+  return failedFiles;
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * inserts new job into file index and job index
+
+ */
+
+private void insertJob(Job job,List<Path> corruptFiles){
+
+  List<CorruptFileInfo> fileInfos=new LinkedList<CorruptFileInfo>();
+
+  for (  Path file : corruptFiles) {
+
+    CorruptFileInfo fileInfo=new CorruptFileInfo(file,job);
+
+    fileInfos.add(fileInfo);
+
+    fileIndex.put(file.toString(),fileInfo);
+
+  }
+
+  jobIndex.put(job,fileInfos);
+
+  numJobsRunning++;
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * returns the number of map reduce jobs running
+
+ */
+
+public int jobsRunning(){
+
+  return numJobsRunning;
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * determines how many files to fix simultaneously
+
+ */
+
+protected static long maxPendingFiles(Configuration conf){
+
+  return conf.getLong(BLOCKFIX_MAX_PENDING_FILES,DEFAULT_BLOCKFIX_MAX_PENDING_FILES);
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * purge expired jobs from the file index
+
+ */
+
+private void purgeFileIndex(){
+
+  Iterator<String> fileIter=fileIndex.keySet().iterator();
+
+  while (fileIter.hasNext()) {
+
+    String file=fileIter.next();
+
+    if (fileIndex.get(file).isExpired()) {
+
+      fileIter.remove();
+
+    }
+
+  }
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * creates and submits a job, updates file index and job index
+
+ */
+
+private Job startJob(String jobName,List<Path> corruptFiles) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Path inDir=new Path(WORK_DIR_PREFIX + "/in/" + jobName);
+
+  Path outDir=new Path(WORK_DIR_PREFIX + "/out/" + jobName);
+
+  List<Path> filesInJob=createInputFile(jobName,inDir,corruptFiles);
+
+  Configuration jobConf=new Configuration(getConf());
+
+  if (poolName != null) {
+
+    jobConf.set(MAPRED_POOL,poolName);
+
+  }
+
+  Job job=new Job(jobConf,jobName);
+
+  job.setJarByClass(getClass());
+
+  job.setMapperClass(DistBlockFixerMapper.class);
+
+  job.setNumReduceTasks(0);
+
+  job.setInputFormatClass(DistBlockFixerInputFormat.class);
+
+  job.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  DistBlockFixerInputFormat.setInputPaths(job,inDir);
+
+  SequenceFileOutputFormat.setOutputPath(job,outDir);
+
+  job.submit();
+
+  LOG.info("DistBlockFixer job " + job.getJobID() + "("+ job.getJobName()+ ") started");
+
+  insertJob(job,filesInJob);
+
+  return job;
+
+}
+
+Location: DistBlockFixer.java
+
+Content: 
+
+/** 
+
+ * Handle a successful job.
+
+ */
+
+private void succeedJob(Job job,long filesSucceeded,long filesFailed) throws IOException {
+
+  LOG.info("DistBlockFixer job " + job.getJobID() + "("+ job.getJobName()+ ") finished (succeeded)");
+
+  if (filesFailed == 0) {
+
+    for (    CorruptFileInfo fileInfo : jobIndex.get(job)) {
+
+      fileInfo.succeed();
+
+    }
+
+  }
+
+ else {
+
+    Set<String> failedFiles=getFailedFiles(job);
+
+    for (    CorruptFileInfo fileInfo : jobIndex.get(job)) {
+
+      if (failedFiles.contains(fileInfo.getFile().toString())) {
+
+        fileInfo.fail();
+
+      }
+
+ else {
+
+        fileInfo.succeed();
+
+      }
+
+    }
+
+  }
+
+  incrFilesFixed(filesSucceeded);
+
+  numJobsRunning--;
+
+}
+

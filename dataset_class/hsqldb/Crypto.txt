@@ -1,0 +1,466 @@
+Location: Crypto.java
+
+Content: 
+
+public Crypto(String keyString,String ivString,String cipherName,String provider){
+
+  final String keyAlgorithm=(cipherName.contains("/")) ? cipherName.substring(0,cipherName.indexOf("/")) : cipherName;
+
+  try {
+
+    byte[] encodedKey=StringConverter.hexStringToByteArray(keyString);
+
+    if (ivString != null && !ivString.isEmpty()) {
+
+      byte[] encodedIv=StringConverter.hexStringToByteArray(ivString);
+
+      ivSpec=new IvParameterSpec(encodedIv);
+
+    }
+
+ else {
+
+      ivSpec=null;
+
+    }
+
+    key=new SecretKeySpec(encodedKey,keyAlgorithm);
+
+    outCipher=provider == null ? Cipher.getInstance(cipherName) : Cipher.getInstance(cipherName,provider);
+
+    if (ivSpec == null) {
+
+      outCipher.init(Cipher.ENCRYPT_MODE,key);
+
+    }
+
+ else {
+
+      outCipher.init(Cipher.ENCRYPT_MODE,key,ivSpec);
+
+    }
+
+    outStreamCipher=provider == null ? Cipher.getInstance(cipherName) : Cipher.getInstance(cipherName,provider);
+
+    if (ivSpec == null) {
+
+      outStreamCipher.init(Cipher.ENCRYPT_MODE,key);
+
+    }
+
+ else {
+
+      outStreamCipher.init(Cipher.ENCRYPT_MODE,key,ivSpec);
+
+    }
+
+    inCipher=provider == null ? Cipher.getInstance(cipherName) : Cipher.getInstance(cipherName,provider);
+
+    if (ivSpec == null) {
+
+      inCipher.init(Cipher.DECRYPT_MODE,key);
+
+    }
+
+ else {
+
+      inCipher.init(Cipher.DECRYPT_MODE,key,ivSpec);
+
+    }
+
+    inStreamCipher=provider == null ? Cipher.getInstance(cipherName) : Cipher.getInstance(cipherName,provider);
+
+    if (ivSpec == null) {
+
+      inStreamCipher.init(Cipher.DECRYPT_MODE,key);
+
+    }
+
+ else {
+
+      inStreamCipher.init(Cipher.DECRYPT_MODE,key,ivSpec);
+
+    }
+
+    return;
+
+  }
+
+ catch (  NoSuchPaddingException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  NoSuchAlgorithmException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  InvalidKeyException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  NoSuchProviderException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  IOException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  InvalidAlgorithmParameterException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+}
+
+Location: Crypto.java
+
+Content: 
+
+public int decode(byte[] source,int sourceOffset,int length,byte[] dest,int destOffset){
+
+  writeLock.lock();
+
+  try {
+
+    if (inCipher == null) {
+
+      return length;
+
+    }
+
+    try {
+
+      if (ivSpec == null) {
+
+        inCipher.init(Cipher.DECRYPT_MODE,key);
+
+      }
+
+ else {
+
+        inCipher.init(Cipher.DECRYPT_MODE,key,ivSpec);
+
+      }
+
+      return inCipher.doFinal(source,sourceOffset,length,dest,destOffset);
+
+    }
+
+ catch (    java.security.InvalidKeyException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+catch (    BadPaddingException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+catch (    IllegalBlockSizeException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+catch (    ShortBufferException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+catch (    InvalidAlgorithmParameterException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: Crypto.java
+
+Content: 
+
+public synchronized int encode(byte[] source,int sourceOffset,int length,byte[] dest,int destOffset){
+
+  if (outCipher == null) {
+
+    return length;
+
+  }
+
+  try {
+
+    if (ivSpec == null) {
+
+      outCipher.init(Cipher.ENCRYPT_MODE,key);
+
+    }
+
+ else {
+
+      outCipher.init(Cipher.ENCRYPT_MODE,key,ivSpec);
+
+    }
+
+    return outCipher.doFinal(source,sourceOffset,length,dest,destOffset);
+
+  }
+
+ catch (  java.security.InvalidKeyException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  BadPaddingException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  IllegalBlockSizeException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  ShortBufferException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  InvalidAlgorithmParameterException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+}
+
+Location: Crypto.java
+
+Content: 
+
+public int getEncodedSize(int size){
+
+  readLock.lock();
+
+  try {
+
+    try {
+
+      return outCipher.getOutputSize(size);
+
+    }
+
+ catch (    IllegalStateException ex) {
+
+      try {
+
+        if (ivSpec == null) {
+
+          outCipher.init(Cipher.ENCRYPT_MODE,key);
+
+        }
+
+ else {
+
+          outCipher.init(Cipher.ENCRYPT_MODE,key,ivSpec);
+
+        }
+
+        return outCipher.getOutputSize(size);
+
+      }
+
+ catch (      java.security.InvalidKeyException e) {
+
+        throw Error.error(ErrorCode.X_S0531,e);
+
+      }
+
+catch (      InvalidAlgorithmParameterException e) {
+
+        throw Error.error(ErrorCode.X_S0531,e);
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: Crypto.java
+
+Content: 
+
+public InputStream getInputStream(InputStream in){
+
+  writeLock.lock();
+
+  try {
+
+    if (inCipher == null) {
+
+      return in;
+
+    }
+
+    try {
+
+      if (ivSpec == null) {
+
+        inStreamCipher.init(Cipher.DECRYPT_MODE,key);
+
+      }
+
+ else {
+
+        inStreamCipher.init(Cipher.DECRYPT_MODE,key,ivSpec);
+
+      }
+
+      return new CipherInputStream(in,inStreamCipher);
+
+    }
+
+ catch (    java.security.InvalidKeyException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+catch (    InvalidAlgorithmParameterException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: Crypto.java
+
+Content: 
+
+public static byte[] getNewKey(String cipherName,String provider){
+
+  try {
+
+    KeyGenerator generator=provider == null ? KeyGenerator.getInstance(cipherName) : KeyGenerator.getInstance(cipherName,provider);
+
+    SecretKey key=generator.generateKey();
+
+    byte[] raw=key.getEncoded();
+
+    return raw;
+
+  }
+
+ catch (  java.security.NoSuchAlgorithmException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+catch (  NoSuchProviderException e) {
+
+    throw Error.error(ErrorCode.X_S0531,e);
+
+  }
+
+}
+
+Location: Crypto.java
+
+Content: 
+
+public OutputStream getOutputStream(OutputStream out){
+
+  writeLock.lock();
+
+  try {
+
+    if (outCipher == null) {
+
+      return out;
+
+    }
+
+    try {
+
+      if (ivSpec == null) {
+
+        outStreamCipher.init(Cipher.ENCRYPT_MODE,key);
+
+      }
+
+ else {
+
+        outStreamCipher.init(Cipher.ENCRYPT_MODE,key,ivSpec);
+
+      }
+
+      return new CipherOutputStream(out,outStreamCipher);
+
+    }
+
+ catch (    java.security.InvalidKeyException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+catch (    InvalidAlgorithmParameterException e) {
+
+      throw Error.error(ErrorCode.X_S0531,e);
+
+    }
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+

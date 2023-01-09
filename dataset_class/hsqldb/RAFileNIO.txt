@@ -1,0 +1,232 @@
+Location: RAFileNIO.java
+
+Content: 
+
+private boolean enlargeFile(long newFileLength){
+
+  try {
+
+    long newBufferLength=newFileLength;
+
+    if (!readOnly) {
+
+      newBufferLength=largeBufferSize;
+
+    }
+
+    MapMode mapMode=readOnly ? FileChannel.MapMode.READ_ONLY : FileChannel.MapMode.READ_WRITE;
+
+    if (!readOnly && file.length() < fileLength + newBufferLength) {
+
+      file.seek(fileLength + newBufferLength - 1);
+
+      file.writeByte(0);
+
+    }
+
+    MappedByteBuffer[] newBuffers=new MappedByteBuffer[buffers.length + 1];
+
+    MappedByteBuffer newBuffer=channel.map(mapMode,fileLength,newBufferLength);
+
+    System.arraycopy(buffers,0,newBuffers,0,buffers.length);
+
+    newBuffers[buffers.length]=newBuffer;
+
+    buffers=newBuffers;
+
+    fileLength+=newBufferLength;
+
+    logger.logDetailEvent("NIO buffer instance, file size " + fileLength);
+
+  }
+
+ catch (  Throwable e) {
+
+    logger.logDetailEvent("NOI buffer allocate failed, file size " + newFileLength);
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: RAFileNIO.java
+
+Content: 
+
+private void positionBufferMove(int relOffset){
+
+  long offset=currentPosition + relOffset;
+
+  if (offset >= bufferPosition + bufferLength) {
+
+    setCurrentBuffer(offset);
+
+  }
+
+  buffer.position((int)(offset - bufferPosition));
+
+  currentPosition=offset;
+
+}
+
+Location: RAFileNIO.java
+
+Content: 
+
+private void positionBufferSeek(long offset){
+
+  if (offset < bufferPosition || offset >= bufferPosition + bufferLength) {
+
+    setCurrentBuffer(offset);
+
+  }
+
+  buffer.position((int)(offset - bufferPosition));
+
+  currentPosition=offset;
+
+}
+
+Location: RAFileNIO.java
+
+Content: 
+
+RAFileNIO(EventLogInterface logger,String name,boolean readOnly,long requiredLength,long maxLength) throws IOException {
+
+  this.logger=logger;
+
+  this.maxLength=maxLength;
+
+  java.io.File tempFile=new java.io.File(name);
+
+  if (readOnly) {
+
+    requiredLength=tempFile.length();
+
+  }
+
+ else {
+
+    if (tempFile.length() > requiredLength) {
+
+      requiredLength=tempFile.length();
+
+    }
+
+    requiredLength=ArrayUtil.getBinaryNormalisedCeiling(requiredLength,largeBufferScale);
+
+  }
+
+  file=new RandomAccessFile(name,readOnly ? "r" : "rw");
+
+  this.readOnly=readOnly;
+
+  this.channel=file.getChannel();
+
+  this.fileDescriptor=file.getFD();
+
+  if (ensureLength(requiredLength)) {
+
+    buffer=buffers[0];
+
+    bufferLength=buffer.limit();
+
+    bufferPosition=0;
+
+    currentPosition=0;
+
+  }
+
+ else {
+
+    close();
+
+    IOException io=new IOException("NIO buffer allocation failed");
+
+    throw io;
+
+  }
+
+}
+
+Location: RAFileNIO.java
+
+Content: 
+
+private void setCurrentBuffer(long offset){
+
+  if (readOnly) {
+
+    return;
+
+  }
+
+  int bufferIndex=(int)(offset >> largeBufferScale);
+
+  if (bufferIndex == buffers.length) {
+
+    bufferIndex=buffers.length - 1;
+
+    bufferPosition=(long)bufferIndex * largeBufferSize;
+
+    buffer=buffers[bufferIndex];
+
+    return;
+
+  }
+
+  buffer=buffers[bufferIndex];
+
+  bufferPosition=offset & largeBufferMask;
+
+}
+
+Location: RAFileNIO.java
+
+Content: 
+
+/** 
+
+ * Non-essential unmap method - see http://bugs.sun.com/view_bug.do?bug_id=4724038 reported by joel_turkel at users.sourceforge.net
+
+ */
+
+private void unmap(MappedByteBuffer buffer) throws IOException {
+
+  if (buffer == null) {
+
+    return;
+
+  }
+
+  try {
+
+    Method cleanerMethod=buffer.getClass().getMethod("cleaner");
+
+    cleanerMethod.setAccessible(true);
+
+    Object cleaner=cleanerMethod.invoke(buffer);
+
+    Method clearMethod=cleaner.getClass().getMethod("clean");
+
+    clearMethod.invoke(cleaner);
+
+  }
+
+ catch (  InvocationTargetException e) {
+
+  }
+
+catch (  NoSuchMethodException e) {
+
+  }
+
+catch (  Throwable e) {
+
+  }
+
+}
+

@@ -1,0 +1,252 @@
+Location: LayoutEngineTestCase.java
+
+Content: 
+
+/** 
+
+ * Perform all checks on the area tree and, optionally, on the intermediate format.
+
+ * @param fopFactory the FOP factory
+
+ * @param testFile Test case XML file
+
+ * @param result The layout results
+
+ * @throws TransformerException if a problem occurs in XSLT/JAXP
+
+ */
+
+protected void checkAll(FopFactory fopFactory,File testFile,LayoutResult result,EventsChecker eventsChecker) throws TransformerException {
+
+  Element testRoot=testAssistant.getTestRoot(testFile);
+
+  NodeList nodes;
+
+  nodes=testRoot.getElementsByTagName("at-checks");
+
+  if (nodes.getLength() > 0) {
+
+    Element atChecks=(Element)nodes.item(0);
+
+    doATChecks(atChecks,result);
+
+  }
+
+  nodes=testRoot.getElementsByTagName("if-checks");
+
+  if (nodes.getLength() > 0) {
+
+    Element ifChecks=(Element)nodes.item(0);
+
+    Document ifDocument=createIF(fopFactory,testFile,result.getAreaTree());
+
+    ifTester.doIFChecks(testFile.getName(),ifChecks,ifDocument);
+
+  }
+
+  nodes=testRoot.getElementsByTagName("event-checks");
+
+  if (nodes.getLength() > 0) {
+
+    Element eventChecks=(Element)nodes.item(0);
+
+    doEventChecks(eventChecks,eventsChecker);
+
+  }
+
+  eventsChecker.emitUncheckedEvents();
+
+}
+
+Location: LayoutEngineTestCase.java
+
+Content: 
+
+private Document createIF(FopFactory fopFactory,File testFile,Document areaTreeXML) throws TransformerException {
+
+  try {
+
+    FOUserAgent ua=fopFactory.newFOUserAgent();
+
+    ua.getEventBroadcaster().addEventListener(new ConsoleEventListenerForTests(testFile.getName(),EventSeverity.WARN));
+
+    IFRenderer ifRenderer=new IFRenderer(ua);
+
+    IFSerializer serializer=new IFSerializer(new IFContext(ua));
+
+    DOMResult result=new DOMResult();
+
+    serializer.setResult(result);
+
+    ifRenderer.setDocumentHandler(serializer);
+
+    ua.setRendererOverride(ifRenderer);
+
+    FontInfo fontInfo=new FontInfo();
+
+    final AreaTreeModel treeModel=new RenderPagesModel(ua,null,fontInfo,null);
+
+    AreaTreeParser parser=new AreaTreeParser();
+
+    ContentHandler handler=parser.getContentHandler(treeModel,ua);
+
+    DelegatingContentHandler proxy=new DelegatingContentHandler(){
+
+      public void endDocument() throws SAXException {
+
+        super.endDocument();
+
+        treeModel.endDocument();
+
+      }
+
+    }
+
+;
+
+    proxy.setDelegateContentHandler(handler);
+
+    Transformer transformer=tfactory.newTransformer();
+
+    transformer.transform(new DOMSource(areaTreeXML),new SAXResult(proxy));
+
+    return (Document)result.getNode();
+
+  }
+
+ catch (  Exception e) {
+
+    throw new TransformerException("Error while generating intermediate format file: " + e.getMessage(),e);
+
+  }
+
+}
+
+Location: LayoutEngineTestCase.java
+
+Content: 
+
+private void doATChecks(Element checksRoot,LayoutResult result){
+
+  List<LayoutEngineCheck> checks=layoutEngineChecksFactory.createCheckList(checksRoot);
+
+  if (checks.size() == 0) {
+
+    throw new RuntimeException("No available area tree check");
+
+  }
+
+  for (  LayoutEngineCheck check : checks) {
+
+    try {
+
+      check.check(result);
+
+    }
+
+ catch (    AssertionError ae) {
+
+      throw new AssertionError("Layout test (" + testFile.getName() + "): "+ ae.getMessage());
+
+    }
+
+catch (    RuntimeException rte) {
+
+      throw new RuntimeException("Layout test (" + testFile.getName() + "): "+ rte.getMessage());
+
+    }
+
+  }
+
+}
+
+Location: LayoutEngineTestCase.java
+
+Content: 
+
+private void doEventChecks(Element eventChecks,EventsChecker eventsChecker){
+
+  NodeList events=eventChecks.getElementsByTagName("event");
+
+  for (int i=0; i < events.getLength(); i++) {
+
+    Element event=(Element)events.item(i);
+
+    NamedNodeMap attributes=event.getAttributes();
+
+    Map<String,String> params=new HashMap<String,String>();
+
+    String key=null;
+
+    for (int j=0; j < attributes.getLength(); j++) {
+
+      Node attribute=attributes.item(j);
+
+      String name=attribute.getNodeName();
+
+      String value=attribute.getNodeValue();
+
+      if ("key".equals(name)) {
+
+        key=value;
+
+      }
+
+ else {
+
+        params.put(name,value);
+
+      }
+
+    }
+
+    if (key == null) {
+
+      throw new RuntimeException("An event element must have a \"key\" attribute");
+
+    }
+
+    eventsChecker.checkEvent(key,params);
+
+  }
+
+}
+
+Location: LayoutEngineTestCase.java
+
+Content: 
+
+/** 
+
+ * Constructs a new instance.
+
+ * @param testFile the test file
+
+ */
+
+public LayoutEngineTestCase(File testFile){
+
+  this.ifTester=new IFTester(tfactory,areaTreeBackupDir);
+
+  this.testFile=testFile;
+
+}
+
+Location: LayoutEngineTestCase.java
+
+Content: 
+
+@BeforeClass public static void makeDirAndRegisterDebugHelper() throws IOException {
+
+  DebugHelper.registerStandardElementListObservers();
+
+  areaTreeBackupDir=new File("build/test-results/layoutengine");
+
+  if (!areaTreeBackupDir.mkdirs() && !areaTreeBackupDir.exists()) {
+
+    throw new IOException("Failed to create the layout engine directory at " + "build/test-results/layoutengine");
+
+  }
+
+}
+

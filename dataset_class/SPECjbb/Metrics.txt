@@ -1,0 +1,1640 @@
+Location: Metrics.java
+
+Content: 
+
+public static String[] benchmarkList(ReportProps props){
+
+  Vector<String> v=new Vector<String>();
+
+  for (int j=1; ; j++) {
+
+    String name=props.get("result.test" + j + ".warehouses");
+
+    if (name == null)     break;
+
+    v.addElement("test" + j);
+
+  }
+
+  int nel=v.size();
+
+  if (nel == 0)   return new String[0];
+
+  String[] names=new String[nel];
+
+  for (int i=0; i < nel; i++)   names[i]=(String)v.elementAt(i);
+
+  return names;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String BothScore(int w,double score_1,double score_2,int whAtPeak_1,int whAtPeak2){
+
+  StringBuffer buf=new StringBuffer("<TR>\n");
+
+  buf.append("  <TD ALIGN=RIGHT>" + w + "</TD>\n");
+
+  buf.append("  <TD ALIGN=RIGHT>" + score_format(score_1) + "</TD>\n");
+
+  if ((whAtPeak_1 <= w) && (w <= 2 * whAtPeak_1)) {
+
+    buf.append("  <TD ALIGN=RIGHT> *  </TD>\n");
+
+  }
+
+ else {
+
+    buf.append("  <TD ALIGN=RIGHT>  &nbsp   </TD>\n");
+
+  }
+
+  buf.append("  <TD ALIGN=RIGHT>" + score_format(score_2) + "</TD>\n");
+
+  if ((whAtPeak2 <= w) && (w <= 2 * whAtPeak2)) {
+
+    buf.append("  <TD ALIGN=RIGHT> *  </TD>\n");
+
+  }
+
+ else {
+
+    buf.append("  <TD ALIGN=RIGHT>   &nbsp  </TD>\n");
+
+  }
+
+  buf.append("</TR>\n");
+
+  return buf.toString();
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private void calculate(){
+
+  double productWorst=1;
+
+  double productBest=1;
+
+  double weights=0;
+
+  int warehouses;
+
+  double score;
+
+  int j;
+
+  highestScore=0;
+
+  maxWarehouses=0;
+
+  expectedPeakWh=props.getInt("input.expected_peak_warehouse");
+
+  for (j=1; ; j++) {
+
+    score=props.getDouble("result.test" + j + ".company.score");
+
+    if (score == 0)     break;
+
+    if (score > highestScore) {
+
+      highestScore=score;
+
+      measuredPeakWarehouse=props.getInt("result.test" + j + ".warehouses");
+
+    }
+
+    warehouses=props.getInt("result.test" + j + ".warehouses");
+
+    if (warehouses > maxWarehouses) {
+
+      maxWarehouses=warehouses;
+
+    }
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public boolean checkElapsed(){
+
+  for (int i=0; i < result.length; i++) {
+
+    double e=result[i].elapsed();
+
+    double mi=result[i].meas_int();
+
+    double ri=result[i].ramp_up_int();
+
+    double ep=result[i].expected_peak();
+
+    if (i >= (ep - 1)) {
+
+      if (e / mi > 1150) {
+
+        output_properly(" INVALID: for point " + i + ", elapsed ms ="+ e+ " specified measurement interval seconds = "+ mi+ ".\n");
+
+        output_properly(" elapsed / intended =" + e / (10 * mi) + " > 115% \n");
+
+        return false;
+
+      }
+
+      if (e / mi < 995) {
+
+        output_properly(" INVALID: for point " + i + ", elapsed ms ="+ e+ " specified measurement interval seconds = "+ mi+ ".\n");
+
+        output_properly(" elapsed / intended =" + e / (10 * mi) + " < 99.5% \n");
+
+        return false;
+
+      }
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String check_all(){
+
+  buf=new StringBuffer();
+
+  String val=props.get("result.validity.200_check");
+
+  if (val != null) {
+
+    if (!val.equals("true")) {
+
+      this.valid=false;
+
+    }
+
+  }
+
+ else {
+
+    this.valid=false;
+
+  }
+
+  this.print_score=true;
+
+  if (!this.valid) {
+
+    output_properly("INVALID because conformance checking returned negative.\n");
+
+  }
+
+  val=props.get("result.validity.999_checkit");
+
+  if (val != null) {
+
+    if (val.equals("false")) {
+
+      this.valid=false;
+
+      output_properly("INVALID because benchmark recompiled or jbb.jar not first in CLASSPATH.");
+
+    }
+
+  }
+
+  boolean checkit;
+
+  val=props.get("result.validity.jbb_operation");
+
+  if (val != null) {
+
+    if (val.equals("true")) {
+
+      checkit=true;
+
+    }
+
+ else {
+
+      checkit=false;
+
+    }
+
+  }
+
+ else {
+
+    checkit=true;
+
+  }
+
+  this.valid=this.valid && checkit;
+
+  if (!checkit) {
+
+    String s="INVALID: JVM failed operational validity check.\n";
+
+    output_properly(s);
+
+  }
+
+  boolean elapsedOK=checkElapsed();
+
+  if (!elapsedOK) {
+
+    String se="INVALID: measurement interval failing to end in close enough time limits.";
+
+    output_properly(se);
+
+    this.valid=false;
+
+  }
+
+  boolean points_before_metric=check_points_before_metric();
+
+  if (!points_before_metric) {
+
+    output_properly("INVALID: all points up to the peak are required");
+
+    this.valid=false;
+
+  }
+
+  if (maximum_warehouses < 8) {
+
+    String s8="INVALID: at least the points from 1 to 8 are needed for a publishable run.";
+
+    output_properly(s8);
+
+    this.valid=false;
+
+  }
+
+  boolean points_for_metric=check_points_for_metric();
+
+  if (this.valid && !SPECInternalUse) {
+
+    output_properly("No errors.  Valid run.");
+
+  }
+
+  return buf.toString();
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private boolean check_points_before_metric(){
+
+  boolean value=true;
+
+  String s;
+
+  for (int i=1; i < expectedPeakWh; i++) {
+
+    if (getScoreAt(i) == 0) {
+
+      output_properly("INVALID: Missing point: " + i + " required for publication; all points up to the peak, "+ expectedPeakWh+ ", are required.");
+
+      value=false;
+
+    }
+
+  }
+
+  return value;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private boolean check_points_for_metric(){
+
+  boolean value=true;
+
+  String s;
+
+  if (maximum_warehouses < 2 * expectedPeakWh) {
+
+    s="Warning: all points from " + expectedPeakWh + " to "+ 2 * expectedPeakWh + " are averaged for metric; 0's will be used for missing points.";
+
+    output_properly(s);
+
+    return false;
+
+  }
+
+  for (int i=expectedPeakWh; i <= 2 * expectedPeakWh; i++) {
+
+    if (score_at[i] == 0) {
+
+      output_properly("Warning: Missing point: 0 will used for point " + i + ".");
+
+      value=false;
+
+    }
+
+  }
+
+  return value;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String compareTableAndGraph(Metrics metrics_2,String label,boolean useHtml,String output_directory){
+
+  StringBuffer buf=new StringBuffer();
+
+  int columns=5;
+
+  if (metrics_2 == null) {
+
+    return tableAndGraph(label,useHtml,output_directory);
+
+  }
+
+  o_directory=output_directory;
+
+  buf.append(check_all_buf);
+
+  buf.append("<TABLE BORDER WIDTH=\"100%\">\n" + "    <TH COLSPAN=" + columns + "></TH>\n");
+
+  int span=result.length + 3;
+
+  buf.append("    <TH ROWSPAN=" + span + ">\n");
+
+  if (useHtml) {
+
+    relocateImageResource(IMAGE_PIX,output_directory);
+
+    relocateImageResource(IMAGE_PIX_2,output_directory);
+
+    buf.append(dotsGraph(metrics_2));
+
+  }
+
+ else {
+
+    try {
+
+      Class.forName("java.awt.image.BufferedImage");
+
+      if (metrics_2 != null)       buf.append(JasonGraph(metrics_2,label));
+
+ else       buf.append(JasonGraph(label));
+
+    }
+
+ catch (    java.lang.InternalError e) {
+
+      buf.append(dotsGraph(metrics_2));
+
+    }
+
+catch (    Exception e) {
+
+      buf.append(dotsGraph(metrics_2));
+
+    }
+
+  }
+
+  buf.append("</TH></TR>\n");
+
+  buf.append("<TR><TH ALIGN=RIGHT>Warehouses</TH>\n" + "    <TH ALIGN=RIGHT>SPECjbb2005 bops</TH>\n" + "    <TH ALIGN=RIGHT>Incl. in metric</TH>\n"+ "    <TH ALIGN=RIGHT>SPECjbb2005 bops</TH>\n"+ "    <TH ALIGN=RIGHT>Incl. in metric</TH></TR>\n");
+
+  Result[] result_2=metrics_2.getResults();
+
+  int mw=Math.max(maxWarehouses,metrics_2.maxWarehouses);
+
+  double hs=Math.max(highestScore,metrics_2.highestScore);
+
+  int shorter=Math.min(result.length,result_2.length);
+
+  int longer=Math.max(result.length,result_2.length);
+
+  for (int i=1; i <= mw; i++) {
+
+    buf.append(BothScore(i,score_at_wh(i),metrics_2.score_at_wh(i),expectedPeakWh,metrics_2.get_whAtPeak()));
+
+  }
+
+  buf.append("<TR><TH ALIGN=LEFT>SPECjbb2005 = </TH>\n" + "    <TH ALIGN=RIGHT>" + metric() + "SPECjbb2005 bops</TH>\n<TH> &nbsp </TH>"+ "    <TH ALIGN=RIGHT>"+ metrics_2.metric()+ "SPECjbb2005 bops</TH>\n<TH> &nbsp </TH>"+ "<P>\n");
+
+  buf.append("</TR>\n</TABLE>\n");
+
+  return buf.toString();
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private void create_warehouse_array(){
+
+  for (int i=0; i < result.length; i++) {
+
+    if (result[i].warehouses() > maximum_warehouses)     maximum_warehouses=result[i].warehouses();
+
+  }
+
+  score_at=new double[maximum_warehouses + 2];
+
+  rampup_millis=new long[maximum_warehouses + 2];
+
+  rampdown_millis=new long[maximum_warehouses + 2];
+
+  start_millis=new long[maximum_warehouses + 2];
+
+  end_millis=new long[maximum_warehouses + 2];
+
+  for (int i=0; i <= maximum_warehouses + 1; i++) {
+
+    score_at[i]=0;
+
+    rampup_millis[i]=0;
+
+    rampdown_millis[i]=0;
+
+    start_millis[i]=0;
+
+    end_millis[i]=0;
+
+  }
+
+  for (int i=0; i < result.length; i++) {
+
+    if (score_at[(int)(result[i].warehouses())] != 0) {
+
+      output_properly("INVALID: cannot repeat points");
+
+      this.valid=false;
+
+    }
+
+ else {
+
+      score_at[(int)(result[i].warehouses())]=result[i].score();
+
+      if (jvm_instances > 1) {
+
+        rampup_millis[(int)(result[i].warehouses())]=result[i].rampup_millis();
+
+        rampdown_millis[(int)(result[i].warehouses())]=result[i].rampdown_millis();
+
+        start_millis[(int)(result[i].warehouses())]=result[i].start_millis();
+
+        end_millis[(int)(result[i].warehouses())]=result[i].end_millis();
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String detail(){
+
+  StringBuffer buf=new StringBuffer();
+
+  if (!valid) {
+
+    buf.append("<H4>Invalid Result</H4>\n");
+
+    buf.append("This result is not valid for the following reason(s):\n");
+
+    buf.append("<PRE>\n");
+
+    buf.append(this.invalid_buf);
+
+    buf.append("</PRE>\n");
+
+  }
+
+ else {
+
+    buf.append(this.invalid_buf);
+
+  }
+
+  buf.append("<H4>Details of Runs</H4>\n");
+
+  buf.append("<TABLE BORDER WIDTH=100%>\n");
+
+  buf.append("<TR><TH ROWSPAN=2>Warehouses</TH>\n");
+
+  buf.append("  <TH ROWSPAN=2>Thrput</TH>\n");
+
+  buf.append("  <TH COLSPAN=2>Total heap (MB)</TH>\n");
+
+  buf.append("  <TH ROWSPAN=2>Thread spread %</TH>\n");
+
+  buf.append("  <TH ROWSPAN=2>% > 120s</TH>\n");
+
+  buf.append("  <TH ROWSPAN=2>transaction type</TH>\n");
+
+  buf.append("  <TH ROWSPAN=2>Count</TH>\n");
+
+  buf.append("  <TH COLSPAN=4>Time (in seconds)</TH>\n");
+
+  buf.append("</TR>\n");
+
+  buf.append("<TR><TH>Size</TH><TH>Used</TH>\n");
+
+  buf.append("<TH>total</TH><TH>max</TH></TR>\n");
+
+  for (int i=0; i < result.length; i++) {
+
+    buf.append(result[i].toDetailRows());
+
+  }
+
+  buf.append("</TABLE>\n");
+
+  return buf.toString();
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private String dotsGraph(Metrics metrics_2){
+
+  StringBuffer buf=new StringBuffer();
+
+  StringBuffer bufLabels=new StringBuffer();
+
+  int[][] xy=new int[101][101];
+
+  int mw;
+
+  double hs;
+
+  if (metrics_2 != null) {
+
+    mw=Math.max(maxWarehouses,metrics_2.maxWarehouses);
+
+    hs=Math.max(highestScore,metrics_2.highestScore);
+
+  }
+
+ else {
+
+    mw=maxWarehouses;
+
+    hs=highestScore;
+
+  }
+
+  int x_width=Math.max(50,mw);
+
+  int y_width=50;
+
+  double x_factor=((double)x_width) / (double)(mw);
+
+  double y_factor=y_width * 0.9 / hs;
+
+  for (int i=0; i < result.length; i++) {
+
+    int x=(int)((double)result[i].warehouses() * x_factor) - 1;
+
+    int y=(int)(result[i].score() * y_factor);
+
+    xy[x][y]=1;
+
+  }
+
+  if (metrics_2 != null) {
+
+    for (int i=0; i < metrics_2.result.length; i++) {
+
+      int x=(int)((double)metrics_2.result[i].warehouses() * x_factor) - 1;
+
+      int y=(int)(metrics_2.result[i].score() * y_factor);
+
+      xy[x][y]=2;
+
+    }
+
+  }
+
+  int unit=getSuggestedYAxisTickInterval(6,1.1 * hs);
+
+  buf.append("<TABLE BORDER=0 CELLSPACING=0 CELLPADDING=0>");
+
+  buf.append("<TR><TD NOWRAP>");
+
+  buf.append("<TABLE BORDER=0 CELLSPACING=0 CELLPADDING=0 HEIGHT=100%>");
+
+  buf.append("<TR><TD ALIGN=center VALIGN=middle NOWRAP>");
+
+  buf.append("<FONT FACE=courier>&nbsp;o&nbsp;<BR>&nbsp;p&nbsp;<BR>&nbsp;s&nbsp;<BR>&nbsp;/&nbsp;<BR>&nbsp;s&nbsp;</FONT>");
+
+  buf.append("</TD>");
+
+  buf.append("<TD VALIGN=top>");
+
+  buf.append("<TABLE BORDER=0 CELLSPACING=2 CELLPADDING=0 HEIGHT=100%>");
+
+  int count_down=(int)(1.1 * (hs / unit));
+
+  for (int y=y_width; y > 0; y--) {
+
+    buf.append("<TR>");
+
+    if (y / (y_factor) < unit * count_down) {
+
+      buf.append("<TD BGCOLOR=white NOWRAP VALIGN=top ALIGN=right VALIGN=top><FONT SIZE=1 COLOR=#ff0000>");
+
+      buf.append(unit * count_down);
+
+      count_down--;
+
+      buf.append("</FONT></TD>");
+
+    }
+
+ else {
+
+      buf.append("<td></td>");
+
+    }
+
+    buf.append("</TR>");
+
+  }
+
+  buf.append("</TABLE></TD></TR></TABLE></TD><TD>");
+
+  buf.append("<TABLE BORDER=1 CELLSPACING=2 CELLPADDING=0 WIDTH=100%>");
+
+  for (int y=y_width; y > 0; y--) {
+
+    buf.append("<TR>");
+
+    for (int x=1; x < x_width; x++) {
+
+      if (xy[x][y] == 1)       buf.append("<TD BGCOLOR=#000000 WIDTH=2><IMG SRC=" + IMAGE_PIX + " WIDTH=2 HEIGHT=2></TD>\n");
+
+ else       if (xy[x][y] == 2)       buf.append("<TD BGCOLOR=#000000 WIDTH=2><IMG SRC=" + IMAGE_PIX_2 + " WIDTH=2 HEIGHT=2></TD>\n");
+
+ else       buf.append("<TD WIDTH=2></TD>\n");
+
+    }
+
+    buf.append("</TR>");
+
+  }
+
+  buf.append("</TABLE>");
+
+  buf.append("</td></TR><TR><TD></TD><TD>");
+
+  buf.append("<TABLE BORDER=0 CELLSPACING=0 CELLPADDING=0 WIDTH=100%>");
+
+  buf.append("<TR>\n");
+
+  int x_unit;
+
+  if (mw < 8) {
+
+    x_unit=1;
+
+  }
+
+ else   if (mw < 120) {
+
+    x_unit=4;
+
+  }
+
+ else {
+
+    x_unit=10;
+
+  }
+
+  buf.append("<TD BGCOLOR=white ALIGN=left><FONT SIZE=1 COLOR=red>0</FONT></TD>\n");
+
+  for (int i=1; i <= mw; i++) {
+
+    if (mw <= 8 || (mw > 8 && (i % x_unit == 0))) {
+
+      if (i + x_unit > mw)       buf.append("<TD BGCOLOR=white ALIGN=right><FONT SIZE=1 COLOR=red>");
+
+ else       buf.append("<TD BGCOLOR=white ALIGN=center><FONT SIZE=1 COLOR=red>");
+
+      if (i < 10) {
+
+        buf.append("0" + i);
+
+      }
+
+ else {
+
+        buf.append("" + i);
+
+      }
+
+      buf.append("</FONT></TD>\n");
+
+    }
+
+ else {
+
+      buf.append("<TD>&nbsp&nbsp</TD>\n");
+
+    }
+
+  }
+
+  buf.append("</TR><TR>");
+
+  buf.append("<TD COLSPAN=" + mw + " ALIGN=center BGCOLOR=white>"+ "<FONT FACE=courier>warehouses</FONT></TD></TR>");
+
+  buf.append("</TABLE>");
+
+  buf.append("</TD></TR></TABLE>");
+
+  return buf.toString();
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public long end_millis_at_wh(int n){
+
+  if (n < end_millis.length) {
+
+    return end_millis[n];
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public static String format(double x){
+
+  int n;
+
+  String s;
+
+  String formatted;
+
+  try {
+
+    if (x < 0.01) {
+
+      formatted="<0.01";
+
+    }
+
+ else     if (x < 0.1) {
+
+      n=(int)(1000 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted=".0" + s;
+
+    }
+
+ else     if (x < 1) {
+
+      n=(int)(1000 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted="." + s;
+
+    }
+
+ else     if (x < 10) {
+
+      n=(int)(100 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted=s.substring(0,1) + "." + s.substring(1,3);
+
+    }
+
+ else     if (x < 100) {
+
+      n=(int)(10 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted=s.substring(0,2) + "." + s.substring(2,3);
+
+    }
+
+ else {
+
+      n=(int)(x + 0.5);
+
+      formatted=Integer.toString(n);
+
+    }
+
+  }
+
+ catch (  StringIndexOutOfBoundsException e) {
+
+    formatted="n/a";
+
+  }
+
+  return formatted;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public double getHighestScore(){
+
+  return highestScore;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public Result[] getResults(){
+
+  return result;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private double getScoreAt(int i){
+
+  if (i < score_at.length) {
+
+    return score_at[i];
+
+  }
+
+ else   return 0;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public int getWarehousesTested(){
+
+  return warehousesTested;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public int get_whAtPeak(){
+
+  return expectedPeakWh;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private String JasonGraph(Metrics metrics_2,String label){
+
+  GraphImage graph=new GraphImage(400,400);
+
+  graph.setPixelSize(8);
+
+  graph.setPixelType(GraphImage.PIXEL_TYPE_CIRCLE);
+
+  graph.setForeground(Color.blue);
+
+  graph.setBackground(Color.white);
+
+  graph.setConnectPointsEnabled(true);
+
+  graph.setXAxisLabelsPrecision(1,0);
+
+  graph.setYAxisLabelsPrecision(3,0);
+
+  int mw=Math.max(maxWarehouses,metrics_2.maxWarehouses);
+
+  double hs=Math.max(highestScore,metrics_2.highestScore);
+
+  double maxx=mw * 1.15;
+
+  double maxy=hs * 1.15;
+
+  graph.setScale(new double[]{graph.getSuggestedMinXScale(maxx,maxy),maxx,graph.getSuggestedMinYScale(maxx,maxy),maxy});
+
+  graph.plotXYAxes(Color.gray);
+
+  graph.plotXAxisTicks(4.0,Color.gray,"warehouses");
+
+  graph.plotYAxisTicks(graph.getSuggestedYAxisTickInterval(10,maxy),Color.gray,"scores");
+
+  for (int i=0; i < result.length; i++) {
+
+    double x=result[i].warehouses();
+
+    double y=result[i].score();
+
+    graph.plot(x,y,Color.red);
+
+  }
+
+  Result[] result_2=metrics_2.getResults();
+
+  graph.setForeground(Color.white);
+
+  for (int i=0; i < result_2.length; i++) {
+
+    if (1 == i)     graph.setForeground(Color.green);
+
+    double x=result_2[i].warehouses();
+
+    double y=result_2[i].score();
+
+    graph.plot(x,y,Color.cyan);
+
+  }
+
+  graph.setImageQuality(0.85f);
+
+  if (label == null) {
+
+    Random random=new Random();
+
+    label="" + (10000 + random.nextInt() % 10000);
+
+  }
+
+  String file_name;
+
+  if (SPECInternalUse) {
+
+    file_name=label + ".jpg";
+
+  }
+
+ else {
+
+    file_name="SPECjbb." + label + ".jpg";
+
+  }
+
+  graph.make(o_directory + java.io.File.separator + file_name);
+
+  return (" <UL><IMG SRC=\"" + file_name + "\" WIDTH=400 HEIGHT=400></UL>");
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+private String JasonGraph(String label){
+
+  GraphImage graph=new GraphImage(400,400);
+
+  graph.setPixelSize(6);
+
+  graph.setPixelType(GraphImage.PIXEL_TYPE_CIRCLE);
+
+  graph.setForeground(Color.red);
+
+  graph.setBackground(Color.white);
+
+  graph.setConnectPointsEnabled(true);
+
+  graph.setXAxisLabelsPrecision(1,0);
+
+  graph.setYAxisLabelsPrecision(3,0);
+
+  double maxx=maxWarehouses * 1.15;
+
+  double maxy=highestScore * 1.15;
+
+  graph.setScale(new double[]{graph.getSuggestedMinXScale(maxx,maxy),maxx,graph.getSuggestedMinYScale(maxx,maxy),maxy});
+
+  graph.plotXYAxes(Color.gray);
+
+  graph.plotXAxisTicks(4.0,Color.gray,"warehouses");
+
+  graph.plotYAxisTicks(graph.getSuggestedYAxisTickInterval(10,maxy),Color.gray,"scores");
+
+  double maximumWarehouse=0;
+
+  for (int i=0; i < result.length; i++) {
+
+    double x=(double)result[i].warehouses();
+
+    if (x > maximumWarehouse) {
+
+      maximumWarehouse=x;
+
+    }
+
+    double y=result[i].score();
+
+    if ((x >= expectedPeakWh) && (x <= 2 * expectedPeakWh))     graph.plot(x,y,Color.red);
+
+ else     graph.plot(x,y,Color.orange);
+
+  }
+
+  if (maximumWarehouse > 2 * expectedPeakWh - 1) {
+
+    graph.plotFlatLine(expectedPeakWh,2 * expectedPeakWh,Integer.parseInt(metric()),(Color.red));
+
+  }
+
+  graph.drawLegend("Included in score calculation",2,4,Color.red,Color.gray,"Dot");
+
+  graph.drawLegend("Not included in score calculation",2,6,Color.orange,Color.gray,"Dot");
+
+  graph.setImageQuality(0.85f);
+
+  if (label == null) {
+
+    Random random=new Random();
+
+    label="" + (10000 + random.nextInt() % 10000);
+
+  }
+
+  String file_name;
+
+  if (SPECInternalUse) {
+
+    file_name=label + ".jpg";
+
+  }
+
+ else {
+
+    file_name="SPECjbb." + label + ".jpg";
+
+  }
+
+  graph.make(o_directory + java.io.File.separator + file_name);
+
+  return (" <UL><IMG SRC=\"" + file_name + "\" WIDTH=400 HEIGHT=400></UL>");
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String metric(){
+
+  int n=expectedPeakWh;
+
+  double total=0;
+
+  int up_to=2 * n;
+
+  if (maximum_warehouses < 2 * n) {
+
+    up_to=maximum_warehouses;
+
+  }
+
+  for (int i=n; i <= up_to; i++) {
+
+    total+=score_at[i];
+
+  }
+
+  return (ratioOrNa(total / (n + 1)));
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public Metrics(ReportProps props,boolean SPECInternalUse){
+
+  this.props=props;
+
+  this.SPECInternalUse=SPECInternalUse;
+
+  this.valid=true;
+
+  this.buf=new StringBuffer();
+
+  this.invalid_buf=new StringBuffer();
+
+  this.results_buf=new StringBuffer();
+
+  name=benchmarkList(props);
+
+  result=new Result[name.length];
+
+  for (int i=0; i < result.length; i++) {
+
+    result[i]=new Result(name[i],props);
+
+  }
+
+  String val=(String)props.get("input.jvm_instances");
+
+  jvm_instances=Integer.parseInt(val.trim());
+
+  warehousesTested=name.length;
+
+  create_warehouse_array();
+
+  calculate();
+
+  check_all_buf=new StringBuffer();
+
+  check_all_buf.append(check_all());
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public static String multiCurvesGraph(Metrics[] metrics,String label,boolean SPECInternalUse,String o_directory){
+
+  GraphImage graph=new GraphImage(400,400);
+
+  graph.setPixelSize(6);
+
+  graph.setPixelType(GraphImage.PIXEL_TYPE_CIRCLE);
+
+  graph.setForeground(Color.blue);
+
+  graph.setBackground(Color.white);
+
+  graph.setConnectPointsEnabled(true);
+
+  graph.setXAxisLabelsPrecision(1,0);
+
+  graph.setYAxisLabelsPrecision(3,0);
+
+  double maxX=0;
+
+  double maxY=0;
+
+  int maxWh=0;
+
+  for (int i=0; i < metrics.length; i++) {
+
+    if (maxX < metrics[i].maxWarehouses)     maxX=metrics[i].maxWarehouses;
+
+    maxY+=metrics[i].highestScore;
+
+    if (maxWh < metrics[i].maximum_warehouses)     maxWh=metrics[i].maximum_warehouses;
+
+  }
+
+  double maxx=maxX * 1.15;
+
+  double maxy=maxY * 1.15;
+
+  graph.setScale(new double[]{graph.getSuggestedMinXScale(maxx,maxy),maxx,graph.getSuggestedMinYScale(maxx,maxy),maxy});
+
+  graph.plotXYAxes(Color.gray);
+
+  graph.plotXAxisTicks(4.0,Color.gray,"warehouses");
+
+  graph.plotYAxisTicks(graph.getSuggestedYAxisTickInterval(10,maxy),Color.gray,"scores");
+
+  double sumX[]=new double[maxWh];
+
+  double sumY[]=new double[maxWh];
+
+  for (int j=0; j < metrics.length; j++) {
+
+    int expPeak=metrics[j].expectedPeakWh;
+
+    Result[] result=metrics[j].getResults();
+
+    Color color=Color.green;
+
+    for (int i=0; i < result.length; i++) {
+
+      if (1 == i)       graph.setForeground(color.darker());
+
+      double x=result[i].warehouses();
+
+      double y=result[i].score();
+
+      if ((x >= expPeak) && (x <= 2 * expPeak))       graph.plot(x,y,Color.red);
+
+ else       graph.plot(x,y,Color.orange);
+
+      sumX[i]=x;
+
+      sumY[i]+=y;
+
+    }
+
+    graph.setForeground(Color.white);
+
+  }
+
+  for (int i=0; i < sumX.length; i++) {
+
+    if (i == 1)     graph.setForeground(Color.magenta);
+
+    graph.plot(sumX[i],sumY[i],Color.blue);
+
+  }
+
+  graph.drawLegend("Instance result",2,4,Color.green,Color.gray,"Line");
+
+  graph.drawLegend("Aggregated result",2,6,Color.magenta,Color.gray,"Line");
+
+  graph.setImageQuality(0.85f);
+
+  if (label == null) {
+
+    Random random=new Random();
+
+    label="" + (10000 + random.nextInt() % 10000);
+
+  }
+
+  String file_name;
+
+  if (SPECInternalUse) {
+
+    file_name=label + ".jpg";
+
+  }
+
+ else {
+
+    file_name="SPECjbb." + label + ".jpg";
+
+  }
+
+  graph.make(o_directory + java.io.File.separator + file_name);
+
+  return (" <UL><IMG SRC=\"" + file_name + "\" WIDTH=400 HEIGHT=400></UL>");
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public void output_properly(String s){
+
+  buf.append(this.wrap(s));
+
+  this.invalid_buf.append(this.wrap(s));
+
+  this.results_buf.append(s + "\n");
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public long rampdown_millis_at_wh(int n){
+
+  if (n < rampdown_millis.length) {
+
+    return rampdown_millis[n];
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public long rampup_millis_at_wh(int n){
+
+  if (n < rampup_millis.length) {
+
+    return rampup_millis[n];
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String ratioOrNa(double x){
+
+  if (!print_score || x <= 0)   return "n/a";
+
+  if (valid && print_score)   return format(x);
+
+  return format(x);
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public void relocateImageResource(String image,String relocateTo){
+
+  String imageResource=IMAGE_RESOURCE_PATH + image;
+
+  InputStream is=getClass().getResourceAsStream(imageResource);
+
+  if (is == null)   return;
+
+  try {
+
+    int b=-1;
+
+    File file=new File(relocateTo + File.separator + image);
+
+    FileOutputStream fos=new FileOutputStream(file);
+
+    while ((b=is.read()) > -1) {
+
+      fos.write(b);
+
+    }
+
+    fos.flush();
+
+    fos.close();
+
+    is.close();
+
+  }
+
+ catch (  IOException ioe) {
+
+    JBButil.getLog().log(Level.WARNING,"IOException:" + ioe.getMessage(),ioe);
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+double score_at_wh(int n){
+
+  if (n < score_at.length) {
+
+    return score_at[n];
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public static String score_format(double x){
+
+  int n;
+
+  String s;
+
+  String formatted;
+
+  try {
+
+    if (x < 0.01) {
+
+      formatted="0";
+
+    }
+
+ else     if (x < 0.1) {
+
+      n=(int)(1000 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted=".0" + s;
+
+    }
+
+ else     if (x < 1) {
+
+      n=(int)(1000 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted="." + s;
+
+    }
+
+ else     if (x < 10) {
+
+      n=(int)(100 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted=s.substring(0,1) + "." + s.substring(1,3);
+
+    }
+
+ else     if (x < 100) {
+
+      n=(int)(10 * x + 0.5);
+
+      s=Integer.toString(n);
+
+      formatted=s.substring(0,2) + "." + s.substring(2,3);
+
+    }
+
+ else {
+
+      n=(int)(x + 0.5);
+
+      formatted=Integer.toString(n);
+
+    }
+
+  }
+
+ catch (  StringIndexOutOfBoundsException e) {
+
+    formatted="n/a";
+
+  }
+
+  return formatted;
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public long start_millis_at_wh(int n){
+
+  if (n < start_millis.length) {
+
+    return start_millis[n];
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String tableAndGraph(String label,boolean useHtml,String output_directory){
+
+  StringBuffer buf=new StringBuffer();
+
+  o_directory=output_directory;
+
+  buf.append(check_all_buf);
+
+  int columns=5;
+
+  buf.append("<TABLE BORDER WIDTH=\"100%\">\n" + "    <TH COLSPAN=" + columns + "></TH>\n");
+
+  int span=result.length + 3;
+
+  buf.append("    <TH ROWSPAN=" + span + ">\n");
+
+  if (useHtml) {
+
+    relocateImageResource(IMAGE_PIX,output_directory);
+
+    relocateImageResource(IMAGE_PIX_2,output_directory);
+
+    buf.append(dotsGraph(null));
+
+  }
+
+ else {
+
+    try {
+
+      Class.forName("java.awt.image.BufferedImage");
+
+      buf.append(JasonGraph(label));
+
+    }
+
+ catch (    java.lang.InternalError e) {
+
+      buf.append(dotsGraph(null));
+
+    }
+
+catch (    Exception e) {
+
+      buf.append(dotsGraph(null));
+
+    }
+
+  }
+
+  buf.append("</TH></TR>\n");
+
+  buf.append("<TR><TH ALIGN=RIGHT>Warehouses</TH>\n" + "    <TH ALIGN=RIGHT>SPECjbb2005 bops</TH>\n" + "    <TH ALIGN=RIGHT>Incl. in metric</TH></TR>\n");
+
+  for (int i=0; i < result.length; i++)   buf.append(result[i].toRow(expectedPeakWh));
+
+  buf.append("<TR><TH ALIGN=LEFT>SPECjbb2005 </TH>\n" + "    <TH ALIGN=RIGHT>  (from " + expectedPeakWh + " to "+ 2 * expectedPeakWh + ") " + "</TH>\n" + "    <TH ALIGN=RIGHT>" + metric() + " SPECjbb2005 bops</TH>\n" + "</TR>\n</TABLE>\n");
+
+  buf.append("</TR>\n</TABLE>\n");
+
+  return buf.toString();
+
+}
+
+Location: Metrics.java
+
+Content: 
+
+public String wrap(String s){
+
+  return ("<h1>" + s + "</h1>");
+
+}
+

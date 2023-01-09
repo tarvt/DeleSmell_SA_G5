@@ -1,0 +1,464 @@
+Location: NativeTextPainter.java
+
+Content: 
+
+/** 
+
+ * Collects all characters from an  {@link AttributedCharacterIterator}.
+
+ * @param runaci the character iterator
+
+ * @return the characters
+
+ */
+
+protected CharSequence collectCharacters(AttributedCharacterIterator runaci){
+
+  StringBuffer chars=new StringBuffer();
+
+  for (runaci.first(); runaci.getIndex() < runaci.getEndIndex(); ) {
+
+    chars.append(runaci.current());
+
+    runaci.next();
+
+  }
+
+  return chars;
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+@Override public List computeTextRuns(TextNode node,AttributedCharacterIterator nodeACI,AttributedCharacterIterator[] chunkACIs){
+
+  nodeACI.first();
+
+  int defaultBidiLevel=(((Integer)nodeACI.getAttribute(WRITING_MODE)).intValue() == WRITING_MODE_RTL) ? 1 : 0;
+
+  for (int i=0, n=chunkACIs.length; i < n; ++i) {
+
+    chunkACIs[i]=new BidiAttributedCharacterIterator(chunkACIs[i],defaultBidiLevel);
+
+  }
+
+  return super.computeTextRuns(node,nodeACI,chunkACIs,null);
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+@Override protected TextLayoutFactory getTextLayoutFactory(){
+
+  return COMPLEX_SCRIPT_TEXT_LAYOUT_FACTORY;
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+@Override protected Set getTextRunBoundaryAttributes(){
+
+  Set textRunBoundaryAttributes=super.getTextRunBoundaryAttributes();
+
+  if (!textRunBoundaryAttributes.contains(BIDI_LEVEL)) {
+
+    textRunBoundaryAttributes.add(BIDI_LEVEL);
+
+  }
+
+  return textRunBoundaryAttributes;
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+/** 
+
+ * @param ch a character
+
+ * @param layout a text span layout
+
+ * @param index an index
+
+ * @param visibleChar visible character flag
+
+ */
+
+protected final void logCharacter(char ch,TextSpanLayout layout,int index,boolean visibleChar){
+
+  if (log.isTraceEnabled()) {
+
+    log.trace("glyph " + index + " -> "+ layout.getGlyphIndex(index)+ " => "+ ch);
+
+    if (CharUtilities.isAnySpace(ch) && ch != 32) {
+
+      log.trace("Space found: " + Integer.toHexString(ch));
+
+    }
+
+ else     if (ch == CharUtilities.ZERO_WIDTH_JOINER) {
+
+      log.trace("ZWJ found: " + Integer.toHexString(ch));
+
+    }
+
+ else     if (ch == CharUtilities.SOFT_HYPHEN) {
+
+      log.trace("Soft hyphen found: " + Integer.toHexString(ch));
+
+    }
+
+    if (!visibleChar) {
+
+      log.trace("Invisible glyph found: " + Integer.toHexString(ch));
+
+    }
+
+  }
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+protected final void logTextRun(TextRun textRun){
+
+  AttributedCharacterIterator runaci=textRun.getACI();
+
+  TextSpanLayout layout=textRun.getLayout();
+
+  runaci.first();
+
+  if (log.isTraceEnabled()) {
+
+    int charCount=runaci.getEndIndex() - runaci.getBeginIndex();
+
+    log.trace("================================================");
+
+    log.trace("New text run:");
+
+    log.trace("char count: " + charCount);
+
+    log.trace("range: " + runaci.getBeginIndex() + " - "+ runaci.getEndIndex());
+
+    log.trace("glyph count: " + layout.getGlyphCount());
+
+  }
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance.
+
+ * @param fontInfo the font collection
+
+ */
+
+public NativeTextPainter(FontInfo fontInfo){
+
+  this.fontInfo=fontInfo;
+
+  this.fontFamilyResolver=new FOPFontFamilyResolverImpl(fontInfo);
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+@Override protected void paintTextRuns(@SuppressWarnings("rawtypes") List textRuns,Graphics2D g2d){
+
+  if (log.isTraceEnabled()) {
+
+    log.trace("paintTextRuns: count = " + textRuns.size());
+
+  }
+
+  if (!isSupported(g2d)) {
+
+    super.paintTextRuns(textRuns,g2d);
+
+    return;
+
+  }
+
+  for (  Object textRun1 : textRuns) {
+
+    TextRun textRun=(TextRun)textRun1;
+
+    try {
+
+      paintTextRun(textRun,g2d);
+
+    }
+
+ catch (    IOException ioe) {
+
+      throw new RuntimeException(ioe);
+
+    }
+
+  }
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+/** 
+
+ * Paints a single text run.
+
+ * @param textRun the text run
+
+ * @param g2d the target Graphics2D instance
+
+ * @throws IOException if an I/O error occurs while rendering the text
+
+ */
+
+protected final void paintTextRun(TextRun textRun,Graphics2D g2d) throws IOException {
+
+  logTextRun(textRun);
+
+  AttributedCharacterIterator runaci=textRun.getACI();
+
+  runaci.first();
+
+  tpi=(TextPaintInfo)runaci.getAttribute(PAINT_INFO);
+
+  if (tpi == null || !tpi.visible) {
+
+    return;
+
+  }
+
+  if (tpi.composite != null) {
+
+    g2d.setComposite(tpi.composite);
+
+  }
+
+  TextSpanLayout layout=textRun.getLayout();
+
+  GVTGlyphVector gv=layout.getGlyphVector();
+
+  if (!(gv.getFont() instanceof FOPGVTFont)) {
+
+    assert gv.getFont() == null || gv.getFont() instanceof SVGGVTFont;
+
+    textRun.getLayout().draw(g2d);
+
+    return;
+
+  }
+
+ else {
+
+    GeneralPath debugShapes=new GeneralPath();
+
+    preparePainting(g2d);
+
+    saveGraphicsState();
+
+    setInitialTransform(g2d.getTransform());
+
+    clip(g2d.getClip());
+
+    beginTextObject();
+
+    writeGlyphs((FOPGVTGlyphVector)gv,debugShapes);
+
+    endTextObject();
+
+    restoreGraphicsState();
+
+    if (DEBUG) {
+
+      g2d.setStroke(new BasicStroke(0));
+
+      g2d.setColor(Color.LIGHT_GRAY);
+
+      g2d.draw(debugShapes);
+
+    }
+
+  }
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+private List reorderRuns(List runs,int level){
+
+  assert level >= 0;
+
+  List runsNew=new java.util.ArrayList();
+
+  for (int i=0, n=runs.size(); i < n; i++) {
+
+    TextRun tri=(TextRun)runs.get(i);
+
+    if (tri.getBidiLevel() < level) {
+
+      runsNew.add(tri);
+
+    }
+
+ else {
+
+      int s=i;
+
+      int e=s;
+
+      while (e < n) {
+
+        TextRun tre=(TextRun)runs.get(e);
+
+        if (tre.getBidiLevel() < level) {
+
+          break;
+
+        }
+
+ else {
+
+          e++;
+
+        }
+
+      }
+
+      if (s < e) {
+
+        runsNew.addAll(reverseRuns(runs,s,e));
+
+      }
+
+      i=e - 1;
+
+    }
+
+  }
+
+  if (!runsNew.equals(runs)) {
+
+    runs=runsNew;
+
+  }
+
+  return runs;
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+@Override protected List reorderTextRuns(TextChunk chunk,List runs){
+
+  int mn=-1;
+
+  int mx=-1;
+
+  for (  TextRun r : (List<TextRun>)runs) {
+
+    int level=r.getBidiLevel();
+
+    if (level >= 0) {
+
+      if ((mn < 0) || (level < mn)) {
+
+        mn=level;
+
+      }
+
+      if ((mx < 0) || (level > mx)) {
+
+        mx=level;
+
+      }
+
+    }
+
+  }
+
+  if (mx > 0) {
+
+    for (int l1=mx, l2=((mn & 1) == 0) ? (mn + 1) : mn; l1 >= l2; l1--) {
+
+      runs=reorderRuns(runs,l1);
+
+    }
+
+  }
+
+  boolean mirror=true;
+
+  reverseGlyphs(runs,mirror);
+
+  return runs;
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+private void reverseGlyphs(List runs,boolean mirror){
+
+  for (  TextRun r : (List<TextRun>)runs) {
+
+    r.maybeReverseGlyphs(mirror);
+
+  }
+
+}
+
+Location: NativeTextPainter.java
+
+Content: 
+
+private List reverseRuns(List runs,int s,int e){
+
+  int n=e - s;
+
+  List runsNew=new java.util.ArrayList(n);
+
+  if (n > 0) {
+
+    for (int i=0; i < n; i++) {
+
+      int k=(n - i - 1);
+
+      TextRun tr=(TextRun)runs.get(s + k);
+
+      tr.reverse();
+
+      runsNew.add(tr);
+
+    }
+
+  }
+
+  return runsNew;
+
+}
+

@@ -1,0 +1,212 @@
+Location: LineRecordReader.java
+
+Content: 
+
+private long getFilePosition() throws IOException {
+
+  long retVal;
+
+  if (isCompressedInput() && null != filePosition) {
+
+    retVal=filePosition.getPos();
+
+  }
+
+ else {
+
+    retVal=pos;
+
+  }
+
+  return retVal;
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+private boolean isCompressedInput(){
+
+  return (codec != null);
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+public LineRecordReader(){
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+public LineRecordReader(byte[] recordDelimiter){
+
+  this.recordDelimiterBytes=recordDelimiter;
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+public LineRecordReader(Configuration job,FileSplit split) throws IOException {
+
+  this.maxLineLength=job.getInt(org.apache.hadoop.mapreduce.lib.input.LineRecordReader.MAX_LINE_LENGTH,Integer.MAX_VALUE);
+
+  start=split.getStart();
+
+  end=start + split.getLength();
+
+  final Path file=split.getPath();
+
+  compressionCodecs=new CompressionCodecFactory(job);
+
+  codec=compressionCodecs.getCodec(file);
+
+  final FileSystem fs=file.getFileSystem(job);
+
+  fileIn=fs.open(file);
+
+  if (isCompressedInput()) {
+
+    decompressor=CodecPool.getDecompressor(codec);
+
+    if (codec instanceof SplittableCompressionCodec) {
+
+      final SplitCompressionInputStream cIn=((SplittableCompressionCodec)codec).createInputStream(fileIn,decompressor,start,end,SplittableCompressionCodec.READ_MODE.BYBLOCK);
+
+      in=new LineReader(cIn,job);
+
+      start=cIn.getAdjustedStart();
+
+      end=cIn.getAdjustedEnd();
+
+      filePosition=cIn;
+
+    }
+
+ else {
+
+      in=new LineReader(codec.createInputStream(fileIn,decompressor),job);
+
+      filePosition=fileIn;
+
+    }
+
+  }
+
+ else {
+
+    fileIn.seek(start);
+
+    in=new LineReader(fileIn,job);
+
+    filePosition=fileIn;
+
+  }
+
+  if (start != 0) {
+
+    start+=in.readLine(new Text(),0,maxBytesToConsume(start));
+
+  }
+
+  this.pos=start;
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+public LineRecordReader(InputStream in,long offset,long endOffset,Configuration job) throws IOException {
+
+  this.maxLineLength=job.getInt(org.apache.hadoop.mapreduce.lib.input.LineRecordReader.MAX_LINE_LENGTH,Integer.MAX_VALUE);
+
+  this.in=new LineReader(in,job);
+
+  this.start=offset;
+
+  this.pos=offset;
+
+  this.end=endOffset;
+
+  filePosition=null;
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+public LineRecordReader(InputStream in,long offset,long endOffset,int maxLineLength){
+
+  this.maxLineLength=maxLineLength;
+
+  this.in=new LineReader(in);
+
+  this.start=offset;
+
+  this.pos=offset;
+
+  this.end=endOffset;
+
+  filePosition=null;
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+private int maxBytesToConsume(long pos){
+
+  return isCompressedInput() ? Integer.MAX_VALUE : (int)Math.min(Integer.MAX_VALUE,end - pos);
+
+}
+
+Location: LineRecordReader.java
+
+Content: 
+
+/** 
+
+ * Read a line. 
+
+ */
+
+public synchronized boolean next(LongWritable key,Text value) throws IOException {
+
+  while (getFilePosition() <= end) {
+
+    key.set(pos);
+
+    int newSize=in.readLine(value,maxLineLength,Math.max(maxBytesToConsume(pos),maxLineLength));
+
+    if (newSize == 0) {
+
+      return false;
+
+    }
+
+    pos+=newSize;
+
+    if (newSize < maxLineLength) {
+
+      return true;
+
+    }
+
+    LOG.info("Skipped line of size " + newSize + " at pos "+ (pos - newSize));
+
+  }
+
+  return false;
+
+}
+

@@ -1,0 +1,124 @@
+Location: UFC.java
+
+Content: 
+
+@ManagedAttribute(description="Average time blocked (in ms) in flow control when trying to send a message") public double getAverageTimeBlocked(){
+
+  return sent.values().stream().mapToDouble(c -> c.getAverageBlockTime() / 1_000_000).average().orElse(0.0);
+
+}
+
+Location: UFC.java
+
+Content: 
+
+@Override protected Header getCreditRequestHeader(){
+
+  return UFC_CREDIT_REQUEST_HDR;
+
+}
+
+Location: UFC.java
+
+Content: 
+
+@ManagedAttribute(description="Number of times flow control blocks sender") public int getNumberOfBlockings(){
+
+  int retval=0;
+
+  for (  Credit cred : sent.values())   retval+=cred.getNumBlockings();
+
+  return retval;
+
+}
+
+Location: UFC.java
+
+Content: 
+
+@Override protected Header getReplenishHeader(){
+
+  return UFC_REPLENISH_HDR;
+
+}
+
+Location: UFC.java
+
+Content: 
+
+protected void handleCredit(Address sender,long increase){
+
+  Credit cred;
+
+  if (sender == null || (cred=sent.get(sender)) == null || increase <= 0)   return;
+
+  if (log.isTraceEnabled()) {
+
+    long new_credit=Math.min(max_credits,cred.get() + increase);
+
+    log.trace("received %d credits from %s, old credits: %s, new credits: %d",increase,sender,cred,new_credit);
+
+  }
+
+  cred.increment(increase,max_credits);
+
+}
+
+Location: UFC.java
+
+Content: 
+
+protected boolean handleMulticastMessage(){
+
+  return false;
+
+}
+
+Location: UFC.java
+
+Content: 
+
+protected void handleViewChange(List<Address> mbrs){
+
+  super.handleViewChange(mbrs);
+
+  if (mbrs == null)   return;
+
+  mbrs.stream().filter(addr -> !sent.containsKey(addr)).forEach(addr -> sent.put(addr,createCredit((int)max_credits)));
+
+  sent.keySet().retainAll(mbrs);
+
+}
+
+Location: UFC.java
+
+Content: 
+
+@ManagedOperation(description="Print credits") public String printCredits(){
+
+  return String.format("%s\nsenders:\n%s",super.printCredits(),printMap(sent));
+
+}
+
+Location: UFC.java
+
+Content: 
+
+@ManagedOperation(description="Print sender credits") public String printSenderCredits(){
+
+  return printMap(sent);
+
+}
+
+Location: UFC.java
+
+Content: 
+
+public void unblock(){
+
+  super.unblock();
+
+  sent.values().forEach(cred -> cred.increment(max_credits,max_credits));
+
+}
+

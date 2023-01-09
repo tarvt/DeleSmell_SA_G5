@@ -1,0 +1,218 @@
+Location: JChannelProbeHandler.java
+
+Content: 
+
+protected static void convert(Map<String,Map<String,Object>> in,Map<String,String> out){
+
+  if (in != null)   in.entrySet().stream().filter(e -> e.getValue() != null).forEach(e -> out.put(e.getKey(),e.getValue().toString()));
+
+}
+
+Location: JChannelProbeHandler.java
+
+Content: 
+
+protected static String enable(int type,boolean flag){
+
+  ThreadMXBean bean=ManagementFactory.getThreadMXBean();
+
+  boolean supported=false;
+
+  if (type == 1) {
+
+    supported=bean.isThreadCpuTimeSupported();
+
+    if (supported)     bean.setThreadCpuTimeEnabled(flag);
+
+  }
+
+ else   if (type == 2) {
+
+    supported=bean.isThreadContentionMonitoringSupported();
+
+    if (supported)     bean.setThreadContentionMonitoringEnabled(flag);
+
+  }
+
+  String tmp=type == 1 ? "CPU" : "contention";
+
+  return String.format("%s monitoring supported: %b, %s monitoring enabled: %b",tmp,supported,tmp,supported && flag);
+
+}
+
+Location: JChannelProbeHandler.java
+
+Content: 
+
+protected void handleJmx(Map<String,String> map,String input){
+
+  int index=input.indexOf('=');
+
+  if (index == -1) {
+
+    Map<String,Map<String,Object>> tmp_stats=dumpAttrsAllProtocols();
+
+    convert(tmp_stats,map);
+
+    return;
+
+  }
+
+  String protocol_name=input.substring(index + 1);
+
+  index=protocol_name.indexOf('.');
+
+  if (index == -1) {
+
+    Map<String,Map<String,Object>> tmp_stats=dumpAttrsSelectedProtocol(protocol_name,null);
+
+    convert(tmp_stats,map);
+
+    return;
+
+  }
+
+  String rest=protocol_name;
+
+  protocol_name=protocol_name.substring(0,index);
+
+  String attrs=rest.substring(index + 1);
+
+  List<String> list=Util.parseStringList(attrs,",");
+
+  for (Iterator<String> it=list.iterator(); it.hasNext(); ) {
+
+    String tmp=it.next();
+
+    index=tmp.indexOf('=');
+
+    if (index > -1) {
+
+      it.remove();
+
+      String attrname=tmp.substring(0,index);
+
+      String attrvalue=tmp.substring(index + 1);
+
+      handleAttrWrite(protocol_name,attrname,attrvalue);
+
+    }
+
+  }
+
+  if (!list.isEmpty()) {
+
+    Map<String,Map<String,Object>> tmp_stats=dumpAttrsSelectedProtocol(protocol_name,list);
+
+    convert(tmp_stats,map);
+
+  }
+
+}
+
+Location: JChannelProbeHandler.java
+
+Content: 
+
+/** 
+
+ * Invokes an operation and puts the return value into map
+
+ * @param map
+
+ * @param operation Protocol.OperationName[args], e.g. STABLE.foo[arg1 arg2 arg3]
+
+ */
+
+protected void handleOperation(Map<String,String> map,String operation) throws Exception {
+
+  int index=operation.indexOf('.');
+
+  if (index == -1)   throw new IllegalArgumentException("operation " + operation + " is missing the protocol name");
+
+  String prot_name=operation.substring(0,index);
+
+  Protocol prot=ch.getProtocolStack().findProtocol(prot_name);
+
+  if (prot == null) {
+
+    log.error("protocol %s not found",prot_name);
+
+    return;
+
+  }
+
+  int args_index=operation.indexOf('[');
+
+  String method_name;
+
+  if (args_index != -1)   method_name=operation.substring(index + 1,args_index).trim();
+
+ else   method_name=operation.substring(index + 1).trim();
+
+  String[] args=null;
+
+  if (args_index != -1) {
+
+    int end_index=operation.indexOf(']');
+
+    if (end_index == -1)     throw new IllegalArgumentException("] not found");
+
+    List<String> str_args=Util.parseCommaDelimitedStrings(operation.substring(args_index + 1,end_index));
+
+    Object[] strings=str_args.toArray();
+
+    args=new String[strings.length];
+
+    for (int i=0; i < strings.length; i++)     args[i]=(String)strings[i];
+
+  }
+
+  Method method=findMethod(prot,method_name,args);
+
+  MethodCall call=new MethodCall(method);
+
+  Object[] converted_args=null;
+
+  if (args != null) {
+
+    converted_args=new Object[args.length];
+
+    Class<?>[] types=method.getParameterTypes();
+
+    for (int i=0; i < args.length; i++)     converted_args[i]=Util.convert(args[i],types[i]);
+
+  }
+
+  Object retval=call.invoke(prot,converted_args);
+
+  if (retval != null)   map.put(prot_name + "." + method_name,retval.toString());
+
+}
+
+Location: JChannelProbeHandler.java
+
+Content: 
+
+public JChannelProbeHandler(JChannel ch){
+
+  this.ch=ch;
+
+  log=LogFactory.getLog(ch.getClass());
+
+}
+
+Location: JChannelProbeHandler.java
+
+Content: 
+
+protected JChannel resetAllStats(){
+
+  List<Protocol> prots=ch.getProtocolStack().getProtocols();
+
+  prots.forEach(Protocol::resetStatistics);
+
+  return ch.resetStats();
+
+}
+

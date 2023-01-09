@@ -1,0 +1,408 @@
+Location: Encoder.java
+
+Content: 
+
+private void allocateBuffers(){
+
+  for (int i=0; i < stripeSize; i++) {
+
+    readBufs[i]=new byte[bufSize];
+
+  }
+
+  for (int i=0; i < paritySize; i++) {
+
+    writeBufs[i]=new byte[bufSize];
+
+  }
+
+}
+
+Location: Encoder.java
+
+Content: 
+
+private void configureBuffers(long blockSize){
+
+  if ((long)bufSize > blockSize) {
+
+    bufSize=(int)blockSize;
+
+    allocateBuffers();
+
+  }
+
+ else   if (blockSize % bufSize != 0) {
+
+    bufSize=(int)(blockSize / 256L);
+
+    if (bufSize == 0) {
+
+      bufSize=1024;
+
+    }
+
+    bufSize=Math.min(bufSize,1024 * 1024);
+
+    allocateBuffers();
+
+  }
+
+}
+
+Location: Encoder.java
+
+Content: 
+
+/** 
+
+ * Recovers a corrupt block in a parity file to an output stream. The encoder generates paritySize parity blocks for a source file stripe. Since there is only one output provided, some blocks are written out to files before being written out to the output.
+
+ * @param fs The filesystem in which both srcFile and parityFile reside.
+
+ * @param srcFile The source file.
+
+ * @param srcSize The size of the source file.
+
+ * @param blockSize The block size for the source/parity files.
+
+ * @param out The destination for the reovered block.
+
+ */
+
+private void encodeFileToStream(FileSystem fs,Path srcFile,long srcSize,long blockSize,OutputStream out,Progressable reporter) throws IOException {
+
+  OutputStream[] tmpOuts=new OutputStream[paritySize];
+
+  tmpOuts[0]=out;
+
+  File[] tmpFiles=new File[paritySize - 1];
+
+  for (int i=0; i < paritySize - 1; i++) {
+
+    tmpFiles[i]=File.createTempFile("parity","_" + i);
+
+    LOG.info("Created tmp file " + tmpFiles[i]);
+
+    tmpFiles[i].deleteOnExit();
+
+  }
+
+  try {
+
+    for (long stripeStart=0; stripeStart < srcSize; stripeStart+=blockSize * stripeSize) {
+
+      reporter.progress();
+
+      LOG.info("Starting encoding of stripe " + srcFile + ":"+ stripeStart);
+
+      InputStream[] blocks=stripeInputs(fs,srcFile,stripeStart,srcSize,blockSize);
+
+      for (int i=0; i < paritySize - 1; i++) {
+
+        tmpOuts[i + 1]=new FileOutputStream(tmpFiles[i]);
+
+      }
+
+      encodeStripe(blocks,stripeStart,blockSize,tmpOuts,reporter);
+
+      for (int i=0; i < paritySize - 1; i++) {
+
+        tmpOuts[i + 1].close();
+
+        tmpOuts[i + 1]=null;
+
+        InputStream in=new FileInputStream(tmpFiles[i]);
+
+        RaidUtils.copyBytes(in,out,writeBufs[i],blockSize);
+
+        reporter.progress();
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    for (int i=0; i < paritySize - 1; i++) {
+
+      if (tmpOuts[i + 1] != null) {
+
+        tmpOuts[i + 1].close();
+
+      }
+
+      tmpFiles[i].delete();
+
+      LOG.info("Deleted tmp file " + tmpFiles[i]);
+
+    }
+
+  }
+
+}
+
+Location: Encoder.java
+
+Content: 
+
+/** 
+
+ * The interface to use to generate a parity file. This method can be called multiple times with the same Encoder object, thus allowing reuse of the buffers allocated by the Encoder object.
+
+ * @param fs The filesystem containing the source file.
+
+ * @param srcFile The source file.
+
+ * @param parityFile The parity file to be generated.
+
+ */
+
+public void encodeFile(FileSystem fs,Path srcFile,FileSystem parityFs,Path parityFile,short parityRepl,Progressable reporter) throws IOException {
+
+  FileStatus srcStat=fs.getFileStatus(srcFile);
+
+  long srcSize=srcStat.getLen();
+
+  long blockSize=srcStat.getBlockSize();
+
+  configureBuffers(blockSize);
+
+  Path tmpDir=getParityTempPath();
+
+  if (!parityFs.mkdirs(tmpDir)) {
+
+    throw new IOException("Could not create tmp dir " + tmpDir);
+
+  }
+
+  Path parityTmp=new Path(tmpDir,parityFile.getName() + rand.nextLong());
+
+  FSDataOutputStream out=parityFs.create(parityTmp,true,conf.getInt("io.file.buffer.size",64 * 1024),parityRepl,blockSize);
+
+  try {
+
+    encodeFileToStream(fs,srcFile,srcSize,blockSize,out,reporter);
+
+    out.close();
+
+    out=null;
+
+    LOG.info("Wrote temp parity file " + parityTmp);
+
+    if (parityFs.exists(parityFile)) {
+
+      parityFs.delete(parityFile,false);
+
+    }
+
+    parityFs.mkdirs(parityFile.getParent());
+
+    if (!parityFs.rename(parityTmp,parityFile)) {
+
+      String msg="Unable to rename file " + parityTmp + " to "+ parityFile;
+
+      throw new IOException(msg);
+
+    }
+
+    LOG.info("Wrote parity file " + parityFile);
+
+  }
+
+  finally {
+
+    if (out != null) {
+
+      out.close();
+
+    }
+
+    parityFs.delete(parityTmp,false);
+
+  }
+
+}
+
+Location: Encoder.java
+
+Content: 
+
+Encoder(Configuration conf,int stripeSize,int paritySize){
+
+  this.conf=conf;
+
+  this.stripeSize=stripeSize;
+
+  this.paritySize=paritySize;
+
+  this.rand=new Random();
+
+  this.bufSize=conf.getInt("raid.encoder.bufsize",1024 * 1024);
+
+  this.readBufs=new byte[stripeSize][];
+
+  this.writeBufs=new byte[paritySize][];
+
+  allocateBuffers();
+
+}
+
+Location: Encoder.java
+
+Content: 
+
+/** 
+
+ * Recovers a corrupt block in a parity file to a local file. The encoder generates paritySize parity blocks for a source file stripe. Since we want only one of the parity blocks, this function creates null outputs for the blocks to be discarded.
+
+ * @param fs The filesystem in which both srcFile and parityFile reside.
+
+ * @param srcFile The source file.
+
+ * @param srcSize The size of the source file.
+
+ * @param blockSize The block size for the source/parity files.
+
+ * @param corruptOffset The location of corruption in the parity file.
+
+ * @param localBlockFile The destination for the reovered block.
+
+ */
+
+public void recoverParityBlockToFile(FileSystem fs,Path srcFile,long srcSize,long blockSize,Path parityFile,long corruptOffset,File localBlockFile) throws IOException {
+
+  OutputStream out=new FileOutputStream(localBlockFile);
+
+  try {
+
+    recoverParityBlockToStream(fs,srcFile,srcSize,blockSize,parityFile,corruptOffset,out);
+
+  }
+
+  finally {
+
+    out.close();
+
+  }
+
+}
+
+Location: Encoder.java
+
+Content: 
+
+/** 
+
+ * Recovers a corrupt block in a parity file to a local file. The encoder generates paritySize parity blocks for a source file stripe. Since we want only one of the parity blocks, this function creates null outputs for the blocks to be discarded.
+
+ * @param fs The filesystem in which both srcFile and parityFile reside.
+
+ * @param srcFile The source file.
+
+ * @param srcSize The size of the source file.
+
+ * @param blockSize The block size for the source/parity files.
+
+ * @param corruptOffset The location of corruption in the parity file.
+
+ * @param out The destination for the reovered block.
+
+ */
+
+public void recoverParityBlockToStream(FileSystem fs,Path srcFile,long srcSize,long blockSize,Path parityFile,long corruptOffset,OutputStream out) throws IOException {
+
+  LOG.info("Recovering parity block" + parityFile + ":"+ corruptOffset);
+
+  corruptOffset=(corruptOffset / blockSize) * blockSize;
+
+  OutputStream[] outs=new OutputStream[paritySize];
+
+  long indexOfCorruptBlockInParityStripe=(corruptOffset / blockSize) % paritySize;
+
+  LOG.info("Index of corrupt block in parity stripe: " + indexOfCorruptBlockInParityStripe);
+
+  for (int i=0; i < paritySize; i++) {
+
+    if (indexOfCorruptBlockInParityStripe == i) {
+
+      outs[i]=out;
+
+    }
+
+ else {
+
+      outs[i]=new NullOutputStream();
+
+    }
+
+  }
+
+  long stripeIdx=corruptOffset / (paritySize * blockSize);
+
+  long stripeStart=stripeIdx * blockSize * stripeSize;
+
+  InputStream[] blocks=stripeInputs(fs,srcFile,stripeStart,srcSize,blockSize);
+
+  LOG.info("Starting recovery by using source stripe " + srcFile + ":"+ stripeStart);
+
+  encodeStripe(blocks,stripeStart,blockSize,outs,new RaidUtils.DummyProgressable());
+
+}
+
+Location: Encoder.java
+
+Content: 
+
+/** 
+
+ * Return input streams for each block in a source file's stripe.
+
+ * @param fs The filesystem where the file resides.
+
+ * @param srcFile The source file.
+
+ * @param stripeStartOffset The start offset of the stripe.
+
+ * @param srcSize The size of the source file.
+
+ * @param blockSize The block size for the source file.
+
+ */
+
+protected InputStream[] stripeInputs(FileSystem fs,Path srcFile,long stripeStartOffset,long srcSize,long blockSize) throws IOException {
+
+  InputStream[] blocks=new InputStream[stripeSize];
+
+  for (int i=0; i < stripeSize; i++) {
+
+    long seekOffset=stripeStartOffset + i * blockSize;
+
+    if (seekOffset < srcSize) {
+
+      FSDataInputStream in=fs.open(srcFile,conf.getInt("io.file.buffer.size",64 * 1024));
+
+      in.seek(seekOffset);
+
+      LOG.info("Opening stream at " + srcFile + ":"+ seekOffset);
+
+      blocks[i]=in;
+
+    }
+
+ else {
+
+      LOG.info("Using zeros at offset " + seekOffset);
+
+      blocks[i]=new RaidUtils.ZeroInputStream(seekOffset + blockSize);
+
+    }
+
+  }
+
+  return blocks;
+
+}
+

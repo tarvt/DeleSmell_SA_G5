@@ -1,0 +1,322 @@
+Location: BinaryData.java
+
+Content: 
+
+/** 
+
+ * This constructor is used inside the engine when an already serialized byte[] is read from a file (.log, .script, .data or text table source). In this case clone is false. When a byte[] is submitted as a parameter of PreparedStatement then clone is true.
+
+ */
+
+public BinaryData(byte[] data,boolean clone){
+
+  if (clone) {
+
+    data=(byte[])ArrayUtil.duplicateArray(data);
+
+  }
+
+  this.data=data;
+
+  this.bitLength=data.length * 8L;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public BinaryData(byte[] data,long bitLength){
+
+  this.data=data;
+
+  this.bitLength=bitLength;
+
+  this.isBits=true;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public BinaryData(long length,DataInput stream){
+
+  data=new byte[(int)length];
+
+  bitLength=data.length * 8L;
+
+  try {
+
+    stream.readFully(data);
+
+  }
+
+ catch (  IOException e) {
+
+    throw Error.error(ErrorCode.GENERAL_IO_ERROR,e);
+
+  }
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public BinaryData(SessionInterface session,BlobData b1,BlobData b2){
+
+  long length=(b1.length(session) + b2.length(session));
+
+  if (length > Integer.MAX_VALUE || b1.length(session) > Integer.MAX_VALUE || b2.length(session) > Integer.MAX_VALUE) {
+
+    throw Error.error(ErrorCode.X_22001);
+
+  }
+
+  data=new byte[(int)length];
+
+  System.arraycopy(b1.getBytes(session,0,(int)b1.length(session)),0,data,0,(int)b1.length(session));
+
+  System.arraycopy(b2.getBytes(session,0,(int)b2.length(session)),0,data,(int)b1.length(session),(int)b2.length(session));
+
+  this.bitLength=(int)length * 8L;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public long bitLength(SessionInterface session){
+
+  return bitLength;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public void free(){
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public InputStream getBinaryStream(SessionInterface session){
+
+  return new BlobInputStream(session,this,0L,length(session));
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public InputStream getBinaryStream(SessionInterface session,long pos,long length){
+
+  if (!isInLimits(data.length,pos,length)) {
+
+    throw new IndexOutOfBoundsException();
+
+  }
+
+  return new BlobInputStream(session,this,pos,length(session));
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public static BinaryData getBitData(byte[] data,long bitLength){
+
+  if (bitLength == 1) {
+
+    return data[0] == 0 ? singleBitZero : singleBitOne;
+
+  }
+
+  return new BinaryData(data,bitLength);
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public BlobData getBlob(SessionInterface session,long pos,long length){
+
+  throw Error.runtimeError(ErrorCode.U_S0500,"BinaryData");
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public byte[] getBytes(SessionInterface session,long pos,int length){
+
+  if (!isInLimits(data.length,pos,length)) {
+
+    throw new IndexOutOfBoundsException();
+
+  }
+
+  byte[] bytes=new byte[length];
+
+  System.arraycopy(data,(int)pos,bytes,0,length);
+
+  return bytes;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public int getStreamBlockSize(){
+
+  return 512 * 1024;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public boolean isBits(){
+
+  return isBits;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public boolean isClosed(){
+
+  return false;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+/** 
+
+ * @todo - implement 
+
+ */
+
+public long nonZeroLength(SessionInterface session){
+
+  return data.length;
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public long position(SessionInterface session,BlobData pattern,long start){
+
+  if (pattern.length(session) > data.length) {
+
+    return -1;
+
+  }
+
+  byte[] bytes=pattern.getBytes(session,0,(int)pattern.length(session));
+
+  return position(session,bytes,start);
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public long position(SessionInterface session,byte[] pattern,long start){
+
+  if (pattern.length > data.length) {
+
+    return -1;
+
+  }
+
+  if (start >= data.length) {
+
+    return -1;
+
+  }
+
+  return ArrayUtil.find(data,(int)start,data.length,pattern);
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public void setBinaryStream(SessionInterface session,long pos,InputStream in){
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public void setBytes(SessionInterface session,long pos,BlobData b,long offset,long length){
+
+  if (length > Integer.MAX_VALUE) {
+
+    throw new IndexOutOfBoundsException();
+
+  }
+
+  byte[] bytes=b.getBytes(session,offset,(int)length);
+
+  setBytes(session,pos,bytes,0,bytes.length);
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public void setBytes(SessionInterface session,long pos,byte[] bytes){
+
+  setBytes(session,pos,bytes,0,bytes.length);
+
+}
+
+Location: BinaryData.java
+
+Content: 
+
+public void setBytes(SessionInterface session,long pos,byte[] bytes,int offset,int length){
+
+  if (!isInLimits(data.length,pos,0)) {
+
+    throw new IndexOutOfBoundsException();
+
+  }
+
+  if (!isInLimits(data.length,pos,length)) {
+
+    data=(byte[])ArrayUtil.resizeArray(data,(int)pos + length);
+
+  }
+
+  System.arraycopy(bytes,offset,data,(int)pos,length);
+
+  bitLength=data.length * 8L;
+
+}
+

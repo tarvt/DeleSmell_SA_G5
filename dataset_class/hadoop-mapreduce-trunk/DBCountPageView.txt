@@ -1,0 +1,220 @@
+Location: DBCountPageView.java
+
+Content: 
+
+private void createTables() throws SQLException {
+
+  String createAccess="CREATE TABLE " + "Access(url      VARCHAR(100) NOT NULL," + " referrer VARCHAR(100),"+ " time     BIGINT NOT NULL, "+ " PRIMARY KEY (url, time))";
+
+  String createPageview="CREATE TABLE " + "Pageview(url      VARCHAR(100) NOT NULL," + " pageview     BIGINT NOT NULL, "+ " PRIMARY KEY (url))";
+
+  Statement st=connection.createStatement();
+
+  try {
+
+    st.executeUpdate(createAccess);
+
+    st.executeUpdate(createPageview);
+
+    connection.commit();
+
+  }
+
+  finally {
+
+    st.close();
+
+  }
+
+}
+
+Location: DBCountPageView.java
+
+Content: 
+
+private void dropTables(){
+
+  String dropAccess="DROP TABLE Access";
+
+  String dropPageview="DROP TABLE Pageview";
+
+  Statement st=null;
+
+  try {
+
+    st=connection.createStatement();
+
+    st.executeUpdate(dropAccess);
+
+    st.executeUpdate(dropPageview);
+
+    connection.commit();
+
+    st.close();
+
+  }
+
+ catch (  SQLException ex) {
+
+    try {
+
+      if (st != null) {
+
+        st.close();
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+    }
+
+  }
+
+}
+
+Location: DBCountPageView.java
+
+Content: 
+
+/** 
+
+ * Populates the Access table with generated records.
+
+ */
+
+private void populateAccess() throws SQLException {
+
+  PreparedStatement statement=null;
+
+  try {
+
+    statement=connection.prepareStatement("INSERT INTO Access(url, referrer, time)" + " VALUES (?, ?, ?)");
+
+    Random random=new Random();
+
+    int time=random.nextInt(50) + 50;
+
+    final int PROBABILITY_PRECISION=100;
+
+    final int NEW_PAGE_PROBABILITY=15;
+
+    String[] pages={"/a","/b","/c","/d","/e","/f","/g","/h","/i","/j"};
+
+    int[][] linkMatrix={{1,5,7},{0,7,4,6},{0,1,7,8},{0,2,4,6,7,9},{0,1},{0,3,5,9},{0},{0,1,3},{0,2,6},{0,2,6}};
+
+    int currentPage=random.nextInt(pages.length);
+
+    String referrer=null;
+
+    for (int i=0; i < time; i++) {
+
+      statement.setString(1,pages[currentPage]);
+
+      statement.setString(2,referrer);
+
+      statement.setLong(3,i);
+
+      statement.execute();
+
+      int action=random.nextInt(PROBABILITY_PRECISION);
+
+      if (action < NEW_PAGE_PROBABILITY) {
+
+        currentPage=random.nextInt(pages.length);
+
+        referrer=null;
+
+      }
+
+ else {
+
+        referrer=pages[currentPage];
+
+        action=random.nextInt(linkMatrix[currentPage].length);
+
+        currentPage=linkMatrix[currentPage][action];
+
+      }
+
+    }
+
+    connection.commit();
+
+  }
+
+ catch (  SQLException ex) {
+
+    connection.rollback();
+
+    throw ex;
+
+  }
+
+ finally {
+
+    if (statement != null) {
+
+      statement.close();
+
+    }
+
+  }
+
+}
+
+Location: DBCountPageView.java
+
+Content: 
+
+/** 
+
+ * Verifies the results are correct 
+
+ */
+
+private boolean verify() throws SQLException {
+
+  String countAccessQuery="SELECT COUNT(*) FROM Access";
+
+  String sumPageviewQuery="SELECT SUM(pageview) FROM Pageview";
+
+  Statement st=null;
+
+  ResultSet rs=null;
+
+  try {
+
+    st=connection.createStatement();
+
+    rs=st.executeQuery(countAccessQuery);
+
+    rs.next();
+
+    long totalPageview=rs.getLong(1);
+
+    rs=st.executeQuery(sumPageviewQuery);
+
+    rs.next();
+
+    long sumPageview=rs.getLong(1);
+
+    LOG.info("totalPageview=" + totalPageview);
+
+    LOG.info("sumPageview=" + sumPageview);
+
+    return totalPageview == sumPageview && totalPageview != 0;
+
+  }
+
+  finally {
+
+    if (st != null)     st.close();
+
+    if (rs != null)     rs.close();
+
+  }
+
+}
+

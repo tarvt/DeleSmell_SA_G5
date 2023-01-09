@@ -1,0 +1,198 @@
+Location: JDBCXADataSource.java
+
+Content: 
+
+public void addResource(Xid xid,JDBCXAResource xaResource){
+
+  lock.writeLock().lock();
+
+  try {
+
+    resources.put(xid,xaResource);
+
+  }
+
+  finally {
+
+    lock.writeLock().unlock();
+
+  }
+
+}
+
+Location: JDBCXADataSource.java
+
+Content: 
+
+/** 
+
+ * Return the list of transactions currently <I>in prepared or heuristically completed states</I>. Need to find out what non-prepared states they are considering <I>heuristically completed</I>.
+
+ * @see javax.transaction.xa.XAResource#recover(int)
+
+ */
+
+Xid[] getPreparedXids(){
+
+  lock.writeLock().lock();
+
+  try {
+
+    Iterator it=resources.keySet().iterator();
+
+    Xid curXid;
+
+    HashSet preparedSet=new HashSet();
+
+    while (it.hasNext()) {
+
+      curXid=(Xid)it.next();
+
+      if (((JDBCXAResource)resources.get(curXid)).state == JDBCXAResource.XA_STATE_PREPARED) {
+
+        preparedSet.add(curXid);
+
+      }
+
+    }
+
+    Xid[] array=new Xid[preparedSet.size()];
+
+    preparedSet.toArray(array);
+
+    return array;
+
+  }
+
+  finally {
+
+    lock.writeLock().unlock();
+
+  }
+
+}
+
+Location: JDBCXADataSource.java
+
+Content: 
+
+/** 
+
+ * This is needed so that XAResource.commit() and XAResource.rollback() may be applied to the right Connection (which is not necessarily that associated with that XAResource object).
+
+ * @see javax.transaction.xa.XAResource#commit(Xid,boolean)
+
+ * @see javax.transaction.xa.XAResource#rollback(Xid)
+
+ */
+
+JDBCXAResource getResource(Xid xid){
+
+  lock.readLock().lock();
+
+  try {
+
+    return (JDBCXAResource)resources.get(xid);
+
+  }
+
+  finally {
+
+    lock.readLock().unlock();
+
+  }
+
+}
+
+Location: JDBCXADataSource.java
+
+Content: 
+
+/** 
+
+ * Get new XAConnection connection, to be managed by a connection manager.
+
+ * @throws SQLException on error
+
+ */
+
+public XAConnection getXAConnection() throws SQLException {
+
+  JDBCConnection connection=(JDBCConnection)JDBCDriver.getConnection(url,connectionProps);
+
+  JDBCXAConnection xaConnection=new JDBCXAConnection(this,connection);
+
+  return xaConnection;
+
+}
+
+Location: JDBCXADataSource.java
+
+Content: 
+
+/** 
+
+ * Gets a new XAConnection after validating the given username and password.
+
+ * @param user String which must match the 'user' configured for thisJDBCXADataSource.
+
+ * @param password  String which must match the 'password' configuredfor this JDBCXADataSource.
+
+ * @see #getXAConnection()
+
+ * @param user the user
+
+ * @param password the password
+
+ * @throws SQLException on error
+
+ */
+
+public XAConnection getXAConnection(String user,String password) throws SQLException {
+
+  if (user == null || password == null) {
+
+    throw JDBCUtil.nullArgument();
+
+  }
+
+  if (user.equals(this.user) && password.equals(this.password)) {
+
+    return getXAConnection();
+
+  }
+
+  throw JDBCUtil.sqlException(Error.error(ErrorCode.X_28000));
+
+}
+
+Location: JDBCXADataSource.java
+
+Content: 
+
+public JDBCXADataSource() throws SQLException {
+
+}
+
+Location: JDBCXADataSource.java
+
+Content: 
+
+public JDBCXAResource removeResource(Xid xid){
+
+  lock.writeLock().lock();
+
+  try {
+
+    return (JDBCXAResource)resources.remove(xid);
+
+  }
+
+  finally {
+
+    lock.writeLock().unlock();
+
+  }
+
+}
+

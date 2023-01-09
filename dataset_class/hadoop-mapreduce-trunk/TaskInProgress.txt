@@ -1,0 +1,1716 @@
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Save diagnostic information for a given task.
+
+ * @param taskId id of the task 
+
+ * @param diagInfo diagnostic information for the task
+
+ */
+
+public void addDiagnosticInfo(TaskAttemptID taskId,String diagInfo){
+
+  List<String> diagHistory=taskDiagnosticData.get(taskId);
+
+  if (diagHistory == null) {
+
+    diagHistory=new ArrayList<String>();
+
+    taskDiagnosticData.put(taskId,diagHistory);
+
+  }
+
+  diagHistory.add(diagInfo);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+public Task addRunningTask(TaskAttemptID taskid,String taskTracker){
+
+  return addRunningTask(taskid,taskTracker,false);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Adds a previously running task to this tip. This is used in case of  jobtracker restarts.
+
+ */
+
+public Task addRunningTask(TaskAttemptID taskid,String taskTracker,boolean taskCleanup){
+
+  int numSlotsNeeded=taskCleanup ? 1 : numSlotsRequired;
+
+  Task t=null;
+
+  if (isMapTask()) {
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug("attempt " + numTaskFailures + " sending skippedRecords "+ failedRanges.getIndicesCount());
+
+    }
+
+    t=new MapTask(jobFile,taskid,partition,splitInfo.getSplitIndex(),numSlotsNeeded);
+
+  }
+
+ else {
+
+    t=new ReduceTask(jobFile,taskid,partition,numMaps,numSlotsNeeded);
+
+  }
+
+  if (jobCleanup) {
+
+    t.setJobCleanupTask();
+
+  }
+
+  if (jobSetup) {
+
+    t.setJobSetupTask();
+
+  }
+
+  if (taskCleanup) {
+
+    t.setTaskCleanupTask();
+
+    t.setState(taskStatuses.get(taskid).getRunState());
+
+    cleanupTasks.put(taskid,taskTracker);
+
+  }
+
+  t.setConf(conf);
+
+  t.setUser(getUser());
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("Launching task with skipRanges:" + failedRanges.getSkipRanges());
+
+  }
+
+  t.setSkipRanges(failedRanges.getSkipRanges());
+
+  t.setSkipping(skipping);
+
+  if (failedRanges.isTestAttempt()) {
+
+    t.setWriteSkipRecs(false);
+
+  }
+
+  activeTasks.put(taskid,taskTracker);
+
+  tasks.add(taskid);
+
+  jobtracker.createTaskEntry(taskid,taskTracker,this);
+
+  if (firstTaskId == null) {
+
+    firstTaskId=taskid;
+
+  }
+
+  return t;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Indicate that one of the taskids in this already-completed TaskInProgress has successfully completed; hence we mark this taskid as  {@link TaskStatus.State.KILLED}. 
+
+ */
+
+void alreadyCompletedTask(TaskAttemptID taskid){
+
+  completedTask(taskid,TaskStatus.State.KILLED);
+
+  addDiagnosticInfo(taskid,"Already completed TIP");
+
+  LOG.info("Already complete TIP " + getTIPId() + " has completed task "+ taskid);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Can this task be speculated? This requires that it isn't done or almost done and that it isn't already being speculatively executed. Added for use by queue scheduling algorithms.
+
+ * @param currentTime 
+
+ */
+
+boolean canBeSpeculated(long currentTime){
+
+  DataStatistics taskStats=job.getRunningTaskStatistics(isMapTask());
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("activeTasks.size(): " + activeTasks.size() + " "+ activeTasks.firstKey()+ " task's progressrate: "+ getCurrentProgressRate(currentTime)+ " taskStats : "+ taskStats);
+
+  }
+
+  return (!skipping && isRunnable() && isRunning()&& activeTasks.size() <= MAX_TASK_EXECS && currentTime - lastDispatchTime >= SPECULATIVE_LAG && completes == 0 && !isOnlyCommitPending() && (taskStats.mean() - getCurrentProgressRate(currentTime) > taskStats.std() * job.getSlowTaskThreshold()));
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Finalize the <b>completed</b> task; note that this might not be the first  task-attempt of the  {@link TaskInProgress} and hence might be declared {@link TaskStatus.State.SUCCEEDED} or {@link TaskStatus.State.KILLED}
+
+ * @param taskId id of the completed task-attempt
+
+ * @param finalTaskState final {@link TaskStatus.State} of the task-attempt
+
+ */
+
+private void completedTask(TaskAttemptID taskId,TaskStatus.State finalTaskState){
+
+  TaskStatus status=taskStatuses.get(taskId);
+
+  status.setRunState(finalTaskState);
+
+  activeTasks.remove(taskId);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Indicate that one of the taskids in this TaskInProgress has successfully completed!
+
+ */
+
+public void completed(TaskAttemptID taskid){
+
+  completedTask(taskid,TaskStatus.State.SUCCEEDED);
+
+  setSuccessfulTaskid(taskid);
+
+  this.completes++;
+
+  this.execFinishTime=JobTracker.getClock().getTime();
+
+  recomputeProgress();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Commit this task attempt for the tip. 
+
+ * @param taskid
+
+ */
+
+public void doCommit(TaskAttemptID taskid){
+
+  taskToCommit=taskid;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Creates a "status report" for this task.  Includes the task ID and overall status, plus reports for all the component task-threads that have ever been started.
+
+ */
+
+synchronized TaskReport generateSingleReport(){
+
+  ArrayList<String> diagnostics=new ArrayList<String>();
+
+  for (  List<String> l : taskDiagnosticData.values()) {
+
+    diagnostics.addAll(l);
+
+  }
+
+  TIPStatus currentStatus=null;
+
+  if (isRunning() && !isComplete()) {
+
+    currentStatus=TIPStatus.RUNNING;
+
+  }
+
+ else   if (isComplete()) {
+
+    currentStatus=TIPStatus.COMPLETE;
+
+  }
+
+ else   if (wasKilled()) {
+
+    currentStatus=TIPStatus.KILLED;
+
+  }
+
+ else   if (isFailed()) {
+
+    currentStatus=TIPStatus.FAILED;
+
+  }
+
+ else   if (!(isComplete() || isRunning() || wasKilled())) {
+
+    currentStatus=TIPStatus.PENDING;
+
+  }
+
+  TaskReport report=new TaskReport(getTIPId(),(float)progress,state,diagnostics.toArray(new String[diagnostics.size()]),currentStatus,execStartTime,execFinishTime,counters);
+
+  if (currentStatus == TIPStatus.RUNNING) {
+
+    report.setRunningTaskAttempts(activeTasks.keySet());
+
+  }
+
+ else   if (currentStatus == TIPStatus.COMPLETE) {
+
+    report.setSuccessfulAttempt(getSuccessfulTaskid());
+
+  }
+
+  return report;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+TreeMap<TaskAttemptID,String> getActiveTasks(){
+
+  return activeTasks;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Get all the  {@link TaskAttemptID}s in this  {@link TaskInProgress}
+
+ */
+
+TaskAttemptID[] getAllTaskAttemptIDs(){
+
+  return tasks.toArray(new TaskAttemptID[tasks.size()]);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Returns the  {@link TaskType} of the {@link TaskAttemptID} passed. The type of an attempt is determined by the nature of the task and not its  id.  For example, - Attempt 'attempt_123_01_m_01_0' might be a job-setup task even though it  has a _m_ in its id. Hence the task type of this attempt is JOB_SETUP  instead of MAP. - Similarly reduce attempt 'attempt_123_01_r_01_0' might have failed and is now supposed to do the task-level cleanup. In such a case this attempt  will be of type TASK_CLEANUP instead of REDUCE.
+
+ */
+
+TaskType getAttemptType(TaskAttemptID id){
+
+  if (isCleanupAttempt(id)) {
+
+    return TaskType.TASK_CLEANUP;
+
+  }
+
+ else   if (isJobSetupTask()) {
+
+    return TaskType.JOB_SETUP;
+
+  }
+
+ else   if (isJobCleanupTask()) {
+
+    return TaskType.JOB_CLEANUP;
+
+  }
+
+ else   if (isMapTask()) {
+
+    return TaskType.MAP;
+
+  }
+
+ else {
+
+    return TaskType.REDUCE;
+
+  }
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Compare most recent task attempts dispatch time to current system time so that task progress rate will slow down as time proceeds even if no progress is reported for the task. This allows speculative tasks to be launched for tasks on slow/dead TT's before we realize the TT is dead/slow. Skew isn't an issue since both times are from the JobTrackers perspective.
+
+ * @return the progress rate from the active task that is doing best
+
+ */
+
+public double getCurrentProgressRate(long currentTime){
+
+  double bestProgressRate=0;
+
+  for (  TaskStatus ts : taskStatuses.values()) {
+
+    if (ts.getRunState() == TaskStatus.State.RUNNING || ts.getRunState() == TaskStatus.State.SUCCEEDED || ts.getRunState() == TaskStatus.State.COMMIT_PENDING) {
+
+      double progressRate=ts.getProgress() / Math.max(1,currentTime - getDispatchTime(ts.getTaskID()));
+
+      if (progressRate > bestProgressRate) {
+
+        bestProgressRate=progressRate;
+
+      }
+
+    }
+
+  }
+
+  return bestProgressRate;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Get the diagnostic messages for a given task within this tip.
+
+ * @param taskId the id of the required task
+
+ * @return the list of diagnostics for that task
+
+ */
+
+synchronized List<String> getDiagnosticInfo(TaskAttemptID taskId){
+
+  return taskDiagnosticData.get(taskId);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Return the dispatch time
+
+ */
+
+public long getDispatchTime(TaskAttemptID taskid){
+
+  Long l=dispatchTimeMap.get(taskid);
+
+  if (l != null) {
+
+    return l.longValue();
+
+  }
+
+  return 0;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Return the exec finish time
+
+ */
+
+public long getExecFinishTime(){
+
+  return execFinishTime;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Return the exec start time
+
+ */
+
+public long getExecStartTime(){
+
+  return execStartTime;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Get the id of this map or reduce task.
+
+ * @return The index of this tip in the maps/reduces lists.
+
+ */
+
+public int getIdWithinJob(){
+
+  return partition;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+public long getLastDispatchTime(){
+
+  return this.lastDispatchTime;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+public long getMapInputSize(){
+
+  if (isMapTask() && !jobSetup && !jobCleanup) {
+
+    return splitInfo.getInputDataLength();
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Get the number of machines where this task has failed.
+
+ * @return the size of the failed machine set
+
+ */
+
+public int getNumberOfFailedMachines(){
+
+  return machinesWhereFailed.size();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+private double getOldProgressRate(){
+
+  return oldProgressRate;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Gets the Node list of input split locations sorted in rack order.
+
+ */
+
+public String getSplitNodes(){
+
+  if (!isMapTask() || jobSetup || jobCleanup) {
+
+    return "";
+
+  }
+
+  String[] splits=splitInfo.getLocations();
+
+  Node[] nodes=new Node[splits.length];
+
+  for (int i=0; i < splits.length; i++) {
+
+    nodes[i]=jobtracker.getNode(splits[i]);
+
+  }
+
+  Arrays.sort(nodes,new Comparator<Node>(){
+
+    public int compare(    Node a,    Node b){
+
+      String left=a.getNetworkLocation();
+
+      String right=b.getNetworkLocation();
+
+      return left.compareTo(right);
+
+    }
+
+  }
+
+);
+
+  return nodeToString(nodes);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Get the event number that was raised for this tip
+
+ */
+
+public int getSuccessEventNumber(){
+
+  return successEventNumber;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+TaskAttemptID getSuccessfulTaskid(){
+
+  return successfulTaskId;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Get the Status of the tasks managed by this TIP
+
+ */
+
+public TaskStatus[] getTaskStatuses(){
+
+  return taskStatuses.values().toArray(new TaskStatus[taskStatuses.size()]);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Return a Task that can be sent to a TaskTracker for execution.
+
+ */
+
+public Task getTaskToRun(String taskTracker) throws IOException {
+
+  TaskAttemptID taskid=null;
+
+  if (nextTaskId < (MAX_TASK_EXECS + maxTaskAttempts + numKilledTasks)) {
+
+    int attemptId=job.getNumRestarts() * NUM_ATTEMPTS_PER_RESTART + nextTaskId;
+
+    taskid=new TaskAttemptID(id,attemptId);
+
+    ++nextTaskId;
+
+  }
+
+ else {
+
+    LOG.warn("Exceeded limit of " + (MAX_TASK_EXECS + maxTaskAttempts) + " (plus "+ numKilledTasks+ " killed)"+ " attempts for the tip '"+ getTIPId()+ "'");
+
+    return null;
+
+  }
+
+  setDispatchTime(taskid,JobTracker.getClock().getTime());
+
+  if (0 == execStartTime) {
+
+    setExecStartTime(lastDispatchTime);
+
+  }
+
+  return addRunningTask(taskid,taskTracker);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Return an ID for this task, not its component taskid-threads
+
+ */
+
+public TaskID getTIPId(){
+
+  return this.id;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Has this task already failed on this machine?
+
+ * @param trackerHost The task tracker hostname
+
+ * @return Has it failed?
+
+ */
+
+public boolean hasFailedOnMachine(String trackerHost){
+
+  return machinesWhereFailed.contains(trackerHost);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Was this task ever scheduled to run on this machine?
+
+ * @param trackerHost The task tracker hostname 
+
+ * @param trackerName The tracker name
+
+ * @return Was task scheduled on the tracker?
+
+ */
+
+public boolean hasRunOnMachine(String trackerHost,String trackerName){
+
+  return this.activeTasks.values().contains(trackerName) || hasFailedOnMachine(trackerHost);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Indicate that one of the taskids in this TaskInProgress has failed.
+
+ */
+
+public void incompleteSubTask(TaskAttemptID taskid,JobStatus jobStatus){
+
+  TaskStatus status=taskStatuses.get(taskid);
+
+  String trackerName;
+
+  String trackerHostName=null;
+
+  TaskStatus.State taskState=TaskStatus.State.FAILED;
+
+  if (status != null) {
+
+    trackerName=status.getTaskTracker();
+
+    trackerHostName=JobInProgress.convertTrackerNameToHostName(trackerName);
+
+    Boolean shouldFail=tasksToKill.remove(taskid);
+
+    if (shouldFail != null) {
+
+      if (status.getRunState() == TaskStatus.State.FAILED || status.getRunState() == TaskStatus.State.KILLED) {
+
+        taskState=(shouldFail) ? TaskStatus.State.FAILED : TaskStatus.State.KILLED;
+
+      }
+
+ else {
+
+        taskState=(shouldFail) ? TaskStatus.State.FAILED_UNCLEAN : TaskStatus.State.KILLED_UNCLEAN;
+
+      }
+
+      status.setRunState(taskState);
+
+      addDiagnosticInfo(taskid,"Task has been " + taskState + " by the user");
+
+    }
+
+    taskState=status.getRunState();
+
+    if (taskState != TaskStatus.State.FAILED && taskState != TaskStatus.State.KILLED && taskState != TaskStatus.State.FAILED_UNCLEAN && taskState != TaskStatus.State.KILLED_UNCLEAN) {
+
+      LOG.info("Task '" + taskid + "' running on '"+ trackerName+ "' in state: '"+ taskState+ "' being failed!");
+
+      status.setRunState(TaskStatus.State.FAILED);
+
+      taskState=TaskStatus.State.FAILED;
+
+    }
+
+    if (0 == status.getFinishTime()) {
+
+      status.setFinishTime(JobTracker.getClock().getTime());
+
+    }
+
+  }
+
+  this.activeTasks.remove(taskid);
+
+  if (this.isMapTask() && !jobSetup && !jobCleanup&& isComplete(taskid)&& jobStatus.getRunState() != JobStatus.SUCCEEDED) {
+
+    this.completes--;
+
+    resetSuccessfulTaskid();
+
+  }
+
+  if (tasks.contains(taskid)) {
+
+    if (taskState == TaskStatus.State.FAILED) {
+
+      numTaskFailures++;
+
+      if (isMapTask()) {
+
+        jobtracker.getInstrumentation().failedMap(taskid);
+
+      }
+
+ else {
+
+        jobtracker.getInstrumentation().failedReduce(taskid);
+
+      }
+
+      machinesWhereFailed.add(trackerHostName);
+
+      if (maxSkipRecords > 0) {
+
+        if (LOG.isDebugEnabled()) {
+
+          LOG.debug("TaskInProgress adding" + status.getNextRecordRange());
+
+        }
+
+        failedRanges.add(status.getNextRecordRange());
+
+        skipping=startSkipping();
+
+      }
+
+    }
+
+ else     if (taskState == TaskStatus.State.KILLED) {
+
+      numKilledTasks++;
+
+      if (isMapTask()) {
+
+        jobtracker.getInstrumentation().killedMap(taskid);
+
+      }
+
+ else {
+
+        jobtracker.getInstrumentation().killedReduce(taskid);
+
+      }
+
+    }
+
+  }
+
+  if (numTaskFailures >= maxTaskAttempts) {
+
+    LOG.info("TaskInProgress " + getTIPId() + " has failed "+ numTaskFailures+ " times.");
+
+    kill();
+
+  }
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Initialization common to Map and Reduce
+
+ */
+
+void init(JobID jobId){
+
+  this.id=new TaskID(jobId,isMapTask() ? TaskType.MAP : TaskType.REDUCE,partition);
+
+  this.skipping=startSkipping();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Is this TaskAttemptid running
+
+ * @param taskId
+
+ * @return true if taskId attempt is running.
+
+ */
+
+boolean isAttemptRunning(TaskAttemptID taskId){
+
+  return activeTasks.containsKey(taskId);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+boolean isCleanupAttempt(TaskAttemptID taskid){
+
+  return cleanupTasks.containsKey(taskid);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+public boolean isCommitPending(TaskAttemptID taskId){
+
+  TaskStatus t=taskStatuses.get(taskId);
+
+  if (t == null) {
+
+    return false;
+
+  }
+
+  return t.getRunState() == TaskStatus.State.COMMIT_PENDING;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Is the given taskid the one that took this tip to completion?
+
+ * @param taskid taskid of attempt to check for completion
+
+ * @return <code>true</code> if taskid is complete, else <code>false</code>
+
+ */
+
+public boolean isComplete(TaskAttemptID taskid){
+
+  return ((completes > 0) && taskid.equals(getSuccessfulTaskid()));
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Is the tip a failure?
+
+ * @return <code>true</code> if tip has failed, else <code>false</code>
+
+ */
+
+public boolean isFailed(){
+
+  return failed;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Is the Task associated with taskid is the first attempt of the tip? 
+
+ * @param taskId
+
+ * @return Returns true if the Task is the first attempt of the tip
+
+ */
+
+public boolean isFirstAttempt(TaskAttemptID taskId){
+
+  return firstTaskId == null ? false : firstTaskId.equals(taskId);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+public boolean isOnlyCommitPending(){
+
+  for (  TaskStatus t : taskStatuses.values()) {
+
+    if (t.getRunState() == TaskStatus.State.COMMIT_PENDING) {
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Return whether this TIP still needs to run
+
+ */
+
+boolean isRunnable(){
+
+  return !failed && (completes == 0);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Is this tip currently running any tasks?
+
+ * @return true if any tasks are running
+
+ */
+
+public boolean isRunning(){
+
+  return !activeTasks.isEmpty();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+boolean isRunningTask(TaskAttemptID taskid){
+
+  TaskStatus status=taskStatuses.get(taskid);
+
+  return status != null && status.getRunState() == TaskStatus.State.RUNNING;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Is the task currently speculating?
+
+ */
+
+boolean isSpeculating(){
+
+  return (activeTasks.size() > MAX_TASK_EXECS);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+String machineWhereCleanupRan(TaskAttemptID taskid){
+
+  return cleanupTasks.get(taskid);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+String machineWhereTaskRan(TaskAttemptID taskid){
+
+  return taskStatuses.get(taskid).getTaskTracker();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+private static String nodeToString(Node[] nodes){
+
+  if (nodes == null || nodes.length == 0) {
+
+    return "";
+
+  }
+
+  StringBuffer ret=new StringBuffer(nodes[0].toString());
+
+  for (int i=1; i < nodes.length; i++) {
+
+    ret.append(",");
+
+    ret.append(nodes[i].toString());
+
+  }
+
+  return ret.toString();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Number of times the TaskInProgress has been killed by the framework.
+
+ */
+
+public int numKilledTasks(){
+
+  return numKilledTasks;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Number of times the TaskInProgress has failed.
+
+ */
+
+public int numTaskFailures(){
+
+  return numTaskFailures;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * This method is called whenever there's a status change for one of the TIP's sub-tasks.  It recomputes the overall  progress for the TIP.  We examine all sub-tasks and find  the one that's most advanced (and non-failed).
+
+ */
+
+void recomputeProgress(){
+
+  if (isComplete()) {
+
+    this.progress=1;
+
+    TaskStatus completedStatus=taskStatuses.get(getSuccessfulTaskid());
+
+    this.counters=completedStatus.getCounters();
+
+    this.state=completedStatus.getStateString();
+
+  }
+
+ else   if (failed) {
+
+    this.progress=0;
+
+    this.state="";
+
+    this.counters=new Counters();
+
+  }
+
+ else {
+
+    double bestProgress=0;
+
+    String bestState="";
+
+    Counters bestCounters=new Counters();
+
+    for (Iterator<TaskAttemptID> it=taskStatuses.keySet().iterator(); it.hasNext(); ) {
+
+      TaskAttemptID taskid=it.next();
+
+      TaskStatus status=taskStatuses.get(taskid);
+
+      if (status.getRunState() == TaskStatus.State.SUCCEEDED) {
+
+        bestProgress=1;
+
+        bestState=status.getStateString();
+
+        bestCounters=status.getCounters();
+
+        break;
+
+      }
+
+ else       if (status.getRunState() == TaskStatus.State.COMMIT_PENDING) {
+
+        bestProgress=this.progress;
+
+        bestState=this.state;
+
+        bestCounters=this.counters;
+
+      }
+
+ else       if (status.getRunState() == TaskStatus.State.RUNNING) {
+
+        if (status.getProgress() >= bestProgress) {
+
+          bestProgress=status.getProgress();
+
+          bestState=status.getStateString();
+
+          if (status.getIncludeCounters()) {
+
+            bestCounters=status.getCounters();
+
+          }
+
+ else {
+
+            bestCounters=this.counters;
+
+          }
+
+        }
+
+      }
+
+    }
+
+    this.progress=bestProgress;
+
+    this.state=bestState;
+
+    this.counters=bestCounters;
+
+  }
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+private void resetSuccessfulTaskid(){
+
+  this.successfulTaskId=null;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Set the dispatch time
+
+ */
+
+public void setDispatchTime(TaskAttemptID taskid,long disTime){
+
+  dispatchTimeMap.put(taskid,disTime);
+
+  this.lastDispatchTime=disTime;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Set the exec finish time
+
+ */
+
+public void setExecFinishTime(long finishTime){
+
+  execFinishTime=finishTime;
+
+  TaskUpdatedEvent tue=new TaskUpdatedEvent(id,execFinishTime);
+
+  jobHistory.logEvent(tue,id.getJobID());
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Set the exec start time
+
+ */
+
+public void setExecStartTime(long startTime){
+
+  execStartTime=startTime;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Set the max number of attempts before we declare a TIP as "failed"
+
+ */
+
+private void setMaxTaskAttempts(){
+
+  if (isMapTask()) {
+
+    this.maxTaskAttempts=conf.getMaxMapAttempts();
+
+  }
+
+ else {
+
+    this.maxTaskAttempts=conf.getMaxReduceAttempts();
+
+  }
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+private void setProgressRate(double rate){
+
+  oldProgressRate=rate;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Set the event number that was raised for this tip
+
+ */
+
+public void setSuccessEventNumber(int eventNumber){
+
+  successEventNumber=eventNumber;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+private void setSuccessfulTaskid(TaskAttemptID successfulTaskId){
+
+  this.successfulTaskId=successfulTaskId;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Returns whether a component task-thread should be  closed because the containing JobInProgress has completed or the task is killed by the user
+
+ */
+
+public boolean shouldClose(TaskAttemptID taskid){
+
+  boolean close=false;
+
+  TaskStatus ts=taskStatuses.get(taskid);
+
+  if ((ts != null) && (!tasksReportedClosed.contains(taskid)) && ((this.failed) || ((job.getStatus().getRunState() != JobStatus.RUNNING && (job.getStatus().getRunState() != JobStatus.PREP))))) {
+
+    tasksReportedClosed.add(taskid);
+
+    close=true;
+
+  }
+
+ else   if (isComplete() && !(isMapTask() && !jobSetup && !jobCleanup&& isComplete(taskid)) && !tasksReportedClosed.contains(taskid)) {
+
+    tasksReportedClosed.add(taskid);
+
+    close=true;
+
+    if (isComplete() && !isComplete(taskid)) {
+
+      addDiagnosticInfo(taskid,"Another (possibly speculative) attempt" + " already SUCCEEDED");
+
+    }
+
+  }
+
+ else   if (isCommitPending(taskid) && !shouldCommit(taskid) && !tasksReportedClosed.contains(taskid)) {
+
+    tasksReportedClosed.add(taskid);
+
+    addDiagnosticInfo(taskid,"Another (possibly speculative) attempt" + " went to COMMIT_PENDING state earlier");
+
+    close=true;
+
+  }
+
+ else {
+
+    close=tasksToKill.keySet().contains(taskid);
+
+  }
+
+  return close;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Returns whether the task attempt should be committed or not 
+
+ */
+
+public boolean shouldCommit(TaskAttemptID taskid){
+
+  return !isComplete() && isCommitPending(taskid) && taskToCommit.equals(taskid);
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Get whether to start skipping mode. 
+
+ */
+
+private boolean startSkipping(){
+
+  if (maxSkipRecords > 0 && numTaskFailures >= SkipBadRecords.getAttemptsToStartSkipping(conf)) {
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Constructor for ReduceTask
+
+ */
+
+public TaskInProgress(JobID jobid,String jobFile,int numMaps,int partition,JobTracker jobtracker,JobConf conf,JobInProgress job,int numSlotsRequired){
+
+  this.jobFile=jobFile;
+
+  this.numMaps=numMaps;
+
+  this.partition=partition;
+
+  this.jobtracker=jobtracker;
+
+  this.job=job;
+
+  this.conf=conf;
+
+  this.maxSkipRecords=SkipBadRecords.getReducerMaxSkipGroups(conf);
+
+  this.numSlotsRequired=numSlotsRequired;
+
+  setMaxTaskAttempts();
+
+  init(jobid);
+
+  if (jobtracker != null) {
+
+    this.jobHistory=jobtracker.getJobHistory();
+
+  }
+
+  this.user=job.getUser();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * Constructor for MapTask
+
+ */
+
+public TaskInProgress(JobID jobid,String jobFile,TaskSplitMetaInfo split,JobTracker jobtracker,JobConf conf,JobInProgress job,int partition,int numSlotsRequired){
+
+  this.jobFile=jobFile;
+
+  this.splitInfo=split;
+
+  this.jobtracker=jobtracker;
+
+  this.job=job;
+
+  this.conf=conf;
+
+  this.partition=partition;
+
+  this.maxSkipRecords=SkipBadRecords.getMapperMaxSkipRecords(conf);
+
+  this.numSlotsRequired=numSlotsRequired;
+
+  setMaxTaskAttempts();
+
+  init(jobid);
+
+  if (jobtracker != null) {
+
+    this.jobHistory=jobtracker.getJobHistory();
+
+  }
+
+  this.user=job.getUser();
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+/** 
+
+ * A status message from a client has arrived. It updates the status of a single component-thread-task, which might result in an overall TaskInProgress status update.
+
+ * @return has the task changed its state noticeably?
+
+ */
+
+synchronized boolean updateStatus(TaskStatus status){
+
+  TaskAttemptID taskid=status.getTaskID();
+
+  String tracker=status.getTaskTracker();
+
+  String diagInfo=status.getDiagnosticInfo();
+
+  TaskStatus oldStatus=taskStatuses.get(taskid);
+
+  boolean changed=true;
+
+  if (diagInfo != null && diagInfo.length() > 0) {
+
+    LOG.info("Error from " + taskid + " on "+ tracker+ ": "+ diagInfo);
+
+    addDiagnosticInfo(taskid,diagInfo);
+
+  }
+
+  if (skipping) {
+
+    failedRanges.updateState(status);
+
+  }
+
+  if (oldStatus != null) {
+
+    TaskStatus.State oldState=oldStatus.getRunState();
+
+    TaskStatus.State newState=status.getRunState();
+
+    if ((newState != TaskStatus.State.RUNNING && newState != TaskStatus.State.COMMIT_PENDING && newState != TaskStatus.State.FAILED_UNCLEAN && newState != TaskStatus.State.KILLED_UNCLEAN && newState != TaskStatus.State.UNASSIGNED) && (oldState == newState)) {
+
+      LOG.warn("Recieved duplicate status update of '" + newState + "' for '"+ taskid+ "' of TIP '"+ getTIPId()+ "'"+ "oldTT="+ oldStatus.getTaskTracker()+ " while newTT="+ status.getTaskTracker());
+
+      return false;
+
+    }
+
+    if ((newState == TaskStatus.State.RUNNING || newState == TaskStatus.State.UNASSIGNED) && (oldState == TaskStatus.State.FAILED || oldState == TaskStatus.State.KILLED || oldState == TaskStatus.State.FAILED_UNCLEAN || oldState == TaskStatus.State.KILLED_UNCLEAN || oldState == TaskStatus.State.SUCCEEDED || oldState == TaskStatus.State.COMMIT_PENDING)) {
+
+      return false;
+
+    }
+
+    if (oldState == TaskStatus.State.FAILED || oldState == TaskStatus.State.KILLED) {
+
+      tasksToKill.put(taskid,true);
+
+      return false;
+
+    }
+
+    changed=oldState != newState;
+
+  }
+
+  if (!isCleanupAttempt(taskid)) {
+
+    taskStatuses.put(taskid,status);
+
+    if (!isJobSetupTask() && ((isMapTask() && job.hasSpeculativeMaps()) || (!isMapTask() && job.hasSpeculativeReduces()))) {
+
+      long now=JobTracker.getClock().getTime();
+
+      double oldProgRate=getOldProgressRate();
+
+      double currProgRate=getCurrentProgressRate(now);
+
+      job.updateStatistics(oldProgRate,currProgRate,isMapTask());
+
+      setProgressRate(currProgRate);
+
+    }
+
+  }
+
+ else {
+
+    taskStatuses.get(taskid).statusUpdate(status.getRunState(),status.getProgress(),status.getStateString(),status.getPhase(),status.getFinishTime());
+
+  }
+
+  recomputeProgress();
+
+  return changed;
+
+}
+
+Location: TaskInProgress.java
+
+Content: 
+
+boolean wasKilled(TaskAttemptID taskid){
+
+  return tasksToKill.containsKey(taskid);
+
+}
+

@@ -1,0 +1,710 @@
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Add quotes to each of the command strings and return as a single string 
+
+ * @param cmd The command to be quoted
+
+ * @param isExecutable makes shell path if the first argument is executable
+
+ * @return returns The quoted string. 
+
+ * @throws IOException
+
+ */
+
+public static String addCommand(List<String> cmd,boolean isExecutable) throws IOException {
+
+  StringBuffer command=new StringBuffer();
+
+  for (  String s : cmd) {
+
+    command.append('\'');
+
+    if (isExecutable) {
+
+      command.append(FileUtil.makeShellPath(new File(s)));
+
+      isExecutable=false;
+
+    }
+
+ else {
+
+      command.append(s);
+
+    }
+
+    command.append('\'');
+
+    command.append(" ");
+
+  }
+
+  return command.toString();
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Construct the command line for running the task JVM
+
+ * @param setup The setup commands for the execed process.
+
+ * @param cmd The command and the arguments that should be run
+
+ * @param stdoutFilename The filename that stdout should be saved to
+
+ * @param stderrFilename The filename that stderr should be saved to
+
+ * @param tailLength The length of the tail to be saved.
+
+ * @return the command line as a String
+
+ * @throws IOException
+
+ */
+
+static String buildCommandLine(List<String> setup,List<String> cmd,File stdoutFilename,File stderrFilename,long tailLength,boolean useSetsid) throws IOException {
+
+  String stdout=FileUtil.makeShellPath(stdoutFilename);
+
+  String stderr=FileUtil.makeShellPath(stderrFilename);
+
+  StringBuffer mergedCmd=new StringBuffer();
+
+  if (!Shell.WINDOWS) {
+
+    mergedCmd.append(" export JVM_PID=`echo $$` ; ");
+
+  }
+
+  if (setup != null && setup.size() > 0) {
+
+    mergedCmd.append(addCommand(setup,false));
+
+    mergedCmd.append(";");
+
+  }
+
+  if (tailLength > 0) {
+
+    mergedCmd.append("(");
+
+  }
+
+ else   if (ProcessTree.isSetsidAvailable && useSetsid && !Shell.WINDOWS) {
+
+    mergedCmd.append("exec setsid ");
+
+  }
+
+ else {
+
+    mergedCmd.append("exec ");
+
+  }
+
+  mergedCmd.append(addCommand(cmd,true));
+
+  mergedCmd.append(" < /dev/null ");
+
+  if (tailLength > 0) {
+
+    mergedCmd.append(" | ");
+
+    mergedCmd.append(tailCommand);
+
+    mergedCmd.append(" -c ");
+
+    mergedCmd.append(tailLength);
+
+    mergedCmd.append(" >> ");
+
+    mergedCmd.append(stdout);
+
+    mergedCmd.append(" ; exit $PIPESTATUS ) 2>&1 | ");
+
+    mergedCmd.append(tailCommand);
+
+    mergedCmd.append(" -c ");
+
+    mergedCmd.append(tailLength);
+
+    mergedCmd.append(" >> ");
+
+    mergedCmd.append(stderr);
+
+    mergedCmd.append(" ; exit $PIPESTATUS");
+
+  }
+
+ else {
+
+    mergedCmd.append(" 1>> ");
+
+    mergedCmd.append(stdout);
+
+    mergedCmd.append(" 2>> ");
+
+    mergedCmd.append(stderr);
+
+  }
+
+  return mergedCmd.toString();
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Construct the command line for running the debug script
+
+ * @param cmd The command and the arguments that should be run
+
+ * @param stdoutFilename The filename that stdout should be saved to
+
+ * @param stderrFilename The filename that stderr should be saved to
+
+ * @param tailLength The length of the tail to be saved.
+
+ * @return the command line as a String
+
+ * @throws IOException
+
+ */
+
+static String buildDebugScriptCommandLine(List<String> cmd,String debugout) throws IOException {
+
+  StringBuilder mergedCmd=new StringBuilder();
+
+  mergedCmd.append("exec ");
+
+  boolean isExecutable=true;
+
+  for (  String s : cmd) {
+
+    if (isExecutable) {
+
+      mergedCmd.append(FileUtil.makeShellPath(new File(s)));
+
+      isExecutable=false;
+
+    }
+
+ else {
+
+      mergedCmd.append(s);
+
+    }
+
+    mergedCmd.append(" ");
+
+  }
+
+  mergedCmd.append(" < /dev/null ");
+
+  mergedCmd.append(" >");
+
+  mergedCmd.append(debugout);
+
+  mergedCmd.append(" 2>&1 ");
+
+  return mergedCmd.toString();
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Wrap a command in a shell to capture debug script's  stdout and stderr to debugout.
+
+ * @param cmd The command and the arguments that should be run
+
+ * @param debugoutFilename The filename that stdout and stderrshould be saved to.
+
+ * @return the modified command that should be run
+
+ * @throws IOException
+
+ */
+
+public static List<String> captureDebugOut(List<String> cmd,File debugoutFilename) throws IOException {
+
+  String debugout=FileUtil.makeShellPath(debugoutFilename);
+
+  List<String> result=new ArrayList<String>(3);
+
+  result.add(bashCommand);
+
+  result.add("-c");
+
+  result.add(buildDebugScriptCommandLine(cmd,debugout));
+
+  return result;
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Wrap a command in a shell to capture stdout and stderr to files. If the tailLength is 0, the entire output will be saved.
+
+ * @param cmd The command and the arguments that should be run
+
+ * @param stdoutFilename The filename that stdout should be saved to
+
+ * @param stderrFilename The filename that stderr should be saved to
+
+ * @param tailLength The length of the tail to be saved.
+
+ * @return the modified command that should be run
+
+ */
+
+public static List<String> captureOutAndError(List<String> cmd,File stdoutFilename,File stderrFilename,long tailLength) throws IOException {
+
+  return captureOutAndError(null,cmd,stdoutFilename,stderrFilename,tailLength,false);
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Wrap a command in a shell to capture stdout and stderr to files. Setup commands such as setting memory limit can be passed which  will be executed before exec. If the tailLength is 0, the entire output will be saved.
+
+ * @param setup The setup commands for the execed process.
+
+ * @param cmd The command and the arguments that should be run
+
+ * @param stdoutFilename The filename that stdout should be saved to
+
+ * @param stderrFilename The filename that stderr should be saved to
+
+ * @param tailLength The length of the tail to be saved.
+
+ * @return the modified command that should be run
+
+ */
+
+public static List<String> captureOutAndError(List<String> setup,List<String> cmd,File stdoutFilename,File stderrFilename,long tailLength) throws IOException {
+
+  return captureOutAndError(setup,cmd,stdoutFilename,stderrFilename,tailLength,false);
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Wrap a command in a shell to capture stdout and stderr to files. Setup commands such as setting memory limit can be passed which  will be executed before exec. If the tailLength is 0, the entire output will be saved.
+
+ * @param setup The setup commands for the execed process.
+
+ * @param cmd The command and the arguments that should be run
+
+ * @param stdoutFilename The filename that stdout should be saved to
+
+ * @param stderrFilename The filename that stderr should be saved to
+
+ * @param tailLength The length of the tail to be saved.
+
+ * @param useSetsid Should setsid be used in the command or not.
+
+ * @return the modified command that should be run
+
+ */
+
+public static List<String> captureOutAndError(List<String> setup,List<String> cmd,File stdoutFilename,File stderrFilename,long tailLength,boolean useSetsid) throws IOException {
+
+  List<String> result=new ArrayList<String>(3);
+
+  result.add(bashCommand);
+
+  result.add("-c");
+
+  String mergedCmd=buildCommandLine(setup,cmd,stdoutFilename,stderrFilename,tailLength,useSetsid);
+
+  result.add(mergedCmd);
+
+  return result;
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Wrap a command in a shell to capture stdout and stderr to files. Setup commands such as setting memory limit can be passed which  will be executed before exec. If the tailLength is 0, the entire output will be saved.
+
+ * @param setup The setup commands for the execed process.
+
+ * @param cmd The command and the arguments that should be run
+
+ * @param stdoutFilename The filename that stdout should be saved to
+
+ * @param stderrFilename The filename that stderr should be saved to
+
+ * @param tailLength The length of the tail to be saved.
+
+ * @param pidFileName The name of the pid-file. pid-file's usage is deprecated
+
+ * @return the modified command that should be run
+
+ * @deprecated     pidFiles are no more used. Instead pid is exported toenv variable JVM_PID.
+
+ */
+
+@Deprecated public static List<String> captureOutAndError(List<String> setup,List<String> cmd,File stdoutFilename,File stderrFilename,long tailLength,String pidFileName) throws IOException {
+
+  return captureOutAndError(setup,cmd,stdoutFilename,stderrFilename,tailLength,false);
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+static File getAttemptDir(TaskAttemptID taskid,boolean isCleanup){
+
+  String cleanupSuffix=isCleanup ? ".cleanup" : "";
+
+  return new File(getJobDir(taskid.getJobID()),taskid + cleanupSuffix);
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+static String getBaseLogDir(){
+
+  return System.getProperty("hadoop.log.dir");
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+static File getIndexFile(TaskAttemptID taskid,boolean isCleanup){
+
+  return new File(getAttemptDir(taskid,isCleanup),"log.index");
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Get the user log directory for the job jobid.
+
+ * @param jobid
+
+ * @return user log directory for the job
+
+ */
+
+public static File getJobDir(JobID jobid){
+
+  return new File(getUserLogDir(),jobid.toString());
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+private static LogFileDetail getLogFileDetail(TaskAttemptID taskid,LogName filter,boolean isCleanup) throws IOException {
+
+  File indexFile=getIndexFile(taskid,isCleanup);
+
+  BufferedReader fis=new BufferedReader(new InputStreamReader(SecureIOUtils.openForRead(indexFile,obtainLogDirOwner(taskid),null)));
+
+  LogFileDetail l=new LogFileDetail();
+
+  String str=fis.readLine();
+
+  if (str == null) {
+
+    throw new IOException("Index file for the log of " + taskid + " doesn't exist.");
+
+  }
+
+  l.location=str.substring(str.indexOf(LogFileDetail.LOCATION) + LogFileDetail.LOCATION.length());
+
+  if (filter.equals(LogName.DEBUGOUT) || filter.equals(LogName.PROFILE)) {
+
+    l.length=new File(l.location,filter.toString()).length();
+
+    l.start=0;
+
+    fis.close();
+
+    return l;
+
+  }
+
+  str=fis.readLine();
+
+  while (str != null) {
+
+    if (str.contains(filter.toString())) {
+
+      str=str.substring(filter.toString().length() + 1);
+
+      String[] startAndLen=str.split(" ");
+
+      l.start=Long.parseLong(startAndLen[0]);
+
+      l.length=Long.parseLong(startAndLen[1]);
+
+      break;
+
+    }
+
+    str=fis.readLine();
+
+  }
+
+  fis.close();
+
+  return l;
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+static File getRealTaskLogFileLocation(TaskAttemptID taskid,boolean isCleanup,LogName filter){
+
+  LogFileDetail l;
+
+  try {
+
+    l=getLogFileDetail(taskid,filter,isCleanup);
+
+  }
+
+ catch (  IOException ie) {
+
+    LOG.error("getTaskLogFileDetail threw an exception " + ie);
+
+    return null;
+
+  }
+
+  return new File(l.location,filter.toString());
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+public static File getTaskLogFile(TaskAttemptID taskid,boolean isCleanup,LogName filter){
+
+  return new File(getAttemptDir(taskid,isCleanup),filter.toString());
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Get the desired maximum length of task's logs.
+
+ * @param conf the job to look in
+
+ * @return the number of bytes to cap the log files at
+
+ */
+
+public static long getTaskLogLength(JobConf conf){
+
+  return conf.getLong(JobContext.TASK_USERLOG_LIMIT,0) * 1024;
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+private static File getTmpIndexFile(TaskAttemptID taskid,boolean isCleanup){
+
+  return new File(getAttemptDir(taskid,isCleanup),"log.tmp");
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Method to return the location of user log directory.
+
+ * @return base log directory
+
+ */
+
+static File getUserLogDir(){
+
+  return LOG_DIR;
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+/** 
+
+ * Obtain the owner of the log dir. This is  determined by checking the job's log directory.
+
+ */
+
+static String obtainLogDirOwner(TaskAttemptID taskid) throws IOException {
+
+  Configuration conf=new Configuration();
+
+  FileSystem raw=FileSystem.getLocal(conf).getRaw();
+
+  Path jobLogDir=new Path(getJobDir(taskid.getJobID()).getAbsolutePath());
+
+  FileStatus jobStat=raw.getFileStatus(jobLogDir);
+
+  return jobStat.getOwner();
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+private static void resetPrevLengths(String logLocation){
+
+  prevOutLength=new File(logLocation,LogName.STDOUT.toString()).length();
+
+  prevErrLength=new File(logLocation,LogName.STDERR.toString()).length();
+
+  prevLogLength=new File(logLocation,LogName.SYSLOG.toString()).length();
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public synchronized static void syncLogs(String logLocation,TaskAttemptID taskid,boolean isCleanup) throws IOException {
+
+  System.out.flush();
+
+  System.err.flush();
+
+  Enumeration<Logger> allLoggers=LogManager.getCurrentLoggers();
+
+  while (allLoggers.hasMoreElements()) {
+
+    Logger l=allLoggers.nextElement();
+
+    Enumeration<Appender> allAppenders=l.getAllAppenders();
+
+    while (allAppenders.hasMoreElements()) {
+
+      Appender a=allAppenders.nextElement();
+
+      if (a instanceof TaskLogAppender) {
+
+        ((TaskLogAppender)a).flush();
+
+      }
+
+    }
+
+  }
+
+  if (currentTaskid != taskid) {
+
+    currentTaskid=taskid;
+
+    resetPrevLengths(logLocation);
+
+  }
+
+  writeToIndexFile(logLocation,isCleanup);
+
+}
+
+Location: TaskLog.java
+
+Content: 
+
+private static void writeToIndexFile(String logLocation,boolean isCleanup) throws IOException {
+
+  File tmpIndexFile=getTmpIndexFile(currentTaskid,isCleanup);
+
+  BufferedOutputStream bos=new BufferedOutputStream(SecureIOUtils.createForWrite(tmpIndexFile,0644));
+
+  DataOutputStream dos=new DataOutputStream(bos);
+
+  dos.writeBytes(LogFileDetail.LOCATION + logLocation + "\n"+ LogName.STDOUT.toString()+ ":");
+
+  dos.writeBytes(Long.toString(prevOutLength) + " ");
+
+  dos.writeBytes(Long.toString(new File(logLocation,LogName.STDOUT.toString()).length() - prevOutLength) + "\n" + LogName.STDERR+ ":");
+
+  dos.writeBytes(Long.toString(prevErrLength) + " ");
+
+  dos.writeBytes(Long.toString(new File(logLocation,LogName.STDERR.toString()).length() - prevErrLength) + "\n" + LogName.SYSLOG.toString()+ ":");
+
+  dos.writeBytes(Long.toString(prevLogLength) + " ");
+
+  dos.writeBytes(Long.toString(new File(logLocation,LogName.SYSLOG.toString()).length() - prevLogLength) + "\n");
+
+  dos.close();
+
+  File indexFile=getIndexFile(currentTaskid,isCleanup);
+
+  Path indexFilePath=new Path(indexFile.getAbsolutePath());
+
+  Path tmpIndexFilePath=new Path(tmpIndexFile.getAbsolutePath());
+
+  if (localFS == null) {
+
+    localFS=FileSystem.getLocal(new Configuration());
+
+  }
+
+  localFS.rename(tmpIndexFilePath,indexFilePath);
+
+}
+

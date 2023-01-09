@@ -1,0 +1,160 @@
+Location: TestDelegationTokenRenewal.java
+
+Content: 
+
+/** 
+
+ * auxilary - create token
+
+ * @param renewer
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+static MyToken createTokens(Text renewer) throws IOException {
+
+  Text user1=new Text("user1");
+
+  MyDelegationTokenSecretManager sm=new MyDelegationTokenSecretManager(DFSConfigKeys.DFS_NAMENODE_DELEGATION_KEY_UPDATE_INTERVAL_DEFAULT,DFSConfigKeys.DFS_NAMENODE_DELEGATION_KEY_UPDATE_INTERVAL_DEFAULT,DFSConfigKeys.DFS_NAMENODE_DELEGATION_TOKEN_MAX_LIFETIME_DEFAULT,3600000,null);
+
+  sm.startThreads();
+
+  DelegationTokenIdentifier dtId1=new DelegationTokenIdentifier(user1,renewer,user1);
+
+  MyToken token1=new MyToken(dtId1,sm);
+
+  token1.setService(new Text("localhost:0"));
+
+  return token1;
+
+}
+
+Location: TestDelegationTokenRenewal.java
+
+Content: 
+
+/** 
+
+ * Basic idea of the test: 1. create tokens. 2. Mark one of them to be renewed in 2 seconds (istead of 24 hourse) 3. register them for renewal 4. sleep for 3 seconds 5. count number of renewals (should 3 initial ones + one extra) 6. register another token for 2 seconds  7. cancel it immediately 8. Sleep and check that the 2 seconds renew didn't happen  (totally 5 reneals) 9. check cancelation
+
+ * @throws IOException
+
+ * @throws URISyntaxException
+
+ */
+
+@Test public void testDTRenewal() throws IOException, URISyntaxException {
+
+  MyFS dfs=(MyFS)FileSystem.get(conf);
+
+  System.out.println("dfs=" + (Object)dfs);
+
+  MyToken token1, token2, token3;
+
+  token1=dfs.getDelegationToken(new Text("user1"));
+
+  token2=dfs.getDelegationToken(new Text("user2"));
+
+  token3=dfs.getDelegationToken(new Text("user3"));
+
+  dfs.setTokenToRenewIn2Sec(token1);
+
+  System.out.println("token=" + token1 + " should be renewed for 2 secs");
+
+  String nn1=DelegationTokenRenewal.SCHEME + "://host1:0";
+
+  String nn2=DelegationTokenRenewal.SCHEME + "://host2:0";
+
+  String nn3=DelegationTokenRenewal.SCHEME + "://host3:0";
+
+  Credentials ts=new Credentials();
+
+  ts.addToken(new Text(nn1),token1);
+
+  ts.addToken(new Text(nn2),token2);
+
+  ts.addToken(new Text(nn3),token3);
+
+  DelegationTokenRenewal.registerDelegationTokensForRenewal(new JobID("job1",1),ts,conf);
+
+  int numberOfExpectedRenewals=3 + 1;
+
+  int attempts=10;
+
+  while (attempts-- > 0) {
+
+    try {
+
+      Thread.sleep(3 * 1000);
+
+    }
+
+ catch (    InterruptedException e) {
+
+    }
+
+    if (dfs.getCounter() == numberOfExpectedRenewals)     break;
+
+  }
+
+  System.out.println("Counter = " + dfs.getCounter() + ";t="+ dfs.getToken());
+
+  assertEquals("renew wasn't called as many times as expected(4):",numberOfExpectedRenewals,dfs.getCounter());
+
+  assertEquals("most recently renewed token mismatch",dfs.getToken(),token1);
+
+  ts=new Credentials();
+
+  MyToken token4=dfs.getDelegationToken(new Text("user4"));
+
+  dfs.setTokenToRenewIn2Sec(token4);
+
+  System.out.println("token=" + token4 + " should be renewed for 2 secs");
+
+  String nn4=DelegationTokenRenewal.SCHEME + "://host4:0";
+
+  ts.addToken(new Text(nn4),token4);
+
+  JobID jid2=new JobID("job2",1);
+
+  DelegationTokenRenewal.registerDelegationTokensForRenewal(jid2,ts,conf);
+
+  DelegationTokenRenewal.removeDelegationTokenRenewalForJob(jid2);
+
+  numberOfExpectedRenewals=dfs.getCounter();
+
+  try {
+
+    Thread.sleep(6 * 1000);
+
+  }
+
+ catch (  InterruptedException e) {
+
+  }
+
+  System.out.println("Counter = " + dfs.getCounter() + ";t="+ dfs.getToken());
+
+  assertEquals("renew wasn't called as many times as expected",numberOfExpectedRenewals,dfs.getCounter());
+
+  boolean exception=false;
+
+  try {
+
+    dfs.renewDelegationToken(token4);
+
+  }
+
+ catch (  InvalidToken ite) {
+
+    exception=true;
+
+  }
+
+  assertTrue("Renew of canceled token didn't fail",exception);
+
+}
+

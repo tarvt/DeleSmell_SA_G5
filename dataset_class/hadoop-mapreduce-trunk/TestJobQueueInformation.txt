@@ -1,0 +1,88 @@
+Location: TestJobQueueInformation.java
+
+Content: 
+
+private JobConf configureWaitingJob(JobConf conf) throws IOException {
+
+  UtilsForTests.configureWaitingJobConf(conf,IN_DIR,OUTPUT_DIR,2,0,"test-job-queue-info",getSignalFile(),getSignalFile());
+
+  return conf;
+
+}
+
+Location: TestJobQueueInformation.java
+
+Content: 
+
+static String getSignalFile(){
+
+  return (new Path(SHARE_DIR,"signal")).toString();
+
+}
+
+Location: TestJobQueueInformation.java
+
+Content: 
+
+public void testJobQueues() throws IOException {
+
+  JobClient jc=new JobClient(mrCluster.createJobConf());
+
+  String expectedQueueInfo="Maximum Tasks Per Job :: 10";
+
+  JobQueueInfo[] queueInfos=jc.getQueues();
+
+  assertNotNull(queueInfos);
+
+  assertEquals(1,queueInfos.length);
+
+  assertEquals("default",queueInfos[0].getQueueName());
+
+  assertEquals(QueueState.RUNNING.getStateName(),queueInfos[0].getQueueState());
+
+  JobConf conf=mrCluster.createJobConf();
+
+  FileSystem fileSys=dfsCluster.getFileSystem();
+
+  conf=configureWaitingJob(conf);
+
+  conf.setJobName("test-job-queue-info-test");
+
+  fileSys.delete(SHARE_DIR,true);
+
+  RunningJob rJob=jc.submitJob(conf);
+
+  while (rJob.getJobState() != JobStatus.RUNNING) {
+
+    UtilsForTests.waitFor(10);
+
+  }
+
+  int numberOfJobs=0;
+
+  for (  JobQueueInfo queueInfo : queueInfos) {
+
+    JobStatus[] jobStatusList=jc.getJobsFromQueue(queueInfo.getQueueName());
+
+    assertNotNull(queueInfo.getQueueName());
+
+    assertNotNull(queueInfo.getSchedulingInfo());
+
+    assertEquals(expectedQueueInfo,queueInfo.getSchedulingInfo());
+
+    numberOfJobs+=jobStatusList.length;
+
+    for (    JobStatus status : jobStatusList) {
+
+      assertEquals(JOB_SCHEDULING_INFO,status.getSchedulingInfo());
+
+    }
+
+  }
+
+  assertEquals(1,numberOfJobs);
+
+  UtilsForTests.signalTasks(dfsCluster,fileSys,getSignalFile(),getSignalFile(),4);
+
+}
+

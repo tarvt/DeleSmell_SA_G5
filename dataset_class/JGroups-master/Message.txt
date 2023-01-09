@@ -1,0 +1,1022 @@
+Location: Message.java
+
+Content: 
+
+public Buffer buffer2(){
+
+  return getBuffer2();
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message buffer(Buffer b){
+
+  return setBuffer(b);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Clears a number of flags in a message
+
+ * @param flags The flags
+
+ * @return A reference to the message
+
+ */
+
+public Message clearFlag(Flag... flags){
+
+  if (flags != null) {
+
+    short tmp=this.flags;
+
+    for (    Flag flag : flags)     if (flag != null)     tmp&=~flag.value();
+
+    this.flags=tmp;
+
+  }
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message clearTransientFlag(TransientFlag... flags){
+
+  if (flags != null) {
+
+    short tmp=this.transient_flags;
+
+    for (    TransientFlag flag : flags)     if (flag != null)     tmp&=~flag.value();
+
+    this.transient_flags=(byte)tmp;
+
+  }
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Create a copy of the message. If offset and length are used (to refer to another buffer), the copy will contain only the subset offset and length point to, copying the subset into the new copy.
+
+ * @param copy_buffer
+
+ * @return Message with specified data
+
+ */
+
+public Message copy(boolean copy_buffer){
+
+  return copy(copy_buffer,true);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Create a copy of the message. If offset and length are used (to refer to another buffer), the copy will contain only the subset offset and length point to, copying the subset into the new copy.<p/> Note that for headers, only the arrays holding references to the headers are copied, not the headers themselves ! The consequence is that the headers array of the copy hold the *same* references as the original, so do *not modify the headers ! If you want to change a header, copy it and call  {@link Message#putHeader(short,Header)} again.
+
+ * @param copy_buffer
+
+ * @param copy_headers Copy the headers
+
+ * @return Message with specified data
+
+ */
+
+public Message copy(boolean copy_buffer,boolean copy_headers){
+
+  Message retval=new Message(false);
+
+  retval.dest=dest;
+
+  retval.sender=sender;
+
+  short tmp_flags=this.flags;
+
+  byte tmp_tflags=this.transient_flags;
+
+  retval.flags=tmp_flags;
+
+  retval.transient_flags=tmp_tflags;
+
+  if (copy_buffer && buf != null)   retval.setBuffer(buf,offset,length);
+
+  retval.headers=copy_headers && headers != null ? Headers.copy(this.headers) : createHeaders(Util.DEFAULT_HEADERS);
+
+  return retval;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Doesn't copy any headers except for those with ID >= copy_headers_above
+
+ * @param copy_buffer
+
+ * @param starting_id
+
+ * @return A message with headers whose ID are >= starting_id
+
+ */
+
+public Message copy(boolean copy_buffer,short starting_id){
+
+  return copy(copy_buffer,starting_id,(short[])null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Copies a message. Copies only headers with IDs >= starting_id or IDs which are in the copy_only_ids list
+
+ * @param copy_buffer
+
+ * @param starting_id
+
+ * @param copy_only_ids
+
+ * @return
+
+ */
+
+public Message copy(boolean copy_buffer,short starting_id,short... copy_only_ids){
+
+  Message retval=copy(copy_buffer,false);
+
+  for (  Map.Entry<Short,Header> entry : getHeaders().entrySet()) {
+
+    short id=entry.getKey();
+
+    if (id >= starting_id || Util.containsId(id,copy_only_ids))     retval.putHeader(id,entry.getValue());
+
+  }
+
+  return retval;
+
+}
+
+Location: Message.java
+
+Content: 
+
+protected static Header[] createHeaders(int size){
+
+  return size > 0 ? new Header[size] : new Header[3];
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static String flagsToString(short flags){
+
+  StringBuilder sb=new StringBuilder();
+
+  boolean first=true;
+
+  Flag[] all_flags=Flag.values();
+
+  for (  Flag flag : all_flags) {
+
+    if (isFlagSet(flags,flag)) {
+
+      if (first)       first=false;
+
+ else       sb.append("|");
+
+      sb.append(flag);
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Buffer getBuffer2(){
+
+  if (buf == null)   return null;
+
+  return new Buffer(buf,offset,length);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Returns a reference to the headers hashmap, which is <em>immutable</em>. Any attempt to modify the returned map will cause a runtime exception
+
+ */
+
+public Map<Short,Header> getHeaders(){
+
+  return Headers.getHeaders(this.headers);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Returns a header for a range of IDs, or null if not found 
+
+ */
+
+public <T extends Header>T getHeader(short... ids){
+
+  if (ids == null || ids.length == 0)   return null;
+
+  return Headers.getHeader(this.headers,ids);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public int getNumHeaders(){
+
+  return Headers.size(this.headers);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public <T extends Object>T getObject(){
+
+  return getObject(null);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Uses custom serialization to create an object from the buffer of the message. Note that this is dangerous when using your own classloader, e.g. inside of an application server ! Most likely, JGroups will use the system classloader to deserialize the buffer into an object, whereas (for example) a web application will want to use the webapp's classloader, resulting in a ClassCastException. The recommended way is for the application to use their own serialization and only pass byte[] buffer to JGroups.<p/> As of 3.5, a classloader can be passed in. It will be used first to find a class, before contacting the other classloaders in the list. If null, the default list of classloaders will be used.
+
+ * @return the object
+
+ */
+
+public <T extends Object>T getObject(ClassLoader loader){
+
+  try {
+
+    return Util.objectFromByteBuffer(buf,offset,length,loader);
+
+  }
+
+ catch (  Exception ex) {
+
+    throw new IllegalArgumentException(ex);
+
+  }
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Returns a <em>reference</em> to the payload (byte buffer). Note that this buffer should not be modified as we do not copy the buffer on copy() or clone(): the buffer of the copied message is simply a reference to the old buffer.<br/> Even if offset and length are used: we return the <em>entire</em> buffer, not a subset.
+
+ */
+
+public byte[] getRawBuffer(){
+
+  return buf;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Address getSrc(){
+
+  return sender;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Checks if a given flag is set
+
+ * @param flag The flag
+
+ * @return Whether or not the flag is currently set
+
+ */
+
+public boolean isFlagSet(Flag flag){
+
+  return isFlagSet(flags,flag);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static boolean isFlagSet(short flags,Flag flag){
+
+  return flag != null && ((flags & flag.value()) == flag.value());
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static boolean isTransientFlagSet(short flags,TransientFlag flag){
+
+  return flag != null && (flags & flag.value()) == flag.value();
+
+}
+
+Location: Message.java
+
+Content: 
+
+public boolean isTransientFlagSet(TransientFlag flag){
+
+  return isTransientFlagSet(transient_flags,flag);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message makeReply(){
+
+  Message retval=new Message(sender);
+
+  if (dest != null)   retval.setSrc(dest);
+
+  return retval;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message(){
+
+  this(true);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Constructs a message given a destination address
+
+ * @param dest The Address of the receiver. If it is null, then the message is sent to the group. Otherwise, it issent to a single member.
+
+ */
+
+public Message(Address dest){
+
+  setDest(dest);
+
+  headers=createHeaders(Util.DEFAULT_HEADERS);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message(Address dest,Buffer buf){
+
+  this(dest);
+
+  setBuffer(buf);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Constructs a message given a destination and source address and the payload byte buffer
+
+ * @param dest The Address of the receiver. If it is null, then the message is sent to the group. Otherwise, it issent to a single member.
+
+ * @param buf The payload. Note that this buffer must not be modified (e.g. buf[0]='x' is notallowed) since we don't copy the contents.
+
+ */
+
+public Message(Address dest,byte[] buf){
+
+  this(dest,buf,0,buf != null ? buf.length : 0);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Constructs a message. The index and length parameters provide a reference to a byte buffer, rather than a copy, and refer to a subset of the buffer. This is important when we want to avoid copying. When the message is serialized, only the subset is serialized.</p> <em> Note that the byte[] buffer passed as argument must not be modified. Reason: if we retransmit the message, it would still have a ref to the original byte[] buffer passed in as argument, and so we would retransmit a changed byte[] buffer ! </em>
+
+ * @param dest The Address of the receiver. If it is null, then the message is sent to the group. Otherwise, it issent to a single member.
+
+ * @param buf A reference to a byte buffer
+
+ * @param offset The index into the byte buffer
+
+ * @param length The number of bytes to be used from <tt>buf</tt>. Both index and length are checkedfor array index violations and an ArrayIndexOutOfBoundsException will be thrown if invalid
+
+ */
+
+public Message(Address dest,byte[] buf,int offset,int length){
+
+  this(dest);
+
+  setBuffer(buf,offset,length);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Constructs a message given a destination and source address and the payload object
+
+ * @param dest The Address of the receiver. If it is null, then the message is sent to the group. Otherwise, it issent to a single member.
+
+ * @param obj The object that will be marshalled into the byte buffer. Has to be serializable (e.g. implementingSerializable, Externalizable or Streamable, or be a basic type (e.g. Integer, Short etc)).
+
+ */
+
+public Message(Address dest,Object obj){
+
+  this(dest);
+
+  setObject(obj);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message(boolean create_headers){
+
+  if (create_headers)   headers=createHeaders(Util.DEFAULT_HEADERS);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public int numHeaders(){
+
+  return Headers.size(this.headers);
+
+}
+
+Location: Message.java
+
+Content: 
+
+public int offset(){
+
+  return offset;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public String printObjectHeaders(){
+
+  return Headers.printObjectHeaders(this.headers);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Puts a header given an ID into the hashmap. Overwrites potential existing entry. 
+
+ */
+
+public Message putHeader(short id,Header hdr){
+
+  if (id < 0)   throw new IllegalArgumentException("An ID of " + id + " is invalid");
+
+  if (hdr != null)   hdr.setProtId(id);
+
+synchronized (this) {
+
+    Header[] resized_array=Headers.putHeader(this.headers,id,hdr,true);
+
+    if (resized_array != null)     this.headers=resized_array;
+
+  }
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public byte[] rawBuffer(){
+
+  return buf;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Reads the message's contents from an input stream, but skips the buffer and instead returns the position (offset) at which the buffer starts 
+
+ */
+
+public int readFromSkipPayload(ByteArrayDataInputStream in) throws IOException, ClassNotFoundException {
+
+  byte leading=in.readByte();
+
+  flags=in.readShort();
+
+  if (Util.isFlagSet(leading,DEST_SET))   dest=Util.readAddress(in);
+
+  if (Util.isFlagSet(leading,SRC_SET))   sender=Util.readAddress(in);
+
+  int len=in.readShort();
+
+  headers=createHeaders(len);
+
+  for (int i=0; i < len; i++) {
+
+    short id=in.readShort();
+
+    Header hdr=readHeader(in).setProtId(id);
+
+    this.headers[i]=hdr;
+
+  }
+
+  if (!Util.isFlagSet(leading,BUF_SET))   return -1;
+
+  length=in.readInt();
+
+  return in.position();
+
+}
+
+Location: Message.java
+
+Content: 
+
+protected static Header readHeader(DataInput in) throws IOException, ClassNotFoundException {
+
+  short magic_number=in.readShort();
+
+  Header hdr=ClassConfigurator.create(magic_number);
+
+  hdr.readFrom(in);
+
+  return hdr;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Sets the buffer<p/> Note that the byte[] buffer passed as argument must not be modified. Reason: if we retransmit the message, it would still have a ref to the original byte[] buffer passed in as argument, and so we would retransmit a changed byte[] buffer !
+
+ */
+
+public Message setBuffer(Buffer buf){
+
+  if (buf != null) {
+
+    this.buf=buf.getBuf();
+
+    this.offset=buf.getOffset();
+
+    this.length=buf.getLength();
+
+  }
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Sets the buffer.<p/> Note that the byte[] buffer passed as argument must not be modified. Reason: if we retransmit the message, it would still have a ref to the original byte[] buffer passed in as argument, and so we would retransmit a changed byte[] buffer !
+
+ */
+
+public Message setBuffer(byte[] b){
+
+  buf=b;
+
+  if (buf != null) {
+
+    offset=0;
+
+    length=buf.length;
+
+  }
+
+ else   offset=length=0;
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Sets the internal buffer to point to a subset of a given buffer.<p/> <em> Note that the byte[] buffer passed as argument must not be modified. Reason: if we retransmit the message, it would still have a ref to the original byte[] buffer passed in as argument, and so we would retransmit a changed byte[] buffer ! </em>
+
+ * @param b The reference to a given buffer. If null, we'll reset the buffer to null
+
+ * @param offset The initial position
+
+ * @param length The number of bytes
+
+ */
+
+public Message setBuffer(byte[] b,int offset,int length){
+
+  buf=b;
+
+  if (buf != null) {
+
+    if (offset < 0 || offset > buf.length)     throw new ArrayIndexOutOfBoundsException(offset);
+
+    if ((offset + length) > buf.length)     throw new ArrayIndexOutOfBoundsException((offset + length));
+
+    this.offset=offset;
+
+    this.length=length;
+
+  }
+
+ else   this.offset=this.length=0;
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Sets a number of flags in a message
+
+ * @param flags The flag or flags
+
+ * @return A reference to the message
+
+ */
+
+public Message setFlag(Flag... flags){
+
+  if (flags != null) {
+
+    short tmp=this.flags;
+
+    for (    Flag flag : flags) {
+
+      if (flag != null)       tmp|=flag.value();
+
+    }
+
+    this.flags=tmp;
+
+  }
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Takes an object and uses Java serialization to generate the byte[] buffer which is set in the message. Parameter 'obj' has to be serializable (e.g. implementing Serializable, Externalizable or Streamable, or be a basic type (e.g. Integer, Short etc)).
+
+ */
+
+public Message setObject(Object obj){
+
+  if (obj == null)   return this;
+
+  if (obj instanceof byte[])   return setBuffer((byte[])obj);
+
+  if (obj instanceof Buffer)   return setBuffer((Buffer)obj);
+
+  try {
+
+    return setBuffer(Util.objectToByteBuffer(obj));
+
+  }
+
+ catch (  Exception ex) {
+
+    throw new IllegalArgumentException(ex);
+
+  }
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message setSrc(Address new_src){
+
+  sender=new_src;
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Atomically checks if a given flag is set and - if not - sets it. When multiple threads concurrently call this method with the same flag, only one of them will be able to set the flag
+
+ * @param flag
+
+ * @return True if the flag could be set, false if not (was already set)
+
+ */
+
+public synchronized boolean setTransientFlagIfAbsent(TransientFlag flag){
+
+  if (isTransientFlagSet(flag))   return false;
+
+  setTransientFlag(flag);
+
+  return true;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message setTransientFlag(short flag){
+
+  short tmp=this.transient_flags;
+
+  tmp|=flag;
+
+  this.transient_flags=(byte)tmp;
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Same as  {@link #setFlag(Flag)} except that transient flags are not marshalled
+
+ * @param flags The flag
+
+ */
+
+public Message setTransientFlag(TransientFlag... flags){
+
+  if (flags != null) {
+
+    short tmp=this.transient_flags;
+
+    for (    TransientFlag flag : flags)     if (flag != null)     tmp|=flag.value();
+
+    this.transient_flags=(byte)tmp;
+
+  }
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Address src(){
+
+  return sender;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public Message src(Address new_src){
+
+  sender=new_src;
+
+  return this;
+
+}
+
+Location: Message.java
+
+Content: 
+
+public static String transientFlagsToString(short flags){
+
+  StringBuilder sb=new StringBuilder();
+
+  boolean first=true;
+
+  TransientFlag[] all_flags=TransientFlag.values();
+
+  for (  TransientFlag flag : all_flags) {
+
+    if (isTransientFlagSet(flags,flag)) {
+
+      if (first)       first=false;
+
+ else       sb.append("|");
+
+      sb.append(flag);
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: Message.java
+
+Content: 
+
+protected static void writeHeader(Header hdr,DataOutput out) throws IOException {
+
+  short magic_number=hdr.getMagicId();
+
+  out.writeShort(magic_number);
+
+  hdr.writeTo(out);
+
+}
+
+Location: Message.java
+
+Content: 
+
+/** 
+
+ * Writes the message to the output stream, but excludes the dest and src addresses unless the src address given as argument is different from the message's src address
+
+ * @param excluded_headers Don't marshal headers that are part of excluded_headers
+
+ */
+
+public void writeToNoAddrs(Address src,DataOutput out,short... excluded_headers) throws IOException {
+
+  byte leading=0;
+
+  boolean write_src_addr=src == null || sender != null && !sender.equals(src);
+
+  if (write_src_addr)   leading=Util.setFlag(leading,SRC_SET);
+
+  if (buf != null)   leading=Util.setFlag(leading,BUF_SET);
+
+  out.write(leading);
+
+  out.writeShort(flags);
+
+  if (write_src_addr)   Util.writeAddress(sender,out);
+
+  Header[] hdrs=this.headers;
+
+  int size=Headers.size(hdrs,excluded_headers);
+
+  out.writeShort(size);
+
+  if (size > 0) {
+
+    for (    Header hdr : hdrs) {
+
+      if (hdr == null)       break;
+
+      short id=hdr.getProtId();
+
+      if (Util.containsId(id,excluded_headers))       continue;
+
+      out.writeShort(id);
+
+      writeHeader(hdr,out);
+
+    }
+
+  }
+
+  if (buf != null) {
+
+    out.writeInt(length);
+
+    out.write(buf,offset,length);
+
+  }
+
+}
+

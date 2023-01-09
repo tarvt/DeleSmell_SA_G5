@@ -1,0 +1,334 @@
+Location: TestSeveral.java
+
+Content: 
+
+/** 
+
+ * Clean the Output directories before running a Job
+
+ * @param fs
+
+ * @param outDir
+
+ */
+
+private void clean(FileSystem fs,Path outDir){
+
+  try {
+
+    fs.delete(outDir,true);
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+}
+
+Location: TestSeveral.java
+
+Content: 
+
+/** 
+
+ * Utility class to create input for the jobs
+
+ * @param inDir
+
+ * @param conf
+
+ * @throws IOException
+
+ */
+
+private void makeInput(Path inDir,JobConf conf) throws IOException {
+
+  FileSystem inFs=inDir.getFileSystem(conf);
+
+  if (inFs.exists(inDir)) {
+
+    inFs.delete(inDir,true);
+
+  }
+
+  inFs.mkdirs(inDir);
+
+  Path inFile=new Path(inDir,"part-0");
+
+  DataOutputStream file=inFs.create(inFile);
+
+  for (int i=0; i < numReduces; i++) {
+
+    file.writeBytes("b a\n");
+
+  }
+
+  file.close();
+
+}
+
+Location: TestSeveral.java
+
+Content: 
+
+/** 
+
+ * Submit a job that will get Killed with a Regex Name (TestJobName) Verify Job Directory Cleanup (TestJobDirCleanup) Verify Even is generated for Killed Job (TestJobInProgressListener)
+
+ * @throws Exception
+
+ */
+
+public void testKilledJob() throws Exception {
+
+  JobConf conf=mrCluster.createJobConf();
+
+  conf.setJobName("name * abc + Evalue]");
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setOutputKeyClass(LongWritable.class);
+
+  conf.setOutputValueClass(Text.class);
+
+  conf.setMapperClass(KillMapper.class);
+
+  conf.setOutputFormat(NullOutputFormat.class);
+
+  conf.setNumReduceTasks(0);
+
+  conf.setLong(JobContext.MAP_MAX_ATTEMPTS,2);
+
+  final Path inDir=new Path("./wc/input");
+
+  final Path outDir=new Path("./wc/output");
+
+  final Path histDir=new Path("./wc/history");
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  clean(fs,outDir);
+
+  makeInput(inDir,conf);
+
+  JobClient jobClient=new JobClient(conf);
+
+  RunningJob job=jobClient.submitJob(conf);
+
+  while (job.getJobState() != JobStatus.RUNNING) {
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    InterruptedException e) {
+
+      break;
+
+    }
+
+  }
+
+  job.killJob();
+
+  job.waitForCompletion();
+
+  assertTrue(job.isComplete());
+
+  assertEquals(JobStatus.KILLED,job.getJobState());
+
+  assertFalse("Missing event notification on killing a running job",myListener.contains(job.getID()));
+
+  TestJobDirCleanup.verifyJobDirCleanup(mrCluster,numTT,job.getID());
+
+}
+
+Location: TestSeveral.java
+
+Content: 
+
+/** 
+
+ * Submit a job with a complex name (TestJobName.testComplexName) Check the status of the job as successful (TestJobKillAndFail) Check that the task tracker directory is cleaned up (TestJobDirCleanup) Create some user defined counters and check them (TestUserDefinedCounters) Job uses a reducer from an External Jar (TestMiniMRClassPath) Check task directories (TestMiniMRWithDFS) Check if the listener notifications are received(TestJobInProgressListener) Verify if priority changes to the job are reflected (TestJobClient) Validate JobHistory file format, content, userlog location (TestJobHistory)
+
+ * @throws Exception
+
+ */
+
+public void testSuccessfulJob() throws Exception {
+
+  final JobConf conf=mrCluster.createJobConf();
+
+  conf.setJobName("[name][some other value that gets" + " truncated internally that this test attempts to aggravate]");
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setOutputFormat(TextOutputFormat.class);
+
+  conf.setMapOutputKeyClass(LongWritable.class);
+
+  conf.setMapOutputValueClass(Text.class);
+
+  conf.setOutputKeyClass(LongWritable.class);
+
+  conf.setOutputValueClass(Text.class);
+
+  conf.setCompressMapOutput(true);
+
+  conf.setMapperClass(TestUserDefinedCounters.CountingMapper.class);
+
+  conf.set("mapred.reducer.class","testjar.ExternalIdentityReducer");
+
+  conf.setLong(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.SPLIT_MINSIZE,1024 * 1024);
+
+  conf.setNumReduceTasks(numReduces);
+
+  conf.setJobPriority(JobPriority.HIGH);
+
+  conf.setJar("build/test/mapred/testjar/testjob.jar");
+
+  String pattern=TaskAttemptID.getTaskAttemptIDsPattern(null,null,TaskType.MAP,1,null);
+
+  conf.setKeepTaskFilesPattern(pattern);
+
+  final Path inDir=new Path("./test/input");
+
+  final Path outDir=new Path("./test/output");
+
+  TEST1_UGI.doAs(new PrivilegedExceptionAction<Void>(){
+
+    public Void run(){
+
+      FileInputFormat.setInputPaths(conf,inDir);
+
+      FileOutputFormat.setOutputPath(conf,outDir);
+
+      return null;
+
+    }
+
+  }
+
+);
+
+  clean(fs,outDir);
+
+  final RunningJob job=TEST1_UGI.doAs(new PrivilegedExceptionAction<RunningJob>(){
+
+    public RunningJob run() throws IOException {
+
+      makeInput(inDir,conf);
+
+      JobClient jobClient=new JobClient(conf);
+
+      return jobClient.submitJob(conf);
+
+    }
+
+  }
+
+);
+
+  final JobID jobId=job.getID();
+
+  while (job.getJobState() != JobStatus.RUNNING) {
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    InterruptedException e) {
+
+      break;
+
+    }
+
+  }
+
+  assertFalse("Missing event notification for a running job",myListener.contains(jobId,true));
+
+  job.waitForCompletion();
+
+  assertTrue(job.isComplete());
+
+  assertEquals(JobStatus.SUCCEEDED,job.getJobState());
+
+  assertFalse("Missing event notification for a successful job",myListener.contains(jobId,false));
+
+  TaskAttemptID taskid=new TaskAttemptID(new TaskID(jobId,TaskType.MAP,1),0);
+
+  TestMiniMRWithDFS.checkTaskDirectories(mrCluster,TEST1_UGI.getUserName(),new String[]{jobId.toString()},new String[]{taskid.toString()});
+
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+
+  int exitCode=TestJobClient.runTool(conf,new JobClient(),new String[]{"-counter",jobId.toString(),"org.apache.hadoop.mapred.Task$Counter","MAP_INPUT_RECORDS"},out);
+
+  assertEquals(0,exitCode);
+
+  assertEquals(numReduces,Integer.parseInt(out.toString().trim()));
+
+  TestUserDefinedCounters.verifyCounters(job,numTT);
+
+  TestJobClient.verifyJobPriority(jobId.toString(),"HIGH",conf);
+
+  TEST1_UGI.doAs(new PrivilegedExceptionAction<Void>(){
+
+    public Void run() throws IOException {
+
+      verifyOutput(outDir.getFileSystem(conf),outDir);
+
+      TestJobHistory.validateJobHistoryFileFormat(mrCluster.getJobTrackerRunner().getJobTracker().getJobHistory(),jobId,conf,"SUCCEEDED",false);
+
+      TestJobHistory.validateJobHistoryFileContent(mrCluster,job,conf);
+
+      for (int i=0; i < numTT; ++i) {
+
+        Path jobDirPath=new Path(mrCluster.getTaskTrackerLocalDir(i),TaskTracker.getJobCacheSubdir(TEST1_UGI.getUserName()));
+
+        boolean b=FileSystem.getLocal(conf).delete(jobDirPath,true);
+
+        assertTrue(b);
+
+      }
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: TestSeveral.java
+
+Content: 
+
+private void verifyOutput(FileSystem fs,Path outDir) throws IOException {
+
+  Path[] outputFiles=FileUtil.stat2Paths(fs.listStatus(outDir,new Utils.OutputFileUtils.OutputFilesFilter()));
+
+  assertEquals(numReduces,outputFiles.length);
+
+  InputStream is=fs.open(outputFiles[0]);
+
+  BufferedReader reader=new BufferedReader(new InputStreamReader(is));
+
+  String s=reader.readLine().split("\t")[1];
+
+  assertEquals("b a",s);
+
+  assertNull(reader.readLine());
+
+  reader.close();
+
+}
+

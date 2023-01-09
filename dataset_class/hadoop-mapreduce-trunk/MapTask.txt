@@ -1,0 +1,222 @@
+Location: MapTask.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <T>T getSplitDetails(Path file,long offset) throws IOException {
+
+  FileSystem fs=file.getFileSystem(conf);
+
+  FSDataInputStream inFile=fs.open(file);
+
+  inFile.seek(offset);
+
+  String className=Text.readString(inFile);
+
+  Class<T> cls;
+
+  try {
+
+    cls=(Class<T>)conf.getClassByName(className);
+
+  }
+
+ catch (  ClassNotFoundException ce) {
+
+    IOException wrap=new IOException("Split class " + className + " not found");
+
+    wrap.initCause(ce);
+
+    throw wrap;
+
+  }
+
+  SerializationFactory factory=new SerializationFactory(conf);
+
+  Deserializer<T> deserializer=(Deserializer<T>)factory.getDeserializer(cls);
+
+  deserializer.open(inFile);
+
+  T split=deserializer.deserialize(null);
+
+  long pos=inFile.getPos();
+
+  getCounters().findCounter(TaskCounter.SPLIT_RAW_BYTES).increment(pos - offset);
+
+  inFile.close();
+
+  return split;
+
+}
+
+Location: MapTask.java
+
+Content: 
+
+public MapTask(){
+
+  super();
+
+}
+
+Location: MapTask.java
+
+Content: 
+
+public MapTask(String jobFile,TaskAttemptID taskId,int partition,TaskSplitIndex splitIndex,int numSlotsRequired){
+
+  super(jobFile,taskId,partition,numSlotsRequired);
+
+  this.splitMetaInfo=splitIndex;
+
+}
+
+Location: MapTask.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <INKEY,INVALUE,OUTKEY,OUTVALUE>void runNewMapper(final JobConf job,final TaskSplitIndex splitIndex,final TaskUmbilicalProtocol umbilical,TaskReporter reporter) throws IOException, ClassNotFoundException, InterruptedException {
+
+  org.apache.hadoop.mapreduce.TaskAttemptContext taskContext=new org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl(job,getTaskID(),reporter);
+
+  org.apache.hadoop.mapreduce.Mapper<INKEY,INVALUE,OUTKEY,OUTVALUE> mapper=(org.apache.hadoop.mapreduce.Mapper<INKEY,INVALUE,OUTKEY,OUTVALUE>)ReflectionUtils.newInstance(taskContext.getMapperClass(),job);
+
+  org.apache.hadoop.mapreduce.InputFormat<INKEY,INVALUE> inputFormat=(org.apache.hadoop.mapreduce.InputFormat<INKEY,INVALUE>)ReflectionUtils.newInstance(taskContext.getInputFormatClass(),job);
+
+  org.apache.hadoop.mapreduce.InputSplit split=null;
+
+  split=getSplitDetails(new Path(splitIndex.getSplitLocation()),splitIndex.getStartOffset());
+
+  org.apache.hadoop.mapreduce.RecordReader<INKEY,INVALUE> input=new NewTrackingRecordReader<INKEY,INVALUE>(inputFormat.createRecordReader(split,taskContext),reporter);
+
+  job.setBoolean(JobContext.SKIP_RECORDS,isSkipping());
+
+  org.apache.hadoop.mapreduce.RecordWriter output=null;
+
+  if (job.getNumReduceTasks() == 0) {
+
+    output=new NewDirectOutputCollector(taskContext,job,umbilical,reporter);
+
+  }
+
+ else {
+
+    output=new NewOutputCollector(taskContext,job,umbilical,reporter);
+
+  }
+
+  org.apache.hadoop.mapreduce.MapContext<INKEY,INVALUE,OUTKEY,OUTVALUE> mapContext=new MapContextImpl<INKEY,INVALUE,OUTKEY,OUTVALUE>(job,getTaskID(),input,output,committer,reporter,split);
+
+  org.apache.hadoop.mapreduce.Mapper<INKEY,INVALUE,OUTKEY,OUTVALUE>.Context mapperContext=new WrappedMapper<INKEY,INVALUE,OUTKEY,OUTVALUE>().getMapContext(mapContext);
+
+  input.initialize(split,mapperContext);
+
+  mapper.run(mapperContext);
+
+  mapPhase.complete();
+
+  setPhase(TaskStatus.Phase.SORT);
+
+  statusUpdate(umbilical);
+
+  input.close();
+
+  output.close(mapperContext);
+
+}
+
+Location: MapTask.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <INKEY,INVALUE,OUTKEY,OUTVALUE>void runOldMapper(final JobConf job,final TaskSplitIndex splitIndex,final TaskUmbilicalProtocol umbilical,TaskReporter reporter) throws IOException, InterruptedException, ClassNotFoundException {
+
+  InputSplit inputSplit=getSplitDetails(new Path(splitIndex.getSplitLocation()),splitIndex.getStartOffset());
+
+  updateJobWithSplit(job,inputSplit);
+
+  reporter.setInputSplit(inputSplit);
+
+  RecordReader<INKEY,INVALUE> rawIn=job.getInputFormat().getRecordReader(inputSplit,job,reporter);
+
+  RecordReader<INKEY,INVALUE> in=isSkipping() ? new SkippingRecordReader<INKEY,INVALUE>(rawIn,umbilical,reporter) : new TrackedRecordReader<INKEY,INVALUE>(rawIn,reporter);
+
+  job.setBoolean(JobContext.SKIP_RECORDS,isSkipping());
+
+  int numReduceTasks=conf.getNumReduceTasks();
+
+  LOG.info("numReduceTasks: " + numReduceTasks);
+
+  MapOutputCollector collector=null;
+
+  if (numReduceTasks > 0) {
+
+    collector=new MapOutputBuffer(umbilical,job,reporter);
+
+  }
+
+ else {
+
+    collector=new DirectMapOutputCollector(umbilical,job,reporter);
+
+  }
+
+  MapRunnable<INKEY,INVALUE,OUTKEY,OUTVALUE> runner=ReflectionUtils.newInstance(job.getMapRunnerClass(),job);
+
+  try {
+
+    runner.run(in,new OldOutputCollector(collector,conf),reporter);
+
+    mapPhase.complete();
+
+    if (numReduceTasks > 0) {
+
+      setPhase(TaskStatus.Phase.SORT);
+
+    }
+
+    statusUpdate(umbilical);
+
+    collector.flush();
+
+  }
+
+  finally {
+
+    in.close();
+
+    collector.close();
+
+  }
+
+}
+
+Location: MapTask.java
+
+Content: 
+
+/** 
+
+ * Update the job with details about the file split
+
+ * @param job the job configuration to update
+
+ * @param inputSplit the file split
+
+ */
+
+private void updateJobWithSplit(final JobConf job,InputSplit inputSplit){
+
+  if (inputSplit instanceof FileSplit) {
+
+    FileSplit fileSplit=(FileSplit)inputSplit;
+
+    job.set(JobContext.MAP_INPUT_FILE,fileSplit.getPath().toString());
+
+    job.setLong(JobContext.MAP_INPUT_START,fileSplit.getStart());
+
+    job.setLong(JobContext.MAP_INPUT_PATH,fileSplit.getLength());
+
+  }
+
+}
+

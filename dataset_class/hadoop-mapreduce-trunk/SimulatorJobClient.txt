@@ -1,0 +1,350 @@
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * Doing exponential back-off probing because load probing could be pretty expensive if we have many pending jobs.
+
+ * @param overloaded Is the job tracker currently overloaded?
+
+ */
+
+private void adjustLoadProbingInterval(boolean overloaded){
+
+  if (overloaded) {
+
+    if (inFlightLPE == null) {
+
+      loadProbingInterval=Math.min(loadProbingInterval * 2,LOAD_PROB_INTERVAL_MAX);
+
+    }
+
+  }
+
+ else {
+
+    loadProbingInterval=LOAD_PROB_INTERVAL_START;
+
+  }
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * Check whether job tracker is overloaded. If not, submit the next job. Pre-condition: noMoreJobs == false
+
+ * @return A list of {@link SimulatorEvent}'s as the follow-up actions.
+
+ */
+
+private List<SimulatorEvent> checkLoadAndSubmitJob(long now) throws IOException {
+
+  List<SimulatorEvent> ret=new ArrayList<SimulatorEvent>(2);
+
+  boolean overloaded=isOverloaded(now);
+
+  adjustLoadProbingInterval(overloaded);
+
+  if (inFlightLPE != null && (inFlightLPE.getTimeStamp() > now + loadProbingInterval)) {
+
+    cancelledLPE.put(inFlightLPE,Boolean.TRUE);
+
+    inFlightLPE=null;
+
+  }
+
+  if (inFlightLPE == null) {
+
+    inFlightLPE=new LoadProbingEvent(this,now + loadProbingInterval);
+
+    ret.add(inFlightLPE);
+
+  }
+
+  if (!overloaded) {
+
+    long submissionTime=now + 1;
+
+    JobStory story=new SimulatorJobStory(nextJob,submissionTime);
+
+    ret.add(new JobSubmissionEvent(this,submissionTime,story));
+
+  }
+
+  return ret;
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * We try to use some light-weight mechanism to determine cluster load.
+
+ * @return Whether, from job client perspective, the cluster is overloaded.
+
+ */
+
+private boolean isOverloaded(long now) throws IOException {
+
+  try {
+
+    ClusterMetrics clusterMetrics=jobTracker.getClusterMetrics();
+
+    if (runningJobs.size() >= clusterMetrics.getTaskTrackerCount()) {
+
+      System.out.printf("%d Overloaded is %s: " + "#runningJobs >= taskTrackerCount (%d >= %d)\n",now,Boolean.TRUE.toString(),runningJobs.size(),clusterMetrics.getTaskTrackerCount());
+
+      return true;
+
+    }
+
+    float incompleteMapTasks=0;
+
+    for (    Map.Entry<JobID,JobSketchInfo> entry : runningJobs.entrySet()) {
+
+      org.apache.hadoop.mapreduce.JobStatus jobStatus=jobTracker.getJobStatus(entry.getKey());
+
+      incompleteMapTasks+=(1 - Math.min(jobStatus.getMapProgress(),1.0)) * entry.getValue().numMaps;
+
+    }
+
+    boolean overloaded=incompleteMapTasks > OVERLAOD_MAPTASK_MAPSLOT_RATIO * clusterMetrics.getMapSlotCapacity();
+
+    String relOp=(overloaded) ? ">" : "<=";
+
+    System.out.printf("%d Overloaded is %s: " + "incompleteMapTasks %s %.1f*mapSlotCapacity (%.1f %s %.1f*%d)\n",now,Boolean.toString(overloaded),relOp,OVERLAOD_MAPTASK_MAPSLOT_RATIO,incompleteMapTasks,relOp,OVERLAOD_MAPTASK_MAPSLOT_RATIO,clusterMetrics.getMapSlotCapacity());
+
+    return overloaded;
+
+  }
+
+ catch (  InterruptedException e) {
+
+    throw new IOException("InterruptedException",e);
+
+  }
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * Handles a job completion event. 
+
+ * @param jobCompleteEvent the submission event to respond to
+
+ * @throws IOException 
+
+ */
+
+private List<SimulatorEvent> processJobCompleteEvent(JobCompleteEvent jobCompleteEvent) throws IOException {
+
+  JobStatus jobStatus=jobCompleteEvent.getJobStatus();
+
+  System.out.println("Job " + jobStatus.getJobID() + " completed at "+ jobCompleteEvent.getTimeStamp()+ " with status: "+ jobStatus.getState()+ " runtime: "+ (jobCompleteEvent.getTimeStamp() - jobStatus.getStartTime()));
+
+  runningJobs.remove(jobCompleteEvent.getJobStatus().getJobID());
+
+  if (noMoreJobs && runningJobs.isEmpty()) {
+
+    jobCompleteEvent.getEngine().shutdown();
+
+  }
+
+  if (!noMoreJobs) {
+
+    if (submissionPolicy == SimulatorJobSubmissionPolicy.SERIAL) {
+
+      long submissionTime=jobCompleteEvent.getTimeStamp() + 1;
+
+      JobStory story=new SimulatorJobStory(nextJob,submissionTime);
+
+      return Collections.<SimulatorEvent>singletonList(new JobSubmissionEvent(this,submissionTime,story));
+
+    }
+
+ else     if (submissionPolicy == SimulatorJobSubmissionPolicy.STRESS) {
+
+      return checkLoadAndSubmitJob(jobCompleteEvent.getTimeStamp());
+
+    }
+
+  }
+
+  return SimulatorEngine.EMPTY_EVENTS;
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * Responds to a job submission event by submitting the job to the  job tracker. If serializeJobSubmissions is true, it postpones the submission until after the previous job finished instead.
+
+ * @param submitEvent the submission event to respond to
+
+ */
+
+private List<SimulatorEvent> processJobSubmissionEvent(JobSubmissionEvent submitEvent) throws IOException {
+
+  JobStatus status=null;
+
+  JobStory story=submitEvent.getJob();
+
+  try {
+
+    status=submitJob(story);
+
+  }
+
+ catch (  InterruptedException e) {
+
+    throw new IOException(e);
+
+  }
+
+  runningJobs.put(status.getJobID(),new JobSketchInfo(story.getNumberMaps(),story.getNumberReduces()));
+
+  System.out.println("Job " + status.getJobID() + " is submitted at "+ submitEvent.getTimeStamp());
+
+  nextJob=jobStoryProducer.getNextJob();
+
+  if (nextJob == null) {
+
+    noMoreJobs=true;
+
+    return SimulatorEngine.EMPTY_EVENTS;
+
+  }
+
+ else   if (submissionPolicy == SimulatorJobSubmissionPolicy.REPLAY) {
+
+    return Collections.<SimulatorEvent>singletonList(new JobSubmissionEvent(this,nextJob.getSubmissionTime(),nextJob));
+
+  }
+
+ else   if (submissionPolicy == SimulatorJobSubmissionPolicy.STRESS) {
+
+    return checkLoadAndSubmitJob(submitEvent.getTimeStamp());
+
+  }
+
+  return SimulatorEngine.EMPTY_EVENTS;
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * Handles a load probing event. If cluster is not overloaded, submit a new job.
+
+ * @param loadProbingEvent the load probing event
+
+ */
+
+private List<SimulatorEvent> processLoadProbingEvent(LoadProbingEvent loadProbingEvent) throws IOException {
+
+  if (cancelledLPE.containsKey(loadProbingEvent)) {
+
+    cancelledLPE.remove(loadProbingEvent);
+
+    return SimulatorEngine.EMPTY_EVENTS;
+
+  }
+
+  assert (loadProbingEvent == inFlightLPE);
+
+  inFlightLPE=null;
+
+  if (noMoreJobs) {
+
+    return SimulatorEngine.EMPTY_EVENTS;
+
+  }
+
+  return checkLoadAndSubmitJob(loadProbingEvent.getTimeStamp());
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ * @param jobTracker The job tracker where we submit job to. Note that the  {@link SimulatorJobClient} interacts with the JobTracker through the{@link ClientProtocol}.
+
+ * @param jobStoryProducer
+
+ */
+
+public SimulatorJobClient(ClientProtocol jobTracker,JobStoryProducer jobStoryProducer){
+
+  this(jobTracker,jobStoryProducer,SimulatorJobSubmissionPolicy.REPLAY);
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ * @param jobTracker The job tracker where we submit job to. Note that the  {@link SimulatorJobClient} interacts with the JobTracker through the{@link ClientProtocol}.
+
+ * @param jobStoryProducer
+
+ * @param submissionPolicy How should we submit jobs to the JobTracker?
+
+ */
+
+public SimulatorJobClient(ClientProtocol jobTracker,JobStoryProducer jobStoryProducer,SimulatorJobSubmissionPolicy submissionPolicy){
+
+  this.jobTracker=jobTracker;
+
+  this.jobStoryProducer=jobStoryProducer;
+
+  this.submissionPolicy=submissionPolicy;
+
+}
+
+Location: SimulatorJobClient.java
+
+Content: 
+
+@SuppressWarnings("deprecation") private JobStatus submitJob(JobStory job) throws IOException, InterruptedException {
+
+  JobID jobId=job.getJobID();
+
+  if (jobId == null) {
+
+    jobId=jobTracker.getNewJobID();
+
+  }
+
+  SimulatorJobCache.put(org.apache.hadoop.mapred.JobID.downgrade(jobId),job);
+
+  return jobTracker.submitJob(jobId,"dummy-path",null);
+
+}
+

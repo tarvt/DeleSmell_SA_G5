@@ -1,0 +1,884 @@
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected void clipBackground(float startx,float starty,float width,float height,BorderProps bpsBefore,BorderProps bpsAfter,BorderProps bpsStart,BorderProps bpsEnd){
+
+  pushGroup(new IFGraphicContext.Group());
+
+  Rectangle rect=toMillipointRectangle(startx,starty,width,height);
+
+  try {
+
+    painter.clipBackground(rect,bpsBefore,bpsAfter,bpsStart,bpsEnd);
+
+  }
+
+ catch (  IFException ife) {
+
+    handleIFException(ife);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void concatenateTransformationMatrixMpt(AffineTransform at,boolean force){
+
+  if (force || !at.isIdentity()) {
+
+    if (log.isTraceEnabled()) {
+
+      log.trace("-----concatenateTransformationMatrix: " + at);
+
+    }
+
+    IFGraphicContext.Group group=new IFGraphicContext.Group(at);
+
+    pushGroup(group);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * Creates a default  {@link IFDocumentHandler} when none has been set.
+
+ * @return the default IFDocumentHandler
+
+ */
+
+protected IFDocumentHandler createDefaultDocumentHandler(){
+
+  FOUserAgent userAgent=getUserAgent();
+
+  IFSerializer serializer=new IFSerializer(new IFContext(userAgent));
+
+  if (userAgent.isAccessibilityEnabled()) {
+
+    userAgent.setStructureTreeEventHandler(serializer.getStructureTreeEventHandler());
+
+  }
+
+  return serializer;
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private Metadata createDefaultDocumentMetadata(){
+
+  Metadata xmp=new Metadata();
+
+  DublinCoreAdapter dc=DublinCoreSchema.getAdapter(xmp);
+
+  if (getUserAgent().getTitle() != null) {
+
+    dc.setTitle(getUserAgent().getTitle());
+
+  }
+
+  if (getUserAgent().getAuthor() != null) {
+
+    dc.addCreator(getUserAgent().getAuthor());
+
+  }
+
+  if (getUserAgent().getKeywords() != null) {
+
+    dc.addSubject(getUserAgent().getKeywords());
+
+  }
+
+  XMPBasicAdapter xmpBasic=XMPBasicSchema.getAdapter(xmp);
+
+  if (getUserAgent().getProducer() != null) {
+
+    xmpBasic.setCreatorTool(getUserAgent().getProducer());
+
+  }
+
+ else {
+
+    xmpBasic.setCreatorTool(Version.getVersion());
+
+  }
+
+  xmpBasic.setMetadataDate(new java.util.Date());
+
+  if (getUserAgent().getCreationDate() != null) {
+
+    xmpBasic.setCreateDate(getUserAgent().getCreationDate());
+
+  }
+
+ else {
+
+    xmpBasic.setCreateDate(xmpBasic.getMetadataDate());
+
+  }
+
+  return xmp;
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected void drawBackground(float startx,float starty,float width,float height,Trait.Background back,BorderProps bpsBefore,BorderProps bpsAfter,BorderProps bpsStart,BorderProps bpsEnd){
+
+  if (painter.isBackgroundRequired(bpsBefore,bpsAfter,bpsStart,bpsEnd)) {
+
+    super.drawBackground(startx,starty,width,height,back,bpsBefore,bpsAfter,bpsStart,bpsEnd);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected void drawBorders(float startx,float starty,float width,float height,BorderProps bpsBefore,BorderProps bpsAfter,BorderProps bpsStart,BorderProps bpsEnd,int level,Color innerBackgroundColor){
+
+  Rectangle rect=toMillipointRectangle(startx,starty,width,height);
+
+  try {
+
+    BorderProps bpsTop=bpsBefore;
+
+    BorderProps bpsBottom=bpsAfter;
+
+    BorderProps bpsLeft;
+
+    BorderProps bpsRight;
+
+    if ((level == -1) || ((level & 1) == 0)) {
+
+      bpsLeft=bpsStart;
+
+      bpsRight=bpsEnd;
+
+    }
+
+ else {
+
+      bpsLeft=bpsEnd;
+
+      bpsRight=bpsStart;
+
+    }
+
+    painter.drawBorderRect(rect,bpsTop,bpsBottom,bpsLeft,bpsRight,innerBackgroundColor);
+
+  }
+
+ catch (  IFException ife) {
+
+    handleIFException(ife);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void establishForeignAttributes(Map foreignAttributes){
+
+  documentHandler.getContext().setForeignAttributes(foreignAttributes);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void establishStructureTreeElement(StructureTreeElement structureTreeElement){
+
+  documentHandler.getContext().setStructureTreeElement(structureTreeElement);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void finishOpenGoTos(){
+
+  int count=unfinishedGoTos.size();
+
+  if (count > 0) {
+
+    Point defaultPos=new Point(0,0);
+
+    while (!unfinishedGoTos.isEmpty()) {
+
+      GoToXYAction action=(GoToXYAction)unfinishedGoTos.get(0);
+
+      noteGoToPosition(action,defaultPos);
+
+    }
+
+    PDFEventProducer eventProducer=PDFEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.nonFullyResolvedLinkTargets(this,count);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private GoToXYAction getGoToActionForID(String targetID,int pageIndex){
+
+  GoToXYAction action=(GoToXYAction)actionSet.get(targetID);
+
+  if (action == null) {
+
+    Point position=(Point)idPositions.get(targetID);
+
+    if (pageIndex >= 0 && position != null) {
+
+      action=new GoToXYAction(targetID,pageIndex,position,documentHandler.getContext());
+
+    }
+
+ else {
+
+      action=new GoToXYAction(targetID,pageIndex,null,documentHandler.getContext());
+
+      unfinishedGoTos.add(action);
+
+    }
+
+    action=(GoToXYAction)actionSet.put(action);
+
+  }
+
+  return action;
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private String getTargetableID(Area area){
+
+  String id=(String)area.getTrait(Trait.PROD_ID);
+
+  if (id == null || id.length() == 0 || !currentPageViewport.isFirstWithID(id) || idPositions.containsKey(id)) {
+
+    return null;
+
+  }
+
+ else {
+
+    return id;
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void handleIFExceptionWithIOException(IFException ife) throws IOException {
+
+  Throwable cause=ife.getCause();
+
+  if (cause instanceof IOException) {
+
+    throw (IOException)cause;
+
+  }
+
+ else {
+
+    handleIFException(ife);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void handleIFException(IFException ife){
+
+  if (ife.getCause() instanceof SAXException) {
+
+    throw new RuntimeException(ife.getCause());
+
+  }
+
+ else {
+
+    throw new RuntimeException(ife);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * Indicates whether document navigation features are supported by the document handler.
+
+ * @return true if document navigation features are available
+
+ */
+
+protected boolean hasDocumentNavigation(){
+
+  return getDocumentNavigationHandler() != null;
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param userAgent the user agent that contains configuration details. This cannot be null.
+
+ */
+
+public IFRenderer(FOUserAgent userAgent){
+
+  super(userAgent);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void noteGoToPosition(GoToXYAction action,PageViewport pv,Point position){
+
+  action.setPageIndex(pv.getPageIndex());
+
+  noteGoToPosition(action,position);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void noteGoToPosition(GoToXYAction action,Point position){
+
+  action.setTargetLocation(position);
+
+  try {
+
+    getDocumentNavigationHandler().addResolvedAction(action);
+
+  }
+
+ catch (  IFException ife) {
+
+    handleIFException(ife);
+
+  }
+
+  unfinishedGoTos.remove(action);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void popID(Area area){
+
+  String prodID=(String)area.getTrait(Trait.PROD_ID);
+
+  if (prodID != null) {
+
+    ids.pop();
+
+    documentHandler.getContext().setID(ids.empty() ? "" : ids.peek());
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void preparePage(PageViewport page){
+
+  super.preparePage(page);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void processExtensionAttachments(AreaTreeObject area) throws IFException {
+
+  if (area.hasExtensionAttachments()) {
+
+    for (    ExtensionAttachment attachment : area.getExtensionAttachments()) {
+
+      this.documentHandler.handleExtensionObject(attachment);
+
+    }
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void pushGroup(IFGraphicContext.Group group){
+
+  graphicContext.pushGroup(group);
+
+  try {
+
+    group.start(painter);
+
+  }
+
+ catch (  IFException ife) {
+
+    handleIFException(ife);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void pushID(Area area){
+
+  String prodID=(String)area.getTrait(Trait.PROD_ID);
+
+  if (prodID != null) {
+
+    ids.push(prodID);
+
+    documentHandler.getContext().setID(prodID);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected void renderBlockViewport(BlockViewport bv,List children){
+
+  boolean inNewLayer=false;
+
+  if (maybeStartLayer(bv)) {
+
+    inNewLayer=true;
+
+  }
+
+  Dimension dim=new Dimension(bv.getIPD(),bv.getBPD());
+
+  viewportDimensionStack.push(dim);
+
+  int saveIP=currentIPPosition;
+
+  int saveBP=currentBPPosition;
+
+  CTM ctm=bv.getCTM();
+
+  int borderPaddingStart=bv.getBorderAndPaddingWidthStart();
+
+  int borderPaddingBefore=bv.getBorderAndPaddingWidthBefore();
+
+  if (bv.getPositioning() == Block.ABSOLUTE || bv.getPositioning() == Block.FIXED) {
+
+    List breakOutList=null;
+
+    if (bv.getPositioning() == Block.FIXED) {
+
+      breakOutList=breakOutOfStateStack();
+
+    }
+
+    AffineTransform positionTransform=new AffineTransform();
+
+    positionTransform.translate(bv.getXOffset(),bv.getYOffset());
+
+    positionTransform.translate(-borderPaddingStart,-borderPaddingBefore);
+
+    String transf;
+
+    transf=bv.getForeignAttributeValue(FOX_TRANSFORM);
+
+    if (transf != null) {
+
+      AffineTransform freeTransform=AWTTransformProducer.createAffineTransform(transf);
+
+      positionTransform.concatenate(freeTransform);
+
+    }
+
+    saveGraphicsState();
+
+    concatenateTransformationMatrixMpt(positionTransform,false);
+
+    float bpwidth=(borderPaddingStart + bv.getBorderAndPaddingWidthEnd());
+
+    float bpheight=(borderPaddingBefore + bv.getBorderAndPaddingWidthAfter());
+
+    drawBackAndBorders(bv,0,0,(dim.width + bpwidth) / 1000f,(dim.height + bpheight) / 1000f);
+
+    AffineTransform contentRectTransform=new AffineTransform();
+
+    contentRectTransform.translate(borderPaddingStart,borderPaddingBefore);
+
+    concatenateTransformationMatrixMpt(contentRectTransform,false);
+
+    AffineTransform contentTransform=ctm.toAffineTransform();
+
+    startViewport(contentTransform,bv.getClipRectangle());
+
+    currentIPPosition=0;
+
+    currentBPPosition=0;
+
+    renderBlocks(bv,children);
+
+    endViewport();
+
+    restoreGraphicsState();
+
+    if (breakOutList != null) {
+
+      restoreStateStackAfterBreakOut(breakOutList);
+
+    }
+
+    currentIPPosition=saveIP;
+
+    currentBPPosition=saveBP;
+
+  }
+
+ else {
+
+    currentBPPosition+=bv.getSpaceBefore();
+
+    handleBlockTraits(bv);
+
+    currentIPPosition+=bv.getStartIndent();
+
+    CTM tempctm=new CTM(containingIPPosition,currentBPPosition);
+
+    ctm=tempctm.multiply(ctm);
+
+    currentBPPosition+=borderPaddingBefore;
+
+    startVParea(ctm,bv.getClipRectangle());
+
+    currentIPPosition=0;
+
+    currentBPPosition=0;
+
+    renderBlocks(bv,children);
+
+    endVParea();
+
+    currentIPPosition=saveIP;
+
+    currentBPPosition=saveBP;
+
+    currentBPPosition+=bv.getAllocBPD();
+
+  }
+
+  viewportDimensionStack.pop();
+
+  maybeEndLayer(bv,inNewLayer);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * Does low-level rendering of text using generalized position adjustments.
+
+ * @param s text to render
+
+ * @param dp an array of 4-tuples, expressing [X,Y] placmentadjustments and [X,Y] advancement adjustments, in that order (may be null)
+
+ * @param reversed if true then text has been reversed (from logical order)
+
+ * @param font to font in use
+
+ * @param parentArea the parent text area to retrieve certain traits from
+
+ */
+
+private void renderTextWithAdjustments(String s,int[][] dp,boolean reversed,Font font,AbstractTextArea parentArea){
+
+  for (int i=0, n=s.length(); i < n; i++) {
+
+    textUtil.addChar(s.charAt(i));
+
+    if (dp != null) {
+
+      textUtil.adjust(dp[i]);
+
+    }
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void resetForeignAttributes(){
+
+  documentHandler.getContext().resetForeignAttributes();
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void resetStructurePointer(){
+
+  documentHandler.getContext().resetStructureTreeElement();
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void saveAbsolutePosition(String id,int relativeIPP,int relativeBPP){
+
+  saveAbsolutePosition(id,this.currentPageViewport,relativeIPP,relativeBPP,graphicContext.getTransform());
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void saveAbsolutePosition(String id,PageViewport pv,int relativeIPP,int relativeBPP,AffineTransform tf){
+
+  Point position=new Point(relativeIPP,relativeBPP);
+
+  tf.transform(position,position);
+
+  idPositions.put(id,position);
+
+  GoToXYAction action=(GoToXYAction)actionSet.get(id);
+
+  if (action != null) {
+
+    noteGoToPosition(action,pv,position);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void saveBlockPosIfTargetable(Block block){
+
+  String id=getTargetableID(block);
+
+  if (hasDocumentNavigation() && id != null) {
+
+    int ipp=block.getXOffset();
+
+    int bpp=block.getYOffset() + block.getSpaceBefore();
+
+    int positioning=block.getPositioning();
+
+    if (!(positioning == Block.FIXED || positioning == Block.ABSOLUTE)) {
+
+      ipp+=currentIPPosition;
+
+      bpp+=currentBPPosition;
+
+    }
+
+    saveAbsolutePosition(id,currentPageViewport,ipp,bpp,graphicContext.getTransform());
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void saveInlinePosIfTargetable(InlineArea inlineArea){
+
+  String id=getTargetableID(inlineArea);
+
+  if (hasDocumentNavigation() && id != null) {
+
+    int extraMarginBefore=5000;
+
+    int ipp=currentIPPosition;
+
+    int bpp=currentBPPosition + inlineArea.getBlockProgressionOffset() - extraMarginBefore;
+
+    saveAbsolutePosition(id,ipp,bpp);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * Sets the  {@link IFDocumentHandler} to be used by the {@link IFRenderer}.
+
+ * @param documentHandler the {@link IFDocumentHandler}
+
+ */
+
+public void setDocumentHandler(IFDocumentHandler documentHandler){
+
+  this.documentHandler=documentHandler;
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private void startViewport(AffineTransform at,Rectangle clipRect){
+
+  saveGraphicsState();
+
+  try {
+
+    IFGraphicContext.Viewport viewport=new IFGraphicContext.Viewport(at,(Dimension)viewportDimensionStack.peek(),clipRect);
+
+    graphicContext.pushGroup(viewport);
+
+    viewport.start(painter);
+
+  }
+
+ catch (  IFException e) {
+
+    handleIFException(e);
+
+  }
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean supportsOutOfOrder(){
+
+  return (this.documentHandler != null ? this.documentHandler.supportsPagesOutOfOrder() : false);
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private Rectangle toMillipointRectangle(float x,float y,float width,float height){
+
+  return new Rectangle(toMillipoints(x),toMillipoints(y),toMillipoints(width),toMillipoints(height));
+
+}
+
+Location: IFRenderer.java
+
+Content: 
+
+private int toMillipoints(float coordinate){
+
+  return Math.round(coordinate * 1000);
+
+}
+

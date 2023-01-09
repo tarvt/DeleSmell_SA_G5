@@ -1,0 +1,222 @@
+Location: AFMParser.java
+
+Content: 
+
+/** 
+
+ * Main constructor.
+
+ */
+
+public AFMParser(){
+
+}
+
+Location: AFMParser.java
+
+Content: 
+
+private static boolean isWhitespace(char ch){
+
+  return ch == ' ' || ch == '\t';
+
+}
+
+Location: AFMParser.java
+
+Content: 
+
+private String parseCharMetrics(String line,Stack<Object> stack,String afmFileName) throws IOException {
+
+  String trimmedLine=line.trim();
+
+  if (END_CHAR_METRICS.equals(trimmedLine)) {
+
+    return trimmedLine;
+
+  }
+
+  AFMFile afm=(AFMFile)stack.peek();
+
+  String encoding=afm.getEncodingScheme();
+
+  CharMetricsHandler charMetricsHandler=CharMetricsHandler.getHandler(VALUE_PARSERS,encoding);
+
+  AFMCharMetrics chm=charMetricsHandler.parse(trimmedLine,stack,afmFileName);
+
+  afm.addCharMetrics(chm);
+
+  return null;
+
+}
+
+Location: AFMParser.java
+
+Content: 
+
+private String parseLine(String line,Stack<Object> stack) throws IOException {
+
+  int startpos=0;
+
+  startpos=skipToNonWhiteSpace(line,startpos);
+
+  int endpos=skipToWhiteSpace(line,startpos);
+
+  String key=line.substring(startpos,endpos);
+
+  startpos=skipToNonWhiteSpace(line,endpos);
+
+  ValueHandler vp=VALUE_PARSERS.get(key);
+
+  if (vp != null) {
+
+    vp.parse(line,startpos,stack);
+
+  }
+
+  return key;
+
+}
+
+Location: AFMParser.java
+
+Content: 
+
+/** 
+
+ * Parses an AFM file from a BufferedReader.
+
+ * @param reader the BufferedReader instance to read from
+
+ * @param afmFileName the name of the AFM file
+
+ * @return the parsed AFM file
+
+ * @throws IOException if an I/O error occurs
+
+ */
+
+public AFMFile parse(BufferedReader reader,String afmFileName) throws IOException {
+
+  Stack<Object> stack=new Stack<Object>();
+
+  int parseMode=PARSE_NORMAL;
+
+  while (true) {
+
+    String line=reader.readLine();
+
+    if (line == null) {
+
+      break;
+
+    }
+
+    String key=null;
+
+switch (parseMode) {
+
+case PARSE_NORMAL:
+
+      key=parseLine(line,stack);
+
+    break;
+
+case PARSE_CHAR_METRICS:
+
+  key=parseCharMetrics(line,stack,afmFileName);
+
+break;
+
+default :
+
+throw new IllegalStateException("Invalid parse mode");
+
+}
+
+Integer newParseMode=PARSE_MODE_CHANGES.get(key);
+
+if (newParseMode != null) {
+
+parseMode=newParseMode;
+
+}
+
+}
+
+return (AFMFile)stack.pop();
+
+}
+
+Location: AFMParser.java
+
+Content: 
+
+/** 
+
+ * Parses an AFM file from a stream.
+
+ * @param in the stream to read from
+
+ * @param afmFileName the name of the AFM file
+
+ * @return the parsed AFM file
+
+ * @throws IOException if an I/O error occurs
+
+ */
+
+public AFMFile parse(InputStream in,String afmFileName) throws IOException {
+
+  Reader reader=new java.io.InputStreamReader(in,"US-ASCII");
+
+  try {
+
+    return parse(new BufferedReader(reader),afmFileName);
+
+  }
+
+  finally {
+
+    IOUtils.closeQuietly(reader);
+
+  }
+
+}
+
+Location: AFMParser.java
+
+Content: 
+
+private static int skipToNonWhiteSpace(String line,int startpos){
+
+  int pos=startpos;
+
+  while (pos < line.length() && isWhitespace(line.charAt(pos))) {
+
+    pos++;
+
+  }
+
+  return pos;
+
+}
+
+Location: AFMParser.java
+
+Content: 
+
+private static int skipToWhiteSpace(String line,int startpos){
+
+  int pos=startpos;
+
+  while (pos < line.length() && !isWhitespace(line.charAt(pos))) {
+
+    pos++;
+
+  }
+
+  return pos;
+
+}
+

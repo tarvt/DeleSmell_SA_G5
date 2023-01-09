@@ -1,0 +1,1212 @@
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Creates a content dispatcher. 
+
+ */
+
+protected Dispatcher createContentDispatcher(){
+
+  return new FragmentContentDispatcher();
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the dispatcher name. 
+
+ */
+
+public String getDispatcherName(Dispatcher dispatcher){
+
+  if (DEBUG_DISPATCHER) {
+
+    if (dispatcher != null) {
+
+      String name=dispatcher.getClass().getName();
+
+      int index=name.lastIndexOf('.');
+
+      if (index != -1) {
+
+        name=name.substring(index + 1);
+
+        index=name.lastIndexOf('$');
+
+        if (index != -1) {
+
+          name=name.substring(index + 1);
+
+        }
+
+      }
+
+      return name;
+
+    }
+
+  }
+
+  return "null";
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the scanner state name. 
+
+ */
+
+protected String getScannerStateName(int state){
+
+switch (state) {
+
+case SCANNER_STATE_DOCTYPE:
+
+    return "SCANNER_STATE_DOCTYPE";
+
+case SCANNER_STATE_ROOT_ELEMENT:
+
+  return "SCANNER_STATE_ROOT_ELEMENT";
+
+case SCANNER_STATE_START_OF_MARKUP:
+
+return "SCANNER_STATE_START_OF_MARKUP";
+
+case SCANNER_STATE_COMMENT:
+
+return "SCANNER_STATE_COMMENT";
+
+case SCANNER_STATE_PI:
+
+return "SCANNER_STATE_PI";
+
+case SCANNER_STATE_CONTENT:
+
+return "SCANNER_STATE_CONTENT";
+
+case SCANNER_STATE_REFERENCE:
+
+return "SCANNER_STATE_REFERENCE";
+
+case SCANNER_STATE_END_OF_INPUT:
+
+return "SCANNER_STATE_END_OF_INPUT";
+
+case SCANNER_STATE_TERMINATED:
+
+return "SCANNER_STATE_TERMINATED";
+
+case SCANNER_STATE_CDATA:
+
+return "SCANNER_STATE_CDATA";
+
+case SCANNER_STATE_TEXT_DECL:
+
+return "SCANNER_STATE_TEXT_DECL";
+
+}
+
+return "??? (" + state + ')';
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Calls document handler with a single character resulting from built-in entity resolution. 
+
+ * @param c
+
+ * @param entity built-in name
+
+ */
+
+private void handleCharacter(char c,String entity) throws XNIException {
+
+  if (fDocumentHandler != null) {
+
+    if (fNotifyBuiltInRefs) {
+
+      fDocumentHandler.startGeneralEntity(entity,null,null,null);
+
+    }
+
+    fSingleChar[0]=c;
+
+    fTempString.setValues(fSingleChar,0,1);
+
+    fDocumentHandler.characters(fTempString,null);
+
+    if (fNotifyBuiltInRefs) {
+
+      fDocumentHandler.endGeneralEntity(entity,null);
+
+    }
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Handles the end element. This method will make sure that the end element name matches the current element and notify the handler about the end of the element and the end of any relevent prefix mappings. <p> <strong>Note:</strong> This method uses the fQName variable. The contents of this variable will be destroyed.
+
+ * @param element The element.
+
+ * @return The element depth.
+
+ * @throws XNIException Thrown if the handler throws a SAX exceptionupon notification.
+
+ */
+
+protected int handleEndElement(QName element,boolean isEmpty) throws XNIException {
+
+  fMarkupDepth--;
+
+  if (fMarkupDepth < fEntityStack[fEntityDepth - 1]) {
+
+    reportFatalError("ElementEntityMismatch",new Object[]{fCurrentElement.rawname});
+
+  }
+
+  QName startElement=fQName;
+
+  fElementStack.popElement(startElement);
+
+  if (element.rawname != startElement.rawname) {
+
+    reportFatalError("ETagRequired",new Object[]{startElement.rawname});
+
+  }
+
+  if (fNamespaces) {
+
+    element.uri=startElement.uri;
+
+  }
+
+  if (fDocumentHandler != null && !isEmpty) {
+
+    fDocumentHandler.endElement(element,null);
+
+  }
+
+  return fMarkupDepth;
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans an attribute. <p> <pre> [41] Attribute ::= Name Eq AttValue </pre>  <p> <strong>Note:</strong> This method assumes that the next  character on the stream is the first character of the attribute name. <p> <strong>Note:</strong> This method uses the fAttributeQName and fQName variables. The contents of these variables will be destroyed.
+
+ * @param attributes The attributes list for the scanned attribute.
+
+ */
+
+protected void scanAttribute(XMLAttributes attributes) throws IOException, XNIException {
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println(">>> scanAttribute()");
+
+  if (fNamespaces) {
+
+    fEntityScanner.scanQName(fAttributeQName);
+
+  }
+
+ else {
+
+    String name=fEntityScanner.scanName();
+
+    fAttributeQName.setValues(null,name,name,null);
+
+  }
+
+  fEntityScanner.skipSpaces();
+
+  if (!fEntityScanner.skipChar('=')) {
+
+    reportFatalError("EqRequiredInAttribute",new Object[]{fCurrentElement.rawname,fAttributeQName.rawname});
+
+  }
+
+  fEntityScanner.skipSpaces();
+
+  int oldLen=attributes.getLength();
+
+  int attrIndex=attributes.addAttribute(fAttributeQName,XMLSymbols.fCDATASymbol,null);
+
+  if (oldLen == attributes.getLength()) {
+
+    reportFatalError("AttributeNotUnique",new Object[]{fCurrentElement.rawname,fAttributeQName.rawname});
+
+  }
+
+  boolean isSameNormalizedAttr=scanAttributeValue(fTempString,fTempString2,fAttributeQName.rawname,fIsEntityDeclaredVC,fCurrentElement.rawname);
+
+  attributes.setValue(attrIndex,fTempString.toString());
+
+  if (!isSameNormalizedAttr) {
+
+    attributes.setNonNormalizedValue(attrIndex,fTempString2.toString());
+
+  }
+
+  attributes.setSpecified(attrIndex,true);
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println("<<< scanAttribute()");
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans a CDATA section.  <p> <strong>Note:</strong> This method uses the fTempString and fStringBuffer variables.
+
+ * @param complete True if the CDATA section is to be scannedcompletely.
+
+ * @return True if CDATA is completely scanned.
+
+ */
+
+protected boolean scanCDATASection(boolean complete) throws IOException, XNIException {
+
+  if (fDocumentHandler != null) {
+
+    fDocumentHandler.startCDATA(null);
+
+  }
+
+  while (true) {
+
+    fStringBuffer.clear();
+
+    if (!fEntityScanner.scanData("]]",fStringBuffer)) {
+
+      if (fDocumentHandler != null && fStringBuffer.length > 0) {
+
+        fDocumentHandler.characters(fStringBuffer,null);
+
+      }
+
+      int brackets=0;
+
+      while (fEntityScanner.skipChar(']')) {
+
+        brackets++;
+
+      }
+
+      if (fDocumentHandler != null && brackets > 0) {
+
+        fStringBuffer.clear();
+
+        if (brackets > XMLEntityManager.DEFAULT_BUFFER_SIZE) {
+
+          int chunks=brackets / XMLEntityManager.DEFAULT_BUFFER_SIZE;
+
+          int remainder=brackets % XMLEntityManager.DEFAULT_BUFFER_SIZE;
+
+          for (int i=0; i < XMLEntityManager.DEFAULT_BUFFER_SIZE; i++) {
+
+            fStringBuffer.append(']');
+
+          }
+
+          for (int i=0; i < chunks; i++) {
+
+            fDocumentHandler.characters(fStringBuffer,null);
+
+          }
+
+          if (remainder != 0) {
+
+            fStringBuffer.length=remainder;
+
+            fDocumentHandler.characters(fStringBuffer,null);
+
+          }
+
+        }
+
+ else {
+
+          for (int i=0; i < brackets; i++) {
+
+            fStringBuffer.append(']');
+
+          }
+
+          fDocumentHandler.characters(fStringBuffer,null);
+
+        }
+
+      }
+
+      if (fEntityScanner.skipChar('>')) {
+
+        break;
+
+      }
+
+      if (fDocumentHandler != null) {
+
+        fStringBuffer.clear();
+
+        fStringBuffer.append("]]");
+
+        fDocumentHandler.characters(fStringBuffer,null);
+
+      }
+
+    }
+
+ else {
+
+      if (fDocumentHandler != null) {
+
+        fDocumentHandler.characters(fStringBuffer,null);
+
+      }
+
+      int c=fEntityScanner.peekChar();
+
+      if (c != -1 && isInvalidLiteral(c)) {
+
+        if (XMLChar.isHighSurrogate(c)) {
+
+          fStringBuffer.clear();
+
+          scanSurrogates(fStringBuffer);
+
+          if (fDocumentHandler != null) {
+
+            fDocumentHandler.characters(fStringBuffer,null);
+
+          }
+
+        }
+
+ else {
+
+          reportFatalError("InvalidCharInCDSect",new Object[]{Integer.toString(c,16)});
+
+          fEntityScanner.scanChar();
+
+        }
+
+      }
+
+    }
+
+  }
+
+  fMarkupDepth--;
+
+  if (fDocumentHandler != null) {
+
+    fDocumentHandler.endCDATA(null);
+
+  }
+
+  return true;
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans a character reference. <p> <pre> [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';' </pre>
+
+ */
+
+protected void scanCharReference() throws IOException, XNIException {
+
+  fStringBuffer2.clear();
+
+  int ch=scanCharReferenceValue(fStringBuffer2,null);
+
+  fMarkupDepth--;
+
+  if (ch != -1) {
+
+    if (fDocumentHandler != null) {
+
+      if (fNotifyCharRefs) {
+
+        fDocumentHandler.startGeneralEntity(fCharRefLiteral,null,null,null);
+
+      }
+
+      Augmentations augs=null;
+
+      if (fValidation && ch <= 0x20) {
+
+        if (fTempAugmentations != null) {
+
+          fTempAugmentations.removeAllItems();
+
+        }
+
+ else {
+
+          fTempAugmentations=new AugmentationsImpl();
+
+        }
+
+        augs=fTempAugmentations;
+
+        augs.putItem(Constants.CHAR_REF_PROBABLE_WS,Boolean.TRUE);
+
+      }
+
+      fDocumentHandler.characters(fStringBuffer2,augs);
+
+      if (fNotifyCharRefs) {
+
+        fDocumentHandler.endGeneralEntity(fCharRefLiteral,null);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans a comment. <p> <pre> [15] Comment ::= '&lt!--' ((Char - '-') | ('-' (Char - '-')))* '-->' </pre> <p> <strong>Note:</strong> Called after scanning past '&lt;!--'
+
+ */
+
+protected void scanComment() throws IOException, XNIException {
+
+  scanComment(fStringBuffer);
+
+  fMarkupDepth--;
+
+  if (fDocumentHandler != null) {
+
+    fDocumentHandler.comment(fStringBuffer,null);
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans element content.
+
+ * @return Returns the next character on the stream.
+
+ */
+
+protected int scanContent() throws IOException, XNIException {
+
+  XMLString content=fTempString;
+
+  int c=fEntityScanner.scanContent(content);
+
+  if (c == '\r') {
+
+    fEntityScanner.scanChar();
+
+    fStringBuffer.clear();
+
+    fStringBuffer.append(fTempString);
+
+    fStringBuffer.append((char)c);
+
+    content=fStringBuffer;
+
+    c=-1;
+
+  }
+
+  if (fDocumentHandler != null && content.length > 0) {
+
+    fDocumentHandler.characters(content,null);
+
+  }
+
+  if (c == ']' && fTempString.length == 0) {
+
+    fStringBuffer.clear();
+
+    fStringBuffer.append((char)fEntityScanner.scanChar());
+
+    fInScanContent=true;
+
+    if (fEntityScanner.skipChar(']')) {
+
+      fStringBuffer.append(']');
+
+      while (fEntityScanner.skipChar(']')) {
+
+        fStringBuffer.append(']');
+
+      }
+
+      if (fEntityScanner.skipChar('>')) {
+
+        reportFatalError("CDEndInContent",null);
+
+      }
+
+    }
+
+    if (fDocumentHandler != null && fStringBuffer.length != 0) {
+
+      fDocumentHandler.characters(fStringBuffer,null);
+
+    }
+
+    fInScanContent=false;
+
+    c=-1;
+
+  }
+
+  return c;
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans an end element. <p> <pre> [42] ETag ::= '&lt;/' Name S? '>' </pre> <p> <strong>Note:</strong> This method uses the fElementQName variable. The contents of this variable will be destroyed. The caller should copy the needed information out of this variable before calling this method.
+
+ * @return The element depth.
+
+ */
+
+protected int scanEndElement() throws IOException, XNIException {
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println(">>> scanEndElement()");
+
+  fElementStack.popElement(fElementQName);
+
+  if (!fEntityScanner.skipString(fElementQName.rawname)) {
+
+    reportFatalError("ETagRequired",new Object[]{fElementQName.rawname});
+
+  }
+
+  fEntityScanner.skipSpaces();
+
+  if (!fEntityScanner.skipChar('>')) {
+
+    reportFatalError("ETagUnterminated",new Object[]{fElementQName.rawname});
+
+  }
+
+  fMarkupDepth--;
+
+  fMarkupDepth--;
+
+  if (fMarkupDepth < fEntityStack[fEntityDepth - 1]) {
+
+    reportFatalError("ElementEntityMismatch",new Object[]{fCurrentElement.rawname});
+
+  }
+
+  if (fDocumentHandler != null) {
+
+    fDocumentHandler.endElement(fElementQName,null);
+
+  }
+
+  return fMarkupDepth;
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans an entity reference.
+
+ * @throws IOException  Thrown if i/o error occurs.
+
+ * @throws XNIException Thrown if handler throws exception uponnotification.
+
+ */
+
+protected void scanEntityReference() throws IOException, XNIException {
+
+  String name=fEntityScanner.scanName();
+
+  if (name == null) {
+
+    reportFatalError("NameRequiredInReference",null);
+
+    return;
+
+  }
+
+  if (!fEntityScanner.skipChar(';')) {
+
+    reportFatalError("SemicolonRequiredInReference",new Object[]{name});
+
+  }
+
+  fMarkupDepth--;
+
+  if (name == fAmpSymbol) {
+
+    handleCharacter('&',fAmpSymbol);
+
+  }
+
+ else   if (name == fLtSymbol) {
+
+    handleCharacter('<',fLtSymbol);
+
+  }
+
+ else   if (name == fGtSymbol) {
+
+    handleCharacter('>',fGtSymbol);
+
+  }
+
+ else   if (name == fQuotSymbol) {
+
+    handleCharacter('"',fQuotSymbol);
+
+  }
+
+ else   if (name == fAposSymbol) {
+
+    handleCharacter('\'',fAposSymbol);
+
+  }
+
+ else   if (fEntityManager.isUnparsedEntity(name)) {
+
+    reportFatalError("ReferenceToUnparsedEntity",new Object[]{name});
+
+  }
+
+ else {
+
+    if (!fEntityManager.isDeclaredEntity(name)) {
+
+      if (fIsEntityDeclaredVC) {
+
+        if (fValidation)         fErrorReporter.reportError(XMLMessageFormatter.XML_DOMAIN,"EntityNotDeclared",new Object[]{name},XMLErrorReporter.SEVERITY_ERROR);
+
+      }
+
+ else {
+
+        reportFatalError("EntityNotDeclared",new Object[]{name});
+
+      }
+
+    }
+
+    fEntityManager.startEntity(name,false);
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans a processing data. This is needed to handle the situation where a document starts with a processing instruction whose  target name <em>starts with</em> "xml". (e.g. xmlfoo)
+
+ * @param target The PI target
+
+ * @param data The string to fill in with the data
+
+ */
+
+protected void scanPIData(String target,XMLString data) throws IOException, XNIException {
+
+  super.scanPIData(target,data);
+
+  fMarkupDepth--;
+
+  if (fDocumentHandler != null) {
+
+    fDocumentHandler.processingInstruction(target,data,null);
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans a start element. This method will handle the binding of namespace information and notifying the handler of the start of the element. <p> <pre> [44] EmptyElemTag ::= '&lt;' Name (S Attribute)* S? '/>' [40] STag ::= '&lt;' Name (S Attribute)* S? '>' </pre>  <p> <strong>Note:</strong> This method assumes that the leading '&lt;' character has been consumed. <p> <strong>Note:</strong> This method uses the fElementQName and fAttributes variables. The contents of these variables will be destroyed. The caller should copy important information out of these variables before calling this method.
+
+ * @return True if element is empty. (i.e. It matchesproduction [44].
+
+ */
+
+protected boolean scanStartElement() throws IOException, XNIException {
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println(">>> scanStartElement()");
+
+  if (fNamespaces) {
+
+    fEntityScanner.scanQName(fElementQName);
+
+  }
+
+ else {
+
+    String name=fEntityScanner.scanName();
+
+    fElementQName.setValues(null,name,name,null);
+
+  }
+
+  String rawname=fElementQName.rawname;
+
+  fCurrentElement=fElementStack.pushElement(fElementQName);
+
+  boolean empty=false;
+
+  fAttributes.removeAllAttributes();
+
+  do {
+
+    boolean sawSpace=fEntityScanner.skipSpaces();
+
+    int c=fEntityScanner.peekChar();
+
+    if (c == '>') {
+
+      fEntityScanner.scanChar();
+
+      break;
+
+    }
+
+ else     if (c == '/') {
+
+      fEntityScanner.scanChar();
+
+      if (!fEntityScanner.skipChar('>')) {
+
+        reportFatalError("ElementUnterminated",new Object[]{rawname});
+
+      }
+
+      empty=true;
+
+      break;
+
+    }
+
+ else     if (!isValidNameStartChar(c) || !sawSpace) {
+
+      if (!isValidNameStartHighSurrogate(c) || !sawSpace) {
+
+        reportFatalError("ElementUnterminated",new Object[]{rawname});
+
+      }
+
+    }
+
+    scanAttribute(fAttributes);
+
+  }
+
+ while (true);
+
+  if (fDocumentHandler != null) {
+
+    if (empty) {
+
+      fMarkupDepth--;
+
+      if (fMarkupDepth < fEntityStack[fEntityDepth - 1]) {
+
+        reportFatalError("ElementEntityMismatch",new Object[]{fCurrentElement.rawname});
+
+      }
+
+      fDocumentHandler.emptyElement(fElementQName,fAttributes,null);
+
+      fElementStack.popElement(fElementQName);
+
+    }
+
+ else {
+
+      fDocumentHandler.startElement(fElementQName,fAttributes,null);
+
+    }
+
+  }
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println("<<< scanStartElement(): " + empty);
+
+  return empty;
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans the remainder of a start or empty tag after the element name.
+
+ * @see #scanStartElement
+
+ * @return True if element is empty.
+
+ */
+
+protected boolean scanStartElementAfterName() throws IOException, XNIException {
+
+  String rawname=fElementQName.rawname;
+
+  fCurrentElement=fElementStack.pushElement(fElementQName);
+
+  boolean empty=false;
+
+  fAttributes.removeAllAttributes();
+
+  do {
+
+    int c=fEntityScanner.peekChar();
+
+    if (c == '>') {
+
+      fEntityScanner.scanChar();
+
+      break;
+
+    }
+
+ else     if (c == '/') {
+
+      fEntityScanner.scanChar();
+
+      if (!fEntityScanner.skipChar('>')) {
+
+        reportFatalError("ElementUnterminated",new Object[]{rawname});
+
+      }
+
+      empty=true;
+
+      break;
+
+    }
+
+ else     if (!isValidNameStartChar(c) || !fSawSpace) {
+
+      if (!isValidNameStartHighSurrogate(c) || !fSawSpace) {
+
+        reportFatalError("ElementUnterminated",new Object[]{rawname});
+
+      }
+
+    }
+
+    scanAttribute(fAttributes);
+
+    fSawSpace=fEntityScanner.skipSpaces();
+
+  }
+
+ while (true);
+
+  if (fDocumentHandler != null) {
+
+    if (empty) {
+
+      fMarkupDepth--;
+
+      if (fMarkupDepth < fEntityStack[fEntityDepth - 1]) {
+
+        reportFatalError("ElementEntityMismatch",new Object[]{fCurrentElement.rawname});
+
+      }
+
+      fDocumentHandler.emptyElement(fElementQName,fAttributes,null);
+
+      fElementStack.popElement(fElementQName);
+
+    }
+
+ else {
+
+      fDocumentHandler.startElement(fElementQName,fAttributes,null);
+
+    }
+
+  }
+
+  if (DEBUG_CONTENT_SCANNING)   System.out.println("<<< scanStartElementAfterName(): " + empty);
+
+  return empty;
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans the name of an element in a start or empty tag. 
+
+ * @see #scanStartElement()
+
+ */
+
+protected void scanStartElementName() throws IOException, XNIException {
+
+  if (fNamespaces) {
+
+    fEntityScanner.scanQName(fElementQName);
+
+  }
+
+ else {
+
+    String name=fEntityScanner.scanName();
+
+    fElementQName.setValues(null,name,name,null);
+
+  }
+
+  fSawSpace=fEntityScanner.skipSpaces();
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Scans an XML or text declaration. <p> <pre> [23] XMLDecl ::= '&lt;?xml' VersionInfo EncodingDecl? SDDecl? S? '?>' [24] VersionInfo ::= S 'version' Eq (' VersionNum ' | " VersionNum ") [80] EncodingDecl ::= S 'encoding' Eq ('"' EncName '"' |  "'" EncName "'" ) [81] EncName ::= [A-Za-z] ([A-Za-z0-9._] | '-') [32] SDDecl ::= S 'standalone' Eq (("'" ('yes' | 'no') "'") | ('"' ('yes' | 'no') '"')) [77] TextDecl ::= '&lt;?xml' VersionInfo? EncodingDecl S? '?>' </pre>
+
+ * @param scanningTextDecl True if a text declaration is tobe scanned instead of an XML declaration.
+
+ */
+
+protected void scanXMLDeclOrTextDecl(boolean scanningTextDecl) throws IOException, XNIException {
+
+  super.scanXMLDeclOrTextDecl(scanningTextDecl,fStrings);
+
+  fMarkupDepth--;
+
+  String version=fStrings[0];
+
+  String encoding=fStrings[1];
+
+  String standalone=fStrings[2];
+
+  fStandalone=standalone != null && standalone.equals("yes");
+
+  fEntityManager.setStandalone(fStandalone);
+
+  fEntityScanner.setXMLVersion(version);
+
+  if (fDocumentHandler != null) {
+
+    if (scanningTextDecl) {
+
+      fDocumentHandler.textDecl(version,encoding,null);
+
+    }
+
+ else {
+
+      fDocumentHandler.xmlDecl(version,encoding,standalone,null);
+
+    }
+
+  }
+
+  if (encoding != null && !fEntityScanner.fCurrentEntity.isEncodingExternallySpecified()) {
+
+    fEntityScanner.setEncoding(encoding);
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Sets the dispatcher.
+
+ * @param dispatcher The new dispatcher.
+
+ */
+
+protected final void setDispatcher(Dispatcher dispatcher){
+
+  fDispatcher=dispatcher;
+
+  if (DEBUG_DISPATCHER) {
+
+    System.out.print("%%% setDispatcher: ");
+
+    System.out.print(getDispatcherName(dispatcher));
+
+    System.out.println();
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Sets the scanner state.
+
+ * @param state The new scanner state.
+
+ */
+
+protected final void setScannerState(int state){
+
+  fScannerState=state;
+
+  if (DEBUG_SCANNER_STATE) {
+
+    System.out.print("### setScannerState: ");
+
+    System.out.print(getScannerStateName(state));
+
+    System.out.println();
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * This method notifies of the start of an entity. The DTD has the pseudo-name of "[dtd]" parameter entity names start with '%'; and general entities are just specified by their name.
+
+ * @param name     The name of the entity.
+
+ * @param identifier The resource identifier.
+
+ * @param encoding The auto-detected IANA encoding name of the entitystream. This value will be null in those situations where the entity encoding is not auto-detected (e.g. internal entities or a document entity that is parsed from a java.io.Reader).
+
+ * @param augs     Additional information that may include infoset augmentations
+
+ * @throws XNIException Thrown by handler to signal an error.
+
+ */
+
+public void startEntity(String name,XMLResourceIdentifier identifier,String encoding,Augmentations augs) throws XNIException {
+
+  if (fEntityDepth == fEntityStack.length) {
+
+    int[] entityarray=new int[fEntityStack.length * 2];
+
+    System.arraycopy(fEntityStack,0,entityarray,0,fEntityStack.length);
+
+    fEntityStack=entityarray;
+
+  }
+
+  fEntityStack[fEntityDepth]=fMarkupDepth;
+
+  super.startEntity(name,identifier,encoding,augs);
+
+  if (fStandalone && fEntityManager.isEntityDeclInExternalSubset(name)) {
+
+    reportFatalError("MSG_REFERENCE_TO_EXTERNALLY_DECLARED_ENTITY_WHEN_STANDALONE",new Object[]{name});
+
+  }
+
+  if (fDocumentHandler != null && !fScanningAttribute) {
+
+    if (!name.equals("[xml]")) {
+
+      fDocumentHandler.startGeneralEntity(name,identifier,encoding,augs);
+
+    }
+
+  }
+
+}
+
+Location: XMLDocumentFragmentScannerImpl.java
+
+Content: 
+
+/** 
+
+ * Default constructor. 
+
+ */
+
+public XMLDocumentFragmentScannerImpl(){
+
+}
+

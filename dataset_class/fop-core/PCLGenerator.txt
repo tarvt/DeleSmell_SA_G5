@@ -1,0 +1,1490 @@
+Location: PCLGenerator.java
+
+Content: 
+
+public void addFont(PCLSoftFontManager sfManager,Typeface font){
+
+  if (!fontManagerMap.containsKey(sfManager)) {
+
+    fontManagerMap.put(sfManager,new LinkedHashMap<Typeface,Long>());
+
+  }
+
+  Map<Typeface,Long> fonts=fontManagerMap.get(sfManager);
+
+  if (!fonts.containsKey(font)) {
+
+    fonts.put(font,out.getByteCount());
+
+  }
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+private int calculatePCLResolution(int resolution){
+
+  return calculatePCLResolution(resolution,false);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Calculates the ideal PCL resolution for a given resolution.
+
+ * @param resolution the input resolution
+
+ * @param increased true if you want to go to a higher resolution, for example if youconvert grayscale or color images to monochrome images so dithering has a chance to generate better quality.
+
+ * @return the resulting PCL resolution (one of 75, 100, 150, 200, 300, 600)
+
+ */
+
+private int calculatePCLResolution(int resolution,boolean increased){
+
+  int choice=-1;
+
+  for (int i=PCL_RESOLUTIONS.length - 2; i >= 0; i--) {
+
+    if (resolution > PCL_RESOLUTIONS[i]) {
+
+      int idx=i + 1;
+
+      if (idx < PCL_RESOLUTIONS.length - 2) {
+
+        idx+=increased ? 2 : 0;
+
+      }
+
+ else       if (idx < PCL_RESOLUTIONS.length - 1) {
+
+        idx+=increased ? 1 : 0;
+
+      }
+
+      choice=idx;
+
+      break;
+
+    }
+
+  }
+
+  if (choice < 0) {
+
+    choice=(increased ? 2 : 0);
+
+  }
+
+  while (choice > 0 && PCL_RESOLUTIONS[choice] > getMaximumBitmapResolution()) {
+
+    choice--;
+
+  }
+
+  return PCL_RESOLUTIONS[choice];
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Changes the current print direction while maintaining the current cursor position.
+
+ * @param rotate the rotation angle (counterclockwise), one of 0, 90, 180 and 270.
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void changePrintDirection(int rotate) throws IOException {
+
+  writeCommand("&a" + rotate + "P");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Clears the horizontal margins.
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void clearHorizontalMargins() throws IOException {
+
+  writeCommand("9");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Convert a Color value to a PCL shade value (0-100).
+
+ * @param col the color
+
+ * @return the PCL shade value (100=black)
+
+ */
+
+public final int convertToPCLShade(Color col){
+
+  float gray=convertToGray(col.getRed(),col.getGreen(),col.getBlue()) / 255f;
+
+  return (int)(100 - (gray * 100f));
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Generates a user-defined pattern for a dithering pattern matching the grayscale value of the color given.
+
+ * @param col the color to create the pattern for
+
+ * @param patternID the pattern ID to use
+
+ * @param ditherMatrixSize the size of the Bayer dither matrix to use (4 or 8 supported)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void defineGrayscalePattern(Color col,int patternID,int ditherMatrixSize) throws IOException {
+
+  ByteArrayOutputStream baout=new ByteArrayOutputStream();
+
+  DataOutputStream data=new DataOutputStream(baout);
+
+  data.writeByte(0);
+
+  data.writeByte(0);
+
+  data.writeByte(1);
+
+  data.writeByte(0);
+
+  data.writeShort(8);
+
+  data.writeShort(8);
+
+  int gray255=convertToGray(col.getRed(),col.getGreen(),col.getBlue());
+
+  byte[] pattern;
+
+  if (ditherMatrixSize == 8) {
+
+    pattern=DitherUtil.getBayerDither(DitherUtil.DITHER_MATRIX_8X8,gray255,false);
+
+  }
+
+ else {
+
+    pattern=DitherUtil.getBayerDither(DitherUtil.DITHER_MATRIX_4X4,gray255,true);
+
+  }
+
+  data.write(pattern);
+
+  if ((baout.size() % 2) > 0) {
+
+    baout.write(0);
+
+  }
+
+  writeCommand("*c" + patternID + "G");
+
+  writeCommand("*c" + baout.size() + "W");
+
+  baout.writeTo(this.out);
+
+  IOUtils.closeQuietly(data);
+
+  IOUtils.closeQuietly(baout);
+
+  writeCommand("*c4Q");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Enters the HP GL/2 mode.
+
+ * @param restorePreviousHPGL2Cursor true if the previous HP GL/2 pen position should berestored, false if the current position is maintained
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void enterHPGL2Mode(boolean restorePreviousHPGL2Cursor) throws IOException {
+
+  if (restorePreviousHPGL2Cursor) {
+
+    writeCommand("%0B");
+
+  }
+
+ else {
+
+    writeCommand("%1B");
+
+  }
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Enters the PCL mode.
+
+ * @param restorePreviousPCLCursor true if the previous PCL cursor position should be restored,false if the current position is maintained
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void enterPCLMode(boolean restorePreviousPCLCursor) throws IOException {
+
+  if (restorePreviousPCLCursor) {
+
+    writeCommand("%0A");
+
+  }
+
+ else {
+
+    writeCommand("%1A");
+
+  }
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Generate a filled rectangle at the current cursor position.
+
+ * @param w the width in millipoints
+
+ * @param h the height in millipoints
+
+ * @param col the fill color
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+protected void fillRect(int w,int h,Color col,boolean colorEnabled) throws IOException {
+
+  if ((w == 0) || (h == 0)) {
+
+    return;
+
+  }
+
+  if (h < 0) {
+
+    h*=-1;
+
+  }
+
+ else {
+
+  }
+
+  setPatternTransparencyMode(false);
+
+  if (USE_PCL_SHADES || Color.black.equals(col) || Color.white.equals(col)) {
+
+    writeCommand("*c" + formatDouble4(w / 100.0) + "h"+ formatDouble4(h / 100.0)+ "V");
+
+    int lineshade=convertToPCLShade(col);
+
+    writeCommand("*c" + lineshade + "G");
+
+    writeCommand("*c2P");
+
+  }
+
+ else {
+
+    if (colorEnabled) {
+
+      selectColor(col);
+
+      writeCommand("*c" + formatDouble4(w / 100.0) + "h"+ formatDouble4(h / 100.0)+ "V");
+
+      writeCommand("*c0P");
+
+    }
+
+ else {
+
+      defineGrayscalePattern(col,32,DitherUtil.DITHER_MATRIX_4X4);
+
+      writeCommand("*c" + formatDouble4(w / 100.0) + "h"+ formatDouble4(h / 100.0)+ "V");
+
+      writeCommand("*c32G");
+
+      writeCommand("*c4P");
+
+    }
+
+  }
+
+  setPatternTransparencyMode(true);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Formats a double value with two decimal positions for PCL output.
+
+ * @param value value to format
+
+ * @return the formatted value
+
+ */
+
+public final String formatDouble2(double value){
+
+  return df2.format(value);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Formats a double value with four decimal positions for PCL output.
+
+ * @param value value to format
+
+ * @return the formatted value
+
+ */
+
+public final String formatDouble4(double value){
+
+  return df4.format(value);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sends the form feed character.
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void formFeed() throws IOException {
+
+  out.write(12);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * @return the maximum resolution to encode bitmap images at 
+
+ */
+
+public int getMaximumBitmapResolution(){
+
+  return this.maxBitmapResolution;
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Returns the currently active text encoding.
+
+ * @return the text encoding
+
+ */
+
+public String getTextEncoding(){
+
+  return ISO_8859_1;
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+private boolean isValidPCLResolution(int resolution){
+
+  return resolution == calculatePCLResolution(resolution);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Paint a bitmap at the current cursor position. The bitmap is converted to a monochrome (1-bit) bitmap image.
+
+ * @param img the bitmap image
+
+ * @param targetDim the target Dimention (in mpt)
+
+ * @param sourceTransparency true if the background should not be erased
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void paintBitmap(RenderedImage img,Dimension targetDim,boolean sourceTransparency,PCLRenderingUtil pclUtil) throws IOException {
+
+  final boolean printerSupportsColor=pclUtil.isColorEnabled();
+
+  boolean monochrome=isMonochromeImage(img);
+
+  double targetHResolution=img.getWidth() / UnitConv.mpt2in(targetDim.width);
+
+  double targetVResolution=img.getHeight() / UnitConv.mpt2in(targetDim.height);
+
+  double targetResolution=Math.max(targetHResolution,targetVResolution);
+
+  int resolution=(int)Math.round(targetResolution);
+
+  int effResolution=calculatePCLResolution(resolution,!(printerSupportsColor && !monochrome));
+
+  Dimension orgDim=new Dimension(img.getWidth(),img.getHeight());
+
+  Dimension effDim;
+
+  if (targetResolution == effResolution) {
+
+    effDim=orgDim;
+
+  }
+
+ else {
+
+    effDim=new Dimension((int)Math.ceil(UnitConv.mpt2px(targetDim.width,effResolution)),(int)Math.ceil(UnitConv.mpt2px(targetDim.height,effResolution)));
+
+  }
+
+  boolean scaled=!orgDim.equals(effDim);
+
+  if (!monochrome) {
+
+    if (printerSupportsColor) {
+
+      RenderedImage effImg=img;
+
+      if (scaled) {
+
+        effImg=BitmapImageUtil.convertTosRGB(img,effDim);
+
+      }
+
+      selectCurrentPattern(0,0);
+
+      renderImageAsColor(effImg,effResolution);
+
+    }
+
+ else {
+
+      RenderedImage red=BitmapImageUtil.convertToMonochrome(img,effDim,this.ditheringQuality);
+
+      selectCurrentPattern(0,0);
+
+      setTransparencyMode(sourceTransparency,true);
+
+      paintMonochromeBitmap(red,effResolution);
+
+    }
+
+  }
+
+ else {
+
+    RenderedImage effImg=img;
+
+    if (scaled) {
+
+      effImg=BitmapImageUtil.convertToMonochrome(img,effDim);
+
+    }
+
+    setSourceTransparencyMode(sourceTransparency);
+
+    selectCurrentPattern(0,0);
+
+    paintMonochromeBitmap(effImg,effResolution);
+
+  }
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Paint a bitmap at the current cursor position. The bitmap must be a monochrome (1-bit) bitmap image.
+
+ * @param img the bitmap image (must be 1-bit b/w)
+
+ * @param resolution the resolution of the image (must be a PCL resolution)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void paintMonochromeBitmap(RenderedImage img,int resolution) throws IOException {
+
+  if (!isValidPCLResolution(resolution)) {
+
+    throw new IllegalArgumentException("Invalid PCL resolution: " + resolution);
+
+  }
+
+  boolean monochrome=isMonochromeImage(img);
+
+  if (!monochrome) {
+
+    throw new IllegalArgumentException("img must be a monochrome image");
+
+  }
+
+  setRasterGraphicsResolution(resolution);
+
+  writeCommand("*r0f" + img.getHeight() + "t"+ img.getWidth()+ "s1A");
+
+  Raster raster=img.getData();
+
+  Encoder encoder=new Encoder(img);
+
+  int imgw=img.getWidth();
+
+  IndexColorModel cm=(IndexColorModel)img.getColorModel();
+
+  if (cm.getTransferType() == DataBuffer.TYPE_BYTE) {
+
+    DataBufferByte dataBuffer=(DataBufferByte)raster.getDataBuffer();
+
+    MultiPixelPackedSampleModel packedSampleModel=new MultiPixelPackedSampleModel(DataBuffer.TYPE_BYTE,img.getWidth(),img.getHeight(),1);
+
+    if (img.getSampleModel().equals(packedSampleModel) && dataBuffer.getNumBanks() == 1) {
+
+      byte[] buf=dataBuffer.getData();
+
+      int scanlineStride=packedSampleModel.getScanlineStride();
+
+      int idx=0;
+
+      int c0=toGray(cm.getRGB(0));
+
+      int c1=toGray(cm.getRGB(1));
+
+      boolean zeroIsWhite=c0 > c1;
+
+      for (int y=0, maxy=img.getHeight(); y < maxy; y++) {
+
+        for (int x=0, maxx=scanlineStride; x < maxx; x++) {
+
+          if (zeroIsWhite) {
+
+            encoder.add8Bits(buf[idx]);
+
+          }
+
+ else {
+
+            encoder.add8Bits((byte)~buf[idx]);
+
+          }
+
+          idx++;
+
+        }
+
+        encoder.endLine();
+
+      }
+
+    }
+
+ else {
+
+      for (int y=0, maxy=img.getHeight(); y < maxy; y++) {
+
+        byte[] line=(byte[])raster.getDataElements(0,y,imgw,1,null);
+
+        for (int x=0, maxx=imgw; x < maxx; x++) {
+
+          encoder.addBit(line[x] == 0);
+
+        }
+
+        encoder.endLine();
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    for (int y=0, maxy=img.getHeight(); y < maxy; y++) {
+
+      for (int x=0, maxx=imgw; x < maxx; x++) {
+
+        int sample=raster.getSample(x,y,0);
+
+        encoder.addBit(sample == 0);
+
+      }
+
+      encoder.endLine();
+
+    }
+
+  }
+
+  writeCommand("*rB");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Main constructor.
+
+ * @param out the OutputStream to write the PCL stream to
+
+ */
+
+public PCLGenerator(OutputStream out){
+
+  this.out=new CountingOutputStream(out);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Main constructor.
+
+ * @param out the OutputStream to write the PCL stream to
+
+ * @param maxResolution the maximum resolution to encode bitmap images at
+
+ */
+
+public PCLGenerator(OutputStream out,int maxResolution){
+
+  this(out);
+
+  boolean found=false;
+
+  for (  int pclResolutions : PCL_RESOLUTIONS) {
+
+    if (pclResolutions == maxResolution) {
+
+      found=true;
+
+      break;
+
+    }
+
+  }
+
+  if (!found) {
+
+    throw new IllegalArgumentException("Illegal value for maximum resolution!");
+
+  }
+
+  this.maxBitmapResolution=maxResolution;
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Pops the current cursor position from the stack.
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void popCursorPos() throws IOException {
+
+  writeCommand("&f1S");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Pushes the current cursor position on a stack (stack size: max 20 entries)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void pushCursorPos() throws IOException {
+
+  writeCommand("&f0S");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+private void renderImageAsColor(RenderedImage imgOrg,int dpi) throws IOException {
+
+  BufferedImage img=new BufferedImage(imgOrg.getWidth(),imgOrg.getHeight(),BufferedImage.TYPE_INT_RGB);
+
+  Graphics2D g=img.createGraphics();
+
+  g.setColor(Color.WHITE);
+
+  g.fillRect(0,0,imgOrg.getWidth(),imgOrg.getHeight());
+
+  g.drawImage((Image)imgOrg,0,0,null);
+
+  if (!isValidPCLResolution(dpi)) {
+
+    throw new IllegalArgumentException("Invalid PCL resolution: " + dpi);
+
+  }
+
+  int w=img.getWidth();
+
+  ColorModel cm=img.getColorModel();
+
+  if (cm instanceof DirectColorModel) {
+
+    writeCommand("*v6W");
+
+    out.write(new byte[]{0,3,0,8,8,8});
+
+  }
+
+ else {
+
+    IndexColorModel icm=(IndexColorModel)cm;
+
+    writeCommand("*v6W");
+
+    out.write(new byte[]{0,1,(byte)icm.getMapSize(),8,8,8});
+
+    byte[] reds=new byte[256];
+
+    byte[] greens=new byte[256];
+
+    byte[] blues=new byte[256];
+
+    icm.getReds(reds);
+
+    icm.getGreens(greens);
+
+    icm.getBlues(blues);
+
+    for (int i=0; i < icm.getMapSize(); i++) {
+
+      writeCommand("*v" + (reds[i] & 0xFF) + "A");
+
+      writeCommand("*v" + (greens[i] & 0xFF) + "B");
+
+      writeCommand("*v" + (blues[i] & 0xFF) + "C");
+
+      writeCommand("*v" + i + "I");
+
+    }
+
+  }
+
+  setRasterGraphicsResolution(dpi);
+
+  writeCommand("*r0f" + img.getHeight() + "t"+ (w)+ "S");
+
+  writeCommand("*r1A");
+
+  Raster raster=img.getData();
+
+  ColorEncoder encoder=new ColorEncoder(img);
+
+  if (cm.getTransferType() == DataBuffer.TYPE_BYTE) {
+
+    DataBufferByte dataBuffer=(DataBufferByte)raster.getDataBuffer();
+
+    if (img.getSampleModel() instanceof MultiPixelPackedSampleModel && dataBuffer.getNumBanks() == 1) {
+
+      byte[] buf=dataBuffer.getData();
+
+      MultiPixelPackedSampleModel sampleModel=(MultiPixelPackedSampleModel)img.getSampleModel();
+
+      int scanlineStride=sampleModel.getScanlineStride();
+
+      int idx=0;
+
+      for (int y=0, maxy=img.getHeight(); y < maxy; y++) {
+
+        for (int x=0; x < scanlineStride; x++) {
+
+          encoder.add8Bits(buf[idx]);
+
+          idx++;
+
+        }
+
+        encoder.endLine();
+
+      }
+
+    }
+
+ else {
+
+      throw new IOException("Unsupported image");
+
+    }
+
+  }
+
+ else   if (cm.getTransferType() == DataBuffer.TYPE_INT) {
+
+    DataBufferInt dataBuffer=(DataBufferInt)raster.getDataBuffer();
+
+    if (img.getSampleModel() instanceof SinglePixelPackedSampleModel && dataBuffer.getNumBanks() == 1) {
+
+      int[] buf=dataBuffer.getData();
+
+      SinglePixelPackedSampleModel sampleModel=(SinglePixelPackedSampleModel)img.getSampleModel();
+
+      int scanlineStride=sampleModel.getScanlineStride();
+
+      int idx=0;
+
+      for (int y=0, maxy=img.getHeight(); y < maxy; y++) {
+
+        for (int x=0; x < scanlineStride; x++) {
+
+          encoder.add8Bits((byte)(buf[idx] >> 16));
+
+          encoder.add8Bits((byte)(buf[idx] >> 8));
+
+          encoder.add8Bits((byte)(buf[idx] >> 0));
+
+          idx++;
+
+        }
+
+        encoder.endLine();
+
+      }
+
+    }
+
+ else {
+
+      throw new IOException("Unsupported image");
+
+    }
+
+  }
+
+ else {
+
+    throw new IOException("Unsupported image");
+
+  }
+
+  writeCommand("*rB");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Resets the printer and restores the user default environment.
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void resetPrinter() throws IOException {
+
+  writeCommand("E");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+public void selectColor(Color col) throws IOException {
+
+  writeCommand("*v6W");
+
+  writeBytes(new byte[]{0,1,1,8,8,8});
+
+  writeCommand(String.format("*v%da%db%dc0I",col.getRed(),col.getGreen(),col.getBlue()));
+
+  writeCommand("*v0S");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Select the current pattern
+
+ * @param patternID the pattern ID (&lt;ESC&gt;*c#G command)
+
+ * @param pattern the pattern type (&lt;ESC&gt;*v#T command)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void selectCurrentPattern(int patternID,int pattern) throws IOException {
+
+  if (pattern > 1) {
+
+    writeCommand("*c" + patternID + "G");
+
+  }
+
+  writeCommand("*v" + pattern + "T");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Selects the duplexing mode for the page. The parameter is usually printer-specific. "0" means Simplex, "1" means Duplex, Long-Edge Binding, "2" means Duplex, Short-Edge Binding.
+
+ * @param selector the integer representing the duplexing mode of the page
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void selectDuplexMode(int selector) throws IOException {
+
+  writeCommand("&l" + selector + "S");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Selects the current grayscale color (the given color is converted to grayscales).
+
+ * @param col the color
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void selectGrayscale(Color col) throws IOException {
+
+  if (Color.black.equals(col)) {
+
+    selectCurrentPattern(0,0);
+
+  }
+
+ else   if (Color.white.equals(col)) {
+
+    selectCurrentPattern(0,1);
+
+  }
+
+ else {
+
+    if (USE_PCL_SHADES) {
+
+      selectCurrentPattern(convertToPCLShade(col),2);
+
+    }
+
+ else {
+
+      defineGrayscalePattern(col,32,DitherUtil.DITHER_MATRIX_4X4);
+
+      selectCurrentPattern(32,4);
+
+    }
+
+  }
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Selects the output bin. The parameter is usually printer-specific. Usually, "1" is the default output bin (upper bin) and "2" is the lower (rear) output bin. Some printers may support additional output bins. Consult the technical reference for your printer for all available values.
+
+ * @param selector the integer representing the output bin
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void selectOutputBin(int selector) throws IOException {
+
+  writeCommand("&l" + selector + "G");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Selects the page size.
+
+ * @param selector the integer representing the page size
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void selectPageSize(int selector) throws IOException {
+
+  writeCommand("&l" + selector + "A");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Selects the paper source. The parameter is usually printer-specific. Usually, "1" is the default tray, "2" is the manual paper feed, "3" is the manual envelope feed, "4" is the "lower" tray and "7" is "auto-select". Consult the technical reference for your printer for all available values.
+
+ * @param selector the integer representing the paper source/tray
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void selectPaperSource(int selector) throws IOException {
+
+  writeCommand("&l" + selector + "H");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sends the job separation command.
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void separateJobs() throws IOException {
+
+  writeCommand("&l1T");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the cursor to a new absolute coordinate.
+
+ * @param x the X coordinate (in millipoints)
+
+ * @param y the Y coordinate (in millipoints)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setCursorPos(double x,double y) throws IOException {
+
+  if (x < 0) {
+
+    writeCommand("&a0h" + formatDouble2(x / 100) + "h"+ formatDouble2(y / 100)+ "V");
+
+  }
+
+ else {
+
+    writeCommand("&a" + formatDouble2(x / 100) + "h"+ formatDouble2(y / 100)+ "V");
+
+  }
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the dithering quality used when encoding gray or color images. If not explicitely set a medium setting (0.5f) is used.
+
+ * @param quality a quality setting between 0.0f (worst/fastest) and 1.0f (best/slowest)
+
+ */
+
+public void setDitheringQuality(float quality){
+
+  quality=Math.min(Math.max(0f,quality),1.0f);
+
+  this.ditheringQuality=quality;
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the pattern transparency mode.
+
+ * @param transparent true if transparent, false for opaque
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setPatternTransparencyMode(boolean transparent) throws IOException {
+
+  setTransparencyMode(currentSourceTransparency,transparent);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the raster graphics resolution
+
+ * @param value the resolution value (units per inch)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setRasterGraphicsResolution(int value) throws IOException {
+
+  writeCommand("*t" + value + "R");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the source transparency mode.
+
+ * @param transparent true if transparent, false for opaque
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setSourceTransparencyMode(boolean transparent) throws IOException {
+
+  setTransparencyMode(transparent,currentPatternTransparency);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * The Text Length command can be used to define the bottom border. See the PCL specification for details.
+
+ * @param numberOfLines the number of lines
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setTextLength(int numberOfLines) throws IOException {
+
+  writeCommand("&l" + numberOfLines + "F");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * The Top Margin command designates the number of lines between the top of the logical page and the top of the text area.
+
+ * @param numberOfLines the number of lines (See PCL specification for details)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setTopMargin(int numberOfLines) throws IOException {
+
+  writeCommand("&l" + numberOfLines + "E");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the transparency modes.
+
+ * @param source source transparency: true if transparent, false for opaque
+
+ * @param pattern pattern transparency: true if transparent, false for opaque
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setTransparencyMode(boolean source,boolean pattern) throws IOException {
+
+  if (source != currentSourceTransparency && pattern != currentPatternTransparency) {
+
+    writeCommand("*v" + (source ? '0' : '1') + "n"+ (pattern ? '0' : '1')+ "O");
+
+  }
+
+ else   if (source != currentSourceTransparency) {
+
+    writeCommand("*v" + (source ? '0' : '1') + "N");
+
+  }
+
+ else   if (pattern != currentPatternTransparency) {
+
+    writeCommand("*v" + (pattern ? '0' : '1') + "O");
+
+  }
+
+  this.currentSourceTransparency=source;
+
+  this.currentPatternTransparency=pattern;
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the unit of measure.
+
+ * @param value the resolution value (units per inch)
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setUnitOfMeasure(int value) throws IOException {
+
+  writeCommand("&u" + value + "D");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sets the Vertical Motion Index (VMI).
+
+ * @param value the VMI value
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void setVMI(double value) throws IOException {
+
+  writeCommand("&l" + formatDouble4(value) + "C");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+private int toGray(int rgb){
+
+  double greyVal=0.072169d * (rgb & 0xff);
+
+  rgb>>=8;
+
+  greyVal+=0.715160d * (rgb & 0xff);
+
+  rgb>>=8;
+
+  greyVal+=0.212671d * (rgb & 0xff);
+
+  return (int)greyVal;
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Sends the universal end of language command (UEL).
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void universalEndOfLanguage() throws IOException {
+
+  writeCommand("%-12345X");
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Writes raw bytes to the output stream
+
+ * @param bytes The bytes
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void writeBytes(byte[] bytes) throws IOException {
+
+  out.write(bytes);
+
+}
+
+Location: PCLGenerator.java
+
+Content: 
+
+/** 
+
+ * Writes raw text (in ISO-8859-1 encoding) to the output stream.
+
+ * @param s the text
+
+ * @throws IOException In case of an I/O error
+
+ */
+
+public void writeText(String s) throws IOException {
+
+  out.write(s.getBytes(ISO_8859_1));
+
+}
+

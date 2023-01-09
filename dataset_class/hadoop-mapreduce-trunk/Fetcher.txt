@@ -1,0 +1,580 @@
+Location: Fetcher.java
+
+Content: 
+
+/** 
+
+ * The connection establishment is attempted multiple times and is given up  only on the last failure. Instead of connecting with a timeout of  X, we try connecting with a timeout of x < X but multiple times. 
+
+ */
+
+private void connect(URLConnection connection,int connectionTimeout) throws IOException {
+
+  int unit=0;
+
+  if (connectionTimeout < 0) {
+
+    throw new IOException("Invalid timeout " + "[timeout = " + connectionTimeout + " ms]");
+
+  }
+
+ else   if (connectionTimeout > 0) {
+
+    unit=Math.min(UNIT_CONNECT_TIMEOUT,connectionTimeout);
+
+  }
+
+  connection.setConnectTimeout(unit);
+
+  while (true) {
+
+    try {
+
+      connection.connect();
+
+      break;
+
+    }
+
+ catch (    IOException ioe) {
+
+      connectionTimeout-=unit;
+
+      if (connectionTimeout == 0) {
+
+        throw ioe;
+
+      }
+
+      if (connectionTimeout < unit) {
+
+        unit=connectionTimeout;
+
+        connection.setConnectTimeout(unit);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Fetcher.java
+
+Content: 
+
+/** 
+
+ * The crux of the matter...
+
+ * @param host {@link MapHost} from which we need to  shuffle available map-outputs.
+
+ */
+
+private void copyFromHost(MapHost host) throws IOException {
+
+  List<TaskAttemptID> maps=scheduler.getMapsForHost(host);
+
+  if (maps.size() == 0) {
+
+    return;
+
+  }
+
+  LOG.debug("Fetcher " + id + " going to fetch from "+ host);
+
+  for (  TaskAttemptID tmp : maps) {
+
+    LOG.debug(tmp);
+
+  }
+
+  Set<TaskAttemptID> remaining=new HashSet<TaskAttemptID>(maps);
+
+  DataInputStream input;
+
+  boolean connectSucceeded=false;
+
+  try {
+
+    URL url=getMapOutputURL(host,maps);
+
+    URLConnection connection=url.openConnection();
+
+    String msgToEncode=SecureShuffleUtils.buildMsgFrom(url);
+
+    String encHash=SecureShuffleUtils.hashFromString(msgToEncode,jobTokenSecret);
+
+    connection.addRequestProperty(SecureShuffleUtils.HTTP_HEADER_URL_HASH,encHash);
+
+    connection.setReadTimeout(readTimeout);
+
+    connect(connection,connectionTimeout);
+
+    connectSucceeded=true;
+
+    input=new DataInputStream(connection.getInputStream());
+
+    String replyHash=connection.getHeaderField(SecureShuffleUtils.HTTP_HEADER_REPLY_URL_HASH);
+
+    if (replyHash == null) {
+
+      throw new IOException("security validation of TT Map output failed");
+
+    }
+
+    LOG.debug("url=" + msgToEncode + ";encHash="+ encHash+ ";replyHash="+ replyHash);
+
+    SecureShuffleUtils.verifyReply(replyHash,encHash,jobTokenSecret);
+
+    LOG.info("for url=" + msgToEncode + " sent hash and receievd reply");
+
+  }
+
+ catch (  IOException ie) {
+
+    ioErrs.increment(1);
+
+    LOG.warn("Failed to connect to " + host + " with "+ remaining.size()+ " map outputs",ie);
+
+    if (!connectSucceeded) {
+
+      for (      TaskAttemptID left : remaining) {
+
+        scheduler.copyFailed(left,host,connectSucceeded);
+
+      }
+
+    }
+
+ else {
+
+      TaskAttemptID firstMap=maps.get(0);
+
+      scheduler.copyFailed(firstMap,host,connectSucceeded);
+
+    }
+
+    for (    TaskAttemptID left : remaining) {
+
+      scheduler.putBackKnownMapOutput(host,left);
+
+    }
+
+    return;
+
+  }
+
+  try {
+
+    boolean good=true;
+
+    while (!remaining.isEmpty() && good) {
+
+      good=copyMapOutput(host,input,remaining);
+
+    }
+
+    IOUtils.cleanup(LOG,input);
+
+    if (good && !remaining.isEmpty()) {
+
+      throw new IOException("server didn't return all expected map outputs: " + remaining.size() + " left.");
+
+    }
+
+  }
+
+  finally {
+
+    for (    TaskAttemptID left : remaining) {
+
+      scheduler.putBackKnownMapOutput(host,left);
+
+    }
+
+  }
+
+}
+
+Location: Fetcher.java
+
+Content: 
+
+private boolean copyMapOutput(MapHost host,DataInputStream input,Set<TaskAttemptID> remaining){
+
+  MapOutput<K,V> mapOutput=null;
+
+  TaskAttemptID mapId=null;
+
+  long decompressedLength=-1;
+
+  long compressedLength=-1;
+
+  try {
+
+    long startTime=System.currentTimeMillis();
+
+    int forReduce=-1;
+
+    try {
+
+      ShuffleHeader header=new ShuffleHeader();
+
+      header.readFields(input);
+
+      mapId=TaskAttemptID.forName(header.mapId);
+
+      compressedLength=header.compressedLength;
+
+      decompressedLength=header.uncompressedLength;
+
+      forReduce=header.forReduce;
+
+    }
+
+ catch (    IllegalArgumentException e) {
+
+      badIdErrs.increment(1);
+
+      LOG.warn("Invalid map id ",e);
+
+      return false;
+
+    }
+
+    if (!verifySanity(compressedLength,decompressedLength,forReduce,remaining,mapId)) {
+
+      return false;
+
+    }
+
+    LOG.debug("header: " + mapId + ", len: "+ compressedLength+ ", decomp len: "+ decompressedLength);
+
+    mapOutput=merger.reserve(mapId,decompressedLength,id);
+
+    if (mapOutput.getType() == Type.WAIT) {
+
+      LOG.info("fetcher#" + id + " - MergerManager returned Status.WAIT ...");
+
+      return false;
+
+    }
+
+    LOG.info("fetcher#" + id + " about to shuffle output of map "+ mapOutput.getMapId()+ " decomp: "+ decompressedLength+ " len: "+ compressedLength+ " to "+ mapOutput.getType());
+
+    if (mapOutput.getType() == Type.MEMORY) {
+
+      shuffleToMemory(host,mapOutput,input,(int)decompressedLength,(int)compressedLength);
+
+    }
+
+ else {
+
+      shuffleToDisk(host,mapOutput,input,compressedLength);
+
+    }
+
+    long endTime=System.currentTimeMillis();
+
+    scheduler.copySucceeded(mapId,host,compressedLength,endTime - startTime,mapOutput);
+
+    remaining.remove(mapId);
+
+    metrics.successFetch();
+
+    return true;
+
+  }
+
+ catch (  IOException ioe) {
+
+    ioErrs.increment(1);
+
+    if (mapId == null || mapOutput == null) {
+
+      LOG.info("fetcher#" + id + " failed to read map header"+ mapId+ " decomp: "+ decompressedLength+ ", "+ compressedLength,ioe);
+
+      return false;
+
+    }
+
+    LOG.info("Failed to shuffle output of " + mapId + " from "+ host.getHostName(),ioe);
+
+    mapOutput.abort();
+
+    scheduler.copyFailed(mapId,host,true);
+
+    metrics.failedFetch();
+
+    return false;
+
+  }
+
+}
+
+Location: Fetcher.java
+
+Content: 
+
+public Fetcher(JobConf job,TaskAttemptID reduceId,ShuffleScheduler<K,V> scheduler,MergeManager<K,V> merger,Reporter reporter,ShuffleClientMetrics metrics,ExceptionReporter exceptionReporter,SecretKey jobTokenSecret){
+
+  this.reporter=reporter;
+
+  this.scheduler=scheduler;
+
+  this.merger=merger;
+
+  this.metrics=metrics;
+
+  this.exceptionReporter=exceptionReporter;
+
+  this.id=++nextId;
+
+  this.reduce=reduceId.getTaskID().getId();
+
+  this.jobTokenSecret=jobTokenSecret;
+
+  ioErrs=reporter.getCounter(SHUFFLE_ERR_GRP_NAME,ShuffleErrors.IO_ERROR.toString());
+
+  wrongLengthErrs=reporter.getCounter(SHUFFLE_ERR_GRP_NAME,ShuffleErrors.WRONG_LENGTH.toString());
+
+  badIdErrs=reporter.getCounter(SHUFFLE_ERR_GRP_NAME,ShuffleErrors.BAD_ID.toString());
+
+  wrongMapErrs=reporter.getCounter(SHUFFLE_ERR_GRP_NAME,ShuffleErrors.WRONG_MAP.toString());
+
+  connectionErrs=reporter.getCounter(SHUFFLE_ERR_GRP_NAME,ShuffleErrors.CONNECTION.toString());
+
+  wrongReduceErrs=reporter.getCounter(SHUFFLE_ERR_GRP_NAME,ShuffleErrors.WRONG_REDUCE.toString());
+
+  if (job.getCompressMapOutput()) {
+
+    Class<? extends CompressionCodec> codecClass=job.getMapOutputCompressorClass(DefaultCodec.class);
+
+    codec=ReflectionUtils.newInstance(codecClass,job);
+
+    decompressor=CodecPool.getDecompressor(codec);
+
+  }
+
+ else {
+
+    codec=null;
+
+    decompressor=null;
+
+  }
+
+  this.connectionTimeout=job.getInt(MRJobConfig.SHUFFLE_CONNECT_TIMEOUT,DEFAULT_STALLED_COPY_TIMEOUT);
+
+  this.readTimeout=job.getInt(MRJobConfig.SHUFFLE_READ_TIMEOUT,DEFAULT_READ_TIMEOUT);
+
+  setName("fetcher#" + id);
+
+  setDaemon(true);
+
+}
+
+Location: Fetcher.java
+
+Content: 
+
+/** 
+
+ * Create the map-output-url. This will contain all the map ids separated by commas
+
+ * @param host
+
+ * @param maps
+
+ * @return
+
+ * @throws MalformedURLException
+
+ */
+
+private URL getMapOutputURL(MapHost host,List<TaskAttemptID> maps) throws MalformedURLException {
+
+  StringBuffer url=new StringBuffer(host.getBaseUrl());
+
+  boolean first=true;
+
+  for (  TaskAttemptID mapId : maps) {
+
+    if (!first) {
+
+      url.append(",");
+
+    }
+
+    url.append(mapId);
+
+    first=false;
+
+  }
+
+  LOG.debug("MapOutput URL for " + host + " -> "+ url.toString());
+
+  return new URL(url.toString());
+
+}
+
+Location: Fetcher.java
+
+Content: 
+
+private void shuffleToDisk(MapHost host,MapOutput<K,V> mapOutput,InputStream input,long compressedLength) throws IOException {
+
+  OutputStream output=mapOutput.getDisk();
+
+  long bytesLeft=compressedLength;
+
+  try {
+
+    final int BYTES_TO_READ=64 * 1024;
+
+    byte[] buf=new byte[BYTES_TO_READ];
+
+    while (bytesLeft > 0) {
+
+      int n=input.read(buf,0,(int)Math.min(bytesLeft,BYTES_TO_READ));
+
+      if (n < 0) {
+
+        throw new IOException("read past end of stream reading " + mapOutput.getMapId());
+
+      }
+
+      output.write(buf,0,n);
+
+      bytesLeft-=n;
+
+      metrics.inputBytes(n);
+
+      reporter.progress();
+
+    }
+
+    LOG.info("Read " + (compressedLength - bytesLeft) + " bytes from map-output for "+ mapOutput.getMapId());
+
+    output.close();
+
+  }
+
+ catch (  IOException ioe) {
+
+    IOUtils.cleanup(LOG,input,output);
+
+    throw ioe;
+
+  }
+
+  if (bytesLeft != 0) {
+
+    throw new IOException("Incomplete map output received for " + mapOutput.getMapId() + " from "+ host.getHostName()+ " ("+ bytesLeft+ " bytes missing of "+ compressedLength+ ")");
+
+  }
+
+}
+
+Location: Fetcher.java
+
+Content: 
+
+private void shuffleToMemory(MapHost host,MapOutput<K,V> mapOutput,InputStream input,int decompressedLength,int compressedLength) throws IOException {
+
+  IFileInputStream checksumIn=new IFileInputStream(input,compressedLength);
+
+  input=checksumIn;
+
+  if (codec != null) {
+
+    decompressor.reset();
+
+    input=codec.createInputStream(input,decompressor);
+
+  }
+
+  byte[] shuffleData=mapOutput.getMemory();
+
+  try {
+
+    IOUtils.readFully(input,shuffleData,0,shuffleData.length);
+
+    metrics.inputBytes(shuffleData.length);
+
+    reporter.progress();
+
+    LOG.info("Read " + shuffleData.length + " bytes from map-output for "+ mapOutput.getMapId());
+
+  }
+
+ catch (  IOException ioe) {
+
+    IOUtils.cleanup(LOG,input);
+
+    throw ioe;
+
+  }
+
+}
+
+Location: Fetcher.java
+
+Content: 
+
+/** 
+
+ * Do some basic verification on the input received -- Being defensive
+
+ * @param compressedLength
+
+ * @param decompressedLength
+
+ * @param forReduce
+
+ * @param remaining
+
+ * @param mapId
+
+ * @return true/false, based on if the verification succeeded or not
+
+ */
+
+private boolean verifySanity(long compressedLength,long decompressedLength,int forReduce,Set<TaskAttemptID> remaining,TaskAttemptID mapId){
+
+  if (compressedLength < 0 || decompressedLength < 0) {
+
+    wrongLengthErrs.increment(1);
+
+    LOG.warn(getName() + " invalid lengths in map output header: id: " + mapId+ " len: "+ compressedLength+ ", decomp len: "+ decompressedLength);
+
+    return false;
+
+  }
+
+  if (forReduce != reduce) {
+
+    wrongReduceErrs.increment(1);
+
+    LOG.warn(getName() + " data for the wrong reduce map: " + mapId+ " len: "+ compressedLength+ " decomp len: "+ decompressedLength+ " for reduce "+ forReduce);
+
+    return false;
+
+  }
+
+  if (!remaining.contains(mapId)) {
+
+    wrongMapErrs.increment(1);
+
+    LOG.warn("Invalid map-output! Received output for " + mapId);
+
+    return false;
+
+  }
+
+  return true;
+
+}
+

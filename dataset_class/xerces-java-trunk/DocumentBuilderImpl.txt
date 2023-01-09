@@ -1,0 +1,336 @@
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+DocumentBuilderImpl(DocumentBuilderFactoryImpl dbf,Hashtable dbfAttrs,Hashtable features) throws SAXNotRecognizedException, SAXNotSupportedException {
+
+  this(dbf,dbfAttrs,features,false);
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+DocumentBuilderImpl(DocumentBuilderFactoryImpl dbf,Hashtable dbfAttrs,Hashtable features,boolean secureProcessing) throws SAXNotRecognizedException, SAXNotSupportedException {
+
+  domParser=new DOMParser();
+
+  if (dbf.isValidating()) {
+
+    fInitErrorHandler=new DefaultValidationErrorHandler();
+
+    setErrorHandler(fInitErrorHandler);
+
+  }
+
+ else {
+
+    fInitErrorHandler=domParser.getErrorHandler();
+
+  }
+
+  domParser.setFeature(VALIDATION_FEATURE,dbf.isValidating());
+
+  domParser.setFeature(NAMESPACES_FEATURE,dbf.isNamespaceAware());
+
+  domParser.setFeature(INCLUDE_IGNORABLE_WHITESPACE,!dbf.isIgnoringElementContentWhitespace());
+
+  domParser.setFeature(CREATE_ENTITY_REF_NODES_FEATURE,!dbf.isExpandEntityReferences());
+
+  domParser.setFeature(INCLUDE_COMMENTS_FEATURE,!dbf.isIgnoringComments());
+
+  domParser.setFeature(CREATE_CDATA_NODES_FEATURE,!dbf.isCoalescing());
+
+  if (dbf.isXIncludeAware()) {
+
+    domParser.setFeature(XINCLUDE_FEATURE,true);
+
+  }
+
+  if (secureProcessing) {
+
+    domParser.setProperty(SECURITY_MANAGER,new SecurityManager());
+
+  }
+
+  this.grammar=dbf.getSchema();
+
+  if (grammar != null) {
+
+    XMLParserConfiguration config=domParser.getXMLParserConfiguration();
+
+    XMLComponent validatorComponent=null;
+
+    if (grammar instanceof XSGrammarPoolContainer) {
+
+      validatorComponent=new XMLSchemaValidator();
+
+      fSchemaValidationManager=new ValidationManager();
+
+      fUnparsedEntityHandler=new UnparsedEntityHandler(fSchemaValidationManager);
+
+      config.setDTDHandler(fUnparsedEntityHandler);
+
+      fUnparsedEntityHandler.setDTDHandler(domParser);
+
+      domParser.setDTDSource(fUnparsedEntityHandler);
+
+      fSchemaValidatorComponentManager=new SchemaValidatorConfiguration(config,(XSGrammarPoolContainer)grammar,fSchemaValidationManager);
+
+    }
+
+ else {
+
+      validatorComponent=new JAXPValidatorComponent(grammar.newValidatorHandler());
+
+      fSchemaValidationManager=null;
+
+      fUnparsedEntityHandler=null;
+
+      fSchemaValidatorComponentManager=config;
+
+    }
+
+    config.addRecognizedFeatures(validatorComponent.getRecognizedFeatures());
+
+    config.addRecognizedProperties(validatorComponent.getRecognizedProperties());
+
+    config.setDocumentHandler((XMLDocumentHandler)validatorComponent);
+
+    ((XMLDocumentSource)validatorComponent).setDocumentHandler(domParser);
+
+    domParser.setDocumentSource((XMLDocumentSource)validatorComponent);
+
+    fSchemaValidator=validatorComponent;
+
+  }
+
+ else {
+
+    fSchemaValidationManager=null;
+
+    fUnparsedEntityHandler=null;
+
+    fSchemaValidatorComponentManager=null;
+
+    fSchemaValidator=null;
+
+  }
+
+  setFeatures(features);
+
+  setDocumentBuilderFactoryAttributes(dbfAttrs);
+
+  fInitEntityResolver=domParser.getEntityResolver();
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+public DOMImplementation getDOMImplementation(){
+
+  return DOMImplementationImpl.getDOMImplementation();
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+DOMParser getDOMParser(){
+
+  return domParser;
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+public boolean isNamespaceAware(){
+
+  try {
+
+    return domParser.getFeature(NAMESPACES_FEATURE);
+
+  }
+
+ catch (  SAXException x) {
+
+    throw new IllegalStateException(x.getMessage());
+
+  }
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+public boolean isValidating(){
+
+  try {
+
+    return domParser.getFeature(VALIDATION_FEATURE);
+
+  }
+
+ catch (  SAXException x) {
+
+    throw new IllegalStateException(x.getMessage());
+
+  }
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+/** 
+
+ * Non-preferred: use the getDOMImplementation() method instead of this one to get a DOM Level 2 DOMImplementation object and then use DOM Level 2 methods to create a DOM Document object.
+
+ */
+
+public Document newDocument(){
+
+  return new org.apache.xerces.dom.DocumentImpl();
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+private void resetSchemaValidator() throws SAXException {
+
+  try {
+
+    fSchemaValidator.reset(fSchemaValidatorComponentManager);
+
+  }
+
+ catch (  XMLConfigurationException e) {
+
+    throw new SAXException(e);
+
+  }
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+/** 
+
+ * Set any DocumentBuilderFactory attributes of our underlying DOMParser Note: code does not handle possible conflicts between DOMParser attribute names and JAXP specific attribute names, eg. DocumentBuilderFactory.setValidating()
+
+ */
+
+private void setDocumentBuilderFactoryAttributes(Hashtable dbfAttrs) throws SAXNotSupportedException, SAXNotRecognizedException {
+
+  if (dbfAttrs == null) {
+
+    return;
+
+  }
+
+  Iterator entries=dbfAttrs.entrySet().iterator();
+
+  while (entries.hasNext()) {
+
+    Map.Entry entry=(Map.Entry)entries.next();
+
+    String name=(String)entry.getKey();
+
+    Object val=entry.getValue();
+
+    if (val instanceof Boolean) {
+
+      domParser.setFeature(name,((Boolean)val).booleanValue());
+
+    }
+
+ else {
+
+      if (JAXP_SCHEMA_LANGUAGE.equals(name)) {
+
+        if (W3C_XML_SCHEMA.equals(val)) {
+
+          if (isValidating()) {
+
+            domParser.setFeature(XMLSCHEMA_VALIDATION_FEATURE,true);
+
+            domParser.setProperty(JAXP_SCHEMA_LANGUAGE,W3C_XML_SCHEMA);
+
+          }
+
+        }
+
+      }
+
+ else       if (JAXP_SCHEMA_SOURCE.equals(name)) {
+
+        if (isValidating()) {
+
+          String value=(String)dbfAttrs.get(JAXP_SCHEMA_LANGUAGE);
+
+          if (value != null && W3C_XML_SCHEMA.equals(value)) {
+
+            domParser.setProperty(name,val);
+
+          }
+
+ else {
+
+            throw new IllegalArgumentException(DOMMessageFormatter.formatMessage(DOMMessageFormatter.DOM_DOMAIN,"jaxp-order-not-supported",new Object[]{JAXP_SCHEMA_LANGUAGE,JAXP_SCHEMA_SOURCE}));
+
+          }
+
+        }
+
+      }
+
+ else {
+
+        domParser.setProperty(name,val);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: DocumentBuilderImpl.java
+
+Content: 
+
+private void setFeatures(Hashtable features) throws SAXNotSupportedException, SAXNotRecognizedException {
+
+  if (features != null) {
+
+    Iterator entries=features.entrySet().iterator();
+
+    while (entries.hasNext()) {
+
+      Map.Entry entry=(Map.Entry)entries.next();
+
+      String feature=(String)entry.getKey();
+
+      boolean value=((Boolean)entry.getValue()).booleanValue();
+
+      domParser.setFeature(feature,value);
+
+    }
+
+  }
+
+}
+

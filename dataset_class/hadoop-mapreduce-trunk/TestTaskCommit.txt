@@ -1,0 +1,204 @@
+Location: TestTaskCommit.java
+
+Content: 
+
+private Task createDummyTask(TaskType type) throws IOException, ClassNotFoundException, InterruptedException {
+
+  JobConf conf=new JobConf();
+
+  conf.setOutputCommitter(CommitterThatAlwaysRequiresCommit.class);
+
+  Path outDir=new Path(rootDir,"output");
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  JobID jobId=JobID.forName("job_201002121132_0001");
+
+  Task testTask;
+
+  if (type == TaskType.MAP) {
+
+    testTask=new MapTask();
+
+  }
+
+ else {
+
+    testTask=new ReduceTask();
+
+  }
+
+  testTask.setConf(conf);
+
+  testTask.initialize(conf,jobId,Reporter.NULL,false);
+
+  return testTask;
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+public void testCommitFail() throws IOException {
+
+  final Path inDir=new Path(rootDir,"./input");
+
+  final Path outDir=new Path(rootDir,"./output");
+
+  JobConf jobConf=createJobConf();
+
+  jobConf.setMaxMapAttempts(1);
+
+  jobConf.setOutputCommitter(CommitterWithCommitFail.class);
+
+  RunningJob rJob=UtilsForTests.runJob(jobConf,inDir,outDir,1,0);
+
+  rJob.waitForCompletion();
+
+  assertEquals(JobStatus.FAILED,rJob.getJobState());
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+public void testCommitNotRequiredForJobCleanup() throws Exception {
+
+  Task testTask=createDummyTask(TaskType.MAP);
+
+  testTask.setJobCleanupTask();
+
+  assertFalse("Job cleanup task should not need commit",testTask.isCommitRequired());
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+public void testCommitNotRequiredForJobSetup() throws Exception {
+
+  Task testTask=createDummyTask(TaskType.MAP);
+
+  testTask.setJobSetupTask();
+
+  assertFalse("Job setup task should not need commit",testTask.isCommitRequired());
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+public void testCommitNotRequiredForTaskCleanup() throws Exception {
+
+  Task testTask=createDummyTask(TaskType.REDUCE);
+
+  testTask.setTaskCleanupTask();
+
+  assertFalse("Task cleanup task should not need commit",testTask.isCommitRequired());
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+public void testCommitRequiredForMapTask() throws Exception {
+
+  Task testTask=createDummyTask(TaskType.MAP);
+
+  assertTrue("MapTask should need commit",testTask.isCommitRequired());
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+public void testCommitRequiredForReduceTask() throws Exception {
+
+  Task testTask=createDummyTask(TaskType.REDUCE);
+
+  assertTrue("ReduceTask should need commit",testTask.isCommitRequired());
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+/** 
+
+ * A test that mimics a failed task to ensure that it does not get into the COMMIT_PENDING state, by using a fake UmbilicalProtocol's implementation that fails if the commit. protocol is played. The test mocks the various steps in a failed task's  life-cycle using a special OutputCommitter and UmbilicalProtocol implementation.
+
+ * @throws Exception
+
+ */
+
+public void testTaskCleanupDoesNotCommit() throws Exception {
+
+  JobConf job=new JobConf();
+
+  job.setOutputCommitter(CommitterWithoutCleanup.class);
+
+  Path outDir=new Path(rootDir,"output");
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  String dummyAttemptID="attempt_200707121733_0001_m_000000_0";
+
+  TaskAttemptID attemptID=TaskAttemptID.forName(dummyAttemptID);
+
+  OutputCommitter committer=new CommitterWithoutCleanup();
+
+  JobContext jContext=new JobContextImpl(job,attemptID.getJobID());
+
+  committer.setupJob(jContext);
+
+  dummyAttemptID="attempt_200707121733_0001_m_000001_0";
+
+  attemptID=TaskAttemptID.forName(dummyAttemptID);
+
+  Task task=new MapTask(null,attemptID,0,null,1);
+
+  task.setConf(job);
+
+  task.localizeConfiguration(job);
+
+  task.initialize(job,attemptID.getJobID(),Reporter.NULL,false);
+
+  String file="test.txt";
+
+  FileSystem localFs=FileSystem.getLocal(job);
+
+  TextOutputFormat<Text,Text> theOutputFormat=new TextOutputFormat<Text,Text>();
+
+  RecordWriter<Text,Text> theRecordWriter=theOutputFormat.getRecordWriter(localFs,job,file,Reporter.NULL);
+
+  theRecordWriter.write(new Text("key"),new Text("value"));
+
+  theRecordWriter.close(Reporter.NULL);
+
+  task.setTaskCleanupTask();
+
+  MyUmbilical umbilical=new MyUmbilical();
+
+  task.run(job,umbilical);
+
+  assertTrue("Task did not succeed",umbilical.taskDone);
+
+}
+
+Location: TestTaskCommit.java
+
+Content: 
+
+public TestTaskCommit() throws IOException {
+
+  super(LOCAL_MR,LOCAL_FS,1,1);
+
+}
+

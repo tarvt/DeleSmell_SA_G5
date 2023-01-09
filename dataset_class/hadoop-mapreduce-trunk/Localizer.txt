@@ -1,0 +1,294 @@
+Location: Localizer.java
+
+Content: 
+
+/** 
+
+ * Create taskDirs on all the disks. Otherwise, in some cases, like when LinuxTaskController is in use, child might wish to balance load across disks but cannot itself create attempt directory because of the fact that job directory is writable only by the TT.
+
+ * @param user
+
+ * @param jobId
+
+ * @param attemptId
+
+ * @param isCleanupAttempt
+
+ * @throws IOException
+
+ */
+
+public void initializeAttemptDirs(String user,String jobId,String attemptId,boolean isCleanupAttempt) throws IOException {
+
+  boolean initStatus=false;
+
+  String attemptDirPath=TaskTracker.getLocalTaskDir(user,jobId,attemptId,isCleanupAttempt);
+
+  for (  String localDir : localDirs) {
+
+    Path localAttemptDir=new Path(localDir,attemptDirPath);
+
+    boolean attemptDirStatus=fs.mkdirs(localAttemptDir);
+
+    if (!attemptDirStatus) {
+
+      LOG.warn("localAttemptDir " + localAttemptDir.toString() + " couldn't be created.");
+
+    }
+
+    initStatus=initStatus || attemptDirStatus;
+
+  }
+
+  if (!initStatus) {
+
+    throw new IOException("Not able to initialize attempt directories " + "in any of the configured local directories for the attempt " + attemptId);
+
+  }
+
+}
+
+Location: Localizer.java
+
+Content: 
+
+/** 
+
+ * Prepare the job directories for a given job. To be called by the job localization code, only if the job is not already localized. <br> Here, we set 700 permissions on the job directories created on all disks. This we do so as to avoid any misuse by other users till the time {@link TaskController#initializeJob(JobInitializationContext)} is run at alater time to set proper private permissions on the job directories. <br>
+
+ * @param user
+
+ * @param jobId
+
+ * @throws IOException
+
+ */
+
+public void initializeJobDirs(String user,JobID jobId) throws IOException {
+
+  boolean initJobDirStatus=false;
+
+  String jobDirPath=TaskTracker.getLocalJobDir(user,jobId.toString());
+
+  for (  String localDir : localDirs) {
+
+    Path jobDir=new Path(localDir,jobDirPath);
+
+    if (fs.exists(jobDir)) {
+
+      fs.delete(jobDir,true);
+
+    }
+
+    boolean jobDirStatus=fs.mkdirs(jobDir);
+
+    if (!jobDirStatus) {
+
+      LOG.warn("Not able to create job directory " + jobDir.toString());
+
+    }
+
+    initJobDirStatus=initJobDirStatus || jobDirStatus;
+
+    fs.setPermission(jobDir,new FsPermission((short)0700));
+
+  }
+
+  if (!initJobDirStatus) {
+
+    throw new IOException("Not able to initialize job directories " + "in any of the configured local directories for job " + jobId.toString());
+
+  }
+
+}
+
+Location: Localizer.java
+
+Content: 
+
+/** 
+
+ * Create job log directory and set appropriate permissions for the directory.
+
+ * @param jobId
+
+ */
+
+public void initializeJobLogDir(JobID jobId) throws IOException {
+
+  Path jobUserLogDir=new Path(TaskLog.getJobDir(jobId).getCanonicalPath());
+
+  if (!fs.mkdirs(jobUserLogDir)) {
+
+    throw new IOException("Could not create job user log directory: " + jobUserLogDir);
+
+  }
+
+  fs.setPermission(jobUserLogDir,new FsPermission((short)0700));
+
+}
+
+Location: Localizer.java
+
+Content: 
+
+/** 
+
+ * Initialize the local directories for a particular user on this TT. This involves creation and setting permissions of the following directories <ul> <li>$mapreduce.cluster.local.dir/taskTracker/$user</li> <li>$mapreduce.cluster.local.dir/taskTracker/$user/jobcache</li> <li>$mapreduce.cluster.local.dir/taskTracker/$user/distcache</li> </ul>
+
+ * @param user
+
+ * @throws IOException
+
+ */
+
+public void initializeUserDirs(String user) throws IOException {
+
+  if (user == null) {
+
+    throw new IOException("User is null. Cannot initialized user-directories.");
+
+  }
+
+  AtomicBoolean localizedUser;
+
+synchronized (localizedUsers) {
+
+    if (!localizedUsers.containsKey(user)) {
+
+      localizedUsers.put(user,new AtomicBoolean(false));
+
+    }
+
+    localizedUser=localizedUsers.get(user);
+
+  }
+
+synchronized (localizedUser) {
+
+    if (localizedUser.get()) {
+
+      LOG.info("User-directories for the user " + user + " are already initialized on this TT. Not doing anything.");
+
+      return;
+
+    }
+
+    LOG.info("Initializing user " + user + " on this TT.");
+
+    boolean userDirStatus=false;
+
+    boolean jobCacheDirStatus=false;
+
+    boolean distributedCacheDirStatus=false;
+
+    for (    String localDir : localDirs) {
+
+      Path userDir=new Path(localDir,TaskTracker.getUserDir(user));
+
+      if (fs.exists(userDir) || fs.mkdirs(userDir)) {
+
+        fs.setPermission(userDir,new FsPermission((short)0700));
+
+        userDirStatus=true;
+
+        Path jobCacheDir=new Path(localDir,TaskTracker.getJobCacheSubdir(user));
+
+        if (fs.exists(jobCacheDir) || fs.mkdirs(jobCacheDir)) {
+
+          fs.setPermission(jobCacheDir,new FsPermission((short)0700));
+
+          jobCacheDirStatus=true;
+
+        }
+
+ else {
+
+          LOG.warn("Unable to create job cache directory : " + jobCacheDir);
+
+        }
+
+        Path distributedCacheDir=new Path(localDir,TaskTracker.getPrivateDistributedCacheDir(user));
+
+        if (fs.exists(distributedCacheDir) || fs.mkdirs(distributedCacheDir)) {
+
+          fs.setPermission(distributedCacheDir,new FsPermission((short)0700));
+
+          distributedCacheDirStatus=true;
+
+        }
+
+ else {
+
+          LOG.warn("Unable to create distributed-cache directory : " + distributedCacheDir);
+
+        }
+
+      }
+
+ else {
+
+        LOG.warn("Unable to create the user directory : " + userDir);
+
+      }
+
+    }
+
+    if (!userDirStatus) {
+
+      throw new IOException("Not able to initialize user directories " + "in any of the configured local directories for user " + user);
+
+    }
+
+    if (!jobCacheDirStatus) {
+
+      throw new IOException("Not able to initialize job-cache directories " + "in any of the configured local directories for user " + user);
+
+    }
+
+    if (!distributedCacheDirStatus) {
+
+      throw new IOException("Not able to initialize distributed-cache directories " + "in any of the configured local directories for user " + user);
+
+    }
+
+    InitializationContext context=new InitializationContext();
+
+    context.user=user;
+
+    context.workDir=null;
+
+    taskController.initializeUser(context);
+
+    localizedUser.set(true);
+
+  }
+
+}
+
+Location: Localizer.java
+
+Content: 
+
+/** 
+
+ * Create a Localizer instance
+
+ * @param fileSys
+
+ * @param lDirs
+
+ * @param tc
+
+ */
+
+public Localizer(FileSystem fileSys,String[] lDirs,TaskController tc){
+
+  fs=fileSys;
+
+  localDirs=lDirs;
+
+  taskController=tc;
+
+}
+

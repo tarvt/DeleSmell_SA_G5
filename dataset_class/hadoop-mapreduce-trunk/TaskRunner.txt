@@ -1,0 +1,820 @@
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Given a "jobJar" (typically retrieved via  {@link JobConf#getJar()}), appends classpath entries for it, as well as its lib/ and classes/ subdirectories.
+
+ * @param jobJar Job jar from configuration
+
+ * @param classPaths Accumulator for class paths
+
+ */
+
+static void appendJobJarClasspaths(String jobJar,List<String> classPaths){
+
+  if (jobJar == null) {
+
+    return;
+
+  }
+
+  File jobCacheDir=new File(new Path(jobJar).getParent().toString());
+
+  File[] libs=new File(jobCacheDir,"lib").listFiles();
+
+  if (libs != null) {
+
+    for (    File l : libs) {
+
+      classPaths.add(l.toString());
+
+    }
+
+  }
+
+  classPaths.add(new File(jobCacheDir,"classes").toString());
+
+  classPaths.add(new File(jobCacheDir,"job.jar").toString());
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+private static void appendSystemClasspaths(List<String> classPaths){
+
+  for (  String c : System.getProperty("java.class.path").split(SYSTEM_PATH_SEPARATOR)) {
+
+    classPaths.add(c);
+
+  }
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * @param taskid
+
+ * @param workDir
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+static Path createChildTmpDir(File workDir,JobConf conf) throws IOException {
+
+  String tmp=conf.get(MRJobConfig.TASK_TEMP_DIR,"./tmp");
+
+  Path tmpDir=new Path(tmp);
+
+  if (!tmpDir.isAbsolute()) {
+
+    tmpDir=new Path(workDir.toString(),tmp);
+
+    FileSystem localFs=FileSystem.getLocal(conf);
+
+    if (!localFs.mkdirs(tmpDir) && localFs.getFileStatus(tmpDir).isFile()) {
+
+      throw new IOException("Mkdirs failed to create " + tmpDir.toString());
+
+    }
+
+  }
+
+  return tmpDir;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Creates the working directory pathname for a task attempt. 
+
+ */
+
+static File formWorkDir(LocalDirAllocator lDirAlloc,TaskAttemptID task,boolean isCleanup,JobConf conf) throws IOException {
+
+  Path workDir=lDirAlloc.getLocalPathToRead(TaskTracker.getTaskWorkDir(conf.getUser(),task.getJobID().toString(),task.toString(),isCleanup),conf);
+
+  return new File(workDir.toString());
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ */
+
+private static List<String> getClassPaths(JobConf conf,File workDir,TaskDistributedCacheManager taskDistributedCacheManager) throws IOException {
+
+  List<String> classPaths=new ArrayList<String>();
+
+  appendSystemClasspaths(classPaths);
+
+  appendJobJarClasspaths(conf.getJar(),classPaths);
+
+  classPaths.addAll(taskDistributedCacheManager.getClassPaths());
+
+  classPaths.add(workDir.toString());
+
+  return classPaths;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+public JvmManager getJvmManager(){
+
+  return jvmManager;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+public TaskTracker.TaskInProgress getTaskInProgress(){
+
+  return tip;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+public TaskTracker getTracker(){
+
+  return tracker;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * @param taskid
+
+ * @param workDir
+
+ * @param classPaths
+
+ * @param logSize
+
+ * @return
+
+ * @throws IOException
+
+ */
+
+private Vector<String> getVMArgs(TaskAttemptID taskid,File workDir,List<String> classPaths,long logSize) throws IOException {
+
+  Vector<String> vargs=new Vector<String>(8);
+
+  File jvm=new File(new File(System.getProperty("java.home"),"bin"),"java");
+
+  vargs.add(jvm.toString());
+
+  String[] javaOptsSplit=parseChildJavaOpts(getChildJavaOpts(conf,JobConf.DEFAULT_MAPRED_TASK_JAVA_OPTS),taskid);
+
+  String libraryPath=System.getProperty("java.library.path");
+
+  if (libraryPath == null) {
+
+    libraryPath=workDir.getAbsolutePath();
+
+  }
+
+ else {
+
+    libraryPath+=SYSTEM_PATH_SEPARATOR + workDir;
+
+  }
+
+  boolean hasUserLDPath=false;
+
+  for (int i=0; i < javaOptsSplit.length; i++) {
+
+    if (javaOptsSplit[i].startsWith("-Djava.library.path=")) {
+
+      javaOptsSplit[i]+=SYSTEM_PATH_SEPARATOR + libraryPath;
+
+      hasUserLDPath=true;
+
+      break;
+
+    }
+
+  }
+
+  if (!hasUserLDPath) {
+
+    vargs.add("-Djava.library.path=" + libraryPath);
+
+  }
+
+  for (int i=0; i < javaOptsSplit.length; i++) {
+
+    vargs.add(javaOptsSplit[i]);
+
+  }
+
+  Path childTmpDir=createChildTmpDir(workDir,conf);
+
+  vargs.add("-Djava.io.tmpdir=" + childTmpDir);
+
+  vargs.add("-classpath");
+
+  String classPath=StringUtils.join(SYSTEM_PATH_SEPARATOR,classPaths);
+
+  vargs.add(classPath);
+
+  setupLog4jProperties(vargs,taskid,logSize);
+
+  if (conf.getProfileEnabled()) {
+
+    if (conf.getProfileTaskRange(t.isMapTask()).isIncluded(t.getPartition())) {
+
+      File prof=TaskLog.getTaskLogFile(taskid,t.isTaskCleanupTask(),TaskLog.LogName.PROFILE);
+
+      vargs.add(String.format(conf.getProfileParams(),prof.toString()));
+
+    }
+
+  }
+
+  vargs.add(Child.class.getName());
+
+  InetSocketAddress address=tracker.getTaskTrackerReportAddress();
+
+  vargs.add(address.getAddress().getHostAddress());
+
+  vargs.add(Integer.toString(address.getPort()));
+
+  vargs.add(taskid.toString());
+
+  vargs.add(TaskLog.getAttemptDir(taskid,t.isTaskCleanupTask()).toString());
+
+  return vargs;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * sets the environment variables needed for task jvm and its children.
+
+ * @param errorInfo
+
+ * @param workDir
+
+ * @param env
+
+ * @return
+
+ * @throws Throwable
+
+ */
+
+private String getVMEnvironment(String errorInfo,File workDir,JobConf conf,Map<String,String> env,TaskAttemptID taskid,long logSize) throws Throwable {
+
+  StringBuffer ldLibraryPath=new StringBuffer();
+
+  ldLibraryPath.append(workDir.toString());
+
+  String oldLdLibraryPath=null;
+
+  oldLdLibraryPath=System.getenv("LD_LIBRARY_PATH");
+
+  if (oldLdLibraryPath != null) {
+
+    ldLibraryPath.append(SYSTEM_PATH_SEPARATOR);
+
+    ldLibraryPath.append(oldLdLibraryPath);
+
+  }
+
+  env.put("LD_LIBRARY_PATH",ldLibraryPath.toString());
+
+  String jobTokenFile=conf.get(TokenCache.JOB_TOKENS_FILENAME);
+
+  LOG.debug("putting jobToken file name into environment fn=" + jobTokenFile);
+
+  env.put(UserGroupInformation.HADOOP_TOKEN_FILE_LOCATION,jobTokenFile);
+
+  env.put("HADOOP_ROOT_LOGGER","INFO,TLA");
+
+  String hadoopClientOpts=System.getenv("HADOOP_CLIENT_OPTS");
+
+  if (hadoopClientOpts == null) {
+
+    hadoopClientOpts="";
+
+  }
+
+ else {
+
+    hadoopClientOpts=hadoopClientOpts + " ";
+
+  }
+
+  hadoopClientOpts=hadoopClientOpts + "-Dhadoop.tasklog.taskid=" + taskid+ " -Dhadoop.tasklog.iscleanup="+ t.isTaskCleanupTask()+ " -Dhadoop.tasklog.totalLogFileSize="+ logSize;
+
+  env.put("HADOOP_CLIENT_OPTS",hadoopClientOpts);
+
+  String mapredChildEnv=getChildEnv(conf);
+
+  if (mapredChildEnv != null && mapredChildEnv.length() > 0) {
+
+    String childEnvs[]=mapredChildEnv.split(",");
+
+    for (    String cEnv : childEnvs) {
+
+      try {
+
+        String[] parts=cEnv.split("=");
+
+        String value=env.get(parts[0]);
+
+        if (value != null) {
+
+          value=parts[1].replace("$" + parts[0],value);
+
+        }
+
+ else {
+
+          value=System.getenv(parts[0]);
+
+          if (value != null) {
+
+            value=parts[1].replace("$" + parts[0],value);
+
+          }
+
+ else {
+
+            value=parts[1].replace("$" + parts[0],"");
+
+          }
+
+        }
+
+        env.put(parts[0],value);
+
+      }
+
+ catch (      Throwable t) {
+
+        errorInfo="Invalid User environment settings : " + mapredChildEnv + ". Failed to parse user-passed environment param."+ " Expecting : env1=value1,env2=value2...";
+
+        LOG.warn(errorInfo);
+
+        throw t;
+
+      }
+
+    }
+
+  }
+
+  return errorInfo;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * @return
+
+ */
+
+private List<String> getVMSetupCmd(){
+
+  int ulimit=getChildUlimit(conf);
+
+  if (ulimit <= 0) {
+
+    return null;
+
+  }
+
+  List<String> setup=null;
+
+  String[] ulimitCmd=Shell.getUlimitMemoryCommand(ulimit);
+
+  if (ulimitCmd != null) {
+
+    setup=new ArrayList<String>();
+
+    for (    String arg : ulimitCmd) {
+
+      setup.add(arg);
+
+    }
+
+  }
+
+  return setup;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+void launchJvmAndWait(List<String> setup,Vector<String> vargs,File stdout,File stderr,long logSize,File workDir,Map<String,String> env) throws InterruptedException {
+
+  jvmManager.launchJvm(this,jvmManager.constructJvmEnv(setup,vargs,stdout,stderr,logSize,workDir,env,conf));
+
+synchronized (lock) {
+
+    while (!done) {
+
+      lock.wait();
+
+    }
+
+  }
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Parse the given string and return an array of individual java opts. Split on whitespace and replace the special string "@taskid@" with the task ID given.
+
+ * @param javaOpts The string to parse
+
+ * @param taskid The task ID to replace the special string with
+
+ * @return An array of individual java opts.
+
+ */
+
+static String[] parseChildJavaOpts(String javaOpts,TaskAttemptID taskid){
+
+  javaOpts=javaOpts.replace("@taskid@",taskid.toString());
+
+  return javaOpts.trim().split("\\s+");
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Prepare the log files for the task
+
+ * @param taskid
+
+ * @param isCleanup
+
+ * @return an array of files. The first file is stdout, the second is stderr.
+
+ * @throws IOException 
+
+ */
+
+File[] prepareLogFiles(TaskAttemptID taskid,boolean isCleanup) throws IOException {
+
+  File[] logFiles=new File[2];
+
+  logFiles[0]=TaskLog.getTaskLogFile(taskid,isCleanup,TaskLog.LogName.STDOUT);
+
+  logFiles[1]=TaskLog.getTaskLogFile(taskid,isCleanup,TaskLog.LogName.STDERR);
+
+  File logDir=logFiles[0].getParentFile();
+
+  boolean b=logDir.mkdirs();
+
+  if (!b) {
+
+    LOG.warn("mkdirs failed. Ignoring");
+
+  }
+
+ else {
+
+    FileSystem localFs=FileSystem.getLocal(conf);
+
+    localFs.setPermission(new Path(logDir.getCanonicalPath()),new FsPermission((short)0700));
+
+  }
+
+  return logFiles;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+public void setExitCode(int exitCode){
+
+  this.exitCodeSet=true;
+
+  this.exitCode=exitCode;
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Prepare the Configs.LOCAL_DIR for the child. The child is sand-boxed now. Whenever it uses LocalDirAllocator from now on inside the child, it will only see files inside the attempt-directory. This is done in the Child's process space.
+
+ */
+
+static void setupChildMapredLocalDirs(Task t,JobConf conf){
+
+  String[] localDirs=conf.getTrimmedStrings(MRConfig.LOCAL_DIR);
+
+  String jobId=t.getJobID().toString();
+
+  String taskId=t.getTaskID().toString();
+
+  boolean isCleanup=t.isTaskCleanupTask();
+
+  String user=t.getUser();
+
+  StringBuffer childMapredLocalDir=new StringBuffer(localDirs[0] + Path.SEPARATOR + TaskTracker.getLocalTaskDir(user,jobId,taskId,isCleanup));
+
+  for (int i=1; i < localDirs.length; i++) {
+
+    childMapredLocalDir.append("," + localDirs[i] + Path.SEPARATOR+ TaskTracker.getLocalTaskDir(user,jobId,taskId,isCleanup));
+
+  }
+
+  LOG.debug(MRConfig.LOCAL_DIR + " for child : " + childMapredLocalDir);
+
+  conf.set(MRConfig.LOCAL_DIR,childMapredLocalDir.toString());
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Write the child's configuration to the disk and set it in configuration so that the child can pick it up from there.
+
+ * @param lDirAlloc
+
+ * @throws IOException
+
+ */
+
+void setupChildTaskConfiguration(LocalDirAllocator lDirAlloc) throws IOException {
+
+  Path localTaskFile=lDirAlloc.getLocalPathForWrite(TaskTracker.getTaskConfFile(t.getUser(),t.getJobID().toString(),t.getTaskID().toString(),t.isTaskCleanupTask()),conf);
+
+  writeLocalTaskFile(localTaskFile.toString(),conf);
+
+  t.setJobFile(localTaskFile.toString());
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+private void setupLog4jProperties(Vector<String> vargs,TaskAttemptID taskid,long logSize){
+
+  vargs.add("-Dhadoop.log.dir=" + new File(System.getProperty("hadoop.log.dir")).getAbsolutePath());
+
+  vargs.add("-Dhadoop.root.logger=" + getLogLevel(conf).toString() + ",TLA");
+
+  vargs.add("-D" + TaskLogAppender.TASKID_PROPERTY + "="+ taskid);
+
+  vargs.add("-D" + TaskLogAppender.ISCLEANUP_PROPERTY + "="+ t.isTaskCleanupTask());
+
+  vargs.add("-D" + TaskLogAppender.LOGSIZE_PROPERTY + "="+ logSize);
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Creates distributed cache symlinks and tmp directory, as appropriate. Note that when we setup the distributed cache, we didn't create the symlinks. This is done on a per task basis by the currently executing task.
+
+ * @param conf The job configuration.
+
+ * @param workDir Working directory, which is completely deleted.
+
+ */
+
+public static void setupWorkDir(JobConf conf,File workDir) throws IOException {
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("Fully deleting contents of " + workDir);
+
+  }
+
+  FileUtil.fullyDeleteContents(workDir);
+
+  if (DistributedCache.getSymlink(conf)) {
+
+    URI[] archives=DistributedCache.getCacheArchives(conf);
+
+    URI[] files=DistributedCache.getCacheFiles(conf);
+
+    Path[] localArchives=DistributedCache.getLocalCacheArchives(conf);
+
+    Path[] localFiles=DistributedCache.getLocalCacheFiles(conf);
+
+    if (archives != null) {
+
+      for (int i=0; i < archives.length; i++) {
+
+        String link=archives[i].getFragment();
+
+        String target=localArchives[i].toString();
+
+        symlink(workDir,target,link);
+
+      }
+
+    }
+
+    if (files != null) {
+
+      for (int i=0; i < files.length; i++) {
+
+        String link=files[i].getFragment();
+
+        String target=localFiles[i].toString();
+
+        symlink(workDir,target,link);
+
+      }
+
+    }
+
+  }
+
+  if (conf.getJar() != null) {
+
+    File jobCacheDir=new File(new Path(conf.getJar()).getParent().toString());
+
+    try {
+
+      TrackerDistributedCacheManager.createAllSymlink(conf,jobCacheDir,workDir);
+
+    }
+
+ catch (    IOException ie) {
+
+      LOG.warn(StringUtils.stringifyException(ie));
+
+    }
+
+  }
+
+  createChildTmpDir(workDir,conf);
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+public void signalDone(){
+
+synchronized (lock) {
+
+    done=true;
+
+    lock.notify();
+
+  }
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Utility method for creating a symlink and warning on errors. If link is null, does nothing.
+
+ */
+
+private static void symlink(File workDir,String target,String link) throws IOException {
+
+  if (link != null) {
+
+    link=workDir.toString() + Path.SEPARATOR + link;
+
+    File flink=new File(link);
+
+    if (!flink.exists()) {
+
+      LOG.info(String.format("Creating symlink: %s <- %s",target,link));
+
+      if (0 != FileUtil.symLink(target,link)) {
+
+        throw new IOException(String.format("Failed to create symlink: %s <- %s",target,link));
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+public TaskRunner(TaskTracker.TaskInProgress tip,TaskTracker tracker,JobConf conf){
+
+  this.tip=tip;
+
+  this.t=tip.getTask();
+
+  this.tracker=tracker;
+
+  this.conf=conf;
+
+  this.jvmManager=tracker.getJvmManagerInstance();
+
+}
+
+Location: TaskRunner.java
+
+Content: 
+
+/** 
+
+ * Write the task specific job-configuration file.
+
+ * @param localFs
+
+ * @throws IOException
+
+ */
+
+private static void writeLocalTaskFile(String jobFile,JobConf conf) throws IOException {
+
+  Path localTaskFile=new Path(jobFile);
+
+  FileSystem localFs=FileSystem.getLocal(conf);
+
+  localFs.delete(localTaskFile,true);
+
+  OutputStream out=localFs.create(localTaskFile);
+
+  try {
+
+    conf.writeXml(out);
+
+  }
+
+  finally {
+
+    out.close();
+
+  }
+
+}
+

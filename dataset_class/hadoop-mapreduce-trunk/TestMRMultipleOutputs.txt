@@ -1,0 +1,270 @@
+Location: TestMRMultipleOutputs.java
+
+Content: 
+
+public TestMRMultipleOutputs() throws IOException {
+
+  super(HadoopTestCase.LOCAL_MR,HadoopTestCase.LOCAL_FS,1,1);
+
+}
+
+Location: TestMRMultipleOutputs.java
+
+Content: 
+
+public void testWithCounters() throws Exception {
+
+  _testMultipleOutputs(true);
+
+  _testMOWithJavaSerialization(true);
+
+}
+
+Location: TestMRMultipleOutputs.java
+
+Content: 
+
+public void testWithoutCounters() throws Exception {
+
+  _testMultipleOutputs(false);
+
+  _testMOWithJavaSerialization(false);
+
+}
+
+Location: TestMRMultipleOutputs.java
+
+Content: 
+
+protected void _testMOWithJavaSerialization(boolean withCounters) throws Exception {
+
+  String input="a\nb\nc\nd\ne\nc\nd\ne";
+
+  Configuration conf=createJobConf();
+
+  conf.set("io.serializations","org.apache.hadoop.io.serializer.JavaSerialization," + "org.apache.hadoop.io.serializer.WritableSerialization");
+
+  Job job=MapReduceTestUtil.createJob(conf,IN_DIR,OUT_DIR,2,1,input);
+
+  job.setJobName("mo");
+
+  MultipleOutputs.addNamedOutput(job,TEXT,TextOutputFormat.class,Long.class,String.class);
+
+  MultipleOutputs.setCountersEnabled(job,withCounters);
+
+  job.setSortComparatorClass(JavaSerializationComparator.class);
+
+  job.setMapOutputKeyClass(Long.class);
+
+  job.setMapOutputValueClass(String.class);
+
+  job.setOutputKeyClass(Long.class);
+
+  job.setOutputValueClass(String.class);
+
+  job.setMapperClass(MOJavaSerDeMap.class);
+
+  job.setReducerClass(MOJavaSerDeReduce.class);
+
+  job.waitForCompletion(true);
+
+  int namedOutputCount=0;
+
+  int valueBasedOutputCount=0;
+
+  FileSystem fs=OUT_DIR.getFileSystem(conf);
+
+  FileStatus[] statuses=fs.listStatus(OUT_DIR);
+
+  for (  FileStatus status : statuses) {
+
+    String fileName=status.getPath().getName();
+
+    if (fileName.equals("text-m-00000") || fileName.equals("text-m-00001") || fileName.equals("text-r-00000")) {
+
+      namedOutputCount++;
+
+    }
+
+ else     if (fileName.equals("a-r-00000") || fileName.equals("b-r-00000") || fileName.equals("c-r-00000")|| fileName.equals("d-r-00000")|| fileName.equals("e-r-00000")) {
+
+      valueBasedOutputCount++;
+
+    }
+
+  }
+
+  assertEquals(3,namedOutputCount);
+
+  assertEquals(5,valueBasedOutputCount);
+
+  BufferedReader reader=new BufferedReader(new InputStreamReader(fs.open(new Path(FileOutputFormat.getOutputPath(job),"text-r-00000"))));
+
+  int count=0;
+
+  String line=reader.readLine();
+
+  while (line != null) {
+
+    assertTrue(line.endsWith(TEXT));
+
+    line=reader.readLine();
+
+    count++;
+
+  }
+
+  reader.close();
+
+  assertFalse(count == 0);
+
+  if (withCounters) {
+
+    CounterGroup counters=job.getCounters().getGroup(MultipleOutputs.class.getName());
+
+    assertEquals(6,counters.size());
+
+    assertEquals(4,counters.findCounter(TEXT).getValue());
+
+    assertEquals(2,counters.findCounter("a").getValue());
+
+    assertEquals(2,counters.findCounter("b").getValue());
+
+    assertEquals(4,counters.findCounter("c").getValue());
+
+    assertEquals(4,counters.findCounter("d").getValue());
+
+    assertEquals(4,counters.findCounter("e").getValue());
+
+  }
+
+}
+
+Location: TestMRMultipleOutputs.java
+
+Content: 
+
+protected void _testMultipleOutputs(boolean withCounters) throws Exception {
+
+  String input="a\nb\nc\nd\ne\nc\nd\ne";
+
+  Configuration conf=createJobConf();
+
+  Job job=MapReduceTestUtil.createJob(conf,IN_DIR,OUT_DIR,2,1,input);
+
+  job.setJobName("mo");
+
+  MultipleOutputs.addNamedOutput(job,TEXT,TextOutputFormat.class,LongWritable.class,Text.class);
+
+  MultipleOutputs.addNamedOutput(job,SEQUENCE,SequenceFileOutputFormat.class,IntWritable.class,Text.class);
+
+  MultipleOutputs.setCountersEnabled(job,withCounters);
+
+  job.setMapperClass(MOMap.class);
+
+  job.setReducerClass(MOReduce.class);
+
+  job.waitForCompletion(true);
+
+  int namedOutputCount=0;
+
+  int valueBasedOutputCount=0;
+
+  FileSystem fs=OUT_DIR.getFileSystem(conf);
+
+  FileStatus[] statuses=fs.listStatus(OUT_DIR);
+
+  for (  FileStatus status : statuses) {
+
+    String fileName=status.getPath().getName();
+
+    if (fileName.equals("text-m-00000") || fileName.equals("text-m-00001") || fileName.equals("text-r-00000")|| fileName.equals("sequence_A-m-00000")|| fileName.equals("sequence_A-m-00001")|| fileName.equals("sequence_B-m-00000")|| fileName.equals("sequence_B-m-00001")|| fileName.equals("sequence_B-r-00000")|| fileName.equals("sequence_C-r-00000")) {
+
+      namedOutputCount++;
+
+    }
+
+ else     if (fileName.equals("a-r-00000") || fileName.equals("b-r-00000") || fileName.equals("c-r-00000")|| fileName.equals("d-r-00000")|| fileName.equals("e-r-00000")) {
+
+      valueBasedOutputCount++;
+
+    }
+
+  }
+
+  assertEquals(9,namedOutputCount);
+
+  assertEquals(5,valueBasedOutputCount);
+
+  BufferedReader reader=new BufferedReader(new InputStreamReader(fs.open(new Path(FileOutputFormat.getOutputPath(job),"text-r-00000"))));
+
+  int count=0;
+
+  String line=reader.readLine();
+
+  while (line != null) {
+
+    assertTrue(line.endsWith(TEXT));
+
+    line=reader.readLine();
+
+    count++;
+
+  }
+
+  reader.close();
+
+  assertFalse(count == 0);
+
+  SequenceFile.Reader seqReader=new SequenceFile.Reader(fs,new Path(FileOutputFormat.getOutputPath(job),"sequence_B-r-00000"),conf);
+
+  assertEquals(IntWritable.class,seqReader.getKeyClass());
+
+  assertEquals(Text.class,seqReader.getValueClass());
+
+  count=0;
+
+  IntWritable key=new IntWritable();
+
+  Text value=new Text();
+
+  while (seqReader.next(key,value)) {
+
+    assertEquals(SEQUENCE,value.toString());
+
+    count++;
+
+  }
+
+  seqReader.close();
+
+  assertFalse(count == 0);
+
+  if (withCounters) {
+
+    CounterGroup counters=job.getCounters().getGroup(MultipleOutputs.class.getName());
+
+    assertEquals(9,counters.size());
+
+    assertEquals(4,counters.findCounter(TEXT).getValue());
+
+    assertEquals(2,counters.findCounter(SEQUENCE + "_A").getValue());
+
+    assertEquals(4,counters.findCounter(SEQUENCE + "_B").getValue());
+
+    assertEquals(2,counters.findCounter(SEQUENCE + "_C").getValue());
+
+    assertEquals(2,counters.findCounter("a").getValue());
+
+    assertEquals(2,counters.findCounter("b").getValue());
+
+    assertEquals(4,counters.findCounter("c").getValue());
+
+    assertEquals(4,counters.findCounter("d").getValue());
+
+    assertEquals(4,counters.findCounter("e").getValue());
+
+  }
+
+}
+

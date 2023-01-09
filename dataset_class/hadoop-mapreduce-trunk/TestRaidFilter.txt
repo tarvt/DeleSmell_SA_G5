@@ -1,0 +1,128 @@
+Location: TestRaidFilter.java
+
+Content: 
+
+private void myTearDown() throws Exception {
+
+  if (dfs != null) {
+
+    dfs.shutdown();
+
+  }
+
+}
+
+Location: TestRaidFilter.java
+
+Content: 
+
+public void testLayeredPolicies() throws Exception {
+
+  hongshuai();
+
+  new File(TEST_DIR).mkdirs();
+
+  conf=new Configuration();
+
+  dfs=new MiniDFSCluster(conf,2,true,null);
+
+  dfs.waitActive();
+
+  fs=dfs.getFileSystem();
+
+  String namenode=fs.getUri().toString();
+
+  FileSystem.setDefaultUri(conf,namenode);
+
+  Path src1=new Path("/user/foo");
+
+  Path src2=new Path("/user/foo/bar");
+
+  PolicyInfo info1=new PolicyInfo("p1",conf);
+
+  info1.setSrcPath(src1.toString());
+
+  info1.setErasureCode("xor");
+
+  info1.setDescription("test policy");
+
+  info1.setProperty("targetReplication","1");
+
+  info1.setProperty("metaReplication","1");
+
+  info1.setProperty("modTimePeriod","0");
+
+  PolicyInfo info2=new PolicyInfo("p2",conf);
+
+  info2.setSrcPath(src2.toString());
+
+  info2.setErasureCode("xor");
+
+  info2.setDescription("test policy");
+
+  info2.setProperty("targetReplication","1");
+
+  info2.setProperty("metaReplication","1");
+
+  info2.setProperty("modTimePeriod","0");
+
+  ArrayList<PolicyInfo> all=new ArrayList<PolicyInfo>();
+
+  all.add(info1);
+
+  all.add(info2);
+
+  try {
+
+    long blockSize=1024;
+
+    byte[] bytes=new byte[(int)blockSize];
+
+    Path f1=new Path(src1,"f1");
+
+    Path f2=new Path(src2,"f2");
+
+    FSDataOutputStream stm1=fs.create(f1,false,4096,(short)1,blockSize);
+
+    FSDataOutputStream stm2=fs.create(f2,false,4096,(short)1,blockSize);
+
+    FSDataOutputStream[] stms=new FSDataOutputStream[]{stm1,stm2};
+
+    for (    FSDataOutputStream stm : stms) {
+
+      stm.write(bytes);
+
+      stm.write(bytes);
+
+      stm.write(bytes);
+
+      stm.close();
+
+    }
+
+    Thread.sleep(1000);
+
+    FileStatus stat1=fs.getFileStatus(f1);
+
+    FileStatus stat2=fs.getFileStatus(f2);
+
+    RaidFilter.Statistics stats=new RaidFilter.Statistics();
+
+    RaidFilter.TimeBasedFilter filter=new RaidFilter.TimeBasedFilter(conf,RaidNode.xorDestinationPath(conf),info1,all,System.currentTimeMillis(),stats);
+
+    System.out.println("Stats " + stats);
+
+    assertTrue(filter.check(stat1));
+
+    assertFalse(filter.check(stat2));
+
+  }
+
+  finally {
+
+    myTearDown();
+
+  }
+
+}
+

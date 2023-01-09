@@ -1,0 +1,464 @@
+Location: TestJobRetire.java
+
+Content: 
+
+private TaskAttemptID createAndAddAttempt(TaskInProgress tip,int attemptId){
+
+  TaskAttemptID taskid=new TaskAttemptID(tip.getTIPId(),attemptId);
+
+  tip.addRunningTask(taskid,"test-tt");
+
+  return taskid;
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+private JobInProgress createAndAddJob(JobTracker jobtracker,JobConf conf){
+
+  JobID id=new JobID(jobtracker.getTrackerIdentifier(),jobtracker.jobs.size() + 1);
+
+  JobInProgress jip=new JobInProgress(id,conf,jobtracker);
+
+  jobtracker.jobs.put(id,jip);
+
+  return jip;
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+private TaskInProgress createAndAddTIP(JobTracker jobtracker,JobInProgress jip,TaskType type){
+
+  JobConf conf=jip.getJobConf();
+
+  JobID id=jip.getJobID();
+
+  TaskInProgress tip=null;
+
+  if (type == TaskType.MAP) {
+
+    tip=new TaskInProgress(id,"dummy",JobSplit.EMPTY_TASK_SPLIT,jobtracker,conf,jip,0,1);
+
+    jip.maps=new TaskInProgress[]{tip};
+
+  }
+
+ else   if (type == TaskType.REDUCE) {
+
+    tip=new TaskInProgress(id,"dummy",jip.desiredMaps(),0,jobtracker,conf,jip,1);
+
+    jip.reduces=new TaskInProgress[]{tip};
+
+  }
+
+ else   if (type == TaskType.JOB_SETUP) {
+
+    tip=new TaskInProgress(id,"dummy",JobSplit.EMPTY_TASK_SPLIT,jobtracker,conf,jip,0,1);
+
+    jip.setup=new TaskInProgress[]{tip};
+
+  }
+
+ else   if (type == TaskType.JOB_CLEANUP) {
+
+    tip=new TaskInProgress(id,"dummy",JobSplit.EMPTY_TASK_SPLIT,jobtracker,conf,jip,0,1);
+
+    jip.cleanup=new TaskInProgress[]{tip};
+
+  }
+
+  return tip;
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+private MiniMRCluster startCluster(JobConf conf,int numTrackers) throws IOException {
+
+  conf.setBoolean(JTConfig.JT_RETIREJOBS,true);
+
+  conf.setLong(JTConfig.JT_RETIREJOB_CACHE_SIZE,1);
+
+  return new MiniMRCluster(0,0,numTrackers,"file:///",1,null,null,null,conf,0);
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+/** 
+
+ * (Mock)Test JobTracker.removeJobTasks() which is called only when the job  retires.
+
+ */
+
+public void testJobRemoval() throws Exception {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    JobConf conf=new JobConf();
+
+    mr=startCluster(conf,0);
+
+    JobTracker jobtracker=mr.getJobTrackerRunner().getJobTracker();
+
+    testRemoveJobTasks(jobtracker,conf,TaskType.MAP);
+
+    testRemoveJobTasks(jobtracker,conf,TaskType.REDUCE);
+
+    testRemoveJobTasks(jobtracker,conf,TaskType.JOB_SETUP);
+
+    testRemoveJobTasks(jobtracker,conf,TaskType.JOB_CLEANUP);
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+    FileUtil.fullyDelete(new File(testDir.toString()));
+
+  }
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+public void testJobRetire() throws Exception {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    JobConf conf=new JobConf();
+
+    mr=startCluster(conf,1);
+
+    JobConf jobConf=mr.createJobConf();
+
+    JobTracker jobtracker=mr.getJobTrackerRunner().getJobTracker();
+
+    Path inDir=new Path(testDir,"input1");
+
+    Path outDir=new Path(testDir,"output1");
+
+    JobID id1=validateJobRetire(jobConf,inDir,outDir,jobtracker);
+
+    outDir=new Path(testDir,"output2");
+
+    JobID id2=validateJobRetire(jobConf,inDir,outDir,jobtracker);
+
+    assertNull("Job not removed from cache",jobtracker.getJobStatus(id1));
+
+    assertEquals("Total job in cache not correct",1,jobtracker.getAllJobs().length);
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+    FileUtil.fullyDelete(new File(testDir.toString()));
+
+  }
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+/** 
+
+ * Test job retire with tasks that report their *first* status only after the job retires. Steps : - Start a mini-mr cluster with 1 task-tracker having only map slots. Note that this task-tracker will take care of setup/cleanup and map  tasks. - Submit a job with 1 map task and 1 reduce task - Wait for the job to finish the map task - Start a 2nd tracker that waits for a long time after contacting the JT. - Wait for the 2nd tracker to get stuck - Kill the job - Wait for the job to retire - Check if the tip mappings are cleaned up. 
+
+ */
+
+public void testJobRetireWithUnreportedTasks() throws Exception {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    JobConf conf=new JobConf();
+
+    conf.setInt(TTConfig.TT_MAP_SLOTS,1);
+
+    conf.setInt(TTConfig.TT_REDUCE_SLOTS,0);
+
+    mr=startCluster(conf,1);
+
+    JobTracker jobtracker=mr.getJobTrackerRunner().getJobTracker();
+
+    Path inDir=new Path(testDir,"in-1");
+
+    Path outDir=new Path(testDir,"out-1");
+
+    JobConf jConf=mr.createJobConf();
+
+    FileInputFormat.setInputPaths(jConf,new Path[]{inDir});
+
+    FileOutputFormat.setOutputPath(jConf,outDir);
+
+    SleepJob sleepJob=new SleepJob();
+
+    sleepJob.setConf(jConf);
+
+    Job job=sleepJob.createJob(1,1,0,1,0,1);
+
+    job.submit();
+
+    JobID id=JobID.downgrade(job.getStatus().getJobID());
+
+    JobInProgress jip=jobtracker.getJob(id);
+
+    for (int i=0; i < 100 && (jip.finishedMaps() < 1); i++) {
+
+      UtilsForTests.waitFor(1000);
+
+    }
+
+    assertEquals(jip.finishedMaps(),1);
+
+    LOG.info("Adding a waiting tracker");
+
+    TaskTrackerRunner testTrackerRunner=mr.new TaskTrackerRunner(1,1,null,mr.createJobConf()){
+
+      @Override TaskTracker createTaskTracker(      JobConf conf) throws IOException, InterruptedException {
+
+        return new WaitingTaskTracker(conf);
+
+      }
+
+    }
+
+;
+
+    mr.addTaskTracker(testTrackerRunner);
+
+    LOG.info("Waiting tracker added");
+
+    WaitingTaskTracker testTT=(WaitingTaskTracker)testTrackerRunner.getTaskTracker();
+
+    for (int i=0; i < 1000 && (jobtracker.taskTrackers().size() < 2); i++) {
+
+      UtilsForTests.waitFor(100);
+
+    }
+
+    assertEquals(jobtracker.taskTrackers().size(),2);
+
+    LOG.info("Cluster is now ready");
+
+    mr.stopTaskTracker(mr.getTaskTrackerID(testTT.getName()));
+
+    assertEquals("Waiting tracker joined but no reduce task got scheduled",1,jip.runningReduces());
+
+    job.killJob();
+
+    TaskInProgress tip=jip.getTasks(TaskType.REDUCE)[0];
+
+    assertNull(tip.getTaskStatus(tip.getAllTaskAttemptIDs()[0]));
+
+    waitTillRetire(id,jobtracker);
+
+    for (    TaskAttemptID tid : jobtracker.taskidToTIPMap.keySet()) {
+
+      LOG.info("TaskidToTIP mapping left over : " + tid);
+
+    }
+
+    assertEquals("'taskid' to TIP mapping still exists",0,jobtracker.taskidToTIPMap.size());
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+    FileUtil.fullyDelete(new File(testDir.toString()));
+
+  }
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+private void testRemoveJobTasks(JobTracker jobtracker,JobConf conf,TaskType type){
+
+  JobInProgress jip=createAndAddJob(jobtracker,conf);
+
+  TaskInProgress tip=createAndAddTIP(jobtracker,jip,type);
+
+  TaskAttemptID taskid=createAndAddAttempt(tip,0);
+
+  assertNull(tip.getTaskStatus(taskid));
+
+  jobtracker.removeJobTasks(jip);
+
+  for (  TaskAttemptID tid : jobtracker.taskidToTIPMap.keySet()) {
+
+    LOG.info("TaskidToTIP : " + tid);
+
+  }
+
+  assertEquals("'taskid' to TIP mapping still exists",0,jobtracker.taskidToTIPMap.size());
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+private JobID validateJobRetire(JobConf jobConf,Path inDir,Path outDir,JobTracker jobtracker) throws IOException {
+
+  RunningJob rj=UtilsForTests.runJob(jobConf,inDir,outDir,0,0);
+
+  rj.waitForCompletion();
+
+  assertTrue(rj.isSuccessful());
+
+  JobID id=rj.getID();
+
+  waitTillRetire(id,jobtracker);
+
+  assertTrue("History url not set",rj.getHistoryUrl() != null && rj.getHistoryUrl().length() > 0);
+
+  assertNotNull("Job is not in cache",jobtracker.getJobStatus(id));
+
+  String name=jobtracker.getLocalJobFilePath(id);
+
+  File file=new File(name);
+
+  assertFalse("JobConf file not deleted",file.exists());
+
+  final String JOBDETAILS="jobdetails";
+
+  final String JOBCONF="jobconf";
+
+  final String JOBTASKS="jobtasks";
+
+  final String TASKSTATS="taskstats";
+
+  final String TASKDETAILS="taskdetails";
+
+  String jobUrlStr=rj.getTrackingURL();
+
+  URL jobUrl=new URL(jobUrlStr);
+
+  URL jobConfUrl=new URL(jobUrlStr.replace(JOBDETAILS,JOBCONF));
+
+  URL jobTasksUrl=new URL(jobUrlStr.replace(JOBDETAILS,JOBTASKS) + "&type=map&pagenum=1");
+
+  verifyRedirection(jobConfUrl);
+
+  verifyRedirection(jobTasksUrl);
+
+  verifyRedirection(jobUrl);
+
+  String jobTrackerUrlStr=jobUrlStr.substring(0,jobUrlStr.indexOf(JOBDETAILS));
+
+  Path logFile=new Path(jobtracker.getJobHistory().getHistoryFilePath(id));
+
+  JobHistoryParser.JobInfo jobInfo=JSPUtil.getJobInfo(logFile,logFile.getFileSystem(jobConf),jobtracker);
+
+  for (  TaskID tid : jobInfo.getAllTasks().keySet()) {
+
+    URL taskDetailsUrl=new URL(jobTrackerUrlStr + TASKDETAILS + ".jsp?tipid="+ tid);
+
+    verifyRedirection(taskDetailsUrl);
+
+  }
+
+  for (  JobHistoryParser.TaskInfo task : jobInfo.getAllTasks().values()) {
+
+    for (    org.apache.hadoop.mapreduce.TaskAttemptID attemptid : task.getAllTaskAttempts().keySet()) {
+
+      URL taskstats=new URL(jobTrackerUrlStr + TASKSTATS + ".jsp?attemptid="+ attemptid);
+
+      verifyRedirection(taskstats);
+
+    }
+
+  }
+
+  return id;
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+private void verifyRedirection(URL url) throws IOException {
+
+  LOG.info("Verifying redirection of " + url);
+
+  HttpURLConnection conn=(HttpURLConnection)url.openConnection();
+
+  conn.setInstanceFollowRedirects(false);
+
+  conn.connect();
+
+  assertEquals(HttpURLConnection.HTTP_MOVED_TEMP,conn.getResponseCode());
+
+  conn.disconnect();
+
+  URL redirectedUrl=new URL(conn.getHeaderField("Location"));
+
+  conn=(HttpURLConnection)redirectedUrl.openConnection();
+
+  conn.connect();
+
+  assertEquals(HttpURLConnection.HTTP_OK,conn.getResponseCode());
+
+  conn.disconnect();
+
+}
+
+Location: TestJobRetire.java
+
+Content: 
+
+private void waitTillRetire(JobID id,JobTracker jobtracker){
+
+  JobInProgress job=jobtracker.getJob(id);
+
+  for (int i=0; i < 10 && job != null; i++) {
+
+    UtilsForTests.waitFor(1000);
+
+    job=jobtracker.getJob(id);
+
+  }
+
+  assertNull("Job did not retire",job);
+
+}
+

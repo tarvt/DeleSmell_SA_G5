@@ -1,0 +1,446 @@
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void addKnownMapOutput(String hostName,String hostUrl,TaskAttemptID mapId){
+
+  MapHost host=mapLocations.get(hostName);
+
+  if (host == null) {
+
+    host=new MapHost(hostName,hostUrl);
+
+    mapLocations.put(hostName,host);
+
+  }
+
+  host.addKnownMap(mapId);
+
+  if (host.getState() == State.PENDING) {
+
+    pendingHosts.add(host);
+
+    notifyAll();
+
+  }
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+private void checkAndInformJobTracker(int failures,TaskAttemptID mapId,boolean readError){
+
+  if ((reportReadErrorImmediately && readError) || ((failures % maxFetchFailuresBeforeReporting) == 0)) {
+
+    LOG.info("Reporting fetch failure for " + mapId + " to jobtracker.");
+
+    status.addFetchFailedMap((org.apache.hadoop.mapred.TaskAttemptID)mapId);
+
+  }
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+private void checkReducerHealth(){
+
+  final float MAX_ALLOWED_FAILED_FETCH_ATTEMPT_PERCENT=0.5f;
+
+  final float MIN_REQUIRED_PROGRESS_PERCENT=0.5f;
+
+  final float MAX_ALLOWED_STALL_TIME_PERCENT=0.5f;
+
+  long totalFailures=failedShuffleCounter.getValue();
+
+  int doneMaps=totalMaps - remainingMaps;
+
+  boolean reducerHealthy=(((float)totalFailures / (totalFailures + doneMaps)) < MAX_ALLOWED_FAILED_FETCH_ATTEMPT_PERCENT);
+
+  boolean reducerProgressedEnough=(((float)doneMaps / totalMaps) >= MIN_REQUIRED_PROGRESS_PERCENT);
+
+  int stallDuration=(int)(System.currentTimeMillis() - lastProgressTime);
+
+  int shuffleProgressDuration=(int)(lastProgressTime - startTime);
+
+  int minShuffleRunDuration=(shuffleProgressDuration > maxMapRuntime) ? shuffleProgressDuration : maxMapRuntime;
+
+  boolean reducerStalled=(((float)stallDuration / minShuffleRunDuration) >= MAX_ALLOWED_STALL_TIME_PERCENT);
+
+  if ((failureCounts.size() >= maxFailedUniqueFetches || failureCounts.size() == (totalMaps - doneMaps)) && !reducerHealthy && (!reducerProgressedEnough || reducerStalled)) {
+
+    LOG.fatal("Shuffle failed with too many fetch failures " + "and insufficient progress!");
+
+    String errorMsg="Exceeded MAX_FAILED_UNIQUE_FETCHES; bailing-out.";
+
+    reporter.reportException(new IOException(errorMsg));
+
+  }
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void copyFailed(TaskAttemptID mapId,MapHost host,boolean readError){
+
+  host.penalize();
+
+  int failures=1;
+
+  if (failureCounts.containsKey(mapId)) {
+
+    IntWritable x=failureCounts.get(mapId);
+
+    x.set(x.get() + 1);
+
+    failures=x.get();
+
+  }
+
+ else {
+
+    failureCounts.put(mapId,new IntWritable(1));
+
+  }
+
+  String hostname=host.getHostName();
+
+  if (hostFailures.containsKey(hostname)) {
+
+    IntWritable x=hostFailures.get(hostname);
+
+    x.set(x.get() + 1);
+
+  }
+
+ else {
+
+    hostFailures.put(hostname,new IntWritable(1));
+
+  }
+
+  if (failures >= abortFailureLimit) {
+
+    try {
+
+      throw new IOException(failures + " failures downloading " + mapId);
+
+    }
+
+ catch (    IOException ie) {
+
+      reporter.reportException(ie);
+
+    }
+
+  }
+
+  checkAndInformJobTracker(failures,mapId,readError);
+
+  checkReducerHealth();
+
+  long delay=(long)(INITIAL_PENALTY * Math.pow(PENALTY_GROWTH_RATE,failures));
+
+  penalties.add(new Penalty(host,delay));
+
+  failedShuffleCounter.increment(1);
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void copySucceeded(TaskAttemptID mapId,MapHost host,long bytes,long millis,MapOutput<K,V> output) throws IOException {
+
+  failureCounts.remove(mapId);
+
+  hostFailures.remove(host.getHostName());
+
+  int mapIndex=mapId.getTaskID().getId();
+
+  if (!finishedMaps[mapIndex]) {
+
+    output.commit();
+
+    finishedMaps[mapIndex]=true;
+
+    shuffledMapsCounter.increment(1);
+
+    if (--remainingMaps == 0) {
+
+      notifyAll();
+
+    }
+
+    totalBytesShuffledTillNow+=bytes;
+
+    float mbs=(float)totalBytesShuffledTillNow / (1024 * 1024);
+
+    int mapsDone=totalMaps - remainingMaps;
+
+    long secsSinceStart=(System.currentTimeMillis() - startTime) / 1000 + 1;
+
+    float transferRate=mbs / secsSinceStart;
+
+    progress.set((float)mapsDone / totalMaps);
+
+    String statusString=mapsDone + " / " + totalMaps+ " copied.";
+
+    status.setStateString(statusString);
+
+    progress.setStatus("copy(" + mapsDone + " of "+ totalMaps+ " at "+ mbpsFormat.format(transferRate)+ " MB/s)");
+
+    reduceShuffleBytes.increment(bytes);
+
+    lastProgressTime=System.currentTimeMillis();
+
+    LOG.debug("map " + mapId + " done "+ statusString);
+
+  }
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void freeHost(MapHost host){
+
+  if (host.getState() != State.PENALIZED) {
+
+    if (host.markAvailable() == State.PENDING) {
+
+      pendingHosts.add(host);
+
+      notifyAll();
+
+    }
+
+  }
+
+  LOG.info(host + " freed by " + Thread.currentThread().getName()+ " in "+ (System.currentTimeMillis() - shuffleStart.get())+ "s");
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized MapHost getHost() throws InterruptedException {
+
+  while (pendingHosts.isEmpty()) {
+
+    wait();
+
+  }
+
+  MapHost host=null;
+
+  Iterator<MapHost> iter=pendingHosts.iterator();
+
+  int numToPick=random.nextInt(pendingHosts.size());
+
+  for (int i=0; i <= numToPick; ++i) {
+
+    host=iter.next();
+
+  }
+
+  pendingHosts.remove(host);
+
+  host.markBusy();
+
+  LOG.info("Assiging " + host + " with "+ host.getNumKnownMapOutputs()+ " to "+ Thread.currentThread().getName());
+
+  shuffleStart.set(System.currentTimeMillis());
+
+  return host;
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized List<TaskAttemptID> getMapsForHost(MapHost host){
+
+  List<TaskAttemptID> list=host.getAndClearKnownMaps();
+
+  Iterator<TaskAttemptID> itr=list.iterator();
+
+  List<TaskAttemptID> result=new ArrayList<TaskAttemptID>();
+
+  int includedMaps=0;
+
+  int totalSize=list.size();
+
+  while (itr.hasNext()) {
+
+    TaskAttemptID id=itr.next();
+
+    if (!obsoleteMaps.contains(id) && !finishedMaps[id.getTaskID().getId()]) {
+
+      result.add(id);
+
+      if (++includedMaps >= MAX_MAPS_AT_ONCE) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  while (itr.hasNext()) {
+
+    TaskAttemptID id=itr.next();
+
+    if (!obsoleteMaps.contains(id) && !finishedMaps[id.getTaskID().getId()]) {
+
+      host.addKnownMap(id);
+
+    }
+
+  }
+
+  LOG.info("assigned " + includedMaps + " of "+ totalSize+ " to "+ host+ " to "+ Thread.currentThread().getName());
+
+  return result;
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void informMaxMapRunTime(int duration){
+
+  if (duration > maxMapRuntime) {
+
+    maxMapRuntime=duration;
+
+  }
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void obsoleteMapOutput(TaskAttemptID mapId){
+
+  obsoleteMaps.add(mapId);
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void putBackKnownMapOutput(MapHost host,TaskAttemptID mapId){
+
+  host.addKnownMap(mapId);
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void resetKnownMaps(){
+
+  mapLocations.clear();
+
+  obsoleteMaps.clear();
+
+  pendingHosts.clear();
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public ShuffleScheduler(JobConf job,TaskStatus status,ExceptionReporter reporter,Progress progress,Counters.Counter shuffledMapsCounter,Counters.Counter reduceShuffleBytes,Counters.Counter failedShuffleCounter){
+
+  totalMaps=job.getNumMapTasks();
+
+  abortFailureLimit=Math.max(30,totalMaps / 10);
+
+  remainingMaps=totalMaps;
+
+  finishedMaps=new boolean[remainingMaps];
+
+  this.reporter=reporter;
+
+  this.status=status;
+
+  this.progress=progress;
+
+  this.shuffledMapsCounter=shuffledMapsCounter;
+
+  this.reduceShuffleBytes=reduceShuffleBytes;
+
+  this.failedShuffleCounter=failedShuffleCounter;
+
+  this.startTime=System.currentTimeMillis();
+
+  lastProgressTime=startTime;
+
+  referee.start();
+
+  this.maxFailedUniqueFetches=Math.min(totalMaps,this.maxFailedUniqueFetches);
+
+  this.maxFetchFailuresBeforeReporting=job.getInt(MRJobConfig.SHUFFLE_FETCH_FAILURES,REPORT_FAILURE_LIMIT);
+
+  this.reportReadErrorImmediately=job.getBoolean(MRJobConfig.SHUFFLE_NOTIFY_READERROR,true);
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+public synchronized void tipFailed(TaskID taskId){
+
+  finishedMaps[taskId.getId()]=true;
+
+}
+
+Location: ShuffleScheduler.java
+
+Content: 
+
+/** 
+
+ * Wait until the shuffle finishes or until the timeout.
+
+ * @param millis maximum wait time
+
+ * @return true if the shuffle is done
+
+ * @throws InterruptedException
+
+ */
+
+public synchronized boolean waitUntilDone(int millis) throws InterruptedException {
+
+  if (remainingMaps > 0) {
+
+    wait(millis);
+
+    return remainingMaps == 0;
+
+  }
+
+  return true;
+
+}
+

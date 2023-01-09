@@ -1,0 +1,178 @@
+Location: URIResolutionTestCase.java
+
+Content: 
+
+private Document createAreaTree(File fo,FOUserAgent ua) throws TransformerException, FOPException {
+
+  DOMResult domres=new DOMResult();
+
+  TransformerHandler athandler=tfactory.newTransformerHandler();
+
+  athandler.setResult(domres);
+
+  XMLRenderer atrenderer=new XMLRenderer(ua);
+
+  atrenderer.setContentHandler(athandler);
+
+  ua.setRendererOverride(atrenderer);
+
+  Fop fop=fopFactory.newFop(ua);
+
+  Transformer transformer=tfactory.newTransformer();
+
+  Source src=new StreamSource(fo);
+
+  Result res=new SAXResult(fop.getDefaultHandler());
+
+  transformer.transform(src,res);
+
+  Document doc=(Document)domres.getNode();
+
+  saveAreaTreeXML(doc,new File(BACKUP_DIR,fo.getName() + ".at.xml"));
+
+  return doc;
+
+}
+
+Location: URIResolutionTestCase.java
+
+Content: 
+
+private String evalXPath(Document doc,String xpath){
+
+  XObject res;
+
+  try {
+
+    res=XPathAPI.eval(doc,xpath);
+
+  }
+
+ catch (  TransformerException e) {
+
+    throw new RuntimeException("XPath evaluation failed: " + e.getMessage());
+
+  }
+
+  return res.str();
+
+}
+
+Location: URIResolutionTestCase.java
+
+Content: 
+
+private static File getTestDir(){
+
+  return new File(getBaseDir(),"test/xml/uri-testing/");
+
+}
+
+Location: URIResolutionTestCase.java
+
+Content: 
+
+@Test public void innerTestFO1() throws Exception {
+
+  File foFile=new File(getTestDir(),"custom-scheme/only-scheme-specific-part.fo");
+
+  FOUserAgent ua=fopFactory.newFOUserAgent();
+
+  Document doc=createAreaTree(foFile,ua);
+
+  assertEquals("viewport for external-graphic is missing","true",evalXPath(doc,"boolean(//flow/block[1]/lineArea/viewport)"));
+
+  assertEquals("46080",evalXPath(doc,"//flow/block[1]/lineArea/viewport/@ipd"));
+
+  assertEquals("46080",evalXPath(doc,"//flow/block[1]/lineArea/viewport/@bpd"));
+
+}
+
+Location: URIResolutionTestCase.java
+
+Content: 
+
+@BeforeClass public static void makeDirs(){
+
+  BACKUP_DIR.mkdirs();
+
+  fopFactory=new FopFactoryBuilder(new File(".").getAbsoluteFile().toURI(),new CustomURIResolver()).build();
+
+}
+
+Location: URIResolutionTestCase.java
+
+Content: 
+
+/** 
+
+ * Save the area tree XML for later inspection.
+
+ * @param doc area tree as a DOM document
+
+ * @param target target file
+
+ * @throws TransformerException if a problem occurs during serialization
+
+ */
+
+protected void saveAreaTreeXML(Document doc,File target) throws TransformerException {
+
+  Transformer transformer=tfactory.newTransformer();
+
+  Source src=new DOMSource(doc);
+
+  Result res=new StreamResult(target);
+
+  transformer.transform(src,res);
+
+}
+
+Location: URIResolutionTestCase.java
+
+Content: 
+
+/** 
+
+ * Test custom URI resolution with a hand-written URIResolver.
+
+ * @throws Exception if anything fails
+
+ */
+
+@Test public void testFO2() throws Exception {
+
+  File foFile=new File(getTestDir(),"custom-scheme/only-scheme-specific-part-svg.fo");
+
+  FOUserAgent ua=fopFactory.newFOUserAgent();
+
+  ByteArrayOutputStream baout=new ByteArrayOutputStream();
+
+  Fop fop=fopFactory.newFop(MimeConstants.MIME_PDF,ua,baout);
+
+  Transformer transformer=tfactory.newTransformer();
+
+  Source src=new StreamSource(foFile);
+
+  Result res=new SAXResult(fop.getDefaultHandler());
+
+  transformer.transform(src,res);
+
+  OutputStream out=new java.io.FileOutputStream(new File(BACKUP_DIR,foFile.getName() + ".pdf"));
+
+  try {
+
+    baout.writeTo(out);
+
+  }
+
+  finally {
+
+    IOUtils.closeQuietly(out);
+
+  }
+
+  assertTrue("Generated PDF has zero length",baout.size() > 0);
+
+}
+

@@ -1,0 +1,580 @@
+Location: JDBC_PING.java
+
+Content: 
+
+protected void attemptSchemaInitialization(){
+
+  if (stringIsEmpty(initialize_sql)) {
+
+    log.debug("Table creation step skipped: initialize_sql property is missing");
+
+    return;
+
+  }
+
+  Connection connection=getConnection();
+
+  if (connection == null)   return;
+
+  try (PreparedStatement ps=connection.prepareStatement(initialize_sql)){
+
+    if (log.isTraceEnabled())     log.trace("SQL for initializing schema: %s",ps);
+
+    ps.execute();
+
+    log.debug("Table created for JDBC_PING Discovery Protocol");
+
+  }
+
+ catch (  SQLException e) {
+
+    log.debug("Could not execute initialize_sql statement; not necessarily an error, we always attempt to create the schema. " + "To suppress this message, set initialize_sql to an empty value. Cause: %s",e.getMessage());
+
+  }
+
+ finally {
+
+    try {
+
+      connection.close();
+
+    }
+
+ catch (    SQLException e) {
+
+      log.error(Util.getMessage("ErrorClosingConnection"),e);
+
+    }
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected void clearTable(String clustername){
+
+  try (Connection conn=getConnection();PreparedStatement ps=conn.prepareStatement(clear_sql)){
+
+    if (clear_sql.indexOf('?') >= 0)     ps.setString(1,clustername);
+
+ else     log.debug("Please update your clear_sql to include cluster_name parameter.");
+
+    if (log.isTraceEnabled())     log.trace("%s: SQL for clearing the table: %s",local_addr,ps);
+
+    ps.execute();
+
+    log.debug("%s: cleared table for cluster %s",local_addr,clustername);
+
+  }
+
+ catch (  SQLException e) {
+
+    log.error(Util.getMessage("ErrorClearingTable"),e);
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected void closeConnection(final Connection connection){
+
+  try {
+
+    connection.close();
+
+  }
+
+ catch (  SQLException e) {
+
+    log.error(Util.getMessage("ErrorClosingConnectionToJDBCPINGDatabase"),e);
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected boolean contains(String cluster_name,Address addr){
+
+  final String addressAsString=addressAsString(addr);
+
+  try (Connection conn=getConnection()){
+
+    try (PreparedStatement ps=conn.prepareStatement(contains_sql)){
+
+      ps.setString(1,cluster_name);
+
+      ps.setString(2,addressAsString);
+
+      try (ResultSet resultSet=ps.executeQuery()){
+
+        if (!resultSet.next())         return false;
+
+        int count=resultSet.getInt("RECORDCOUNT");
+
+        return count > 0;
+
+      }
+
+     }
+
+   }
+
+ catch (  SQLException e) {
+
+    log.error(Util.getMessage("ErrorReadingTable"),e);
+
+  }
+
+  return false;
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected synchronized void delete(Connection connection,String clustername,String addressToDelete) throws SQLException {
+
+  try (PreparedStatement ps=connection.prepareStatement(delete_single_sql)){
+
+    ps.setString(1,addressToDelete);
+
+    ps.setString(2,clustername);
+
+    if (log.isTraceEnabled())     log.trace("%s: SQL for deletion: %s",local_addr,ps);
+
+    ps.executeUpdate();
+
+    log.debug("Removed %s for cluster %s from database",addressToDelete,clustername);
+
+  }
+
+ }
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected void delete(String clustername,String addressToDelete) throws SQLException {
+
+  final Connection connection=getConnection();
+
+  if (connection != null) {
+
+    try {
+
+      delete(connection,clustername,addressToDelete);
+
+    }
+
+ catch (    SQLException e) {
+
+      log.error(Util.getMessage("ErrorUpdatingJDBCPINGTable"),e);
+
+    }
+
+ finally {
+
+      closeConnection(connection);
+
+    }
+
+  }
+
+ else {
+
+    log.error(Util.getMessage("FailedToDeletePingDataInDatabase"));
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected Connection getConnection(){
+
+  if (dataSource == null) {
+
+    Connection connection;
+
+    try {
+
+      connection=DriverManager.getConnection(connection_url,connection_username,connection_password);
+
+    }
+
+ catch (    SQLException e) {
+
+      log.error(Util.getMessage("CouldNotOpenConnectionToDatabase"),e);
+
+      return null;
+
+    }
+
+    if (connection == null) {
+
+      log.error(Util.getMessage("ReceivedNullConnectionFromTheDriverManager"));
+
+    }
+
+    return connection;
+
+  }
+
+ else {
+
+    try {
+
+      return dataSource.getConnection();
+
+    }
+
+ catch (    SQLException e) {
+
+      log.error(Util.getMessage("CouldNotOpenConnectionToDatabase"),e);
+
+      return null;
+
+    }
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected DataSource getDataSourceFromJNDI(String name){
+
+  final DataSource data_source;
+
+  InitialContext ctx=null;
+
+  try {
+
+    ctx=new InitialContext();
+
+    Object whatever=ctx.lookup(name);
+
+    if (whatever == null)     throw new IllegalArgumentException("JNDI name " + name + " is not bound");
+
+    if (!(whatever instanceof DataSource))     throw new IllegalArgumentException("JNDI name " + name + " was found but is not a DataSource");
+
+    data_source=(DataSource)whatever;
+
+    log.debug("Datasource found via JNDI lookup via name: %s",name);
+
+    return data_source;
+
+  }
+
+ catch (  NamingException e) {
+
+    throw new IllegalArgumentException("Could not lookup datasource " + name,e);
+
+  }
+
+ finally {
+
+    if (ctx != null) {
+
+      try {
+
+        ctx.close();
+
+      }
+
+ catch (      NamingException e) {
+
+        log.warn("Failed to close naming context.",e);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected synchronized void insert(Connection connection,PingData data,String clustername,String address) throws SQLException {
+
+  final byte[] serializedPingData=serializeWithoutView(data);
+
+  try (PreparedStatement ps=connection.prepareStatement(insert_single_sql)){
+
+    ps.setString(1,address);
+
+    ps.setString(2,clustername);
+
+    ps.setBytes(3,serializedPingData);
+
+    if (log.isTraceEnabled())     log.trace("%s: SQL for insertion: %s",local_addr,ps);
+
+    ps.executeUpdate();
+
+    log.debug("Inserted %s for cluster %s into database",address,clustername);
+
+  }
+
+ }
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected void loadDriver(){
+
+  if (stringIsEmpty(connection_driver))   return;
+
+  log.debug("Registering JDBC Driver named '%s'",connection_driver);
+
+  try {
+
+    Class.forName(connection_driver);
+
+  }
+
+ catch (  ClassNotFoundException e) {
+
+    throw new IllegalArgumentException("JDBC Driver required for JDBC_PING " + " protocol could not be loaded: '" + connection_driver + "'");
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected static final PreparedStatement prepareStatement(final Connection connection,final String sql,final int resultSetType,final int resultSetConcurrency) throws SQLException {
+
+  try {
+
+    return connection.prepareStatement(sql,resultSetType,resultSetConcurrency);
+
+  }
+
+ catch (  final SQLException x) {
+
+    try {
+
+      return connection.prepareStatement(sql);
+
+    }
+
+ catch (    final SQLException x2) {
+
+      x.addSuppressed(x2);
+
+      throw x;
+
+    }
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected void readAll(Connection connection,List<Address> members,String clustername,Responses rsps) throws SQLException {
+
+  try (PreparedStatement ps=prepareStatement(connection,select_all_pingdata_sql,ResultSet.TYPE_FORWARD_ONLY,ResultSet.CONCUR_UPDATABLE)){
+
+    ps.setString(1,clustername);
+
+    if (log.isTraceEnabled())     log.trace("%s: SQL for reading: %s",local_addr,ps);
+
+    try (ResultSet resultSet=ps.executeQuery()){
+
+      while (resultSet.next()) {
+
+        byte[] bytes=resultSet.getBytes(1);
+
+        try {
+
+          PingData data=deserialize(bytes);
+
+          reads++;
+
+          if (data == null || (members != null && !members.contains(data.getAddress())))           continue;
+
+          rsps.addResponse(data,false);
+
+          if (local_addr != null && !local_addr.equals(data.getAddress()))           addDiscoveryResponseToCaches(data.getAddress(),data.getLogicalName(),data.getPhysicalAddr());
+
+        }
+
+ catch (        Exception e) {
+
+          int row=resultSet.getRow();
+
+          log.error("%s: failed deserializing row %d: %s; removing it from the table",local_addr,row,e);
+
+          try {
+
+            resultSet.deleteRow();
+
+          }
+
+ catch (          Throwable t) {
+
+            log.error("%s: failed removing row %d: %s; please delete it manually",local_addr,row,e);
+
+          }
+
+        }
+
+      }
+
+    }
+
+   }
+
+ }
+
+Location: JDBC_PING.java
+
+Content: 
+
+public void setDataSource(DataSource dataSource){
+
+  this.dataSource=dataSource;
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+private static boolean stringIsEmpty(final String value){
+
+  return value == null || value.trim().isEmpty();
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+private static boolean stringNotEmpty(final String value){
+
+  return !stringIsEmpty(value);
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected void verifyConfigurationParameters(){
+
+  if (dataSource == null) {
+
+    if (stringIsEmpty(this.connection_url) || stringIsEmpty(this.connection_driver) || stringIsEmpty(this.connection_username)) {
+
+      if (stringIsEmpty(this.datasource_jndi_name)) {
+
+        throw new IllegalArgumentException("Either the 4 configuration properties starting with 'connection_' or the datasource_jndi_name must be set");
+
+      }
+
+    }
+
+    if (stringNotEmpty(this.connection_url) || stringNotEmpty(this.connection_driver) || stringNotEmpty(this.connection_username)) {
+
+      if (stringNotEmpty(this.datasource_jndi_name)) {
+
+        throw new IllegalArgumentException("When using the 'datasource_jndi_name' configuration property, all properties starting with 'connection_' must not be set");
+
+      }
+
+    }
+
+  }
+
+  if (stringIsEmpty(this.insert_single_sql)) {
+
+    throw new IllegalArgumentException("The insert_single_sql configuration property is mandatory");
+
+  }
+
+  if (stringIsEmpty(this.delete_single_sql)) {
+
+    throw new IllegalArgumentException("The delete_single_sql configuration property is mandatory");
+
+  }
+
+  if (stringIsEmpty(this.select_all_pingdata_sql)) {
+
+    throw new IllegalArgumentException("The select_all_pingdata_sql configuration property is mandatory");
+
+  }
+
+}
+
+Location: JDBC_PING.java
+
+Content: 
+
+protected synchronized void writeToDB(PingData data,String clustername,boolean overwrite){
+
+  final String ownAddress=addressAsString(data.getAddress());
+
+  final Connection connection=getConnection();
+
+  if (connection != null) {
+
+    try {
+
+      if (overwrite)       delete(connection,clustername,ownAddress);
+
+ else {
+
+        if (contains(clustername,data.getAddress()))         return;
+
+      }
+
+      insert(connection,data,clustername,ownAddress);
+
+    }
+
+ catch (    SQLException e) {
+
+      log.error(Util.getMessage("ErrorUpdatingJDBCPINGTable"),e);
+
+    }
+
+ finally {
+
+      closeConnection(connection);
+
+    }
+
+  }
+
+ else {
+
+    log.error(Util.getMessage("FailedToStorePingDataInDatabase"));
+
+  }
+
+}
+

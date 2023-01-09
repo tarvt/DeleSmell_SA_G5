@@ -1,0 +1,720 @@
+Location: FetcherThread.java
+
+Content: 
+
+private CrawlDatum createRedirDatum(Text redirUrl,FetchItem fit,byte status){
+
+  CrawlDatum newDatum=new CrawlDatum(status,fit.datum.getFetchInterval(),fit.datum.getScore());
+
+  newDatum.getMetaData().putAll(fit.datum.getMetaData());
+
+  try {
+
+    scfilters.initialScore(redirUrl,newDatum);
+
+  }
+
+ catch (  ScoringFilterException e) {
+
+    LOG.error("Scoring filtering failed for {}: ",redirUrl,e);
+
+  }
+
+  if (reprUrl != null) {
+
+    newDatum.getMetaData().put(Nutch.WRITABLE_REPR_URL_KEY,new Text(reprUrl));
+
+  }
+
+  return newDatum;
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+public FetcherThread(Configuration conf,AtomicInteger activeThreads,FetchItemQueues fetchQueues,QueueFeeder feeder,AtomicInteger spinWaiting,AtomicLong lastRequestStart,FetcherRun.Context context,AtomicInteger errors,String segmentName,boolean parsing,boolean storingContent,AtomicInteger pages,AtomicLong bytes){
+
+  this.setDaemon(true);
+
+  this.setName("FetcherThread");
+
+  this.conf=conf;
+
+  this.urlFilters=new URLFilters(conf);
+
+  this.urlExemptionFilters=new URLExemptionFilters(conf);
+
+  this.scfilters=new ScoringFilters(conf);
+
+  this.parseUtil=new ParseUtil(conf);
+
+  this.skipTruncated=conf.getBoolean(ParseSegment.SKIP_TRUNCATED,true);
+
+  this.signatureWithoutParsing=conf.getBoolean("fetcher.signature",false);
+
+  this.protocolFactory=new ProtocolFactory(conf);
+
+  this.normalizers=new URLNormalizers(conf,URLNormalizers.SCOPE_FETCHER);
+
+  this.maxCrawlDelay=conf.getInt("fetcher.max.crawl.delay",30) * 1000;
+
+  float crawlDelay=conf.getFloat("fetcher.server.delay",1.0f);
+
+  this.minCrawlDelay=(long)(conf.getFloat("fetcher.min.crawl.delay",crawlDelay) * 1000);
+
+  this.activeThreads=activeThreads;
+
+  this.fetchQueues=fetchQueues;
+
+  this.feeder=feeder;
+
+  this.spinWaiting=spinWaiting;
+
+  this.lastRequestStart=lastRequestStart;
+
+  this.context=context;
+
+  this.errors=errors;
+
+  this.segmentName=segmentName;
+
+  this.parsing=parsing;
+
+  this.storingContent=storingContent;
+
+  this.pages=pages;
+
+  this.bytes=bytes;
+
+  this.logUtil.setConf(conf);
+
+  if (parsing) {
+
+    if (conf.getBoolean("parse.filter.urls",true))     this.urlFiltersForOutlinks=urlFilters;
+
+    if (conf.getBoolean("parse.normalize.urls",true))     this.normalizersForOutlinks=new URLNormalizers(conf,URLNormalizers.SCOPE_OUTLINK);
+
+  }
+
+  if ((activatePublisher=conf.getBoolean("fetcher.publisher",false)))   this.publisher=new FetcherThreadPublisher(conf);
+
+  queueMode=conf.get("fetcher.queue.mode",FetchItemQueues.QUEUE_MODE_HOST);
+
+  queueMode=FetchItemQueues.checkQueueMode(queueMode);
+
+  LOG.info("{} {} Using queue mode : {}",getName(),Thread.currentThread().getId(),queueMode);
+
+  this.maxRedirect=conf.getInt("http.redirect.max",3);
+
+  this.maxRedirectExceededSkip=conf.getBoolean("http.redirect.max.exceeded.skip",false);
+
+  int maxOutlinksPerPage=conf.getInt("db.max.outlinks.per.page",100);
+
+  maxOutlinks=(maxOutlinksPerPage < 0) ? Integer.MAX_VALUE : maxOutlinksPerPage;
+
+  int maxOutlinkL=conf.getInt("db.max.outlink.length",4096);
+
+  maxOutlinkLength=(maxOutlinkL < 0) ? Integer.MAX_VALUE : maxOutlinkL;
+
+  interval=conf.getInt("db.fetch.interval.default",2592000);
+
+  ignoreInternalLinks=conf.getBoolean("db.ignore.internal.links",false);
+
+  ignoreExternalLinks=conf.getBoolean("db.ignore.external.links",false);
+
+  ignoreAlsoRedirects=conf.getBoolean("db.ignore.also.redirects",true);
+
+  ignoreExternalLinksMode=conf.get("db.ignore.external.links.mode","byHost");
+
+  maxOutlinkDepth=conf.getInt("fetcher.follow.outlinks.depth",-1);
+
+  outlinksIgnoreExternal=conf.getBoolean("fetcher.follow.outlinks.ignore.external",false);
+
+  maxOutlinkDepthNumLinks=conf.getInt("fetcher.follow.outlinks.num.links",4);
+
+  if (conf.getBoolean("fetcher.store.robotstxt",false)) {
+
+    if (storingContent) {
+
+      robotsTxtContent=new LinkedList<>();
+
+    }
+
+ else {
+
+      LOG.warn("{} {} Ignoring fetcher.store.robotstxt because not storing content (fetcher.store.content)!",getName(),Thread.currentThread().getId());
+
+    }
+
+  }
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+public String getReprUrl(){
+
+  return reprUrl;
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private Text handleRedirect(FetchItem fit,String newUrl,boolean temp,String redirType) throws MalformedURLException, URLFilterException, InterruptedException {
+
+  if (newUrl.length() > maxOutlinkLength) {
+
+    return null;
+
+  }
+
+  newUrl=normalizers.normalize(newUrl,URLNormalizers.SCOPE_FETCHER);
+
+  newUrl=urlFilters.filter(newUrl);
+
+  String urlString=fit.url.toString();
+
+  if (newUrl == null || newUrl.equals(urlString)) {
+
+    LOG.debug(" - {} redirect skipped: {}",redirType,(newUrl != null ? "to same url" : "filtered"));
+
+    return null;
+
+  }
+
+  if (ignoreAlsoRedirects && (ignoreExternalLinks || ignoreInternalLinks)) {
+
+    try {
+
+      URL origUrl=fit.u;
+
+      URL redirUrl=new URL(newUrl);
+
+      if (ignoreExternalLinks) {
+
+        String origHostOrDomain, newHostOrDomain;
+
+        if ("bydomain".equalsIgnoreCase(ignoreExternalLinksMode)) {
+
+          origHostOrDomain=URLUtil.getDomainName(origUrl).toLowerCase();
+
+          newHostOrDomain=URLUtil.getDomainName(redirUrl).toLowerCase();
+
+        }
+
+ else {
+
+          origHostOrDomain=origUrl.getHost().toLowerCase();
+
+          newHostOrDomain=redirUrl.getHost().toLowerCase();
+
+        }
+
+        if (!origHostOrDomain.equals(newHostOrDomain)) {
+
+          LOG.debug(" - ignoring redirect {} from {} to {} because external links are ignored",redirType,urlString,newUrl);
+
+          return null;
+
+        }
+
+      }
+
+      if (ignoreInternalLinks) {
+
+        String origHost=origUrl.getHost().toLowerCase();
+
+        String newHost=redirUrl.getHost().toLowerCase();
+
+        if (origHost.equals(newHost)) {
+
+          LOG.debug(" - ignoring redirect {} from {} to {} because internal links are ignored",redirType,urlString,newUrl);
+
+          return null;
+
+        }
+
+      }
+
+    }
+
+ catch (    MalformedURLException e) {
+
+      return null;
+
+    }
+
+  }
+
+  reprUrl=URLUtil.chooseRepr(reprUrl,newUrl,temp);
+
+  Text url=new Text(newUrl);
+
+  if (maxRedirect > 0) {
+
+    redirecting=true;
+
+    redirectCount++;
+
+    LOG.debug(" - {} redirect to {} (fetching now)",redirType,url);
+
+    return url;
+
+  }
+
+ else {
+
+    CrawlDatum newDatum=createRedirDatum(url,fit,CrawlDatum.STATUS_LINKED);
+
+    output(url,newDatum,null,null,CrawlDatum.STATUS_LINKED);
+
+    LOG.debug(" - {} redirect to {} (fetching later)",redirType,url);
+
+    return null;
+
+  }
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+public synchronized boolean isHalted(){
+
+  return halted;
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private void logError(Text url,String message){
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("{} {} fetch of {} failed with: {}",getName(),Thread.currentThread().getId(),url,message);
+
+  }
+
+  errors.incrementAndGet();
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private void outputRobotsTxt(List<Content> robotsTxtContent) throws InterruptedException {
+
+  for (  Content robotsTxt : robotsTxtContent) {
+
+    LOG.debug("fetched and stored robots.txt {}",robotsTxt.getUrl());
+
+    try {
+
+      context.write(new Text(robotsTxt.getUrl()),new NutchWritable(robotsTxt));
+
+    }
+
+ catch (    IOException e) {
+
+      LOG.error("fetcher caught:",e);
+
+    }
+
+  }
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private ParseStatus output(Text key,CrawlDatum datum,Content content,ProtocolStatus pstatus,int status) throws InterruptedException {
+
+  return output(key,datum,content,pstatus,status,0);
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private ParseStatus output(Text key,CrawlDatum datum,Content content,ProtocolStatus pstatus,int status,int outlinkDepth) throws InterruptedException {
+
+  datum.setStatus(status);
+
+  datum.setFetchTime(System.currentTimeMillis());
+
+  if (pstatus != null)   datum.getMetaData().put(Nutch.WRITABLE_PROTO_STATUS_KEY,pstatus);
+
+  ParseResult parseResult=null;
+
+  if (content != null) {
+
+    Metadata metadata=content.getMetadata();
+
+    if (content.getContentType() != null)     datum.getMetaData().put(new Text(Metadata.CONTENT_TYPE),new Text(content.getContentType()));
+
+    metadata.set(Nutch.SEGMENT_NAME_KEY,segmentName);
+
+    try {
+
+      scfilters.passScoreBeforeParsing(key,datum,content);
+
+    }
+
+ catch (    Exception e) {
+
+      if (LOG.isWarnEnabled()) {
+
+        LOG.warn("{} {} Couldn't pass score, url {} ({})",getName(),Thread.currentThread().getId(),key,e);
+
+      }
+
+    }
+
+    if (status == CrawlDatum.STATUS_FETCH_SUCCESS) {
+
+      if (parsing && !(skipTruncated && ParseSegment.isTruncated(content))) {
+
+        try {
+
+          parseResult=this.parseUtil.parse(content);
+
+        }
+
+ catch (        Exception e) {
+
+          LOG.warn("{} {} Error parsing: {}: {}",getName(),Thread.currentThread().getId(),key,StringUtils.stringifyException(e));
+
+        }
+
+      }
+
+      if (parseResult == null && (parsing || signatureWithoutParsing)) {
+
+        byte[] signature=SignatureFactory.getSignature(conf).calculate(content,new ParseStatus().getEmptyParse(conf));
+
+        datum.setSignature(signature);
+
+      }
+
+    }
+
+    content.getMetadata().add(Nutch.FETCH_STATUS_KEY,Integer.toString(status));
+
+  }
+
+  try {
+
+    context.write(key,new NutchWritable(datum));
+
+    if (content != null && storingContent)     context.write(key,new NutchWritable(content));
+
+    if (parseResult != null) {
+
+      for (      Entry<Text,Parse> entry : parseResult) {
+
+        Text url=entry.getKey();
+
+        Parse parse=entry.getValue();
+
+        ParseStatus parseStatus=parse.getData().getStatus();
+
+        ParseData parseData=parse.getData();
+
+        if (!parseStatus.isSuccess()) {
+
+          LOG.warn("{} {} Error parsing: {}: {}",getName(),Thread.currentThread().getId(),key,parseStatus);
+
+          parse=parseStatus.getEmptyParse(conf);
+
+        }
+
+        byte[] signature=SignatureFactory.getSignature(conf).calculate(content,parse);
+
+        parseData.getContentMeta().set(Nutch.SEGMENT_NAME_KEY,segmentName);
+
+        parseData.getContentMeta().set(Nutch.SIGNATURE_KEY,StringUtil.toHexString(signature));
+
+        parseData.getContentMeta().set(Nutch.FETCH_TIME_KEY,Long.toString(datum.getFetchTime()));
+
+        if (url.equals(key))         datum.setSignature(signature);
+
+        try {
+
+          scfilters.passScoreAfterParsing(url,content,parse);
+
+        }
+
+ catch (        Exception e) {
+
+          if (LOG.isWarnEnabled()) {
+
+            LOG.warn("{} {} Couldn't pass score, url {} ({})",getName(),Thread.currentThread().getId(),key,e);
+
+          }
+
+        }
+
+        String origin=null;
+
+        Outlink[] links=parseData.getOutlinks();
+
+        int outlinksToStore=Math.min(maxOutlinks,links.length);
+
+        if (ignoreExternalLinks || ignoreInternalLinks) {
+
+          URL originURL=new URL(url.toString());
+
+          if ("bydomain".equalsIgnoreCase(ignoreExternalLinksMode)) {
+
+            origin=URLUtil.getDomainName(originURL).toLowerCase();
+
+          }
+
+ else {
+
+            origin=originURL.getHost().toLowerCase();
+
+          }
+
+        }
+
+        if (fetchNode != null) {
+
+          fetchNode.setOutlinks(links);
+
+          fetchNode.setTitle(parseData.getTitle());
+
+          FetchNodeDb.getInstance().put(fetchNode.getUrl().toString(),fetchNode);
+
+        }
+
+        int validCount=0;
+
+        List<Outlink> outlinkList=new ArrayList<>(outlinksToStore);
+
+        HashSet<String> outlinks=new HashSet<>(outlinksToStore);
+
+        for (int i=0; i < links.length && validCount < outlinksToStore; i++) {
+
+          String toUrl=links[i].getToUrl();
+
+          if (toUrl.length() > maxOutlinkLength) {
+
+            continue;
+
+          }
+
+          toUrl=ParseOutputFormat.filterNormalize(url.toString(),toUrl,origin,ignoreInternalLinks,ignoreExternalLinks,ignoreExternalLinksMode,urlFiltersForOutlinks,urlExemptionFilters,normalizersForOutlinks);
+
+          if (toUrl == null) {
+
+            continue;
+
+          }
+
+          validCount++;
+
+          links[i].setUrl(toUrl);
+
+          outlinkList.add(links[i]);
+
+          outlinks.add(toUrl);
+
+        }
+
+        if (activatePublisher) {
+
+          FetcherThreadEvent reportEvent=new FetcherThreadEvent(PublishEventType.REPORT,url.toString());
+
+          reportEvent.addOutlinksToEventData(outlinkList);
+
+          reportEvent.addEventData(Nutch.FETCH_EVENT_TITLE,parseData.getTitle());
+
+          reportEvent.addEventData(Nutch.FETCH_EVENT_CONTENTTYPE,parseData.getContentMeta().get("content-type"));
+
+          reportEvent.addEventData(Nutch.FETCH_EVENT_SCORE,datum.getScore());
+
+          reportEvent.addEventData(Nutch.FETCH_EVENT_FETCHTIME,datum.getFetchTime());
+
+          reportEvent.addEventData(Nutch.FETCH_EVENT_CONTENTLANG,parseData.getContentMeta().get("content-language"));
+
+          publisher.publish(reportEvent,conf);
+
+        }
+
+        if (maxOutlinkDepth > 0 && outlinkDepth < maxOutlinkDepth) {
+
+          FetchItem ft=FetchItem.create(url,null,queueMode);
+
+          FetchItemQueue queue=fetchQueues.getFetchItemQueue(ft.queueID);
+
+          queue.alreadyFetched.add(url.toString().hashCode());
+
+          context.getCounter("FetcherOutlinks","outlinks_detected").increment(outlinks.size());
+
+          int outlinkCounter=0;
+
+          String followUrl;
+
+          Iterator<String> iter=outlinks.iterator();
+
+          while (iter.hasNext() && outlinkCounter < maxOutlinkDepthNumLinks) {
+
+            followUrl=iter.next();
+
+            if (outlinksIgnoreExternal) {
+
+              if (!URLUtil.getHost(url.toString()).equals(URLUtil.getHost(followUrl))) {
+
+                continue;
+
+              }
+
+            }
+
+            int urlHashCode=followUrl.hashCode();
+
+            if (queue.alreadyFetched.contains(urlHashCode)) {
+
+              continue;
+
+            }
+
+            queue.alreadyFetched.add(urlHashCode);
+
+            FetchItem fit=FetchItem.create(new Text(followUrl),new CrawlDatum(CrawlDatum.STATUS_LINKED,interval),queueMode,outlinkDepth + 1);
+
+            context.getCounter("FetcherOutlinks","outlinks_following").increment(1);
+
+            fetchQueues.addFetchItem(fit);
+
+            outlinkCounter++;
+
+          }
+
+        }
+
+        parseData.setOutlinks(outlinkList.toArray(new Outlink[outlinkList.size()]));
+
+        context.write(url,new NutchWritable(new ParseImpl(new ParseText(parse.getText()),parseData,parse.isCanonical())));
+
+      }
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    if (LOG.isErrorEnabled()) {
+
+      LOG.error("fetcher caught:",e);
+
+    }
+
+  }
+
+  if (parseResult != null && !parseResult.isEmpty()) {
+
+    Parse p=parseResult.get(content.getUrl());
+
+    if (p != null) {
+
+      context.getCounter("ParserStatus",ParseStatus.majorCodes[p.getData().getStatus().getMajorCode()]).increment(1);
+
+      return p.getData().getStatus();
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private FetchItem queueRedirect(Text redirUrl,FetchItem fit) throws ScoringFilterException {
+
+  if (fetchQueues.redirectIsQueuedRecently(redirUrl)) {
+
+    redirecting=false;
+
+    context.getCounter("FetcherStatus","redirect_deduplicated").increment(1);
+
+    LOG.debug(" - ignoring redirect from {} to {} as duplicate",fit.url,redirUrl);
+
+    return null;
+
+  }
+
+  CrawlDatum newDatum=createRedirDatum(redirUrl,fit,CrawlDatum.STATUS_DB_UNFETCHED);
+
+  fit=FetchItem.create(redirUrl,newDatum,queueMode);
+
+  if (fit != null) {
+
+    FetchItemQueue fiq=fetchQueues.getFetchItemQueue(fit.queueID);
+
+    fiq.addInProgressFetchItem(fit);
+
+  }
+
+ else {
+
+    redirecting=false;
+
+    context.getCounter("FetcherStatus","FetchItem.notCreated.redirect").increment(1);
+
+  }
+
+  return fit;
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+public synchronized void setHalted(boolean halted){
+
+  this.halted=halted;
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private void setReprUrl(String urlString){
+
+  this.reprUrl=urlString;
+
+}
+
+Location: FetcherThread.java
+
+Content: 
+
+private void updateStatus(int bytesInPage) throws IOException {
+
+  pages.incrementAndGet();
+
+  bytes.addAndGet(bytesInPage);
+
+}
+

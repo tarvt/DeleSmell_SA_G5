@@ -1,0 +1,264 @@
+Location: Sudoku.java
+
+Content: 
+
+/** 
+
+ * Create a row that places num in cell x, y.
+
+ * @param rowValues a scratch pad to mark the bits needed
+
+ * @param x the horizontal offset of the cell
+
+ * @param y the vertical offset of the cell
+
+ * @param num the number to place
+
+ * @return a bitvector of the columns selected
+
+ */
+
+private boolean[] generateRow(boolean[] rowValues,int x,int y,int num){
+
+  for (int i=0; i < rowValues.length; ++i) {
+
+    rowValues[i]=false;
+
+  }
+
+  int xBox=x / squareXSize;
+
+  int yBox=y / squareYSize;
+
+  rowValues[x * size + num - 1]=true;
+
+  rowValues[size * size + y * size + num - 1]=true;
+
+  rowValues[2 * size * size + (xBox * squareXSize + yBox) * size + num - 1]=true;
+
+  rowValues[3 * size * size + size * x + y]=true;
+
+  return rowValues;
+
+}
+
+Location: Sudoku.java
+
+Content: 
+
+private DancingLinks<ColumnName> makeModel(){
+
+  DancingLinks<ColumnName> model=new DancingLinks<ColumnName>();
+
+  for (int x=0; x < size; ++x) {
+
+    for (int num=1; num <= size; ++num) {
+
+      model.addColumn(new ColumnConstraint(num,x));
+
+    }
+
+  }
+
+  for (int y=0; y < size; ++y) {
+
+    for (int num=1; num <= size; ++num) {
+
+      model.addColumn(new RowConstraint(num,y));
+
+    }
+
+  }
+
+  for (int x=0; x < squareYSize; ++x) {
+
+    for (int y=0; y < squareXSize; ++y) {
+
+      for (int num=1; num <= size; ++num) {
+
+        model.addColumn(new SquareConstraint(num,x,y));
+
+      }
+
+    }
+
+  }
+
+  for (int x=0; x < size; ++x) {
+
+    for (int y=0; y < size; ++y) {
+
+      model.addColumn(new CellConstraint(x,y));
+
+    }
+
+  }
+
+  boolean[] rowValues=new boolean[size * size * 4];
+
+  for (int x=0; x < size; ++x) {
+
+    for (int y=0; y < size; ++y) {
+
+      if (board[y][x] == -1) {
+
+        for (int num=1; num <= size; ++num) {
+
+          model.addRow(generateRow(rowValues,x,y,num));
+
+        }
+
+      }
+
+ else {
+
+        model.addRow(generateRow(rowValues,x,y,board[y][x]));
+
+      }
+
+    }
+
+  }
+
+  return model;
+
+}
+
+Location: Sudoku.java
+
+Content: 
+
+/** 
+
+ * A string containing a representation of the solution.
+
+ * @param size the size of the board
+
+ * @param solution a list of list of column names
+
+ * @return a string of the solution matrix
+
+ */
+
+static String stringifySolution(int size,List<List<ColumnName>> solution){
+
+  int[][] picture=new int[size][size];
+
+  StringBuffer result=new StringBuffer();
+
+  for (  List<ColumnName> row : solution) {
+
+    int x=-1;
+
+    int y=-1;
+
+    int num=-1;
+
+    for (    ColumnName item : row) {
+
+      if (item instanceof ColumnConstraint) {
+
+        x=((ColumnConstraint)item).column;
+
+        num=((ColumnConstraint)item).num;
+
+      }
+
+ else       if (item instanceof RowConstraint) {
+
+        y=((RowConstraint)item).row;
+
+      }
+
+    }
+
+    picture[y][x]=num;
+
+  }
+
+  for (int y=0; y < size; ++y) {
+
+    for (int x=0; x < size; ++x) {
+
+      result.append(picture[y][x]);
+
+      result.append(" ");
+
+    }
+
+    result.append("\n");
+
+  }
+
+  return result.toString();
+
+}
+
+Location: Sudoku.java
+
+Content: 
+
+/** 
+
+ * Set up a puzzle board to the given size. Boards may be asymmetric, but the squares will always be divided to be more cells wide than they are tall. For example, a 6x6 puzzle will make  sub-squares that are 3x2 (3 cells wide, 2 cells tall). Clearly that means the board is made up of 2x3 sub-squares.
+
+ * @param stream The input stream to read the data from
+
+ */
+
+public Sudoku(InputStream stream) throws IOException {
+
+  BufferedReader file=new BufferedReader(new InputStreamReader(stream));
+
+  String line=file.readLine();
+
+  List<int[]> result=new ArrayList<int[]>();
+
+  while (line != null) {
+
+    StringTokenizer tokenizer=new StringTokenizer(line);
+
+    int size=tokenizer.countTokens();
+
+    int[] col=new int[size];
+
+    int y=0;
+
+    while (tokenizer.hasMoreElements()) {
+
+      String word=tokenizer.nextToken();
+
+      if ("?".equals(word)) {
+
+        col[y]=-1;
+
+      }
+
+ else {
+
+        col[y]=Integer.parseInt(word);
+
+      }
+
+      y+=1;
+
+    }
+
+    result.add(col);
+
+    line=file.readLine();
+
+  }
+
+  size=result.size();
+
+  board=result.toArray(new int[size][]);
+
+  squareYSize=(int)Math.sqrt(size);
+
+  squareXSize=size / squareYSize;
+
+  file.close();
+
+}
+

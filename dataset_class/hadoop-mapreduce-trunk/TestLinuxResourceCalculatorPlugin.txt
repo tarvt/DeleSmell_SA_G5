@@ -1,0 +1,150 @@
+Location: TestLinuxResourceCalculatorPlugin.java
+
+Content: 
+
+/** 
+
+ * Test parsing /proc/meminfo
+
+ * @throws IOException
+
+ */
+
+@Test public void testParsingProcMemFile() throws IOException {
+
+  long memTotal=4058864L;
+
+  long memFree=99632L;
+
+  long inactive=567732L;
+
+  long swapTotal=2096472L;
+
+  long swapFree=1818480L;
+
+  File tempFile=new File(FAKE_MEMFILE);
+
+  tempFile.deleteOnExit();
+
+  FileWriter fWriter=new FileWriter(FAKE_MEMFILE);
+
+  fWriter.write(String.format(MEMINFO_FORMAT,memTotal,memFree,inactive,swapTotal,swapFree));
+
+  fWriter.close();
+
+  assertEquals(plugin.getAvailablePhysicalMemorySize(),1024L * (memFree + inactive));
+
+  assertEquals(plugin.getAvailableVirtualMemorySize(),1024L * (memFree + inactive + swapFree));
+
+  assertEquals(plugin.getPhysicalMemorySize(),1024L * memTotal);
+
+  assertEquals(plugin.getVirtualMemorySize(),1024L * (memTotal + swapTotal));
+
+}
+
+Location: TestLinuxResourceCalculatorPlugin.java
+
+Content: 
+
+/** 
+
+ * Test parsing /proc/stat and /proc/cpuinfo
+
+ * @throws IOException
+
+ */
+
+@Test public void testParsingProcStatAndCpuFile() throws IOException {
+
+  long numProcessors=8;
+
+  long cpuFrequencyKHz=2392781;
+
+  String fileContent="";
+
+  for (int i=0; i < numProcessors; i++) {
+
+    fileContent+=String.format(CPUINFO_FORMAT,i,cpuFrequencyKHz / 1000D) + "\n";
+
+  }
+
+  File tempFile=new File(FAKE_CPUFILE);
+
+  tempFile.deleteOnExit();
+
+  FileWriter fWriter=new FileWriter(FAKE_CPUFILE);
+
+  fWriter.write(fileContent);
+
+  fWriter.close();
+
+  assertEquals(plugin.getNumProcessors(),numProcessors);
+
+  assertEquals(plugin.getCpuFrequency(),cpuFrequencyKHz);
+
+  long uTime=54972994;
+
+  long nTime=188860;
+
+  long sTime=19803373;
+
+  tempFile=new File(FAKE_STATFILE);
+
+  tempFile.deleteOnExit();
+
+  updateStatFile(uTime,nTime,sTime);
+
+  assertEquals(plugin.getCumulativeCpuTime(),FAKE_JIFFY_LENGTH * (uTime + nTime + sTime));
+
+  assertEquals(plugin.getCpuUsage(),(float)(TaskTrackerStatus.UNAVAILABLE));
+
+  uTime+=100L;
+
+  plugin.advanceTime(200L);
+
+  updateStatFile(uTime,nTime,sTime);
+
+  assertEquals(plugin.getCumulativeCpuTime(),FAKE_JIFFY_LENGTH * (uTime + nTime + sTime));
+
+  assertEquals(plugin.getCpuUsage(),6.25F);
+
+  uTime+=600L;
+
+  plugin.advanceTime(300L);
+
+  updateStatFile(uTime,nTime,sTime);
+
+  assertEquals(plugin.getCpuUsage(),25F);
+
+  uTime+=1L;
+
+  plugin.advanceTime(1L);
+
+  updateStatFile(uTime,nTime,sTime);
+
+  assertEquals(plugin.getCumulativeCpuTime(),FAKE_JIFFY_LENGTH * (uTime + nTime + sTime));
+
+  assertEquals(plugin.getCpuUsage(),25F);
+
+}
+
+Location: TestLinuxResourceCalculatorPlugin.java
+
+Content: 
+
+/** 
+
+ * Write information to fake /proc/stat file
+
+ */
+
+private void updateStatFile(long uTime,long nTime,long sTime) throws IOException {
+
+  FileWriter fWriter=new FileWriter(FAKE_STATFILE);
+
+  fWriter.write(String.format(STAT_FILE_FORMAT,uTime,nTime,sTime));
+
+  fWriter.close();
+
+}
+

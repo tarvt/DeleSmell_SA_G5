@@ -1,0 +1,158 @@
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public void awaited(String lock_name,Owner owner){
+
+  if (is_coord)   updateBackups(Type.DELETE_AWAITER,lock_name,owner);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public void awaiting(String lock_name,Owner owner){
+
+  if (is_coord)   updateBackups(Type.CREATE_AWAITER,lock_name,owner);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public CENTRAL_LOCK(){
+
+  super();
+
+  addLockListener(this);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+protected void copyLocksTo(List<Address> new_joiners){
+
+  Map<String,ServerLock> copy;
+
+synchronized (server_locks) {
+
+    copy=new HashMap<>(server_locks);
+
+  }
+
+  log.trace("[%s] copying locks to %s",local_addr,new_joiners);
+
+  for (  Map.Entry<String,ServerLock> entry : copy.entrySet()) {
+
+    for (    Address joiner : new_joiners) {
+
+      ServerLock lock=entry.getValue();
+
+      if (lock.owner != null) {
+
+        sendCreateLockRequest(joiner,entry.getKey(),entry.getValue().owner);
+
+      }
+
+synchronized (lock.condition) {
+
+        Queue<Owner> queue=lock.condition.queue;
+
+        for (        Owner owner : queue) {
+
+          sendAwaitConditionRequest(lock.lock_name,owner);
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public void lockCreated(String name){
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public void lockDeleted(String name){
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public void locked(String lock_name,Owner owner){
+
+  if (is_coord)   updateBackups(Type.CREATE_LOCK,lock_name,owner);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public void lockRevoked(String lock_name,Owner current_owner){
+
+  log.warn("%s: lock %s has been revoked; the existing owner is %s",local_addr,lock_name,current_owner);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+protected void sendCreateLockRequest(Address dest,String lock_name,Owner owner){
+
+  sendRequest(dest,Type.CREATE_LOCK,lock_name,owner,0,false);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+protected void sendDeleteLockRequest(Address dest,String lock_name){
+
+  sendRequest(dest,Type.DELETE_LOCK,lock_name,null,0,false);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+public void unlocked(String lock_name,Owner owner){
+
+  if (is_coord)   updateBackups(Type.DELETE_LOCK,lock_name,owner);
+
+}
+
+Location: CENTRAL_LOCK.java
+
+Content: 
+
+protected void updateBackups(Type type,String lock_name,Owner owner){
+
+synchronized (backups) {
+
+    for (    Address backup : backups)     sendRequest(backup,type,lock_name,owner,0,false);
+
+  }
+
+}
+

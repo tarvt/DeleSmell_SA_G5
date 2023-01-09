@@ -1,0 +1,1514 @@
+Location: GMS.java
+
+Content: 
+
+public void becomeClient(){
+
+  ClientGmsImpl tmp=(ClientGmsImpl)impls.get(CLIENT);
+
+  if (tmp == null) {
+
+    tmp=new ClientGmsImpl(this);
+
+    impls.put(CLIENT,tmp);
+
+  }
+
+  try {
+
+    tmp.init();
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("ExceptionSwitchingToClientRole"),e);
+
+  }
+
+  setImpl(tmp);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public void becomeCoordinator(){
+
+  CoordGmsImpl tmp=(CoordGmsImpl)impls.get(COORD);
+
+  if (tmp == null) {
+
+    tmp=new CoordGmsImpl(this);
+
+    impls.put(COORD,tmp);
+
+  }
+
+  try {
+
+    first_view_sent=false;
+
+    tmp.init();
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("ExceptionSwitchingToCoordinatorRole"),e);
+
+  }
+
+  setImpl(tmp);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public void becomeParticipant(){
+
+  ParticipantGmsImpl tmp=(ParticipantGmsImpl)impls.get(PART);
+
+  if (tmp == null) {
+
+    tmp=new ParticipantGmsImpl(this);
+
+    impls.put(PART,tmp);
+
+  }
+
+  try {
+
+    tmp.init();
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("ExceptionSwitchingToParticipant"),e);
+
+  }
+
+  setImpl(tmp);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation(description="Forces cancellation of current merge task") public void cancelMerge(){
+
+  merger.forceCancelMerge();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Broadcasts the new view and digest as VIEW messages, possibly sends JOIN-RSP messages to joiners and then waits for acks from expected_acks
+
+ * @param new_view the new view ({@link View} or {@link MergeView})
+
+ * @param digest the digest, can be null if new_view is not a MergeView
+
+ * @param expected_acks the members from which to wait for VIEW_ACKs (self will be excluded)
+
+ * @param joiners the list of members to which to send the join response (jr). If null, no JOIN_RSPs will be sent
+
+ * @param jr the {@link JoinRsp}. If null (or joiners is null), no JOIN_RSPs will be sent
+
+ */
+
+public void castViewChangeAndSendJoinRsps(View new_view,Digest digest,Collection<Address> expected_acks,Collection<Address> joiners,JoinRsp jr){
+
+  up_prot.up(new Event(Event.TMP_VIEW,new_view));
+
+  down_prot.down(new Event(Event.TMP_VIEW,new_view));
+
+  View full_view=new_view;
+
+  if (use_delta_views && view != null && !(new_view instanceof MergeView)) {
+
+    if (!first_view_sent)     first_view_sent=true;
+
+ else     new_view=createDeltaView(view,new_view);
+
+  }
+
+  Message view_change_msg=new Message().putHeader(this.id,new GmsHeader(GmsHeader.VIEW)).setBuffer(marshal(new_view,digest)).setTransientFlag(Message.TransientFlag.DONT_LOOPBACK);
+
+  if (new_view instanceof MergeView)   view_change_msg.setFlag(Message.Flag.NO_TOTAL_ORDER);
+
+  ack_collector.reset(expected_acks,local_addr);
+
+  long start=System.currentTimeMillis();
+
+  impl.handleViewChange(full_view,digest);
+
+  log.trace("%s: mcasting view %s",local_addr,new_view);
+
+  down_prot.down(view_change_msg);
+
+  sendJoinResponses(jr,joiners);
+
+  try {
+
+    if (ack_collector.size() > 0) {
+
+      ack_collector.waitForAllAcks(view_ack_collection_timeout);
+
+      log.trace("%s: got all ACKs (%d) for view %s in %d ms",local_addr,ack_collector.expectedAcks(),new_view.getViewId(),System.currentTimeMillis() - start);
+
+    }
+
+  }
+
+ catch (  TimeoutException e) {
+
+    if (log_collect_msgs)     ;
+
+    log.warn("%s: failed to collect all ACKs (expected=%d) for view %s after %d ms, missing %d ACKs from %s",local_addr,ack_collector.expectedAcks(),new_view.getViewId(),System.currentTimeMillis() - start,ack_collector.size(),ack_collector.printMissing());
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Computes a merge membership 
+
+ */
+
+protected List<Address> computeNewMembership(final Collection<Collection<Address>> subviews){
+
+  try {
+
+    List<Address> retval=membership_change_policy.getNewMembership(subviews);
+
+    if (retval == null)     throw new IllegalStateException("null membership list");
+
+    return retval;
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(Util.getMessage("MembershipChangePolicy"),membership_change_policy.getClass().getSimpleName(),t);
+
+  }
+
+  try {
+
+    return new DefaultMembershipPolicy().getNewMembership(subviews);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(Util.getMessage("DefaultMembershipChangePolicyFailed"),t);
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Computes the regular membership 
+
+ */
+
+protected List<Address> computeNewMembership(final List<Address> current_members,final Collection<Address> joiners,final Collection<Address> leavers,final Collection<Address> suspects){
+
+  List<Address> joiners_copy, leavers_copy, suspects_copy;
+
+  joiners_copy=joiners == null ? Collections.emptyList() : new ArrayList<>(joiners);
+
+  leavers_copy=leavers == null ? Collections.emptyList() : new ArrayList<>(leavers);
+
+  suspects_copy=suspects == null ? Collections.emptyList() : new ArrayList<>(suspects);
+
+  try {
+
+    List<Address> retval=membership_change_policy.getNewMembership(current_members,joiners_copy,leavers_copy,suspects_copy);
+
+    if (retval == null)     throw new IllegalStateException("null membership list");
+
+    return retval;
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(Util.getMessage("MembershipChangePolicy"),membership_change_policy.getClass().getSimpleName(),t);
+
+  }
+
+  try {
+
+    return new DefaultMembershipPolicy().getNewMembership(current_members,joiners_copy,leavers_copy,suspects_copy);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(Util.getMessage("DefaultMembershipChangePolicyFailed"),t);
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected static View createDeltaView(final View current_view,final View next_view){
+
+  final ViewId current_view_id=current_view.getViewId();
+
+  final ViewId next_view_id=next_view.getViewId();
+
+  Address[][] diff=View.diff(current_view,next_view);
+
+  return new DeltaView(next_view_id,current_view_id,diff[1],diff[0]);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected View createViewFromDeltaView(View current_view,DeltaView delta_view){
+
+  if (current_view == null || delta_view == null)   throw new IllegalStateException("current view (" + current_view + ") or delta view ("+ delta_view+ ") is null");
+
+  ViewId current_view_id=current_view.getViewId(), delta_ref_view_id=delta_view.getRefViewId(), delta_view_id=delta_view.getViewId();
+
+  if (!current_view_id.equals(delta_ref_view_id))   throw new IllegalStateException("the view-id of the delta view (" + delta_ref_view_id + ") doesn't match the "+ "current view-id ("+ current_view_id+ "); discarding delta view "+ delta_view);
+
+  List<Address> current_mbrs=current_view.getMembers();
+
+  List<Address> left_mbrs=Arrays.asList(delta_view.getLeftMembers());
+
+  List<Address> new_mbrs=Arrays.asList(delta_view.getNewMembers());
+
+  List<Address> new_mbrship=computeNewMembership(current_mbrs,new_mbrs,left_mbrs,Collections.emptyList());
+
+  return new View(delta_view_id,new_mbrship);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected static short determineFlags(final View view,final Digest digest){
+
+  short retval=0;
+
+  if (view != null) {
+
+    retval|=VIEW_PRESENT;
+
+    if (view instanceof MergeView)     retval|=MERGE_VIEW;
+
+ else     if (view instanceof DeltaView)     retval|=DELTA_VIEW;
+
+  }
+
+  if (digest != null)   retval|=DIGEST_PRESENT;
+
+  if (writeAddresses(view,digest))   retval|=READ_ADDRS;
+
+  return retval;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Returns the second-in-line 
+
+ */
+
+protected Address determineNextCoordinator(){
+
+synchronized (members) {
+
+    return members.size() > 1 ? members.elementAt(1) : null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation public String dumpViewHandlerHistory(){
+
+  return view_handler.dumpHistory();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation public String dumpViewHandlerQueue(){
+
+  return view_handler.dumpQueue();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GmsImpl getImpl(){
+
+  return impl;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute(description="impl") public String getImplementation(){
+
+  return impl == null ? "null" : impl.getClass().getSimpleName();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public Promise<Address> getLeavePromise(){
+
+  return leave_promise;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public boolean getLogCollectMessages(){
+
+  return log_collect_msgs;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public long getMaxJoinAttempts(){
+
+  return max_join_attempts;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute public String getMembers(){
+
+  return members.toString();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public MembershipChangePolicy getMembershipChangePolicy(){
+
+  return membership_change_policy;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Only used for internal testing, don't use this method ! 
+
+ */
+
+public Merger getMerger(){
+
+  return merger;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public long getMergeTimeout(){
+
+  return merge_timeout;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Computes the next view. Returns a copy that has  {@code leavers} and{@code suspected_mbrs} removed and {@code joiners} added.
+
+ */
+
+public View getNextView(Collection<Address> joiners,Collection<Address> leavers,Collection<Address> suspected_mbrs){
+
+synchronized (members) {
+
+    ViewId view_id=view != null ? view.getViewId() : null;
+
+    if (view_id == null) {
+
+      log.error(Util.getMessage("ViewidIsNull"));
+
+      return null;
+
+    }
+
+    long vid=Math.max(view_id.getId(),ltime) + 1;
+
+    ltime=vid;
+
+    List<Address> mbrs=computeNewMembership(tmp_members.getMembers(),joiners,leavers,suspected_mbrs);
+
+    Address new_coord=!mbrs.isEmpty() ? mbrs.get(0) : local_addr;
+
+    View v=new View(new_coord,vid,mbrs);
+
+    tmp_members.set(mbrs);
+
+    if (joiners != null)     joiners.stream().filter(tmp_mbr -> !joining.contains(tmp_mbr)).forEach(joining::add);
+
+    if (leavers != null)     leavers.stream().filter(addr -> !leaving.contains(addr)).forEach(leaving::add);
+
+    if (suspected_mbrs != null)     suspected_mbrs.stream().filter(addr -> !leaving.contains(addr)).forEach(leaving::add);
+
+    return v;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute public int getNumberOfViews(){
+
+  return num_views;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute public int getNumMembers(){
+
+  return members.size();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public long getViewAckCollectionTimeout(){
+
+  return view_ack_collection_timeout;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Returns the current view and digest. Try to find a matching digest twice (if not found on the first try) 
+
+ */
+
+public Tuple<View,Digest> getViewAndDigest(){
+
+  MutableDigest digest=new MutableDigest(view.getMembersRaw()).set(getDigest());
+
+  return digest.allSet() || digest.set(getDigest()).allSet() ? new Tuple<>(view,digest) : null;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public ViewHandler getViewHandler(){
+
+  return view_handler;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute public int getViewHandlerSize(){
+
+  return view_handler.size();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS(){
+
+}
+
+Location: GMS.java
+
+Content: 
+
+boolean haveCoordinatorRole(){
+
+  return impl instanceof CoordGmsImpl;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected void initState(){
+
+  hongshuai();
+
+  ClientGmsImpl tmp=(ClientGmsImpl)impls.get(CLIENT);
+
+  if (tmp == null) {
+
+    tmp=new ClientGmsImpl(this);
+
+    impls.put(CLIENT,tmp);
+
+  }
+
+  try {
+
+    tmp.init();
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("ExceptionSwitchingToClientRole"),e);
+
+  }
+
+  setImpl(tmp);
+
+  view=null;
+
+  first_view_sent=false;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public void installView(View new_view){
+
+  installView(new_view,null);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute(description="Whether or not the current instance is the coordinator") public boolean isCoord(){
+
+  return impl instanceof CoordGmsImpl;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public boolean isCoordinator(){
+
+  Address coord=determineCoordinator();
+
+  return Objects.equals(local_addr,coord);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public boolean isLeaving(){
+
+  return is_leaving;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute(description="Is the merge killer task running") public boolean isMergeKillerRunning(){
+
+  return merger.isMergeKillerTaskRunning();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedAttribute public boolean isViewHandlerSuspended(){
+
+  return view_handler.suspended();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS joinTimeout(long timeout){
+
+  this.join_timeout=timeout;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS leaveTimeout(long timeout){
+
+  this.leave_timeout=timeout;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected static Buffer marshal(Collection<? extends Address> mbrs){
+
+  try {
+
+    final ByteArrayDataOutputStream out=new ByteArrayDataOutputStream((int)Util.size(mbrs));
+
+    Util.writeAddresses(mbrs,out);
+
+    return out.getBuffer();
+
+  }
+
+ catch (  Exception ex) {
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public static Buffer marshal(JoinRsp join_rsp){
+
+  return Util.streamableToBuffer(join_rsp);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected static Buffer marshal(final View view,final Digest digest){
+
+  try {
+
+    int expected_size=Global.SHORT_SIZE;
+
+    if (view != null)     expected_size+=view.serializedSize();
+
+    boolean write_addrs=writeAddresses(view,digest);
+
+    if (digest != null)     expected_size=(int)digest.serializedSize(write_addrs);
+
+    final ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(expected_size + 10);
+
+    out.writeShort(determineFlags(view,digest));
+
+    if (view != null)     view.writeTo(out);
+
+    if (digest != null)     digest.writeTo(out,write_addrs);
+
+    return out.getBuffer();
+
+  }
+
+ catch (  Exception ex) {
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected static Buffer marshal(final ViewId view_id){
+
+  try {
+
+    final ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(Util.size(view_id));
+
+    Util.writeViewId(view_id,out);
+
+    return out.getBuffer();
+
+  }
+
+ catch (  Exception ex) {
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Send down a MERGE_DIGEST event 
+
+ */
+
+public void mergeDigest(Digest d){
+
+  down_prot.down(new Event(Event.MERGE_DIGEST,d));
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS printLocalAddress(boolean flag){
+
+  print_local_addr=flag;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation(description="Prints the last (max 20) MergeIds") public String printMergeIdHistory(){
+
+  return merger.getMergeIdHistory();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation public String printPreviousMembers(){
+
+  return prev_members == null ? "" : prev_members.stream().map(Object::toString).collect(Collectors.joining(", "));
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation public String printPreviousViews(){
+
+  return prev_views.stream().map(Object::toString).collect(Collectors.joining("\n"));
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected void process(Collection<Request> requests){
+
+  if (requests.isEmpty())   return;
+
+  Request firstReq=requests.iterator().next();
+
+switch (firstReq.type) {
+
+case Request.JOIN:
+
+case Request.JOIN_WITH_STATE_TRANSFER:
+
+case Request.LEAVE:
+
+case Request.SUSPECT:
+
+    impl.handleMembershipChange(requests);
+
+  break;
+
+case Request.COORD_LEAVE:
+
+impl.handleCoordLeave(firstReq.mbr);
+
+break;
+
+case Request.MERGE:
+
+impl.merge(firstReq.views);
+
+break;
+
+default :
+
+log.error("request type " + firstReq.type + " is unknown; discarded");
+
+}
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected JoinRsp readJoinRsp(byte[] buffer,int offset,int length){
+
+  try {
+
+    return buffer != null ? Util.streamableFromBuffer(JoinRsp::new,buffer,offset,length) : null;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading JoinRsp from message: %s",local_addr,ex);
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected Collection<? extends Address> readMembers(byte[] buffer,int offset,int length){
+
+  if (buffer == null)   return null;
+
+  try {
+
+    DataInput in=new ByteArrayDataInputStream(buffer,offset,length);
+
+    return Util.readAddresses(in,ArrayList::new);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading members from message: %s",local_addr,ex);
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected Tuple<View,Digest> readViewAndDigest(byte[] buffer,int offset,int length){
+
+  try {
+
+    return _readViewAndDigest(buffer,offset,length);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading view and digest from message: %s",local_addr,ex);
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected ViewId readViewId(byte[] buffer,int offset,int length){
+
+  if (buffer == null)   return null;
+
+  try {
+
+    DataInput in=new ByteArrayDataInputStream(buffer,offset,length);
+
+    return Util.readViewId(in);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading ViewId from message: %s",local_addr,ex);
+
+    return null;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation public void resumeViewHandler(){
+
+  view_handler.resume();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected void sendJoinResponses(JoinRsp jr,Collection<Address> joiners){
+
+  if (jr == null || joiners == null || joiners.isEmpty())   return;
+
+  Buffer marshalled_jr=marshal(jr);
+
+  for (  Address joiner : joiners) {
+
+    log.trace("%s: sending join-rsp to %s: view=%s (%d mbrs)",local_addr,joiner,jr.getView(),jr.getView().size());
+
+    sendJoinResponse(marshalled_jr,joiner);
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected void sendJoinResponse(Buffer marshalled_rsp,Address dest){
+
+  Message m=new Message(dest,marshalled_rsp).putHeader(this.id,new GmsHeader(GmsHeader.JOIN_RSP)).setFlag(INTERNAL);
+
+  getDownProtocol().down(m);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public void sendJoinResponse(JoinRsp rsp,Address dest){
+
+  Message m=new Message(dest).putHeader(this.id,new GmsHeader(GmsHeader.JOIN_RSP)).setBuffer(marshal(rsp)).setFlag(OOB,INTERNAL);
+
+  getDownProtocol().down(m);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected void sendViewAck(Address dest){
+
+  Message view_ack=new Message(dest).setFlag(OOB,INTERNAL).putHeader(this.id,new GmsHeader(GmsHeader.VIEW_ACK));
+
+  down_prot.down(view_ack);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Send down a SET_DIGEST event 
+
+ */
+
+public void setDigest(Digest d){
+
+  down_prot.down(new Event(Event.SET_DIGEST,d));
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public void setImpl(GmsImpl new_impl){
+
+synchronized (impl_mutex) {
+
+    if (impl == new_impl)     return;
+
+    impl=new_impl;
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setLeaving(boolean flag){
+
+  this.is_leaving=flag;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setLogCollectMessages(boolean flag){
+
+  log_collect_msgs=flag;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setMaxJoinAttempts(long t){
+
+  max_join_attempts=t;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setMembershipChangePolicy(MembershipChangePolicy membership_change_policy){
+
+  if (membership_change_policy != null)   this.membership_change_policy=membership_change_policy;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@Property(description="The fully qualified name of a class implementing MembershipChangePolicy.") public GMS setMembershipChangePolicy(String classname){
+
+  try {
+
+    membership_change_policy=(MembershipChangePolicy)Util.loadClass(classname,getClass()).getDeclaredConstructor().newInstance();
+
+    return this;
+
+  }
+
+ catch (  Throwable e) {
+
+    throw new IllegalArgumentException("membership_change_policy could not be created",e);
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setMergeTimeout(long timeout){
+
+  merge_timeout=timeout;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setPrintLocalAddress(boolean flag){
+
+  print_local_addr=flag;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setPrintLocalAddr(boolean flag){
+
+  setPrintLocalAddress(flag);
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS setViewAckCollectionTimeout(long view_ack_collection_timeout){
+
+  if (view_ack_collection_timeout <= 0)   throw new IllegalArgumentException("view_ack_collection_timeout has to be greater than 0");
+
+  this.view_ack_collection_timeout=view_ack_collection_timeout;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+boolean startFlush(View view){
+
+  return _startFlush(view,4,true,1000L,5000L);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+boolean startFlush(View view,int maxAttempts,long floor,long ceiling){
+
+  return _startFlush(view,maxAttempts,true,floor,ceiling);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+void stopFlush(){
+
+  if (flushProtocolInStack) {
+
+    log.trace("%s: sending RESUME event",local_addr);
+
+    up_prot.up(new Event(Event.RESUME));
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+void stopFlush(List<Address> members){
+
+  log.trace("%s: sending RESUME event",local_addr);
+
+  up_prot.up(new Event(Event.RESUME,members));
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation public void suspect(String suspected_member){
+
+  if (suspected_member == null)   return;
+
+  Map<Address,String> contents=NameCache.getContents();
+
+  for (  Map.Entry<Address,String> entry : contents.entrySet()) {
+
+    String logical_name=entry.getValue();
+
+    if (Objects.equals(logical_name,suspected_member)) {
+
+      Address suspect=entry.getKey();
+
+      if (suspect != null)       up(new Event(Event.SUSPECT,Collections.singletonList(suspect)));
+
+    }
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+@ManagedOperation public void suspendViewHandler(){
+
+  view_handler.suspend();
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public View view(){
+
+  return view;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public GMS viewAckCollectionTimeout(long view_ack_collection_timeout){
+
+  if (view_ack_collection_timeout <= 0)   throw new IllegalArgumentException("view_ack_collection_timeout has to be greater than 0");
+
+  this.view_ack_collection_timeout=view_ack_collection_timeout;
+
+  return this;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+/** 
+
+ * Checks whether the potential_new_coord would be the new coordinator (2nd in line) 
+
+ */
+
+protected boolean wouldBeNewCoordinator(Address potential_new_coord){
+
+  if (potential_new_coord == null)   return false;
+
+synchronized (members) {
+
+    if (members.size() < 2)     return false;
+
+    Address new_coord=members.elementAt(1);
+
+    return Objects.equals(new_coord,potential_new_coord);
+
+  }
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected static boolean writeAddresses(final View view,final Digest digest){
+
+  return digest == null || view == null || !Arrays.equals(view.getMembersRaw(),digest.getMembersRaw());
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public MergeId _getMergeId(){
+
+  return impl instanceof CoordGmsImpl ? ((CoordGmsImpl)impl).getMergeId() : null;
+
+}
+
+Location: GMS.java
+
+Content: 
+
+public static Tuple<View,Digest> _readViewAndDigest(byte[] buffer,int offset,int length) throws Exception {
+
+  if (buffer == null)   return null;
+
+  DataInput in=new ByteArrayDataInputStream(buffer,offset,length);
+
+  View tmp_view=null;
+
+  Digest digest=null;
+
+  short flags=in.readShort();
+
+  if ((flags & VIEW_PRESENT) == VIEW_PRESENT) {
+
+    tmp_view=(flags & MERGE_VIEW) == MERGE_VIEW ? new MergeView() : (flags & DELTA_VIEW) == DELTA_VIEW ? new DeltaView() : new View();
+
+    tmp_view.readFrom(in);
+
+  }
+
+  if ((flags & DIGEST_PRESENT) == DIGEST_PRESENT) {
+
+    if ((flags & READ_ADDRS) == READ_ADDRS) {
+
+      digest=new Digest();
+
+      digest.readFrom(in);
+
+    }
+
+ else {
+
+      digest=new Digest(tmp_view.getMembersRaw());
+
+      digest.readFrom(in,false);
+
+    }
+
+  }
+
+  return new Tuple<>(tmp_view,digest);
+
+}
+
+Location: GMS.java
+
+Content: 
+
+protected boolean _startFlush(final View new_view,int maxAttempts,boolean resumeIfFailed,long randomFloor,long randomCeiling){
+
+  if (!flushProtocolInStack)   return true;
+
+  try {
+
+    boolean successfulFlush=false;
+
+    boolean validView=new_view != null && new_view.size() > 0;
+
+    if (validView && flushProtocolInStack) {
+
+      int attemptCount=0;
+
+      while (attemptCount < maxAttempts) {
+
+        if (attemptCount > 0)         Util.sleepRandom(randomFloor,randomCeiling);
+
+        try {
+
+          up_prot.up(new Event(Event.SUSPEND,new ArrayList<>(new_view.getMembers())));
+
+          successfulFlush=true;
+
+          break;
+
+        }
+
+ catch (        Exception e) {
+
+          attemptCount++;
+
+        }
+
+      }
+
+      if (successfulFlush)       log.trace("%s: successful GMS flush by coordinator",local_addr);
+
+ else {
+
+        if (resumeIfFailed)         up(new Event(Event.RESUME,new ArrayList<>(new_view.getMembers())));
+
+        log.warn("%s: GMS flush by coordinator failed",local_addr);
+
+      }
+
+    }
+
+    return successfulFlush;
+
+  }
+
+ catch (  Exception e) {
+
+    return false;
+
+  }
+
+}
+

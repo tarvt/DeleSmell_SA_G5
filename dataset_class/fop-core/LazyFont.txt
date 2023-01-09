@@ -1,0 +1,134 @@
+Location: LazyFont.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param fontInfo  the font info to embed
+
+ * @param resourceResolver the font resolver to handle font URIs
+
+ */
+
+public LazyFont(EmbedFontInfo fontInfo,InternalResourceResolver resourceResolver,boolean useComplexScripts){
+
+  this.fontUris=fontInfo.getFontUris();
+
+  this.useKerning=fontInfo.getKerning();
+
+  if (resourceResolver != null) {
+
+    this.useAdvanced=useComplexScripts;
+
+  }
+
+ else {
+
+    this.useAdvanced=fontInfo.getAdvanced();
+
+  }
+
+  this.simulateStyle=fontInfo.getSimulateStyle();
+
+  this.embedAsType1=fontInfo.getEmbedAsType1();
+
+  this.encodingMode=fontInfo.getEncodingMode() != null ? fontInfo.getEncodingMode() : EncodingMode.AUTO;
+
+  this.embeddingMode=fontInfo.getEmbeddingMode() != null ? fontInfo.getEmbeddingMode() : EmbeddingMode.AUTO;
+
+  this.subFontName=fontInfo.getSubFontName();
+
+  this.embedded=fontInfo.isEmbedded();
+
+  this.resourceResolver=resourceResolver;
+
+}
+
+Location: LazyFont.java
+
+Content: 
+
+private void load(boolean fail){
+
+  if (!isMetricsLoaded) {
+
+    try {
+
+      if (fontUris.getMetrics() != null) {
+
+        XMLFontMetricsReader reader=null;
+
+        InputStream in=resourceResolver.getResource(fontUris.getMetrics());
+
+        InputSource src=new InputSource(in);
+
+        src.setSystemId(fontUris.getMetrics().toASCIIString());
+
+        reader=new XMLFontMetricsReader(src,resourceResolver);
+
+        reader.setKerningEnabled(useKerning);
+
+        reader.setAdvancedEnabled(useAdvanced);
+
+        if (this.embedded) {
+
+          reader.setFontEmbedURI(fontUris.getEmbed());
+
+        }
+
+        realFont=reader.getFont();
+
+      }
+
+ else {
+
+        if (fontUris.getEmbed() == null) {
+
+          throw new RuntimeException("Cannot load font. No font URIs available.");
+
+        }
+
+        realFont=FontLoader.loadFont(fontUris,subFontName,embedded,embeddingMode,encodingMode,useKerning,useAdvanced,resourceResolver,simulateStyle,embedAsType1);
+
+      }
+
+      if (realFont instanceof FontDescriptor) {
+
+        realFontDescriptor=(FontDescriptor)realFont;
+
+      }
+
+    }
+
+ catch (    RuntimeException e) {
+
+      String error="Failed to read font file " + fontUris.getEmbed();
+
+      throw new RuntimeException(error,e);
+
+    }
+
+catch (    Exception e) {
+
+      String error="Failed to read font file " + fontUris.getEmbed();
+
+      log.error(error,e);
+
+      if (fail) {
+
+        throw new RuntimeException(error,e);
+
+      }
+
+    }
+
+    realFont.setEventListener(this.eventListener);
+
+    isMetricsLoaded=true;
+
+  }
+
+}
+

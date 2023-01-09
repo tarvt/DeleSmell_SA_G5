@@ -1,0 +1,340 @@
+Location: RingBuffer.java
+
+Content: 
+
+public T[] buf(){
+
+  return buf;
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public int countLockLockless(){
+
+  return count;
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+/** 
+
+ * Removes as many messages as possible and adds them to c. Contrary to  {@link #drainTo(Collection)}, this method blocks until at least one message is available, or the caller thread is interrupted.
+
+ * @param c The collection to which to add the removed messages.
+
+ * @return The number of messages removed
+
+ * @throws NullPointerException If c is null
+
+ */
+
+public int drainToBlocking(Collection<? super T> c) throws InterruptedException {
+
+  return drainToBlocking(c,Integer.MAX_VALUE);
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+/** 
+
+ * Removes a number of messages and adds them to c. Contrary to  {@link #drainTo(Collection,int)}, this method blocks until at least one message is available, or the caller thread is interrupted.
+
+ * @param c The collection to which to add the removed messages.
+
+ * @param max_elements The max number of messages to remove. The actual number of messages removed may be smallerif the buffer has fewer elements
+
+ * @return The number of messages removed
+
+ * @throws NullPointerException If c is null
+
+ */
+
+public int drainToBlocking(Collection<? super T> c,int max_elements) throws InterruptedException {
+
+  lock.lockInterruptibly();
+
+  try {
+
+    while (count == 0)     not_empty.await();
+
+    return drainTo(c,max_elements);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+/** 
+
+ * Removes messages and adds them to c.
+
+ * @param c The array to add messages to.
+
+ * @return The number of messages removed and added to c. This is min(count, c.length). Contrary to{@link #drainTo(Object[])}, this method blocks until at least one message is available or the caller thread is interrupted.
+
+ */
+
+public int drainToBlocking(T[] c) throws InterruptedException {
+
+  lock.lockInterruptibly();
+
+  try {
+
+    while (count == 0)     not_empty.await();
+
+    return drainTo(c);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+/** 
+
+ * Removes messages and adds them to c.
+
+ * @param c The array to add messages to.
+
+ * @return The number of messages removed and added to c. This is min(count, c.length). If no messages are present,this method returns immediately
+
+ */
+
+public int drainTo(T[] c){
+
+  int num=Math.min(count,c.length);
+
+  if (num == 0)   return num;
+
+  int read_index=ri;
+
+  for (int i=0; i < num; i++) {
+
+    int real_index=realIndex(read_index + i);
+
+    c[i]=(buf[real_index]);
+
+    buf[real_index]=null;
+
+  }
+
+  publishReadIndex(num);
+
+  return num;
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public RingBuffer<T> publishReadIndex(int num_elements_read){
+
+  this.ri=realIndex(this.ri + num_elements_read);
+
+  lock.lock();
+
+  try {
+
+    this.count-=num_elements_read;
+
+    not_full.signalAll();
+
+    return this;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public int readIndex(){
+
+  lock.lock();
+
+  try {
+
+    return ri;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public int readIndexLockless(){
+
+  return ri;
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+/** 
+
+ * Apparently much more efficient than mod (%) 
+
+ */
+
+protected int realIndex(int index){
+
+  return index & (buf.length - 1);
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public RingBuffer(Class<T> element_type){
+
+  buf=(T[])Array.newInstance(element_type,16);
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public RingBuffer(Class<T> element_type,int capacity){
+
+  int c=Util.getNextHigherPowerOfTwo(capacity);
+
+  buf=(T[])Array.newInstance(element_type,c);
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+/** 
+
+ * Blocks until messages are available 
+
+ */
+
+public int waitForMessages() throws InterruptedException {
+
+  return waitForMessages(40,null);
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+/** 
+
+ * Blocks until messages are available
+
+ * @param num_spins the number of times we should spin before acquiring a lock
+
+ * @param wait_strategy the strategy used to spin. The first parameter is the iteration count and the secondparameter is the max number of spins
+
+ */
+
+public int waitForMessages(int num_spins,final BiConsumer<Integer,Integer> wait_strategy) throws InterruptedException {
+
+  for (int i=0; i < num_spins && count == 0; i++) {
+
+    if (wait_strategy != null)     wait_strategy.accept(i,num_spins);
+
+ else     Thread.yield();
+
+  }
+
+  if (count == 0)   _waitForMessages();
+
+  return count;
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public int writeIndex(){
+
+  lock.lock();
+
+  try {
+
+    return wi;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RingBuffer.java
+
+Content: 
+
+public void _waitForMessages() throws InterruptedException {
+
+  lock.lockInterruptibly();
+
+  try {
+
+    while (count == 0)     not_empty.await();
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+

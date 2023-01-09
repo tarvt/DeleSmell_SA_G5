@@ -1,0 +1,834 @@
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Dump scheduler state to the fairscheduler log.
+
+ */
+
+private synchronized void dump(){
+
+synchronized (eventLog) {
+
+    eventLog.log("BEGIN_DUMP");
+
+    ArrayList<JobInProgress> jobs=new ArrayList<JobInProgress>(infos.keySet());
+
+    Collections.sort(jobs,new Comparator<JobInProgress>(){
+
+      public int compare(      JobInProgress j1,      JobInProgress j2){
+
+        return (int)Math.signum(j1.getStartTime() - j2.getStartTime());
+
+      }
+
+    }
+
+);
+
+    for (    JobInProgress job : jobs) {
+
+      JobProfile profile=job.getProfile();
+
+      JobInfo info=infos.get(job);
+
+      Schedulable ms=info.mapSchedulable;
+
+      Schedulable rs=info.reduceSchedulable;
+
+      eventLog.log("JOB",profile.getJobID(),profile.name,profile.user,job.getPriority(),poolMgr.getPoolName(job),job.numMapTasks,ms.getRunningTasks(),ms.getDemand(),ms.getFairShare(),ms.getWeight(),job.numReduceTasks,rs.getRunningTasks(),rs.getDemand(),rs.getFairShare(),rs.getWeight());
+
+    }
+
+    List<Pool> pools=new ArrayList<Pool>(poolMgr.getPools());
+
+    Collections.sort(pools,new Comparator<Pool>(){
+
+      public int compare(      Pool p1,      Pool p2){
+
+        if (p1.isDefaultPool())         return 1;
+
+ else         if (p2.isDefaultPool())         return -1;
+
+ else         return p1.getName().compareTo(p2.getName());
+
+      }
+
+    }
+
+);
+
+    for (    Pool pool : pools) {
+
+      int runningMaps=0;
+
+      int runningReduces=0;
+
+      for (      JobInProgress job : pool.getJobs()) {
+
+        JobInfo info=infos.get(job);
+
+        if (info != null) {
+
+        }
+
+      }
+
+      String name=pool.getName();
+
+      eventLog.log("POOL",name,poolMgr.getPoolWeight(name),pool.getJobs().size(),poolMgr.getAllocation(name,TaskType.MAP),runningMaps,poolMgr.getAllocation(name,TaskType.REDUCE),runningReduces);
+
+    }
+
+    eventLog.log("END_DUMP");
+
+  }
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+protected void dumpIfNecessary(){
+
+  long now=clock.getTime();
+
+  long timeDelta=now - lastDumpTime;
+
+  if (timeDelta > dumpInterval && eventLog.isEnabled()) {
+
+    dump();
+
+    lastDumpTime=now;
+
+  }
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+public FairScheduler(){
+
+  this(new Clock(),false);
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Constructor used for tests, which can change the clock and disable updates.
+
+ */
+
+protected FairScheduler(Clock clock,boolean mockMode){
+
+  this.clock=clock;
+
+  this.mockMode=mockMode;
+
+  this.jobListener=new JobListener();
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Get the maximum locality level at which a given job is allowed to launch tasks, based on how long it has been waiting for local tasks. This is used to implement the "delay scheduling" feature of the Fair Scheduler for optimizing data locality. If the job has no locality information (e.g. it does not use HDFS), this  method returns LocalityLevel.ANY, allowing tasks at any level. Otherwise, the job can only launch tasks at its current locality level or lower, unless it has waited at least nodeLocalityDelay or rackLocalityDelay milliseconds depends on the current level. If it has waited (nodeLocalityDelay + rackLocalityDelay) milliseconds, it can go to any level.
+
+ */
+
+protected LocalityLevel getAllowedLocalityLevel(JobInProgress job,long currentTime){
+
+  JobInfo info=infos.get(job);
+
+  if (info == null) {
+
+    LOG.error("getAllowedLocalityLevel called on job " + job + ", which does not have a JobInfo in infos");
+
+    return LocalityLevel.ANY;
+
+  }
+
+  if (job.nonLocalMaps.size() > 0) {
+
+    return LocalityLevel.ANY;
+
+  }
+
+  Pool pool=poolMgr.getPool(job);
+
+  PoolSchedulable sched=pool.getMapSchedulable();
+
+  long minShareTimeout=poolMgr.getMinSharePreemptionTimeout(pool.getName());
+
+  long fairShareTimeout=poolMgr.getFairSharePreemptionTimeout();
+
+  if (currentTime - sched.getLastTimeAtMinShare() > minShareTimeout || currentTime - sched.getLastTimeAtHalfFairShare() > fairShareTimeout) {
+
+    eventLog.log("INFO","No delay scheduling for " + job.getJobID() + " because it is being starved");
+
+    return LocalityLevel.ANY;
+
+  }
+
+switch (info.lastMapLocalityLevel) {
+
+case NODE:
+
+    if (info.timeWaitedForLocalMap >= nodeLocalityDelay + rackLocalityDelay)     return LocalityLevel.ANY;
+
+ else     if (info.timeWaitedForLocalMap >= nodeLocalityDelay)     return LocalityLevel.RACK;
+
+ else     return LocalityLevel.NODE;
+
+case RACK:
+
+  if (info.timeWaitedForLocalMap >= rackLocalityDelay)   return LocalityLevel.ANY;
+
+ else   return LocalityLevel.RACK;
+
+default :
+
+return LocalityLevel.ANY;
+
+}
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+public FairSchedulerEventLog getEventLog(){
+
+  return eventLog;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+public JobInfo getJobInfo(JobInProgress job){
+
+  return infos.get(job);
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+public double getJobWeight(JobInProgress job,TaskType taskType){
+
+  if (!isRunnable(job)) {
+
+    return 1.0;
+
+  }
+
+ else {
+
+    double weight=1.0;
+
+    if (sizeBasedWeight) {
+
+      JobInfo info=infos.get(job);
+
+      int runnableTasks=(taskType == TaskType.MAP) ? info.mapSchedulable.getDemand() : info.reduceSchedulable.getDemand();
+
+      weight=Math.log1p(runnableTasks) / Math.log(2);
+
+    }
+
+    weight*=getPriorityFactor(job.getPriority());
+
+    if (weightAdjuster != null) {
+
+      weight=weightAdjuster.adjustWeight(job,taskType,weight);
+
+    }
+
+    return weight;
+
+  }
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Returns the LoadManager object used by the Fair Share scheduler
+
+ */
+
+LoadManager getLoadManager(){
+
+  return loadMgr;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+public PoolManager getPoolManager(){
+
+  return poolMgr;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+public List<PoolSchedulable> getPoolSchedulables(TaskType type){
+
+  List<PoolSchedulable> scheds=new ArrayList<PoolSchedulable>();
+
+  for (  Pool pool : poolMgr.getPools()) {
+
+    scheds.add(pool.getSchedulable(type));
+
+  }
+
+  return scheds;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+private double getPriorityFactor(JobPriority priority){
+
+switch (priority) {
+
+case VERY_HIGH:
+
+    return 4.0;
+
+case HIGH:
+
+  return 2.0;
+
+case NORMAL:
+
+return 1.0;
+
+case LOW:
+
+return 0.5;
+
+default :
+
+return 0.25;
+
+}
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+private List<TaskStatus> getRunningTasks(JobInProgress job,TaskType type){
+
+  Set<TaskInProgress> tips=new HashSet<TaskInProgress>();
+
+  if (type == TaskType.MAP) {
+
+    tips.addAll(job.nonLocalRunningMaps);
+
+    for (    Set<TaskInProgress> set : job.runningMapCache.values()) {
+
+      tips.addAll(set);
+
+    }
+
+  }
+
+ else {
+
+    tips.addAll(job.runningReduces);
+
+  }
+
+  List<TaskStatus> statuses=new ArrayList<TaskStatus>();
+
+  for (  TaskInProgress tip : tips) {
+
+    for (    TaskAttemptID id : tip.getActiveTasks().keySet()) {
+
+      TaskStatus stat=tip.getTaskStatus(id);
+
+      if (stat != null) {
+
+        statuses.add(stat);
+
+      }
+
+    }
+
+  }
+
+  return statuses;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+private int getTotalSlots(TaskType type,ClusterStatus clusterStatus){
+
+  return (type == TaskType.MAP ? clusterStatus.getMaxMapTasks() : clusterStatus.getMaxReduceTasks());
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+protected boolean isRunnable(JobInProgress job){
+
+  JobInfo info=infos.get(job);
+
+  if (info == null)   return false;
+
+  return info.runnable;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Is a pool being starved for fair share for the given task type? This is defined as being below half its fair share.
+
+ */
+
+boolean isStarvedForFairShare(PoolSchedulable sched){
+
+  int desiredFairShare=(int)Math.floor(Math.min(sched.getFairShare() / 2,sched.getDemand()));
+
+  return (sched.getRunningTasks() < desiredFairShare);
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Is a pool below its min share for the given task type?
+
+ */
+
+boolean isStarvedForMinShare(PoolSchedulable sched){
+
+  int desiredShare=Math.min(sched.getMinShare(),sched.getDemand());
+
+  return (sched.getRunningTasks() < desiredShare);
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Get maximum number of tasks to assign on a TaskTracker on a heartbeat. The scheduler may launch fewer than this many tasks if the LoadManager says not to launch more, but it will never launch more than this number.
+
+ */
+
+private int maxTasksToAssign(TaskType type,TaskTrackerStatus tts){
+
+  if (!assignMultiple)   return 1;
+
+  int cap=(type == TaskType.MAP) ? mapAssignCap : reduceAssignCap;
+
+  if (cap == -1)   return (type == TaskType.MAP) ? tts.getAvailableMapSlots() : tts.getAvailableReduceSlots();
+
+ else   return cap;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Check for pools that need tasks preempted, either because they have been below their guaranteed share for minSharePreemptionTimeout or they have been below half their fair share for the fairSharePreemptionTimeout. If such pools exist, compute how many tasks of each type need to be preempted and then select the right ones using preemptTasks. This method computes and logs the number of tasks we want to preempt even if preemption is disabled, for debugging purposes.
+
+ */
+
+protected void preemptTasksIfNecessary(){
+
+  if (!preemptionEnabled)   return;
+
+  long curTime=clock.getTime();
+
+  if (curTime - lastPreemptCheckTime < preemptionInterval)   return;
+
+  lastPreemptCheckTime=curTime;
+
+synchronized (taskTrackerManager) {
+
+synchronized (this) {
+
+      for (      TaskType type : MAP_AND_REDUCE) {
+
+        List<PoolSchedulable> scheds=getPoolSchedulables(type);
+
+        int tasksToPreempt=0;
+
+        for (        PoolSchedulable sched : scheds) {
+
+          tasksToPreempt+=tasksToPreempt(sched,curTime);
+
+        }
+
+        if (tasksToPreempt > 0) {
+
+          eventLog.log("SHOULD_PREEMPT",type,tasksToPreempt);
+
+          if (!onlyLogPreemption) {
+
+            preemptTasks(scheds,tasksToPreempt);
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Preempt a given number of tasks from a list of PoolSchedulables.  The policy for this is to pick tasks from pools that are over their fair  share, but make sure that no pool is placed below its fair share in the  process. Furthermore, we want to minimize the amount of computation wasted by preemption, so out of the tasks in over-scheduled pools, we prefer to preempt tasks that started most recently.
+
+ */
+
+private void preemptTasks(List<PoolSchedulable> scheds,int tasksToPreempt){
+
+  if (scheds.isEmpty() || tasksToPreempt == 0)   return;
+
+  TaskType taskType=scheds.get(0).getTaskType();
+
+  List<TaskStatus> runningTasks=new ArrayList<TaskStatus>();
+
+  for (  PoolSchedulable sched : scheds) {
+
+    if (sched.getRunningTasks() > sched.getFairShare())     for (    JobSchedulable js : sched.getJobSchedulables()) {
+
+      runningTasks.addAll(getRunningTasks(js.getJob(),taskType));
+
+    }
+
+  }
+
+  Collections.sort(runningTasks,new Comparator<TaskStatus>(){
+
+    public int compare(    TaskStatus t1,    TaskStatus t2){
+
+      if (t1.getStartTime() < t2.getStartTime())       return 1;
+
+ else       if (t1.getStartTime() == t2.getStartTime())       return 0;
+
+ else       return -1;
+
+    }
+
+  }
+
+);
+
+  HashMap<Pool,Integer> tasksLeft=new HashMap<Pool,Integer>();
+
+  for (  Pool p : poolMgr.getPools()) {
+
+    tasksLeft.put(p,p.getSchedulable(taskType).getRunningTasks());
+
+  }
+
+  for (  TaskStatus status : runningTasks) {
+
+    JobID jobID=status.getTaskID().getJobID();
+
+    JobInProgress job=taskTrackerManager.getJob(jobID);
+
+    Pool pool=poolMgr.getPool(job);
+
+    PoolSchedulable sched=pool.getSchedulable(taskType);
+
+    int tasksLeftForPool=tasksLeft.get(pool);
+
+    if (tasksLeftForPool > sched.getFairShare()) {
+
+      eventLog.log("PREEMPT",status.getTaskID(),status.getTaskTracker());
+
+      try {
+
+        taskTrackerManager.killTask(status.getTaskID(),false);
+
+        tasksToPreempt--;
+
+        if (tasksToPreempt == 0)         break;
+
+        tasksLeft.put(pool,--tasksLeftForPool);
+
+      }
+
+ catch (      IOException e) {
+
+        LOG.error("Failed to kill task " + status.getTaskID(),e);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Count how many tasks of a given type the pool needs to preempt, if any. If the pool has been below its min share for at least its preemption timeout, it should preempt the difference between its current share and this min share. If it has been below half its fair share for at least the fairSharePreemptionTimeout, it should preempt enough tasks to get up to its full fair share. If both conditions hold, we preempt the max of the two amounts (this shouldn't happen unless someone sets the timeouts to be identical for some reason).
+
+ */
+
+protected int tasksToPreempt(PoolSchedulable sched,long curTime){
+
+  String pool=sched.getName();
+
+  long minShareTimeout=poolMgr.getMinSharePreemptionTimeout(pool);
+
+  long fairShareTimeout=poolMgr.getFairSharePreemptionTimeout();
+
+  int tasksDueToMinShare=0;
+
+  int tasksDueToFairShare=0;
+
+  if (curTime - sched.getLastTimeAtMinShare() > minShareTimeout) {
+
+    int target=Math.min(sched.getMinShare(),sched.getDemand());
+
+    tasksDueToMinShare=Math.max(0,target - sched.getRunningTasks());
+
+  }
+
+  if (curTime - sched.getLastTimeAtHalfFairShare() > fairShareTimeout) {
+
+    int target=(int)Math.min(sched.getFairShare(),sched.getDemand());
+
+    tasksDueToFairShare=Math.max(0,target - sched.getRunningTasks());
+
+  }
+
+  int tasksToPreempt=Math.max(tasksDueToMinShare,tasksDueToFairShare);
+
+  if (tasksToPreempt > 0) {
+
+    String message="Should preempt " + tasksToPreempt + " "+ sched.getTaskType()+ " tasks for pool "+ sched.getName()+ ": tasksDueToMinShare = "+ tasksDueToMinShare+ ", tasksDueToFairShare = "+ tasksDueToFairShare;
+
+    eventLog.log("INFO",message);
+
+    LOG.info(message);
+
+  }
+
+  return tasksToPreempt;
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Update a job's locality level and locality wait variables given that that  it has just launched a map task on a given task tracker.
+
+ */
+
+private void updateLastMapLocalityLevel(JobInProgress job,Task mapTaskLaunched,TaskTrackerStatus tracker){
+
+  JobInfo info=infos.get(job);
+
+  LocalityLevel localityLevel=LocalityLevel.fromTask(job,mapTaskLaunched,tracker);
+
+  info.lastMapLocalityLevel=localityLevel;
+
+  info.timeWaitedForLocalMap=0;
+
+  eventLog.log("ASSIGNED_LOC_LEVEL",job.getJobID(),localityLevel);
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Update locality wait times for jobs that were skipped at last heartbeat.
+
+ */
+
+private void updateLocalityWaitTimes(long currentTime){
+
+  long timeSinceLastHeartbeat=(lastHeartbeatTime == 0 ? 0 : currentTime - lastHeartbeatTime);
+
+  lastHeartbeatTime=currentTime;
+
+  for (  JobInfo info : infos.values()) {
+
+    if (info.skippedAtLastHeartbeat) {
+
+      info.timeWaitedForLocalMap+=timeSinceLastHeartbeat;
+
+      info.skippedAtLastHeartbeat=false;
+
+    }
+
+  }
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+/** 
+
+ * Update the preemption fields for all PoolScheduables, i.e. the times since each pool last was at its guaranteed share and at > 1/2 of its fair share for each type of task.
+
+ */
+
+private void updatePreemptionVariables(){
+
+  long now=clock.getTime();
+
+  for (  TaskType type : MAP_AND_REDUCE) {
+
+    for (    PoolSchedulable sched : getPoolSchedulables(type)) {
+
+      if (!isStarvedForMinShare(sched)) {
+
+        sched.setLastTimeAtMinShare(now);
+
+      }
+
+      if (!isStarvedForFairShare(sched)) {
+
+        sched.setLastTimeAtHalfFairShare(now);
+
+      }
+
+      eventLog.log("PREEMPT_VARS",sched.getName(),type,now - sched.getLastTimeAtMinShare(),now - sched.getLastTimeAtHalfFairShare());
+
+    }
+
+  }
+
+}
+
+Location: FairScheduler.java
+
+Content: 
+
+private void updateRunnability(){
+
+  for (  JobInfo info : infos.values()) {
+
+    info.runnable=false;
+
+  }
+
+  List<JobInProgress> jobs=new ArrayList<JobInProgress>(infos.keySet());
+
+  Collections.sort(jobs,new FifoJobComparator());
+
+  Map<String,Integer> userJobs=new HashMap<String,Integer>();
+
+  Map<String,Integer> poolJobs=new HashMap<String,Integer>();
+
+  for (  JobInProgress job : jobs) {
+
+    String user=job.getJobConf().getUser();
+
+    String pool=poolMgr.getPoolName(job);
+
+    int userCount=userJobs.containsKey(user) ? userJobs.get(user) : 0;
+
+    int poolCount=poolJobs.containsKey(pool) ? poolJobs.get(pool) : 0;
+
+    if (userCount < poolMgr.getUserMaxJobs(user) && poolCount < poolMgr.getPoolMaxJobs(pool)) {
+
+      if (job.getStatus().getRunState() == JobStatus.RUNNING || job.getStatus().getRunState() == JobStatus.PREP) {
+
+        userJobs.put(user,userCount + 1);
+
+        poolJobs.put(pool,poolCount + 1);
+
+        JobInfo jobInfo=infos.get(job);
+
+        if (job.getStatus().getRunState() == JobStatus.RUNNING) {
+
+          jobInfo.runnable=true;
+
+        }
+
+ else {
+
+          if (jobInfo.needsInitializing) {
+
+            jobInfo.needsInitializing=false;
+
+            jobInitializer.initJob(jobInfo,job);
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+

@@ -1,0 +1,290 @@
+Location: SliveTest.java
+
+Content: 
+
+/** 
+
+ * Cleans up the base directory by removing it
+
+ * @param cfg ConfigExtractor which has location of base directory
+
+ * @throws IOException
+
+ */
+
+private void cleanup(ConfigExtractor cfg) throws IOException {
+
+  FileSystem fs=FileSystem.get(cfg.getConfig());
+
+  Path base=cfg.getBaseDirectory();
+
+  if (base != null) {
+
+    LOG.info("Attempting to recursively delete " + base);
+
+    fs.delete(base,true);
+
+  }
+
+}
+
+Location: SliveTest.java
+
+Content: 
+
+/** 
+
+ * Checks if a string is a boolean or not and what type
+
+ * @param val val to check
+
+ * @return boolean
+
+ */
+
+private boolean getBool(String val){
+
+  if (val == null) {
+
+    return false;
+
+  }
+
+  String cleanupOpt=val.toLowerCase().trim();
+
+  if (cleanupOpt.equals("true") || cleanupOpt.equals("1")) {
+
+    return true;
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: SliveTest.java
+
+Content: 
+
+/** 
+
+ * Sets up a job conf for the given job using the given config object. Ensures that the correct input format is set, the mapper and and reducer class and the input and output keys and value classes along with any other job configuration.
+
+ * @param config
+
+ * @return JobConf representing the job to be ran
+
+ * @throws IOException
+
+ */
+
+private JobConf getJob(ConfigExtractor config) throws IOException {
+
+  JobConf job=new JobConf(config.getConfig(),SliveTest.class);
+
+  job.setInputFormat(DummyInputFormat.class);
+
+  FileOutputFormat.setOutputPath(job,config.getOutputPath());
+
+  job.setMapperClass(SliveMapper.class);
+
+  job.setPartitionerClass(SlivePartitioner.class);
+
+  job.setReducerClass(SliveReducer.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setOutputFormat(TextOutputFormat.class);
+
+  TextOutputFormat.setCompressOutput(job,false);
+
+  job.setNumReduceTasks(config.getReducerAmount());
+
+  job.setNumMapTasks(config.getMapAmount());
+
+  return job;
+
+}
+
+Location: SliveTest.java
+
+Content: 
+
+/** 
+
+ * Runs the job given the provided config
+
+ * @param config the config to run the job with
+
+ * @throws IOException if can not run the given job
+
+ */
+
+private void runJob(ConfigExtractor config) throws IOException {
+
+  JobClient.runJob(getJob(config));
+
+}
+
+Location: SliveTest.java
+
+Content: 
+
+public SliveTest(Configuration base){
+
+  this.base=base;
+
+}
+
+Location: SliveTest.java
+
+Content: 
+
+/** 
+
+ * Attempts to write the report to the given output using the specified config. It will open up the expected reducer output file and read in its contents and then split up by operation output and sort by operation type and then for each operation type it will generate a report to the specified result file and the console.
+
+ * @param cfg the config specifying the files and output
+
+ * @throws Exception if files can not be opened/closed/read or invalid format
+
+ */
+
+private void writeReport(ConfigExtractor cfg) throws Exception {
+
+  Path dn=cfg.getOutputPath();
+
+  LOG.info("Writing report using contents of " + dn);
+
+  FileSystem fs=FileSystem.get(cfg.getConfig());
+
+  FileStatus[] reduceFiles=fs.listStatus(dn);
+
+  BufferedReader fileReader=null;
+
+  PrintWriter reportWriter=null;
+
+  try {
+
+    List<OperationOutput> noOperations=new ArrayList<OperationOutput>();
+
+    Map<String,List<OperationOutput>> splitTypes=new TreeMap<String,List<OperationOutput>>();
+
+    for (    FileStatus fn : reduceFiles) {
+
+      if (!fn.getPath().getName().startsWith("part"))       continue;
+
+      fileReader=new BufferedReader(new InputStreamReader(new DataInputStream(fs.open(fn.getPath()))));
+
+      String line;
+
+      while ((line=fileReader.readLine()) != null) {
+
+        String pieces[]=line.split("\t",2);
+
+        if (pieces.length == 2) {
+
+          OperationOutput data=new OperationOutput(pieces[0],pieces[1]);
+
+          String op=(data.getOperationType());
+
+          if (op != null) {
+
+            List<OperationOutput> opList=splitTypes.get(op);
+
+            if (opList == null) {
+
+              opList=new ArrayList<OperationOutput>();
+
+            }
+
+            opList.add(data);
+
+            splitTypes.put(op,opList);
+
+          }
+
+ else {
+
+            noOperations.add(data);
+
+          }
+
+        }
+
+ else {
+
+          throw new IOException("Unparseable line " + line);
+
+        }
+
+      }
+
+      fileReader.close();
+
+      fileReader=null;
+
+    }
+
+    File resFile=null;
+
+    if (cfg.getResultFile() != null) {
+
+      resFile=new File(cfg.getResultFile());
+
+    }
+
+    if (resFile != null) {
+
+      LOG.info("Report results being placed to logging output and to file " + resFile.getCanonicalPath());
+
+      reportWriter=new PrintWriter(new FileOutputStream(resFile));
+
+    }
+
+ else {
+
+      LOG.info("Report results being placed to logging output");
+
+    }
+
+    ReportWriter reporter=new ReportWriter();
+
+    if (!noOperations.isEmpty()) {
+
+      reporter.basicReport(noOperations,reportWriter);
+
+    }
+
+    for (    String opType : splitTypes.keySet()) {
+
+      reporter.opReport(opType,splitTypes.get(opType),reportWriter);
+
+    }
+
+  }
+
+  finally {
+
+    if (fileReader != null) {
+
+      fileReader.close();
+
+    }
+
+    if (reportWriter != null) {
+
+      reportWriter.close();
+
+    }
+
+  }
+
+}
+

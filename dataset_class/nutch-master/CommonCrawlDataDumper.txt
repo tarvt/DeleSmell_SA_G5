@@ -1,0 +1,562 @@
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+private void closeStream(){
+
+  try {
+
+    tarOutput.finish();
+
+    tarOutput.close();
+
+    gzipOutput.close();
+
+    bufOutput.close();
+
+    fileOutput.close();
+
+  }
+
+ catch (  IOException ioe) {
+
+    LOG.warn("Error in closing stream: " + ioe.getMessage());
+
+  }
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+private void collectStats(Map<String,Integer> typeCounts,String mimeType){
+
+  typeCounts.put(mimeType,typeCounts.containsKey(mimeType) ? typeCounts.get(mimeType) + 1 : 1);
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+/** 
+
+ * Constructor
+
+ */
+
+public CommonCrawlDataDumper(){
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+/** 
+
+ * Configurable constructor
+
+ * @param config A populated {@link CommonCrawlConfig}
+
+ */
+
+public CommonCrawlDataDumper(CommonCrawlConfig config){
+
+  this.config=config;
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+private void constructNewStream(File outputDir) throws IOException {
+
+  String archiveName=new SimpleDateFormat("yyyyMMddhhmm'.tar.gz'").format(new Date());
+
+  LOG.info("Creating a new gzip archive: " + archiveName);
+
+  fileOutput=new FileOutputStream(new File(outputDir + File.separator + archiveName));
+
+  bufOutput=new BufferedOutputStream(fileOutput);
+
+  gzipOutput=new GzipCompressorOutputStream(bufOutput);
+
+  tarOutput=new TarArchiveOutputStream(gzipOutput);
+
+  tarOutput.setLongFileMode(TarArchiveOutputStream.LONGFILE_GNU);
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+/** 
+
+ * Dumps the reverse engineered CBOR content from the provided segment directories if a parent directory contains more than one segment, otherwise a single segment can be passed as an argument. If the boolean argument is provided then the CBOR is also zipped.
+
+ * @param outputDir      the directory you wish to dump the raw content to. Thisdirectory will be created.
+
+ * @param segmentRootDir a directory containing one or more segments.
+
+ * @param linkdb         Path to linkdb.
+
+ * @param gzip           a boolean flag indicating whether the CBOR content should alsobe gzipped.
+
+ * @param mimeTypes a string array of mimeTypes to filter on, everything else is excluded
+
+ * @param epochFilename  if {@code true}, output files will be names using the epoch time (in milliseconds).
+
+ * @param extension      a file extension to use with output documents.
+
+ * @param warc if true write as warc format
+
+ * @throws Exception if any exception occurs.
+
+ */
+
+public void dump(File outputDir,File segmentRootDir,File linkdb,boolean gzip,String[] mimeTypes,boolean epochFilename,String extension,boolean warc) throws Exception {
+
+  if (gzip) {
+
+    LOG.info("Gzipping CBOR data has been skipped");
+
+  }
+
+  Map<String,Integer> typeCounts=new HashMap<>();
+
+  Map<String,Integer> filteredCounts=new HashMap<>();
+
+  Configuration nutchConfig=NutchConfiguration.create();
+
+  Path segmentRootPath=new Path(segmentRootDir.toString());
+
+  FileSystem fs=segmentRootPath.getFileSystem(nutchConfig);
+
+  List<Path> parts=new ArrayList<>();
+
+  RemoteIterator<LocatedFileStatus> files=fs.listFiles(segmentRootPath,true);
+
+  String partPattern=".*" + File.separator + Content.DIR_NAME+ File.separator+ "part-[0-9]{5}"+ File.separator+ "data";
+
+  while (files.hasNext()) {
+
+    LocatedFileStatus next=files.next();
+
+    if (next.isFile()) {
+
+      Path path=next.getPath();
+
+      if (path.toString().matches(partPattern)) {
+
+        parts.add(path);
+
+      }
+
+    }
+
+  }
+
+  LinkDbReader linkDbReader=null;
+
+  if (linkdb != null) {
+
+    linkDbReader=new LinkDbReader(nutchConfig,new Path(linkdb.toString()));
+
+  }
+
+  if (parts == null || parts.size() == 0) {
+
+    LOG.error("No segment directories found in {} ",segmentRootDir.getAbsolutePath());
+
+    System.exit(1);
+
+  }
+
+  LOG.info("Found {} segment parts",parts.size());
+
+  if (gzip && !warc) {
+
+    fileList=new ArrayList<>();
+
+    constructNewStream(outputDir);
+
+  }
+
+  for (  Path segmentPart : parts) {
+
+    LOG.info("Processing segment Part : [ {} ]",segmentPart);
+
+    try {
+
+      SequenceFile.Reader reader=new SequenceFile.Reader(nutchConfig,SequenceFile.Reader.file(segmentPart));
+
+      Writable key=(Writable)reader.getKeyClass().getConstructor().newInstance();
+
+      Content content=null;
+
+      while (reader.next(key)) {
+
+        content=new Content();
+
+        reader.getCurrentValue(content);
+
+        Metadata metadata=content.getMetadata();
+
+        String url=key.toString();
+
+        String baseName=FilenameUtils.getBaseName(url);
+
+        String extensionName=FilenameUtils.getExtension(url);
+
+        if (!extension.isEmpty()) {
+
+          extensionName=extension;
+
+        }
+
+ else         if ((extensionName == null) || extensionName.isEmpty()) {
+
+          extensionName="html";
+
+        }
+
+        String outputFullPath=null;
+
+        String outputRelativePath=null;
+
+        String filename=null;
+
+        String timestamp=null;
+
+        String reverseKey=null;
+
+        if (epochFilename || config.getReverseKey()) {
+
+          try {
+
+            long epoch=new SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss z").parse(getDate(metadata.get("Date"))).getTime();
+
+            timestamp=String.valueOf(epoch);
+
+          }
+
+ catch (          ParseException pe) {
+
+            LOG.warn(pe.getMessage());
+
+          }
+
+          reverseKey=reverseUrl(url);
+
+          config.setReverseKeyValue(reverseKey.replace("/","_") + "_" + DigestUtils.sha1Hex(url)+ "_"+ timestamp);
+
+        }
+
+        if (!warc) {
+
+          if (epochFilename) {
+
+            outputFullPath=DumpFileUtil.createFileNameFromUrl(outputDir.getAbsolutePath(),reverseKey,url,timestamp,extensionName,!gzip);
+
+            outputRelativePath=outputFullPath.substring(0,outputFullPath.lastIndexOf(File.separator) - 1);
+
+            filename=content.getMetadata().get(Metadata.DATE) + "." + extensionName;
+
+          }
+
+ else {
+
+            String md5Ofurl=DumpFileUtil.getUrlMD5(url);
+
+            String fullDir=DumpFileUtil.createTwoLevelsDirectory(outputDir.getAbsolutePath(),md5Ofurl,!gzip);
+
+            filename=DumpFileUtil.createFileName(md5Ofurl,baseName,extensionName);
+
+            outputFullPath=String.format("%s/%s",fullDir,filename);
+
+            String[] fullPathLevels=fullDir.split(Pattern.quote(File.separator));
+
+            String firstLevelDirName=fullPathLevels[fullPathLevels.length - 2];
+
+            String secondLevelDirName=fullPathLevels[fullPathLevels.length - 1];
+
+            outputRelativePath=firstLevelDirName + secondLevelDirName;
+
+          }
+
+        }
+
+        Boolean filter=(mimeTypes == null);
+
+        String jsonData="";
+
+        try {
+
+          String mimeType=new Tika().detect(content.getContent());
+
+          Set<String> inUrls=null;
+
+          if (linkDbReader != null) {
+
+            Inlinks inlinks=linkDbReader.getInlinks((Text)key);
+
+            if (inlinks != null) {
+
+              Iterator<Inlink> iterator=inlinks.iterator();
+
+              inUrls=new LinkedHashSet<>();
+
+              while (inUrls.size() <= MAX_INLINKS && iterator.hasNext()) {
+
+                inUrls.add(iterator.next().getFromUrl());
+
+              }
+
+            }
+
+          }
+
+          try (CommonCrawlFormat format=CommonCrawlFormatFactory.getCommonCrawlFormat(warc ? "WARC" : "JACKSON",nutchConfig,config)){
+
+            if (inUrls != null) {
+
+              format.setInLinks(new ArrayList<>(inUrls));
+
+            }
+
+            jsonData=format.getJsonData(url,content,metadata);
+
+          }
+
+           collectStats(typeCounts,mimeType);
+
+          if ((mimeType != null) && (mimeTypes != null) && Arrays.asList(mimeTypes).contains(mimeType)) {
+
+            collectStats(filteredCounts,mimeType);
+
+            filter=true;
+
+          }
+
+        }
+
+ catch (        IOException ioe) {
+
+          LOG.error("Fatal error in creating JSON data: " + ioe.getMessage());
+
+          return;
+
+        }
+
+        if (!warc) {
+
+          if (filter) {
+
+            byte[] byteData=serializeCBORData(jsonData);
+
+            if (!gzip) {
+
+              File outputFile=new File(outputFullPath);
+
+              if (outputFile.exists()) {
+
+                LOG.info("Skipping writing: [" + outputFullPath + "]: file already exists");
+
+              }
+
+ else {
+
+                LOG.info("Writing: [" + outputFullPath + "]");
+
+                IOUtils.copy(new ByteArrayInputStream(byteData),new FileOutputStream(outputFile));
+
+              }
+
+            }
+
+ else {
+
+              if (fileList.contains(outputFullPath)) {
+
+                LOG.info("Skipping compressing: [" + outputFullPath + "]: file already exists");
+
+              }
+
+ else {
+
+                fileList.add(outputFullPath);
+
+                LOG.info("Compressing: [" + outputFullPath + "]");
+
+                TarArchiveEntry tarEntry=new TarArchiveEntry(outputRelativePath + File.separator + filename);
+
+                tarEntry.setSize(byteData.length);
+
+                tarOutput.putArchiveEntry(tarEntry);
+
+                tarOutput.write(byteData);
+
+                tarOutput.closeArchiveEntry();
+
+              }
+
+            }
+
+          }
+
+        }
+
+      }
+
+      reader.close();
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.warn("SKIPPED: {} Because : {}",segmentPart,e.getMessage());
+
+    }
+
+ finally {
+
+      fs.close();
+
+    }
+
+  }
+
+  if (gzip && !warc) {
+
+    closeStream();
+
+  }
+
+  if (!typeCounts.isEmpty()) {
+
+    LOG.info("CommonsCrawlDataDumper File Stats: " + DumpFileUtil.displayFileTypes(typeCounts,filteredCounts));
+
+  }
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+/** 
+
+ * Gets the current date if the given timestamp is empty or null.
+
+ * @param timestamp the timestamp
+
+ * @return the current timestamp if the given one is null.
+
+ */
+
+private String getDate(String timestamp){
+
+  if (timestamp == null || timestamp.isEmpty()) {
+
+    DateFormat dateFormat=new SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss z");
+
+    timestamp=dateFormat.format(new Date());
+
+  }
+
+  return timestamp;
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+private byte[] serializeCBORData(String jsonData){
+
+  CBORFactory factory=new CBORFactory();
+
+  CBORGenerator generator=null;
+
+  ByteArrayOutputStream stream=null;
+
+  try {
+
+    stream=new ByteArrayOutputStream();
+
+    generator=factory.createGenerator(stream);
+
+    writeMagicHeader(generator);
+
+    generator.writeString(jsonData);
+
+    generator.flush();
+
+    stream.flush();
+
+    return stream.toByteArray();
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.warn("CBOR encoding failed: " + e.getMessage());
+
+  }
+
+ finally {
+
+    try {
+
+      generator.close();
+
+      stream.close();
+
+    }
+
+ catch (    IOException e) {
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: CommonCrawlDataDumper.java
+
+Content: 
+
+/** 
+
+ * Writes the CBOR "Self-Describe Tag" (value 55799, serialized as 3-byte sequence of  {@code 0xd9d9f7}) at the current position. This method must be used to write the CBOR magic number at the beginning of the document. Since version 2.5, <a href="https://github.com/FasterXML/jackson-dataformat-cbor" >jackson-dataformat-cbor</a> will support the  {@code WRITE_TYPE_HEADER}feature to write that type tag at the beginning of the document.
+
+ * @param generator {@link CBORGenerator} object used to create a CBOR-encoded document.
+
+ * @throws IOException if any I/O error occurs.
+
+ * @see <a href="https://tools.ietf.org/html/rfc7049#section-2.4.5">RFC
+
+   * 7049</a>
+
+ */
+
+private void writeMagicHeader(CBORGenerator generator) throws IOException {
+
+  byte[] header=new byte[3];
+
+  header[0]=(byte)0xd9;
+
+  header[1]=(byte)0xd9;
+
+  header[2]=(byte)0xf7;
+
+  generator.writeBytes(header,0,header.length);
+
+}
+

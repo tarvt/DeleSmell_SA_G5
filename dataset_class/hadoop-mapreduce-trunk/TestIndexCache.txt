@@ -1,0 +1,286 @@
+Location: TestIndexCache.java
+
+Content: 
+
+private static void checkRecord(IndexRecord rec,long fill){
+
+  assertEquals(fill,rec.startOffset);
+
+  assertEquals(fill,rec.rawLength);
+
+  assertEquals(fill,rec.partLength);
+
+}
+
+Location: TestIndexCache.java
+
+Content: 
+
+public void testBadIndex() throws Exception {
+
+  final int parts=30;
+
+  JobConf conf=new JobConf();
+
+  FileSystem fs=FileSystem.getLocal(conf).getRaw();
+
+  Path p=new Path(System.getProperty("test.build.data","/tmp"),"cache").makeQualified(fs);
+
+  fs.delete(p,true);
+
+  conf.setInt(TTConfig.TT_INDEX_CACHE,1);
+
+  IndexCache cache=new IndexCache(conf);
+
+  Path f=new Path(p,"badindex");
+
+  FSDataOutputStream out=fs.create(f,false);
+
+  CheckedOutputStream iout=new CheckedOutputStream(out,new CRC32());
+
+  DataOutputStream dout=new DataOutputStream(iout);
+
+  for (int i=0; i < parts; ++i) {
+
+    for (int j=0; j < MapTask.MAP_OUTPUT_INDEX_RECORD_LENGTH / 8; ++j) {
+
+      if (0 == (i % 3)) {
+
+        dout.writeLong(i);
+
+      }
+
+ else {
+
+        out.writeLong(i);
+
+      }
+
+    }
+
+  }
+
+  out.writeLong(iout.getChecksum().getValue());
+
+  dout.close();
+
+  try {
+
+    cache.getIndexInformation("badindex",7,f,UserGroupInformation.getCurrentUser().getShortUserName());
+
+    fail("Did not detect bad checksum");
+
+  }
+
+ catch (  IOException e) {
+
+    if (!(e.getCause() instanceof ChecksumException)) {
+
+      throw e;
+
+    }
+
+  }
+
+}
+
+Location: TestIndexCache.java
+
+Content: 
+
+public void testInvalidReduceNumberOrLength() throws Exception {
+
+  JobConf conf=new JobConf();
+
+  FileSystem fs=FileSystem.getLocal(conf).getRaw();
+
+  Path p=new Path(System.getProperty("test.build.data","/tmp"),"cache").makeQualified(fs);
+
+  fs.delete(p,true);
+
+  conf.setInt(TTConfig.TT_INDEX_CACHE,1);
+
+  final int partsPerMap=1000;
+
+  final int bytesPerFile=partsPerMap * 24;
+
+  IndexCache cache=new IndexCache(conf);
+
+  Path feq=new Path(p,"invalidReduceOrPartsPerMap");
+
+  writeFile(fs,feq,bytesPerFile,partsPerMap);
+
+  try {
+
+    cache.getIndexInformation("reduceEqualPartsPerMap",partsPerMap,feq,UserGroupInformation.getCurrentUser().getShortUserName());
+
+    fail("Number of reducers equal to partsPerMap did not fail");
+
+  }
+
+ catch (  Exception e) {
+
+    if (!(e instanceof IOException)) {
+
+      throw e;
+
+    }
+
+  }
+
+  try {
+
+    cache.getIndexInformation("reduceMorePartsPerMap",partsPerMap + 1,feq,UserGroupInformation.getCurrentUser().getShortUserName());
+
+    fail("Number of reducers more than partsPerMap did not fail");
+
+  }
+
+ catch (  Exception e) {
+
+    if (!(e instanceof IOException)) {
+
+      throw e;
+
+    }
+
+  }
+
+}
+
+Location: TestIndexCache.java
+
+Content: 
+
+public void testLRCPolicy() throws Exception {
+
+  Random r=new Random();
+
+  long seed=r.nextLong();
+
+  r.setSeed(seed);
+
+  System.out.println("seed: " + seed);
+
+  JobConf conf=new JobConf();
+
+  FileSystem fs=FileSystem.getLocal(conf).getRaw();
+
+  Path p=new Path(System.getProperty("test.build.data","/tmp"),"cache").makeQualified(fs);
+
+  fs.delete(p,true);
+
+  conf.setInt(TTConfig.TT_INDEX_CACHE,1);
+
+  final int partsPerMap=1000;
+
+  final int bytesPerFile=partsPerMap * 24;
+
+  IndexCache cache=new IndexCache(conf);
+
+  int totalsize=bytesPerFile;
+
+  for (; totalsize < 1024 * 1024; totalsize+=bytesPerFile) {
+
+    Path f=new Path(p,Integer.toString(totalsize,36));
+
+    writeFile(fs,f,totalsize,partsPerMap);
+
+    IndexRecord rec=cache.getIndexInformation(Integer.toString(totalsize,36),r.nextInt(partsPerMap),f,UserGroupInformation.getCurrentUser().getShortUserName());
+
+    checkRecord(rec,totalsize);
+
+  }
+
+  for (  FileStatus stat : fs.listStatus(p)) {
+
+    fs.delete(stat.getPath(),true);
+
+  }
+
+  for (int i=bytesPerFile; i < 1024 * 1024; i+=bytesPerFile) {
+
+    Path f=new Path(p,Integer.toString(i,36));
+
+    IndexRecord rec=cache.getIndexInformation(Integer.toString(i,36),r.nextInt(partsPerMap),f,UserGroupInformation.getCurrentUser().getShortUserName());
+
+    checkRecord(rec,i);
+
+  }
+
+  Path f=new Path(p,Integer.toString(totalsize,36));
+
+  writeFile(fs,f,totalsize,partsPerMap);
+
+  cache.getIndexInformation(Integer.toString(totalsize,36),r.nextInt(partsPerMap),f,UserGroupInformation.getCurrentUser().getShortUserName());
+
+  fs.delete(f,false);
+
+  boolean fnf=false;
+
+  try {
+
+    cache.getIndexInformation(Integer.toString(bytesPerFile,36),r.nextInt(partsPerMap),new Path(p,Integer.toString(bytesPerFile)),UserGroupInformation.getCurrentUser().getShortUserName());
+
+  }
+
+ catch (  IOException e) {
+
+    if (e.getCause() == null || !(e.getCause() instanceof FileNotFoundException)) {
+
+      throw e;
+
+    }
+
+ else {
+
+      fnf=true;
+
+    }
+
+  }
+
+  if (!fnf)   fail("Failed to push out last entry");
+
+  for (int i=bytesPerFile << 1; i < 1024 * 1024; i+=bytesPerFile) {
+
+    IndexRecord rec=cache.getIndexInformation(Integer.toString(i,36),r.nextInt(partsPerMap),new Path(p,Integer.toString(i,36)),UserGroupInformation.getCurrentUser().getShortUserName());
+
+    checkRecord(rec,i);
+
+  }
+
+  IndexRecord rec=cache.getIndexInformation(Integer.toString(totalsize,36),r.nextInt(partsPerMap),f,UserGroupInformation.getCurrentUser().getShortUserName());
+
+  checkRecord(rec,totalsize);
+
+}
+
+Location: TestIndexCache.java
+
+Content: 
+
+private static void writeFile(FileSystem fs,Path f,long fill,int parts) throws IOException {
+
+  FSDataOutputStream out=fs.create(f,false);
+
+  CheckedOutputStream iout=new CheckedOutputStream(out,new CRC32());
+
+  DataOutputStream dout=new DataOutputStream(iout);
+
+  for (int i=0; i < parts; ++i) {
+
+    for (int j=0; j < MapTask.MAP_OUTPUT_INDEX_RECORD_LENGTH / 8; ++j) {
+
+      dout.writeLong(fill);
+
+    }
+
+  }
+
+  out.writeLong(iout.getChecksum().getValue());
+
+  dout.close();
+
+}
+

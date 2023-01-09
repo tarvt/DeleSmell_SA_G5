@@ -1,0 +1,222 @@
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+/** 
+
+ * Adds suspected members to the suspect list. Returns true if a member is not present and the timer is not running.
+
+ * @param list The list of suspected members
+
+ * @return true if the timer needs to be started, or false otherwise
+
+ */
+
+protected boolean addSuspects(Collection<Address> list){
+
+  if (list == null || list.isEmpty())   return false;
+
+  boolean added=false;
+
+synchronized (suspects) {
+
+    for (    Address suspected_mbr : list) {
+
+      boolean found_dupe=suspects.stream().anyMatch(e -> e.suspect.equals(suspected_mbr));
+
+      if (!found_dupe) {
+
+        suspects.add(new Entry(suspected_mbr,getCurrentTimeMillis() + timeout));
+
+        added=true;
+
+      }
+
+    }
+
+    return (added && !running) && (running=true);
+
+  }
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+/** 
+
+ * Removes all elements from suspects that are <em>not</em> in the new membership
+
+ */
+
+protected void adjustSuspectedMembers(List<Address> new_mbrship){
+
+synchronized (suspects) {
+
+    suspects.removeIf(entry -> !new_mbrship.contains(entry.suspect));
+
+  }
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+protected void clearSuspects(){
+
+synchronized (suspects) {
+
+    suspects.clear();
+
+  }
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+private static long getCurrentTimeMillis(){
+
+  return TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+@ManagedAttribute(description="List of currently suspected members") public String getSuspects(){
+
+synchronized (suspects) {
+
+    return suspects.toString();
+
+  }
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+protected boolean removeSuspect(Address suspect){
+
+  if (suspect == null)   return false;
+
+synchronized (suspects) {
+
+    return suspects.removeIf(e -> Objects.equals(e.suspect,suspect));
+
+  }
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+protected synchronized void startTimer(){
+
+  timer=getThreadFactory().newThread(this,"VERIFY_SUSPECT.TimerThread");
+
+  timer.setDaemon(true);
+
+  timer.start();
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+protected void verifySuspectWithICMP(Address suspected_mbr){
+
+  InetAddress host=suspected_mbr instanceof IpAddress ? ((IpAddress)suspected_mbr).getIpAddress() : null;
+
+  if (host == null)   throw new IllegalArgumentException("suspected_mbr is not of type IpAddress - FD_ICMP only works with these");
+
+  try {
+
+    if (log.isTraceEnabled())     log.trace("pinging host " + suspected_mbr + " using interface "+ intf);
+
+    long start=getCurrentTimeMillis(), stop;
+
+    boolean rc=host.isReachable(intf,0,(int)timeout);
+
+    stop=getCurrentTimeMillis();
+
+    if (rc)     log.trace("successfully received response from " + host + " (after "+ (stop - start)+ "ms)");
+
+ else {
+
+      log.debug("failed pinging " + suspected_mbr + " after "+ (stop - start)+ "ms; passing up SUSPECT event");
+
+      removeSuspect(suspected_mbr);
+
+      up_prot.up(new Event(Event.SUSPECT,Collections.singletonList(suspected_mbr)));
+
+    }
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedPinging"),suspected_mbr,ex);
+
+  }
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+/** 
+
+ * Sends ARE_YOU_DEAD message to suspected_mbr, wait for return or timeout
+
+ */
+
+protected void verifySuspect(Collection<Address> mbrs){
+
+  if (mbrs == null || mbrs.isEmpty())   return;
+
+  if (addSuspects(mbrs)) {
+
+    hongshuai();
+
+    timer=getThreadFactory().newThread(this,"VERIFY_SUSPECT.TimerThread");
+
+    timer.setDaemon(true);
+
+    timer.start();
+
+    log.trace("verifying that %s %s dead",mbrs,mbrs.size() == 1 ? "is" : "are");
+
+  }
+
+  for (  Address mbr : mbrs) {
+
+    for (int i=0; i < num_msgs; i++) {
+
+      Message msg=new Message(mbr).setFlag(Message.Flag.INTERNAL).putHeader(this.id,new VerifyHeader(VerifyHeader.ARE_YOU_DEAD,local_addr));
+
+      down_prot.down(msg);
+
+    }
+
+  }
+
+}
+
+Location: VERIFY_SUSPECT.java
+
+Content: 
+
+public VERIFY_SUSPECT(){
+
+}
+

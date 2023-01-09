@@ -1,0 +1,58 @@
+Location: TestTaskTrackerSlotManagement.java
+
+Content: 
+
+/** 
+
+ * Test case to test addition of free slot when the job fails localization due to cache file being modified after the job has started running.
+
+ * @throws Exception
+
+ */
+
+@Test public void testFreeingOfTaskSlots() throws Exception {
+
+  MiniMRCluster mrCluster=new MiniMRCluster(0,"file:///",1);
+
+  Configuration conf=mrCluster.createJobConf();
+
+  Cluster cluster=new Cluster(conf);
+
+  conf.set(JobContext.MAP_DEBUG_SCRIPT,"/bin/echo");
+
+  conf.set(JobContext.REDUCE_DEBUG_SCRIPT,"/bin/echo");
+
+  Job j=MapReduceTestUtil.createJob(conf,new Path(TEST_DIR,"in"),new Path(TEST_DIR,"out"),0,0);
+
+  j.addCacheFile(new URI(CACHE_FILE_PATH));
+
+  j.setMaxMapAttempts(1);
+
+  j.setMaxReduceAttempts(1);
+
+  j.submit();
+
+  File myFile=new File(CACHE_FILE_PATH);
+
+  myFile.setLastModified(0L);
+
+  mrCluster.startTaskTracker(null,null,0,1);
+
+  j.waitForCompletion(false);
+
+  Assert.assertFalse("Job successfully completed.",j.isSuccessful());
+
+  ClusterMetrics metrics=cluster.getClusterStatus();
+
+  Assert.assertEquals(0,metrics.getOccupiedMapSlots());
+
+  Assert.assertEquals(0,metrics.getOccupiedReduceSlots());
+
+  TaskTracker tt=mrCluster.getTaskTrackerRunner(0).getTaskTracker();
+
+  Assert.assertEquals(metrics.getMapSlotCapacity(),tt.getFreeSlots(true));
+
+  Assert.assertEquals(metrics.getReduceSlotCapacity(),tt.getFreeSlots(false));
+
+}
+

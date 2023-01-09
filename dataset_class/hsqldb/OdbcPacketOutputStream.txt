@@ -1,0 +1,152 @@
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+public int getSize(){
+
+  return written - packetStart;
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+static OdbcPacketOutputStream newOdbcPacketOutputStream() throws IOException {
+
+  return new OdbcPacketOutputStream(new ByteArrayOutputStream());
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+protected OdbcPacketOutputStream(ByteArrayOutputStream byteArrayOutputStream) throws IOException {
+
+  super(byteArrayOutputStream);
+
+  this.byteArrayOutputStream=byteArrayOutputStream;
+
+  reset();
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+synchronized void reset() throws IOException {
+
+  byteArrayOutputStream.reset();
+
+  packetStart=written;
+
+  writeInt(-1);
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+/** 
+
+ * The behavior here is purposefully different from java.io.DataOutputStream.writeChar(int), which writes 2 bytes. We are supporting only 1-byte characters, or don't care about the high bits.
+
+ */
+
+synchronized public void writeByteChar(char c) throws IOException {
+
+  writeByte(c);
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+synchronized void writeSized(String s) throws IOException {
+
+  stringWriterDos.writeUTF(s);
+
+  byte[] ba=stringWriterOS.toByteArray();
+
+  stringWriterOS.reset();
+
+  writeInt(ba.length - 2);
+
+  write(ba,2,ba.length - 2);
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+/** 
+
+ * Wrapper method to write a null-terminated String.
+
+ */
+
+synchronized void write(String s) throws IOException {
+
+  write(s,true);
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+synchronized void write(String s,boolean nullTerm) throws IOException {
+
+  stringWriterDos.writeUTF(s);
+
+  write(stringWriterOS.toByteArray(),2,stringWriterOS.size() - 2);
+
+  stringWriterOS.reset();
+
+  if (nullTerm) {
+
+    writeByte(0);
+
+  }
+
+}
+
+Location: OdbcPacketOutputStream.java
+
+Content: 
+
+/** 
+
+ * @return packet size (which does not count the type byte).
+
+ */
+
+synchronized int xmit(char packetType,org.hsqldb.lib.DataOutputStream destinationStream) throws IOException {
+
+  byte[] ba=byteArrayOutputStream.toByteArray();
+
+  ba[0]=(byte)(ba.length >> 24);
+
+  ba[1]=(byte)(ba.length >> 16);
+
+  ba[2]=(byte)(ba.length >> 8);
+
+  ba[3]=(byte)ba.length;
+
+  reset();
+
+  destinationStream.writeByte(packetType);
+
+  destinationStream.write(ba);
+
+  destinationStream.flush();
+
+  return ba.length;
+
+}
+

@@ -1,0 +1,178 @@
+Location: FOPTestbed.java
+
+Content: 
+
+/** 
+
+ * Creates a new FOProcessor.
+
+ * @return the newly created instance
+
+ */
+
+public Processor createFOProcessor(){
+
+  try {
+
+    Class clazz=Class.forName(this.fopCfg.getAttribute("class","org.apache.fop.threading.FOProcessorImpl"));
+
+    Processor fop=(Processor)clazz.getDeclaredConstructor().newInstance();
+
+    ContainerUtil.configure(fop,this.fopCfg);
+
+    ContainerUtil.initialize(fop);
+
+    return fop;
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException("Error creating FO Processor",e);
+
+  }
+
+}
+
+Location: FOPTestbed.java
+
+Content: 
+
+/** 
+
+ * Starts the stress test.
+
+ */
+
+public void doStressTest(){
+
+  LOG.info("Starting stress test...");
+
+  long start=System.currentTimeMillis();
+
+  this.counter=0;
+
+  ThreadGroup workerGroup=new ThreadGroup("FOP workers");
+
+  List threadList=new java.util.LinkedList();
+
+  for (int ti=0; ti < this.threads; ti++) {
+
+    TaskRunner runner=new TaskRunner();
+
+    Thread thread=new Thread(workerGroup,runner,"Worker- " + ti);
+
+    threadList.add(thread);
+
+  }
+
+  for (  Object aThreadList : threadList) {
+
+    ((Thread)aThreadList).start();
+
+  }
+
+  while (threadList.size() > 0) {
+
+    Thread t=(Thread)threadList.get(0);
+
+    if (!t.isAlive()) {
+
+      threadList.remove(0);
+
+      continue;
+
+    }
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    InterruptedException ie) {
+
+    }
+
+  }
+
+  long duration=System.currentTimeMillis() - start;
+
+  report(duration);
+
+}
+
+Location: FOPTestbed.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void initialize() throws Exception {
+
+  this.foprocessor=createFOProcessor();
+
+}
+
+Location: FOPTestbed.java
+
+Content: 
+
+private void report(long duration){
+
+  int count=this.results.size();
+
+  int failures=0;
+
+  long bytesWritten=0;
+
+  System.out.println("Report on " + count + " tasks:");
+
+  for (  Object result : this.results) {
+
+    Result res=(Result)result;
+
+    if (res.failure != null) {
+
+      System.out.println("FAIL: " + (res.end - res.start) + " "+ res.task);
+
+      System.out.println("  -> " + res.failure.getMessage());
+
+      failures++;
+
+    }
+
+ else {
+
+      System.out.println("good: " + (res.end - res.start) + " "+ res.filesize+ " "+ res.task);
+
+      bytesWritten+=res.filesize;
+
+    }
+
+  }
+
+  System.out.println("Stress test duration: " + duration + "ms");
+
+  if (failures > 0) {
+
+    System.out.println(failures + " failures of " + count+ " documents!!!");
+
+  }
+
+ else {
+
+    float mb=1024f * 1024f;
+
+    System.out.println("Bytes written: " + (bytesWritten / mb) + " MB, "+ (bytesWritten * 1000 / duration)+ " bytes / sec");
+
+    System.out.println("NO failures with " + count + " documents.");
+
+  }
+
+}
+

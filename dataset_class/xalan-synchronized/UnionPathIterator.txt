@@ -1,0 +1,256 @@
+Location: UnionPathIterator.java
+
+Content: 
+
+/** 
+
+ * Add an iterator to the union list.
+
+ * @param expr non-null reference to a location path iterator.
+
+ */
+
+public void addIterator(DTMIterator expr){
+
+  if (null == m_iterators) {
+
+    m_iterators=new DTMIterator[1];
+
+    m_iterators[0]=expr;
+
+  }
+
+ else {
+
+    DTMIterator[] exprs=m_iterators;
+
+    int len=m_iterators.length;
+
+    m_iterators=new DTMIterator[len + 1];
+
+    System.arraycopy(exprs,0,m_iterators,0,len);
+
+    m_iterators[len]=expr;
+
+  }
+
+  expr.nextNode();
+
+  if (expr instanceof Expression)   ((Expression)expr).exprSetParent(this);
+
+}
+
+Location: UnionPathIterator.java
+
+Content: 
+
+/** 
+
+ * Create a new location path iterator.
+
+ * @param compiler The Compiler which is creating this expression.
+
+ * @param opPos    The position of this iterator in the
+
+ * @return New location path iterator.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected LocPathIterator createDTMIterator(Compiler compiler,int opPos) throws javax.xml.transform.TransformerException {
+
+  LocPathIterator lpi=(LocPathIterator)WalkerFactory.newDTMIterator(compiler,opPos,(compiler.getLocationPathDepth() <= 0));
+
+  return lpi;
+
+}
+
+Location: UnionPathIterator.java
+
+Content: 
+
+/** 
+
+ * This will return an iterator capable of handling the union of paths given.
+
+ * @param compiler The Compiler which is creating this expression.
+
+ * @param opPos    The position of this iterator in the opcode list from thecompiler.
+
+ * @return Object that is derived from LocPathIterator.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+public static LocPathIterator createUnionIterator(Compiler compiler,int opPos) throws javax.xml.transform.TransformerException {
+
+  UnionPathIterator upi=new UnionPathIterator(compiler,opPos);
+
+  int nPaths=upi.m_exprs.length;
+
+  boolean isAllChildIterators=true;
+
+  for (int i=0; i < nPaths; i++) {
+
+    LocPathIterator lpi=upi.m_exprs[i];
+
+    if (lpi.getAxis() != Axis.CHILD) {
+
+      isAllChildIterators=false;
+
+      break;
+
+    }
+
+ else {
+
+      if (HasPositionalPredChecker.check(lpi)) {
+
+        isAllChildIterators=false;
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  if (isAllChildIterators) {
+
+    UnionChildIterator uci=new UnionChildIterator();
+
+    for (int i=0; i < nPaths; i++) {
+
+      PredicatedNodeTest lpi=upi.m_exprs[i];
+
+      uci.addNodeTest(lpi);
+
+    }
+
+    return uci;
+
+  }
+
+ else   return upi;
+
+}
+
+Location: UnionPathIterator.java
+
+Content: 
+
+/** 
+
+ * Initialize the location path iterators. Recursive.
+
+ * @param compiler The Compiler which is creating this expression.
+
+ * @param opPos    The position of this iterator in the opcode list from thecompiler.
+
+ * @param count    The insert position of the iterator.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+protected void loadLocationPaths(Compiler compiler,int opPos,int count) throws javax.xml.transform.TransformerException {
+
+  int steptype=compiler.getOp(opPos);
+
+  if (steptype == OpCodes.OP_LOCATIONPATH) {
+
+    loadLocationPaths(compiler,compiler.getNextOpPos(opPos),count + 1);
+
+    m_exprs[count]=createDTMIterator(compiler,opPos);
+
+    m_exprs[count].exprSetParent(this);
+
+  }
+
+ else {
+
+switch (steptype) {
+
+case OpCodes.OP_VARIABLE:
+
+case OpCodes.OP_EXTFUNCTION:
+
+case OpCodes.OP_FUNCTION:
+
+case OpCodes.OP_GROUP:
+
+      loadLocationPaths(compiler,compiler.getNextOpPos(opPos),count + 1);
+
+    WalkingIterator iter=new WalkingIterator(compiler.getNamespaceContext());
+
+  iter.exprSetParent(this);
+
+if (compiler.getLocationPathDepth() <= 0) iter.setIsTopLevel(true);
+
+iter.m_firstWalker=new org.apache.xpath.axes.FilterExprWalker(iter);
+
+iter.m_firstWalker.init(compiler,opPos,steptype);
+
+m_exprs[count]=iter;
+
+break;
+
+default :
+
+m_exprs=new LocPathIterator[count];
+
+}
+
+}
+
+}
+
+Location: UnionPathIterator.java
+
+Content: 
+
+/** 
+
+ * Constructor to create an instance which you can add location paths to.
+
+ */
+
+public UnionPathIterator(){
+
+  super();
+
+  m_iterators=null;
+
+  m_exprs=null;
+
+}
+
+Location: UnionPathIterator.java
+
+Content: 
+
+/** 
+
+ * Create a UnionPathIterator object, including creation of location path iterators from the opcode list, and call back into the Compiler to create predicate expressions.
+
+ * @param compiler The Compiler which is creating this expression.
+
+ * @param opPos    The position of this iterator in the opcode list from thecompiler.
+
+ * @throws javax.xml.transform.TransformerException
+
+ */
+
+public UnionPathIterator(Compiler compiler,int opPos) throws javax.xml.transform.TransformerException {
+
+  super();
+
+  opPos=OpMap.getFirstChildPos(opPos);
+
+  loadLocationPaths(compiler,opPos,0);
+
+}
+

@@ -1,0 +1,598 @@
+Location: RaidShell.java
+
+Content: 
+
+private void checkOpen() throws IOException {
+
+  if (!clientRunning) {
+
+    IOException result=new IOException("RaidNode closed");
+
+    throw result;
+
+  }
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * checks the parity blocks for a given file and modifies corruptBlocksPerStripe accordingly
+
+ */
+
+private void checkParityBlocks(final Path filePath,final HashMap<Integer,Integer> corruptBlocksPerStripe,final long blockSize,final long fileStripes,final RaidInfo raidInfo) throws IOException {
+
+  BlockLocation[] containerBlocks=getParityBlocks(filePath,blockSize,fileStripes,raidInfo);
+
+  long parityStripeLength=blockSize * ((long)raidInfo.parityBlocksPerStripe);
+
+  long parityFileLength=parityStripeLength * fileStripes;
+
+  long parityBlocksFound=0L;
+
+  for (  BlockLocation cb : containerBlocks) {
+
+    if (cb.getLength() % blockSize != 0) {
+
+      throw new IOException("container block size is not " + "multiple of parity block size");
+
+    }
+
+    int blocksInContainer=(int)(cb.getLength() / blockSize);
+
+    LOG.debug("found container with offset " + cb.getOffset() + ", length "+ cb.getLength());
+
+    for (long offset=cb.getOffset(); offset < cb.getOffset() + cb.getLength(); offset+=blockSize) {
+
+      long block=offset / blockSize;
+
+      int stripe=(int)(offset / parityStripeLength);
+
+      if (stripe < 0) {
+
+        continue;
+
+      }
+
+      if (stripe >= fileStripes) {
+
+        break;
+
+      }
+
+      parityBlocksFound++;
+
+      if (cb.isCorrupt() || (cb.getNames().length == 0 && cb.getLength() > 0)) {
+
+        LOG.debug("parity file for " + filePath.toString() + " corrupt in block "+ block+ ", stripe "+ stripe+ "/"+ fileStripes);
+
+        if (corruptBlocksPerStripe.get(stripe) == null) {
+
+          corruptBlocksPerStripe.put(stripe,1);
+
+        }
+
+ else {
+
+          corruptBlocksPerStripe.put(stripe,corruptBlocksPerStripe.get(stripe) + 1);
+
+        }
+
+      }
+
+ else {
+
+        LOG.debug("parity file for " + filePath.toString() + " OK in block "+ block+ ", stripe "+ stripe+ "/"+ fileStripes);
+
+      }
+
+    }
+
+  }
+
+  long parityBlocksExpected=raidInfo.parityBlocksPerStripe * fileStripes;
+
+  if (parityBlocksFound != parityBlocksExpected) {
+
+    throw new IOException("expected " + parityBlocksExpected + " parity blocks but got "+ parityBlocksFound);
+
+  }
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+public static RaidProtocol createRaidnode(Configuration conf) throws IOException {
+
+  return createRaidnode(RaidNode.getAddress(conf),conf);
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+public static RaidProtocol createRaidnode(InetSocketAddress raidNodeAddr,Configuration conf) throws IOException {
+
+  return createRaidnode(createRPCRaidnode(raidNodeAddr,conf,UserGroupInformation.getCurrentUser()));
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+private static RaidProtocol createRaidnode(RaidProtocol rpcRaidnode) throws IOException {
+
+  RetryPolicy createPolicy=RetryPolicies.retryUpToMaximumCountWithFixedSleep(5,5000,TimeUnit.MILLISECONDS);
+
+  Map<Class<? extends Exception>,RetryPolicy> remoteExceptionToPolicyMap=new HashMap<Class<? extends Exception>,RetryPolicy>();
+
+  Map<Class<? extends Exception>,RetryPolicy> exceptionToPolicyMap=new HashMap<Class<? extends Exception>,RetryPolicy>();
+
+  exceptionToPolicyMap.put(RemoteException.class,RetryPolicies.retryByRemoteException(RetryPolicies.TRY_ONCE_THEN_FAIL,remoteExceptionToPolicyMap));
+
+  RetryPolicy methodPolicy=RetryPolicies.retryByException(RetryPolicies.TRY_ONCE_THEN_FAIL,exceptionToPolicyMap);
+
+  Map<String,RetryPolicy> methodNameToPolicyMap=new HashMap<String,RetryPolicy>();
+
+  methodNameToPolicyMap.put("create",methodPolicy);
+
+  return (RaidProtocol)RetryProxy.create(RaidProtocol.class,rpcRaidnode,methodNameToPolicyMap);
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+private static RaidProtocol createRPCRaidnode(InetSocketAddress raidNodeAddr,Configuration conf,UserGroupInformation ugi) throws IOException {
+
+  LOG.debug("RaidShell connecting to " + raidNodeAddr);
+
+  return (RaidProtocol)RPC.getProxy(RaidProtocol.class,RaidProtocol.versionID,raidNodeAddr,ugi,conf,NetUtils.getSocketFactory(conf,RaidProtocol.class));
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * checks the raided file system, prints a list of corrupt files to System.out and returns the number of corrupt files
+
+ */
+
+public int fsck(final String path) throws IOException {
+
+  FileSystem fs=(new Path(path)).getFileSystem(conf);
+
+  if (fs instanceof DistributedRaidFileSystem) {
+
+    fs=((DistributedRaidFileSystem)fs).getFileSystem();
+
+  }
+
+  if (!(fs instanceof DistributedFileSystem)) {
+
+    throw new IOException("expected DistributedFileSystem but got " + fs.getClass().getName());
+
+  }
+
+  final DistributedFileSystem dfs=(DistributedFileSystem)fs;
+
+  String xorPrefix=RaidNode.xorDestinationPath(conf).toUri().getPath();
+
+  String rsPrefix=RaidNode.rsDestinationPath(conf).toUri().getPath();
+
+  if (!xorPrefix.endsWith("/")) {
+
+    xorPrefix=xorPrefix + "/";
+
+  }
+
+  if (!rsPrefix.endsWith("/")) {
+
+    rsPrefix=rsPrefix + "/";
+
+  }
+
+  LOG.debug("prefixes: " + xorPrefix + ", "+ rsPrefix);
+
+  final String[] files=RaidDFSUtil.getCorruptFiles(dfs);
+
+  final List<Path> corruptFileCandidates=new LinkedList<Path>();
+
+  for (  final String f : files) {
+
+    final Path p=new Path(f);
+
+    if (!p.toString().startsWith(xorPrefix) && !p.toString().startsWith(rsPrefix) && p.toString().startsWith(path)) {
+
+      corruptFileCandidates.add(p);
+
+    }
+
+  }
+
+  RaidUtils.filterTrash(conf,corruptFileCandidates);
+
+  int numberOfCorruptFiles=0;
+
+  for (  final Path corruptFileCandidate : corruptFileCandidates) {
+
+    if (isFileCorrupt(dfs,corruptFileCandidate)) {
+
+      System.out.println(corruptFileCandidate.toString());
+
+      numberOfCorruptFiles++;
+
+    }
+
+  }
+
+  return numberOfCorruptFiles;
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * returns the raid for a given file
+
+ */
+
+private RaidInfo getFileRaidInfo(final DistributedFileSystem dfs,final Path filePath) throws IOException {
+
+  Path destPath=null;
+
+  RaidNode.ParityFilePair ppair=null;
+
+  try {
+
+    destPath=RaidNode.xorDestinationPath(conf);
+
+    ppair=RaidNode.getParityFile(destPath,filePath,conf);
+
+  }
+
+ catch (  FileNotFoundException ignore) {
+
+  }
+
+  if (ppair != null) {
+
+    return new RaidInfo(RaidType.XOR,ppair,1);
+
+  }
+
+ else {
+
+    try {
+
+      destPath=RaidNode.rsDestinationPath(conf);
+
+      ppair=RaidNode.getParityFile(destPath,filePath,conf);
+
+    }
+
+ catch (    FileNotFoundException ignore) {
+
+    }
+
+    if (ppair != null) {
+
+      return new RaidInfo(RaidType.RS,ppair,RaidNode.rsParityLength(conf));
+
+    }
+
+ else {
+
+      return new RaidInfo(RaidType.NONE,null,0);
+
+    }
+
+  }
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * gets the parity blocks corresponding to file returns the parity blocks in case of DFS and the part blocks containing parity blocks in case of HAR FS
+
+ */
+
+private BlockLocation[] getParityBlocks(final Path filePath,final long blockSize,final long fileStripes,final RaidInfo raidInfo) throws IOException {
+
+  final String parityPathStr=raidInfo.parityPair.getPath().toUri().getPath();
+
+  FileSystem parityFS=raidInfo.parityPair.getFileSystem();
+
+  FileStatus parityFileStatus=parityFS.getFileStatus(new Path(parityPathStr));
+
+  long parityFileLength=parityFileStatus.getLen();
+
+  if (parityFileLength != fileStripes * raidInfo.parityBlocksPerStripe * blockSize) {
+
+    throw new IOException("expected parity file of length" + (fileStripes * raidInfo.parityBlocksPerStripe * blockSize) + " but got parity file of length "+ parityFileLength);
+
+  }
+
+  BlockLocation[] parityBlocks=parityFS.getFileBlockLocations(parityFileStatus,0L,parityFileLength);
+
+  if (parityFS instanceof DistributedFileSystem || parityFS instanceof DistributedRaidFileSystem) {
+
+    long parityBlockSize=parityFileStatus.getBlockSize();
+
+    if (parityBlockSize != blockSize) {
+
+      throw new IOException("file block size is " + blockSize + " but parity file block size is "+ parityBlockSize);
+
+    }
+
+  }
+
+ else   if (parityFS instanceof HarFileSystem) {
+
+    LOG.debug("HAR FS found");
+
+  }
+
+ else {
+
+    LOG.warn("parity file system is not of a supported type");
+
+  }
+
+  return parityBlocks;
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+void initializeLocal(Configuration conf) throws IOException {
+
+  this.ugi=UserGroupInformation.getCurrentUser();
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+void initializeRpc(Configuration conf,InetSocketAddress address) throws IOException {
+
+  this.ugi=UserGroupInformation.getCurrentUser();
+
+  this.rpcRaidnode=createRPCRaidnode(address,conf,ugi);
+
+  this.raidnode=createRaidnode(rpcRaidnode);
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * checks whether a file has more than the allowable number of corrupt blocks and must therefore be considered corrupt
+
+ */
+
+private boolean isFileCorrupt(final DistributedFileSystem dfs,final Path filePath) throws IOException {
+
+  HashMap<Integer,Integer> corruptBlocksPerStripe=new LinkedHashMap<Integer,Integer>();
+
+  final int stripeBlocks=RaidNode.getStripeLength(conf);
+
+  final FileStatus fileStatus=dfs.getFileStatus(filePath);
+
+  final long blockSize=fileStatus.getBlockSize();
+
+  final long fileLength=fileStatus.getLen();
+
+  final long fileLengthInBlocks=(fileLength / blockSize) + (((fileLength % blockSize) == 0) ? 0L : 1L);
+
+  final long fileStripes=(fileLengthInBlocks / stripeBlocks) + (((fileLengthInBlocks % stripeBlocks) == 0) ? 0L : 1L);
+
+  final BlockLocation[] fileBlocks=dfs.getFileBlockLocations(fileStatus,0,fileLength);
+
+  for (  BlockLocation fileBlock : fileBlocks) {
+
+    int blockNo=(int)(fileBlock.getOffset() / blockSize);
+
+    final int stripe=(int)(blockNo / stripeBlocks);
+
+    if (fileBlock.isCorrupt() || (fileBlock.getNames().length == 0 && fileBlock.getLength() > 0)) {
+
+      if (corruptBlocksPerStripe.get(stripe) == null) {
+
+        corruptBlocksPerStripe.put(stripe,1);
+
+      }
+
+ else {
+
+        corruptBlocksPerStripe.put(stripe,corruptBlocksPerStripe.get(stripe) + 1);
+
+      }
+
+      LOG.debug("file " + filePath.toString() + " corrupt in block "+ blockNo+ "/"+ fileLengthInBlocks+ ", stripe "+ stripe+ "/"+ fileStripes);
+
+    }
+
+ else {
+
+      LOG.debug("file " + filePath.toString() + " OK in block "+ blockNo+ "/"+ fileLengthInBlocks+ ", stripe "+ stripe+ "/"+ fileStripes);
+
+    }
+
+  }
+
+  RaidInfo raidInfo=getFileRaidInfo(dfs,filePath);
+
+  if (raidInfo.raidType != RaidType.NONE) {
+
+    checkParityBlocks(filePath,corruptBlocksPerStripe,blockSize,fileStripes,raidInfo);
+
+  }
+
+  final int maxCorruptBlocksPerStripe=raidInfo.parityBlocksPerStripe;
+
+  for (  int corruptBlocksInStripe : corruptBlocksPerStripe.values()) {
+
+    if (corruptBlocksInStripe > maxCorruptBlocksPerStripe) {
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * Start RaidShell. <p> The RaidShell connects to the specified RaidNode and performs basic configuration options.
+
+ * @throws IOException
+
+ */
+
+public RaidShell(Configuration conf) throws IOException {
+
+  super(conf);
+
+  this.conf=conf;
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+public int recoverAndPrint(String cmd,String argv[],int startindex) throws IOException {
+
+  int exitCode=0;
+
+  for (  Path p : recover(cmd,argv,startindex)) {
+
+    System.out.println(p);
+
+  }
+
+  return exitCode;
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+public void recoverBlocks(String[] args,int startIndex) throws IOException {
+
+  LOG.debug("Recovering blocks for " + (args.length - startIndex) + " files");
+
+  BlockFixer.BlockFixerHelper fixer=new BlockFixer.BlockFixerHelper(conf);
+
+  for (int i=startIndex; i < args.length; i++) {
+
+    String path=args[i];
+
+    fixer.fixFile(new Path(path));
+
+  }
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * Recovers the specified path from the parity file
+
+ */
+
+public Path[] recover(String cmd,String argv[],int startindex) throws IOException {
+
+  Path[] paths=new Path[(argv.length - startindex) / 2];
+
+  int j=0;
+
+  for (int i=startindex; i < argv.length; i=i + 2) {
+
+    String path=argv[i];
+
+    long corruptOffset=Long.parseLong(argv[i + 1]);
+
+    LOG.debug("RaidShell recoverFile for " + path + " corruptOffset "+ corruptOffset);
+
+    paths[j]=new Path(raidnode.recoverFile(path,corruptOffset));
+
+    LOG.debug("Raidshell created recovery file " + paths[j]);
+
+    j++;
+
+  }
+
+  return paths;
+
+}
+
+Location: RaidShell.java
+
+Content: 
+
+/** 
+
+ * Apply operation specified by 'cmd' on all parameters starting from argv[startindex].
+
+ */
+
+private int showConfig(String cmd,String argv[],int startindex) throws IOException {
+
+  int exitCode=0;
+
+  int i=startindex;
+
+  PolicyList[] all=raidnode.getAllPolicies();
+
+  for (  PolicyList list : all) {
+
+    for (    PolicyInfo p : list.getAll()) {
+
+      System.out.println(p);
+
+    }
+
+  }
+
+  return exitCode;
+
+}
+

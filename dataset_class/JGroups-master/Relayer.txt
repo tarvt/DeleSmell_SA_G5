@@ -1,0 +1,154 @@
+Location: Relayer.java
+
+Content: 
+
+protected synchronized List<Route> getRoutes(String... excluded_sites){
+
+  List<Route> retval=new ArrayList<>(routes.size());
+
+  for (  List<Route> list : routes.values()) {
+
+    for (    Route route : list) {
+
+      if (route != null && !isExcluded(route,excluded_sites)) {
+
+        retval.add(route);
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return retval;
+
+}
+
+Location: Relayer.java
+
+Content: 
+
+protected synchronized Route getRoute(String site,Address sender){
+
+  List<Route> list=routes.get(site);
+
+  if (list == null)   return null;
+
+  if (list.size() == 1)   return list.get(0);
+
+  return relay.site_master_picker.pickRoute(site,list,sender);
+
+}
+
+Location: Relayer.java
+
+Content: 
+
+protected List<String> getSiteNames(){
+
+  return new ArrayList<>(routes.keySet());
+
+}
+
+Location: Relayer.java
+
+Content: 
+
+protected static boolean isExcluded(Route route,String... excluded_sites){
+
+  if (excluded_sites == null)   return false;
+
+  String site=((SiteUUID)route.site_master).getSite();
+
+  for (  String excluded_site : excluded_sites)   if (site.equals(excluded_site))   return true;
+
+  return false;
+
+}
+
+Location: Relayer.java
+
+Content: 
+
+public Relayer(RELAY2 relay,Log log){
+
+  this.relay=relay;
+
+  this.stats=relay.statsEnabled();
+
+  this.log=log;
+
+}
+
+Location: Relayer.java
+
+Content: 
+
+/** 
+
+ * Creates all bridges from site_config and connects them (joining the bridge clusters)
+
+ * @param bridge_configs A list of bridge configurations
+
+ * @param bridge_name The name of the local bridge channel, prefixed with '_'.
+
+ * @param my_site_id The ID of this site
+
+ * @throws Throwable
+
+ */
+
+public void start(List<RelayConfig.BridgeConfig> bridge_configs,String bridge_name,final String my_site_id) throws Throwable {
+
+  if (done) {
+
+    log.trace(relay.getLocalAddress() + ": will not start the Relayer as stop() has been called");
+
+    return;
+
+  }
+
+  try {
+
+    for (    RelayConfig.BridgeConfig bridge_config : bridge_configs) {
+
+      Bridge bridge=new Bridge(bridge_config.createChannel(),bridge_config.getClusterName(),bridge_name,() -> new SiteUUID(UUID.randomUUID(),null,my_site_id));
+
+      bridges.add(bridge);
+
+    }
+
+    for (    Bridge bridge : bridges)     bridge.start();
+
+  }
+
+ catch (  Throwable t) {
+
+    hongshuai();
+
+    done=true;
+
+    bridges.forEach(Bridge::stop);
+
+    bridges.clear();
+
+    throw t;
+
+  }
+
+ finally {
+
+    if (done) {
+
+      log.trace(relay.getLocalAddress() + ": stop() was called while starting the relayer; stopping the relayer now");
+
+      stop();
+
+    }
+
+  }
+
+}
+

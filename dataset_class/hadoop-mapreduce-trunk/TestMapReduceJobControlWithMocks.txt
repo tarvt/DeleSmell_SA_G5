@@ -1,0 +1,174 @@
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+private ControlledJob createControlledJob(JobControl jobControl,boolean successful,ControlledJob... dependingJobs) throws IOException, InterruptedException {
+
+  List<ControlledJob> dependingJobsList=dependingJobs == null ? null : Arrays.asList(dependingJobs);
+
+  ControlledJob job=new ControlledJob(createJob(true,successful),dependingJobsList);
+
+  jobControl.addJob(job);
+
+  return job;
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+private ControlledJob createFailedControlledJob(JobControl jobControl,ControlledJob... dependingJobs) throws IOException, InterruptedException {
+
+  return createControlledJob(jobControl,false,dependingJobs);
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+private Job createJob(boolean complete,boolean successful) throws IOException, InterruptedException {
+
+  Job mockJob=mock(Job.class);
+
+  when(mockJob.getConfiguration()).thenReturn(new Configuration());
+
+  when(mockJob.isComplete()).thenReturn(complete);
+
+  when(mockJob.isSuccessful()).thenReturn(successful);
+
+  return mockJob;
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+private ControlledJob createSuccessfulControlledJob(JobControl jobControl,ControlledJob... dependingJobs) throws IOException, InterruptedException {
+
+  return createControlledJob(jobControl,true,dependingJobs);
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+private void runJobControl(JobControl jobControl){
+
+  Thread controller=new Thread(jobControl);
+
+  controller.start();
+
+  waitTillAllFinished(jobControl);
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+@Test public void testFailedJob() throws Exception {
+
+  JobControl jobControl=new JobControl("Test");
+
+  ControlledJob job1=createFailedControlledJob(jobControl);
+
+  ControlledJob job2=createSuccessfulControlledJob(jobControl);
+
+  ControlledJob job3=createSuccessfulControlledJob(jobControl,job1,job2);
+
+  ControlledJob job4=createSuccessfulControlledJob(jobControl,job3);
+
+  runJobControl(jobControl);
+
+  assertEquals("Success list",1,jobControl.getSuccessfulJobList().size());
+
+  assertEquals("Failed list",3,jobControl.getFailedJobList().size());
+
+  assertTrue(job1.getJobState() == ControlledJob.State.FAILED);
+
+  assertTrue(job2.getJobState() == ControlledJob.State.SUCCESS);
+
+  assertTrue(job3.getJobState() == ControlledJob.State.DEPENDENT_FAILED);
+
+  assertTrue(job4.getJobState() == ControlledJob.State.DEPENDENT_FAILED);
+
+  jobControl.stop();
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+@Test public void testKillJob() throws Exception {
+
+  JobControl jobControl=new JobControl("Test");
+
+  ControlledJob job=createFailedControlledJob(jobControl);
+
+  job.killJob();
+
+  verify(job.getJob()).killJob();
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+@Test public void testSuccessfulJobs() throws Exception {
+
+  JobControl jobControl=new JobControl("Test");
+
+  ControlledJob job1=createSuccessfulControlledJob(jobControl);
+
+  ControlledJob job2=createSuccessfulControlledJob(jobControl);
+
+  ControlledJob job3=createSuccessfulControlledJob(jobControl,job1,job2);
+
+  ControlledJob job4=createSuccessfulControlledJob(jobControl,job3);
+
+  runJobControl(jobControl);
+
+  assertEquals("Success list",4,jobControl.getSuccessfulJobList().size());
+
+  assertEquals("Failed list",0,jobControl.getFailedJobList().size());
+
+  assertTrue(job1.getJobState() == ControlledJob.State.SUCCESS);
+
+  assertTrue(job2.getJobState() == ControlledJob.State.SUCCESS);
+
+  assertTrue(job3.getJobState() == ControlledJob.State.SUCCESS);
+
+  assertTrue(job4.getJobState() == ControlledJob.State.SUCCESS);
+
+  jobControl.stop();
+
+}
+
+Location: TestMapReduceJobControlWithMocks.java
+
+Content: 
+
+private void waitTillAllFinished(JobControl jobControl){
+
+  while (!jobControl.allFinished()) {
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    InterruptedException e) {
+
+    }
+
+  }
+
+}
+

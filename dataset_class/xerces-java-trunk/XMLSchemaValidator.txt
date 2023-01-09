@@ -1,0 +1,2600 @@
+Location: XMLSchemaValidator.java
+
+Content: 
+
+private void activateSelectorFor(IdentityConstraint ic){
+
+  Selector selector=ic.getSelector();
+
+  FieldActivator activator=this;
+
+  if (selector == null)   return;
+
+  XPathMatcher matcher=selector.createMatcher(activator,fElementDepth);
+
+  fMatcherStack.addMatcher(matcher);
+
+  matcher.startDocumentFragment();
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void addDefaultAttributes(QName element,XMLAttributes attributes,XSAttributeGroupDecl attrGrp){
+
+  if (DEBUG) {
+
+    System.out.println("==>addDefaultAttributes: " + element);
+
+  }
+
+  XSObjectList attrUses=attrGrp.getAttributeUses();
+
+  int useCount=attrUses.getLength();
+
+  XSAttributeUseImpl currUse;
+
+  XSAttributeDecl currDecl;
+
+  short constType;
+
+  ValidatedInfo defaultValue;
+
+  boolean isSpecified;
+
+  QName attName;
+
+  for (int i=0; i < useCount; i++) {
+
+    currUse=(XSAttributeUseImpl)attrUses.item(i);
+
+    currDecl=currUse.fAttrDecl;
+
+    constType=currUse.fConstraintType;
+
+    defaultValue=currUse.fDefault;
+
+    if (constType == XSConstants.VC_NONE) {
+
+      constType=currDecl.getConstraintType();
+
+      defaultValue=currDecl.fDefault;
+
+    }
+
+    isSpecified=attributes.getValue(currDecl.fTargetNamespace,currDecl.fName) != null;
+
+    if (currUse.fUse == SchemaSymbols.USE_REQUIRED) {
+
+      if (!isSpecified)       reportSchemaError("cvc-complex-type.4",new Object[]{element.rawname,currDecl.fName});
+
+    }
+
+    if (!isSpecified && constType != XSConstants.VC_NONE) {
+
+      attName=new QName(null,currDecl.fName,currDecl.fName,currDecl.fTargetNamespace);
+
+      String normalized=(defaultValue != null) ? defaultValue.stringValue() : "";
+
+      int attrIndex;
+
+      if (attributes instanceof XMLAttributesImpl) {
+
+        XMLAttributesImpl attrs=(XMLAttributesImpl)attributes;
+
+        attrIndex=attrs.getLength();
+
+        attrs.addAttributeNS(attName,"CDATA",normalized);
+
+      }
+
+ else {
+
+        attrIndex=attributes.addAttribute(attName,"CDATA",normalized);
+
+      }
+
+      if (fAugPSVI) {
+
+        Augmentations augs=attributes.getAugmentations(attrIndex);
+
+        AttributePSVImpl attrPSVI=new AttributePSVImpl();
+
+        augs.putItem(Constants.ATTRIBUTE_PSVI,attrPSVI);
+
+        attrPSVI.fDeclaration=currDecl;
+
+        attrPSVI.fTypeDecl=currDecl.fType;
+
+        attrPSVI.fValue.copyFrom(defaultValue);
+
+        attrPSVI.fValidationContext=fValidationRoot;
+
+        attrPSVI.fValidity=AttributePSVI.VALIDITY_VALID;
+
+        attrPSVI.fValidationAttempted=AttributePSVI.VALIDATION_FULL;
+
+        attrPSVI.fSpecified=true;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+public boolean characterData(String data,Augmentations augs){
+
+  fSawText=fSawText || data.length() > 0;
+
+  if (fNormalizeData && fWhiteSpace != -1 && fWhiteSpace != XSSimpleType.WS_PRESERVE) {
+
+    normalizeWhitespace(data,fWhiteSpace == XSSimpleType.WS_COLLAPSE);
+
+    fBuffer.append(fNormalizedStr.ch,fNormalizedStr.offset,fNormalizedStr.length);
+
+  }
+
+ else {
+
+    if (fAppendBuffer)     fBuffer.append(data);
+
+  }
+
+  boolean allWhiteSpace=true;
+
+  if (fCurrentType != null && fCurrentType.getTypeCategory() == XSTypeDefinition.COMPLEX_TYPE) {
+
+    XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+    if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_ELEMENT) {
+
+      for (int i=0; i < data.length(); i++) {
+
+        if (!XMLChar.isSpace(data.charAt(i))) {
+
+          allWhiteSpace=false;
+
+          fSawCharacters=true;
+
+          break;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  return allWhiteSpace;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void checkElementMatchesRootElementDecl(final XSElementDecl rootElementDecl,final QName element){
+
+  if (element.localpart != rootElementDecl.fName || element.uri != rootElementDecl.fTargetNamespace) {
+
+    reportSchemaError("cvc-elt.1.b",new Object[]{element.rawname,rootElementDecl.fName});
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+public void elementDefault(String data){
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+Object elementLocallyValidComplexType(QName element,Object textContent){
+
+  Object actualValue=null;
+
+  XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+  if (!fNil) {
+
+    if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_EMPTY && (fSubElement || fSawText)) {
+
+      reportSchemaError("cvc-complex-type.2.1",new Object[]{element.rawname});
+
+    }
+
+ else     if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_SIMPLE) {
+
+      if (fSubElement)       reportSchemaError("cvc-complex-type.2.2",new Object[]{element.rawname});
+
+      XSSimpleType dv=ctype.fXSSimpleType;
+
+      try {
+
+        if (!fNormalizeData || fUnionType) {
+
+          fValidationState.setNormalizationRequired(true);
+
+        }
+
+        actualValue=dv.validate(textContent,fValidationState,fValidatedInfo);
+
+      }
+
+ catch (      InvalidDatatypeValueException e) {
+
+        reportSchemaError(e.getKey(),e.getArgs());
+
+        reportSchemaError("cvc-complex-type.2.2",new Object[]{element.rawname});
+
+      }
+
+    }
+
+ else     if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_ELEMENT) {
+
+      if (fSawCharacters) {
+
+        reportSchemaError("cvc-complex-type.2.3",new Object[]{element.rawname});
+
+      }
+
+    }
+
+    if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_ELEMENT || ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_MIXED) {
+
+      if (DEBUG) {
+
+        System.out.println(fCurrCMState);
+
+      }
+
+      if (fCurrCMState[0] >= 0 && !fCurrentCM.endContentModel(fCurrCMState)) {
+
+        String expected=expectedStr(fCurrentCM.whatCanGoHere(fCurrCMState));
+
+        final int[] occurenceInfo=fCurrentCM.occurenceInfo(fCurrCMState);
+
+        if (occurenceInfo != null) {
+
+          final int minOccurs=occurenceInfo[0];
+
+          final int count=occurenceInfo[2];
+
+          if (count < minOccurs) {
+
+            final int required=minOccurs - count;
+
+            if (required > 1) {
+
+              reportSchemaError("cvc-complex-type.2.4.j",new Object[]{element.rawname,fCurrentCM.getTermName(occurenceInfo[3]),Integer.toString(minOccurs),Integer.toString(required)});
+
+            }
+
+ else {
+
+              reportSchemaError("cvc-complex-type.2.4.i",new Object[]{element.rawname,fCurrentCM.getTermName(occurenceInfo[3]),Integer.toString(minOccurs)});
+
+            }
+
+          }
+
+ else {
+
+            reportSchemaError("cvc-complex-type.2.4.b",new Object[]{element.rawname,expected});
+
+          }
+
+        }
+
+ else {
+
+          reportSchemaError("cvc-complex-type.2.4.b",new Object[]{element.rawname,expected});
+
+        }
+
+      }
+
+    }
+
+  }
+
+  return actualValue;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+Object elementLocallyValidType(QName element,Object textContent){
+
+  if (fCurrentType == null)   return null;
+
+  Object retValue=null;
+
+  if (fCurrentType.getTypeCategory() == XSTypeDefinition.SIMPLE_TYPE) {
+
+    if (fSubElement)     reportSchemaError("cvc-type.3.1.2",new Object[]{element.rawname});
+
+    if (!fNil) {
+
+      XSSimpleType dv=(XSSimpleType)fCurrentType;
+
+      try {
+
+        if (!fNormalizeData || fUnionType) {
+
+          fValidationState.setNormalizationRequired(true);
+
+        }
+
+        retValue=dv.validate(textContent,fValidationState,fValidatedInfo);
+
+      }
+
+ catch (      InvalidDatatypeValueException e) {
+
+        reportSchemaError(e.getKey(),e.getArgs());
+
+        reportSchemaError("cvc-type.3.1.3",new Object[]{element.rawname,textContent});
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    retValue=elementLocallyValidComplexType(element,textContent);
+
+  }
+
+  return retValue;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+final Augmentations endElementPSVI(boolean root,SchemaGrammar[] grammars,Augmentations augs){
+
+  if (fAugPSVI) {
+
+    augs=getEmptyAugs(augs);
+
+    fCurrentPSVI.fDeclaration=this.fCurrentElemDecl;
+
+    fCurrentPSVI.fTypeDecl=this.fCurrentType;
+
+    fCurrentPSVI.fNotation=this.fNotation;
+
+    fCurrentPSVI.fValidationContext=this.fValidationRoot;
+
+    fCurrentPSVI.fNil=this.fNil;
+
+    if (fElementDepth > fNFullValidationDepth) {
+
+      fCurrentPSVI.fValidationAttempted=ElementPSVI.VALIDATION_FULL;
+
+    }
+
+ else     if (fElementDepth > fNNoneValidationDepth) {
+
+      fCurrentPSVI.fValidationAttempted=ElementPSVI.VALIDATION_NONE;
+
+    }
+
+ else {
+
+      fCurrentPSVI.fValidationAttempted=ElementPSVI.VALIDATION_PARTIAL;
+
+    }
+
+    if (fNFullValidationDepth == fElementDepth) {
+
+      fNFullValidationDepth=fElementDepth - 1;
+
+    }
+
+    if (fNNoneValidationDepth == fElementDepth) {
+
+      fNNoneValidationDepth=fElementDepth - 1;
+
+    }
+
+    if (fDefaultValue != null)     fCurrentPSVI.fSpecified=true;
+
+    fCurrentPSVI.fValue.copyFrom(fValidatedInfo);
+
+    if (fStrictAssess) {
+
+      String[] errors=fXSIErrorReporter.mergeContext();
+
+      fCurrentPSVI.fErrors=errors;
+
+      fCurrentPSVI.fValidity=(errors == null) ? ElementPSVI.VALIDITY_VALID : ElementPSVI.VALIDITY_INVALID;
+
+    }
+
+ else {
+
+      fCurrentPSVI.fValidity=ElementPSVI.VALIDITY_NOTKNOWN;
+
+      fXSIErrorReporter.popContext();
+
+    }
+
+    if (root) {
+
+      fCurrentPSVI.fGrammars=grammars;
+
+      fCurrentPSVI.fSchemaInformation=null;
+
+    }
+
+  }
+
+  return augs;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+/** 
+
+ * ensure element stack capacity 
+
+ */
+
+void ensureStackCapacity(){
+
+  if (fElementDepth == fElemDeclStack.length) {
+
+    int newSize=fElementDepth + INC_STACK_SIZE;
+
+    boolean[] newArrayB=new boolean[newSize];
+
+    System.arraycopy(fSubElementStack,0,newArrayB,0,fElementDepth);
+
+    fSubElementStack=newArrayB;
+
+    XSElementDecl[] newArrayE=new XSElementDecl[newSize];
+
+    System.arraycopy(fElemDeclStack,0,newArrayE,0,fElementDepth);
+
+    fElemDeclStack=newArrayE;
+
+    newArrayB=new boolean[newSize];
+
+    System.arraycopy(fNilStack,0,newArrayB,0,fElementDepth);
+
+    fNilStack=newArrayB;
+
+    XSNotationDecl[] newArrayN=new XSNotationDecl[newSize];
+
+    System.arraycopy(fNotationStack,0,newArrayN,0,fElementDepth);
+
+    fNotationStack=newArrayN;
+
+    XSTypeDefinition[] newArrayT=new XSTypeDefinition[newSize];
+
+    System.arraycopy(fTypeStack,0,newArrayT,0,fElementDepth);
+
+    fTypeStack=newArrayT;
+
+    XSCMValidator[] newArrayC=new XSCMValidator[newSize];
+
+    System.arraycopy(fCMStack,0,newArrayC,0,fElementDepth);
+
+    fCMStack=newArrayC;
+
+    newArrayB=new boolean[newSize];
+
+    System.arraycopy(fSawTextStack,0,newArrayB,0,fElementDepth);
+
+    fSawTextStack=newArrayB;
+
+    newArrayB=new boolean[newSize];
+
+    System.arraycopy(fStringContent,0,newArrayB,0,fElementDepth);
+
+    fStringContent=newArrayB;
+
+    newArrayB=new boolean[newSize];
+
+    System.arraycopy(fStrictAssessStack,0,newArrayB,0,fElementDepth);
+
+    fStrictAssessStack=newArrayB;
+
+    int[][] newArrayIA=new int[newSize][];
+
+    System.arraycopy(fCMStateStack,0,newArrayIA,0,fElementDepth);
+
+    fCMStateStack=newArrayIA;
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+private String expectedStr(Vector expected){
+
+  StringBuffer ret=new StringBuffer("{");
+
+  int size=expected.size();
+
+  for (int i=0; i < size; i++) {
+
+    if (i > 0)     ret.append(", ");
+
+    ret.append(expected.elementAt(i).toString());
+
+  }
+
+  ret.append('}');
+
+  return ret.toString();
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+SchemaGrammar findSchemaGrammar(short contextType,String namespace,QName enclosingElement,QName triggeringComponent,XMLAttributes attributes){
+
+  SchemaGrammar grammar=null;
+
+  grammar=fGrammarBucket.getGrammar(namespace);
+
+  if (grammar == null) {
+
+    fXSDDescription.setNamespace(namespace);
+
+    if (fGrammarPool != null) {
+
+      grammar=(SchemaGrammar)fGrammarPool.retrieveGrammar(fXSDDescription);
+
+      if (grammar != null) {
+
+        if (!fGrammarBucket.putGrammar(grammar,true,fNamespaceGrowth)) {
+
+          fXSIErrorReporter.fErrorReporter.reportError(XSMessageFormatter.SCHEMA_DOMAIN,"GrammarConflict",null,XMLErrorReporter.SEVERITY_WARNING);
+
+          grammar=null;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  if (!fUseGrammarPoolOnly && (grammar == null || (fNamespaceGrowth && !hasSchemaComponent(grammar,contextType,triggeringComponent)))) {
+
+    fXSDDescription.reset();
+
+    fXSDDescription.fContextType=contextType;
+
+    fXSDDescription.setNamespace(namespace);
+
+    fXSDDescription.fEnclosedElementName=enclosingElement;
+
+    fXSDDescription.fTriggeringComponent=triggeringComponent;
+
+    fXSDDescription.fAttributes=attributes;
+
+    if (fLocator != null) {
+
+      fXSDDescription.setBaseSystemId(fLocator.getExpandedSystemId());
+
+    }
+
+    Hashtable locationPairs=fLocationPairs;
+
+    Object locationArray=locationPairs.get(namespace == null ? XMLSymbols.EMPTY_STRING : namespace);
+
+    if (locationArray != null) {
+
+      String[] temp=((XMLSchemaLoader.LocationArray)locationArray).getLocationArray();
+
+      if (temp.length != 0) {
+
+        setLocationHints(fXSDDescription,temp,grammar);
+
+      }
+
+    }
+
+    if (grammar == null || fXSDDescription.fLocationHints != null) {
+
+      boolean toParseSchema=true;
+
+      if (grammar != null) {
+
+        locationPairs=EMPTY_TABLE;
+
+      }
+
+      try {
+
+        XMLInputSource xis=XMLSchemaLoader.resolveDocument(fXSDDescription,locationPairs,fEntityResolver);
+
+        if (grammar != null && fNamespaceGrowth) {
+
+          try {
+
+            if (grammar.getDocumentLocations().contains(XMLEntityManager.expandSystemId(xis.getSystemId(),xis.getBaseSystemId(),false))) {
+
+              toParseSchema=false;
+
+            }
+
+          }
+
+ catch (          MalformedURIException e) {
+
+          }
+
+        }
+
+        if (toParseSchema) {
+
+          grammar=fSchemaLoader.loadSchema(fXSDDescription,xis,fLocationPairs);
+
+        }
+
+      }
+
+ catch (      IOException ex) {
+
+        final String[] locationHints=fXSDDescription.getLocationHints();
+
+        fXSIErrorReporter.fErrorReporter.reportError(XSMessageFormatter.SCHEMA_DOMAIN,"schema_reference.4",new Object[]{locationHints != null ? locationHints[0] : XMLSymbols.EMPTY_STRING},XMLErrorReporter.SEVERITY_WARNING,ex);
+
+      }
+
+    }
+
+  }
+
+  return grammar;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+XSTypeDefinition getAndCheckXsiType(QName element,String xsiType,XMLAttributes attributes){
+
+  QName typeName=null;
+
+  try {
+
+    typeName=(QName)fQNameDV.validate(xsiType,fValidationState,null);
+
+  }
+
+ catch (  InvalidDatatypeValueException e) {
+
+    reportSchemaError(e.getKey(),e.getArgs());
+
+    reportSchemaError("cvc-elt.4.1",new Object[]{element.rawname,SchemaSymbols.URI_XSI + "," + SchemaSymbols.XSI_TYPE,xsiType});
+
+    return null;
+
+  }
+
+  XSTypeDefinition type=null;
+
+  if (typeName.uri == SchemaSymbols.URI_SCHEMAFORSCHEMA) {
+
+    type=SchemaGrammar.SG_SchemaNS.getGlobalTypeDecl(typeName.localpart);
+
+  }
+
+  if (type == null) {
+
+    SchemaGrammar grammar=findSchemaGrammar(XSDDescription.CONTEXT_XSITYPE,typeName.uri,element,typeName,attributes);
+
+    if (grammar != null)     type=grammar.getGlobalTypeDecl(typeName.localpart);
+
+  }
+
+  if (type == null) {
+
+    reportSchemaError("cvc-elt.4.2",new Object[]{element.rawname,xsiType});
+
+    return null;
+
+  }
+
+  if (fCurrentType != null) {
+
+    short block=XSConstants.DERIVATION_NONE;
+
+    if (fCurrentElemDecl != null) {
+
+      block=fCurrentElemDecl.fBlock;
+
+    }
+
+    if (fCurrentType.getTypeCategory() == XSTypeDefinition.COMPLEX_TYPE) {
+
+      block|=((XSComplexTypeDecl)fCurrentType).fBlock;
+
+    }
+
+    if (!XSConstraints.checkTypeDerivationOk(type,fCurrentType,block)) {
+
+      reportSchemaError("cvc-elt.4.3",new Object[]{element.rawname,xsiType,XS10TypeHelper.getSchemaTypeName(fCurrentType)});
+
+    }
+
+  }
+
+  return type;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+Augmentations getEmptyAugs(Augmentations augs){
+
+  if (augs == null) {
+
+    augs=fAugmentations;
+
+    augs.removeAllItems();
+
+  }
+
+  augs.putItem(Constants.ELEMENT_PSVI,fCurrentPSVI);
+
+  fCurrentPSVI.reset();
+
+  return augs;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+public XSElementDecl getGlobalElementDecl(QName element){
+
+  final SchemaGrammar sGrammar=findSchemaGrammar(XSDDescription.CONTEXT_ELEMENT,element.uri,null,element,null);
+
+  if (sGrammar != null) {
+
+    return sGrammar.getGlobalElementDecl(element.localpart);
+
+  }
+
+  return null;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+boolean getXsiNil(QName element,String xsiNil){
+
+  if (fCurrentElemDecl != null && !fCurrentElemDecl.getNillable()) {
+
+    reportSchemaError("cvc-elt.3.1",new Object[]{element.rawname,SchemaSymbols.URI_XSI + "," + SchemaSymbols.XSI_NIL});
+
+  }
+
+ else {
+
+    String value=XMLChar.trim(xsiNil);
+
+    if (value.equals(SchemaSymbols.ATTVAL_TRUE) || value.equals(SchemaSymbols.ATTVAL_TRUE_1)) {
+
+      if (fCurrentElemDecl != null && fCurrentElemDecl.getConstraintType() == XSConstants.VC_FIXED) {
+
+        reportSchemaError("cvc-elt.3.2.2",new Object[]{element.rawname,SchemaSymbols.URI_XSI + "," + SchemaSymbols.XSI_NIL});
+
+      }
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+XMLString handleCharacters(XMLString text){
+
+  if (fSkipValidationDepth >= 0)   return text;
+
+  fSawText=fSawText || text.length > 0;
+
+  if (fNormalizeData && fWhiteSpace != -1 && fWhiteSpace != XSSimpleType.WS_PRESERVE) {
+
+    normalizeWhitespace(text,fWhiteSpace == XSSimpleType.WS_COLLAPSE);
+
+    text=fNormalizedStr;
+
+  }
+
+  if (fAppendBuffer)   fBuffer.append(text.ch,text.offset,text.length);
+
+  if (fCurrentType != null && fCurrentType.getTypeCategory() == XSTypeDefinition.COMPLEX_TYPE) {
+
+    XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+    if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_ELEMENT) {
+
+      for (int i=text.offset; i < text.offset + text.length; i++) {
+
+        if (!XMLChar.isSpace(text.ch[i])) {
+
+          fSawCharacters=true;
+
+          break;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  return text;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void handleEndDocument(){
+
+  if (fIDCChecking) {
+
+    fValueStoreCache.endDocument();
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+/** 
+
+ * Handle end element. If there is not text content, and there is a {value constraint} on the corresponding element decl, then set the fDefaultValue XMLString representing the default value.
+
+ */
+
+Augmentations handleEndElement(QName element,Augmentations augs){
+
+  if (DEBUG) {
+
+    System.out.println("==>handleEndElement:" + element);
+
+  }
+
+  if (fSkipValidationDepth >= 0) {
+
+    if (fSkipValidationDepth == fElementDepth && fSkipValidationDepth > 0) {
+
+      fNFullValidationDepth=fSkipValidationDepth - 1;
+
+      fSkipValidationDepth=-1;
+
+      fElementDepth--;
+
+      fSubElement=fSubElementStack[fElementDepth];
+
+      fCurrentElemDecl=fElemDeclStack[fElementDepth];
+
+      fNil=fNilStack[fElementDepth];
+
+      fNotation=fNotationStack[fElementDepth];
+
+      fCurrentType=fTypeStack[fElementDepth];
+
+      fCurrentCM=fCMStack[fElementDepth];
+
+      fStrictAssess=fStrictAssessStack[fElementDepth];
+
+      fCurrCMState=fCMStateStack[fElementDepth];
+
+      fSawText=fSawTextStack[fElementDepth];
+
+      fSawCharacters=fStringContent[fElementDepth];
+
+    }
+
+ else {
+
+      fElementDepth--;
+
+    }
+
+    if (fElementDepth == -1 && fFullChecking && !fUseGrammarPoolOnly) {
+
+      XSConstraints.fullSchemaChecking(fGrammarBucket,fSubGroupHandler,fCMBuilder,fXSIErrorReporter.fErrorReporter);
+
+    }
+
+    if (fAugPSVI)     augs=getEmptyAugs(augs);
+
+    return augs;
+
+  }
+
+  processElementContent(element);
+
+  if (fIDCChecking) {
+
+    int oldCount=fMatcherStack.getMatcherCount();
+
+    for (int i=oldCount - 1; i >= 0; i--) {
+
+      XPathMatcher matcher=fMatcherStack.getMatcherAt(i);
+
+      if (fCurrentElemDecl == null) {
+
+        matcher.endElement(element,fCurrentType,false,fValidatedInfo.actualValue,fValidatedInfo.actualValueType,fValidatedInfo.itemValueTypes);
+
+      }
+
+ else {
+
+        matcher.endElement(element,fCurrentType,fCurrentElemDecl.getNillable(),fDefaultValue == null ? fValidatedInfo.actualValue : fCurrentElemDecl.fDefault.actualValue,fDefaultValue == null ? fValidatedInfo.actualValueType : fCurrentElemDecl.fDefault.actualValueType,fDefaultValue == null ? fValidatedInfo.itemValueTypes : fCurrentElemDecl.fDefault.itemValueTypes);
+
+      }
+
+    }
+
+    if (fMatcherStack.size() > 0) {
+
+      fMatcherStack.popContext();
+
+    }
+
+    int newCount=fMatcherStack.getMatcherCount();
+
+    for (int i=oldCount - 1; i >= newCount; i--) {
+
+      XPathMatcher matcher=fMatcherStack.getMatcherAt(i);
+
+      if (matcher instanceof Selector.Matcher) {
+
+        Selector.Matcher selMatcher=(Selector.Matcher)matcher;
+
+        IdentityConstraint id;
+
+        if ((id=selMatcher.getIdentityConstraint()) != null && id.getCategory() != IdentityConstraint.IC_KEYREF) {
+
+          fValueStoreCache.transplant(id,selMatcher.getInitialDepth());
+
+        }
+
+      }
+
+    }
+
+    for (int i=oldCount - 1; i >= newCount; i--) {
+
+      XPathMatcher matcher=fMatcherStack.getMatcherAt(i);
+
+      if (matcher instanceof Selector.Matcher) {
+
+        Selector.Matcher selMatcher=(Selector.Matcher)matcher;
+
+        IdentityConstraint id;
+
+        if ((id=selMatcher.getIdentityConstraint()) != null && id.getCategory() == IdentityConstraint.IC_KEYREF) {
+
+          ValueStoreBase values=fValueStoreCache.getValueStoreFor(id,selMatcher.getInitialDepth());
+
+          if (values != null && values.fValuesCount == values.fFieldCount)           values.endDocumentFragment();
+
+        }
+
+      }
+
+    }
+
+    fValueStoreCache.endElement();
+
+  }
+
+  if (fElementDepth < fIgnoreXSITypeDepth) {
+
+    fIgnoreXSITypeDepth--;
+
+  }
+
+  SchemaGrammar[] grammars=null;
+
+  if (fElementDepth == 0) {
+
+    Iterator invIdRefs=fValidationState.checkIDRefID();
+
+    fValidationState.resetIDTables();
+
+    if (invIdRefs != null) {
+
+      while (invIdRefs.hasNext()) {
+
+        reportSchemaError("cvc-id.1",new Object[]{invIdRefs.next()});
+
+      }
+
+    }
+
+    if (fFullChecking && !fUseGrammarPoolOnly) {
+
+      XSConstraints.fullSchemaChecking(fGrammarBucket,fSubGroupHandler,fCMBuilder,fXSIErrorReporter.fErrorReporter);
+
+    }
+
+    grammars=fGrammarBucket.getGrammars();
+
+    if (fGrammarPool != null) {
+
+      for (int k=0; k < grammars.length; k++) {
+
+        grammars[k].setImmutable(true);
+
+      }
+
+      fGrammarPool.cacheGrammars(XMLGrammarDescription.XML_SCHEMA,grammars);
+
+    }
+
+    augs=endElementPSVI(true,grammars,augs);
+
+  }
+
+ else {
+
+    augs=endElementPSVI(false,grammars,augs);
+
+    fElementDepth--;
+
+    fSubElement=fSubElementStack[fElementDepth];
+
+    fCurrentElemDecl=fElemDeclStack[fElementDepth];
+
+    fNil=fNilStack[fElementDepth];
+
+    fNotation=fNotationStack[fElementDepth];
+
+    fCurrentType=fTypeStack[fElementDepth];
+
+    fCurrentCM=fCMStack[fElementDepth];
+
+    fStrictAssess=fStrictAssessStack[fElementDepth];
+
+    fCurrCMState=fCMStateStack[fElementDepth];
+
+    fSawText=fSawTextStack[fElementDepth];
+
+    fSawCharacters=fStringContent[fElementDepth];
+
+    fWhiteSpace=-1;
+
+    fAppendBuffer=false;
+
+    fUnionType=false;
+
+  }
+
+  return augs;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void handleIgnorableWhitespace(XMLString text){
+
+  if (fSkipValidationDepth >= 0)   return;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void handleStartDocument(XMLLocator locator,String encoding){
+
+  if (fIDCChecking) {
+
+    fValueStoreCache.startDocument();
+
+  }
+
+  if (fAugPSVI) {
+
+    fCurrentPSVI.fGrammars=null;
+
+    fCurrentPSVI.fSchemaInformation=null;
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+/** 
+
+ * Handle element. 
+
+ */
+
+Augmentations handleStartElement(QName element,XMLAttributes attributes,Augmentations augs){
+
+  if (DEBUG) {
+
+    System.out.println("==>handleStartElement: " + element);
+
+  }
+
+  if (fElementDepth == -1 && fValidationManager.isGrammarFound()) {
+
+    if (fSchemaType == null && !fUseGrammarPoolOnly) {
+
+      fSchemaDynamicValidation=true;
+
+    }
+
+ else {
+
+    }
+
+  }
+
+  if (!fUseGrammarPoolOnly) {
+
+    String sLocation=attributes.getValue(SchemaSymbols.URI_XSI,SchemaSymbols.XSI_SCHEMALOCATION);
+
+    String nsLocation=attributes.getValue(SchemaSymbols.URI_XSI,SchemaSymbols.XSI_NONAMESPACESCHEMALOCATION);
+
+    storeLocations(sLocation,nsLocation);
+
+  }
+
+  if (fSkipValidationDepth >= 0) {
+
+    fElementDepth++;
+
+    if (fAugPSVI)     augs=getEmptyAugs(augs);
+
+    return augs;
+
+  }
+
+  Object decl=null;
+
+  if (fCurrentCM != null) {
+
+    decl=fCurrentCM.oneTransition(element,fCurrCMState,fSubGroupHandler);
+
+    if (fCurrCMState[0] == XSCMValidator.FIRST_ERROR) {
+
+      XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+      Vector next;
+
+      if (ctype.fParticle != null && (next=fCurrentCM.whatCanGoHere(fCurrCMState)).size() > 0) {
+
+        String expected=expectedStr(next);
+
+        final int[] occurenceInfo=fCurrentCM.occurenceInfo(fCurrCMState);
+
+        String elemExpandedQname=(element.uri != null) ? "{" + '"' + element.uri+ '"'+ ":"+ element.localpart+ "}" : element.localpart;
+
+        if (occurenceInfo != null) {
+
+          final int minOccurs=occurenceInfo[0];
+
+          final int maxOccurs=occurenceInfo[1];
+
+          final int count=occurenceInfo[2];
+
+          if (count < minOccurs) {
+
+            final int required=minOccurs - count;
+
+            if (required > 1) {
+
+              reportSchemaError("cvc-complex-type.2.4.h",new Object[]{element.rawname,fCurrentCM.getTermName(occurenceInfo[3]),Integer.toString(minOccurs),Integer.toString(required)});
+
+            }
+
+ else {
+
+              reportSchemaError("cvc-complex-type.2.4.g",new Object[]{element.rawname,fCurrentCM.getTermName(occurenceInfo[3]),Integer.toString(minOccurs)});
+
+            }
+
+          }
+
+ else           if (count >= maxOccurs && maxOccurs != SchemaSymbols.OCCURRENCE_UNBOUNDED) {
+
+            reportSchemaError("cvc-complex-type.2.4.e",new Object[]{element.rawname,expected,Integer.toString(maxOccurs)});
+
+          }
+
+ else {
+
+            reportSchemaError("cvc-complex-type.2.4.a",new Object[]{elemExpandedQname,expected});
+
+          }
+
+        }
+
+ else {
+
+          reportSchemaError("cvc-complex-type.2.4.a",new Object[]{elemExpandedQname,expected});
+
+        }
+
+      }
+
+ else {
+
+        final int[] occurenceInfo=fCurrentCM.occurenceInfo(fCurrCMState);
+
+        if (occurenceInfo != null) {
+
+          final int maxOccurs=occurenceInfo[1];
+
+          final int count=occurenceInfo[2];
+
+          if (count >= maxOccurs && maxOccurs != SchemaSymbols.OCCURRENCE_UNBOUNDED) {
+
+            reportSchemaError("cvc-complex-type.2.4.f",new Object[]{fCurrentCM.getTermName(occurenceInfo[3]),Integer.toString(maxOccurs)});
+
+          }
+
+ else {
+
+            reportSchemaError("cvc-complex-type.2.4.d",new Object[]{element.rawname});
+
+          }
+
+        }
+
+ else {
+
+          reportSchemaError("cvc-complex-type.2.4.d",new Object[]{element.rawname});
+
+        }
+
+      }
+
+    }
+
+  }
+
+  if (fElementDepth != -1) {
+
+    ensureStackCapacity();
+
+    fSubElementStack[fElementDepth]=true;
+
+    fSubElement=false;
+
+    fElemDeclStack[fElementDepth]=fCurrentElemDecl;
+
+    fNilStack[fElementDepth]=fNil;
+
+    fNotationStack[fElementDepth]=fNotation;
+
+    fTypeStack[fElementDepth]=fCurrentType;
+
+    fStrictAssessStack[fElementDepth]=fStrictAssess;
+
+    fCMStack[fElementDepth]=fCurrentCM;
+
+    fCMStateStack[fElementDepth]=fCurrCMState;
+
+    fSawTextStack[fElementDepth]=fSawText;
+
+    fStringContent[fElementDepth]=fSawCharacters;
+
+  }
+
+  fElementDepth++;
+
+  fCurrentElemDecl=null;
+
+  XSWildcardDecl wildcard=null;
+
+  fCurrentType=null;
+
+  fStrictAssess=true;
+
+  fNil=false;
+
+  fNotation=null;
+
+  fBuffer.setLength(0);
+
+  fSawText=false;
+
+  fSawCharacters=false;
+
+  if (decl != null) {
+
+    if (decl instanceof XSElementDecl) {
+
+      fCurrentElemDecl=(XSElementDecl)decl;
+
+    }
+
+ else {
+
+      wildcard=(XSWildcardDecl)decl;
+
+    }
+
+  }
+
+  if (wildcard != null && wildcard.fProcessContents == XSWildcardDecl.PC_SKIP) {
+
+    fSkipValidationDepth=fElementDepth;
+
+    if (fAugPSVI)     augs=getEmptyAugs(augs);
+
+    return augs;
+
+  }
+
+  if (fElementDepth == 0) {
+
+    if (fRootElementDeclaration != null) {
+
+      fCurrentElemDecl=fRootElementDeclaration;
+
+      checkElementMatchesRootElementDecl(fCurrentElemDecl,element);
+
+    }
+
+ else     if (fRootElementDeclQName != null) {
+
+      processRootElementDeclQName(fRootElementDeclQName,element);
+
+    }
+
+ else     if (fRootTypeDefinition != null) {
+
+      fCurrentType=fRootTypeDefinition;
+
+    }
+
+ else     if (fRootTypeQName != null) {
+
+      processRootTypeQName(fRootTypeQName);
+
+    }
+
+  }
+
+  if (fCurrentType == null) {
+
+    if (fCurrentElemDecl == null) {
+
+      SchemaGrammar sGrammar=findSchemaGrammar(XSDDescription.CONTEXT_ELEMENT,element.uri,null,element,attributes);
+
+      if (sGrammar != null) {
+
+        fCurrentElemDecl=sGrammar.getGlobalElementDecl(element.localpart);
+
+      }
+
+    }
+
+    if (fCurrentElemDecl != null) {
+
+      fCurrentType=fCurrentElemDecl.fType;
+
+    }
+
+  }
+
+  if (fElementDepth == fIgnoreXSITypeDepth && fCurrentElemDecl == null) {
+
+    fIgnoreXSITypeDepth++;
+
+  }
+
+  String xsiType=null;
+
+  if (fElementDepth >= fIgnoreXSITypeDepth) {
+
+    xsiType=attributes.getValue(SchemaSymbols.URI_XSI,SchemaSymbols.XSI_TYPE);
+
+  }
+
+  if (fCurrentType == null && xsiType == null) {
+
+    if (fElementDepth == 0) {
+
+      if (fDynamicValidation || fSchemaDynamicValidation) {
+
+        if (fDocumentSource != null) {
+
+          fDocumentSource.setDocumentHandler(fDocumentHandler);
+
+          if (fDocumentHandler != null)           fDocumentHandler.setDocumentSource(fDocumentSource);
+
+          fElementDepth=-2;
+
+          return augs;
+
+        }
+
+        fSkipValidationDepth=fElementDepth;
+
+        if (fAugPSVI)         augs=getEmptyAugs(augs);
+
+        return augs;
+
+      }
+
+      fXSIErrorReporter.fErrorReporter.reportError(XSMessageFormatter.SCHEMA_DOMAIN,"cvc-elt.1.a",new Object[]{element.rawname},XMLErrorReporter.SEVERITY_ERROR);
+
+    }
+
+ else     if (wildcard != null && wildcard.fProcessContents == XSWildcardDecl.PC_STRICT) {
+
+      reportSchemaError("cvc-complex-type.2.4.c",new Object[]{element.rawname});
+
+    }
+
+    fCurrentType=SchemaGrammar.fAnyType;
+
+    fStrictAssess=false;
+
+    fNFullValidationDepth=fElementDepth;
+
+    fAppendBuffer=false;
+
+    fXSIErrorReporter.pushContext();
+
+  }
+
+ else {
+
+    fXSIErrorReporter.pushContext();
+
+    if (xsiType != null) {
+
+      XSTypeDefinition oldType=fCurrentType;
+
+      fCurrentType=getAndCheckXsiType(element,xsiType,attributes);
+
+      if (fCurrentType == null) {
+
+        if (oldType == null)         fCurrentType=SchemaGrammar.fAnyType;
+
+ else         fCurrentType=oldType;
+
+      }
+
+    }
+
+    fNNoneValidationDepth=fElementDepth;
+
+    if (fCurrentElemDecl != null && fCurrentElemDecl.getConstraintType() == XSConstants.VC_FIXED) {
+
+      fAppendBuffer=true;
+
+    }
+
+ else     if (fCurrentType.getTypeCategory() == XSTypeDefinition.SIMPLE_TYPE) {
+
+      fAppendBuffer=true;
+
+    }
+
+ else {
+
+      XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+      fAppendBuffer=(ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_SIMPLE);
+
+    }
+
+  }
+
+  if (fCurrentElemDecl != null && fCurrentElemDecl.getAbstract())   reportSchemaError("cvc-elt.2",new Object[]{element.rawname});
+
+  if (fElementDepth == 0) {
+
+    fValidationRoot=element.rawname;
+
+  }
+
+  if (fNormalizeData) {
+
+    fFirstChunk=true;
+
+    fTrailing=false;
+
+    fUnionType=false;
+
+    fWhiteSpace=-1;
+
+  }
+
+  if (fCurrentType.getTypeCategory() == XSTypeDefinition.COMPLEX_TYPE) {
+
+    XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+    if (ctype.getAbstract()) {
+
+      reportSchemaError("cvc-type.2",new Object[]{element.rawname});
+
+    }
+
+    if (fNormalizeData) {
+
+      if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_SIMPLE) {
+
+        if (ctype.fXSSimpleType.getVariety() == XSSimpleType.VARIETY_UNION) {
+
+          fUnionType=true;
+
+        }
+
+ else {
+
+          try {
+
+            fWhiteSpace=ctype.fXSSimpleType.getWhitespace();
+
+          }
+
+ catch (          DatatypeException e) {
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+ else   if (fNormalizeData) {
+
+    XSSimpleType dv=(XSSimpleType)fCurrentType;
+
+    if (dv.getVariety() == XSSimpleType.VARIETY_UNION) {
+
+      fUnionType=true;
+
+    }
+
+ else {
+
+      try {
+
+        fWhiteSpace=dv.getWhitespace();
+
+      }
+
+ catch (      DatatypeException e) {
+
+      }
+
+    }
+
+  }
+
+  fCurrentCM=null;
+
+  if (fCurrentType.getTypeCategory() == XSTypeDefinition.COMPLEX_TYPE) {
+
+    fCurrentCM=((XSComplexTypeDecl)fCurrentType).getContentModel(fCMBuilder);
+
+  }
+
+  fCurrCMState=null;
+
+  if (fCurrentCM != null)   fCurrCMState=fCurrentCM.startContentModel();
+
+  String xsiNil=attributes.getValue(SchemaSymbols.URI_XSI,SchemaSymbols.XSI_NIL);
+
+  if (xsiNil != null && fCurrentElemDecl != null)   fNil=getXsiNil(element,xsiNil);
+
+  XSAttributeGroupDecl attrGrp=null;
+
+  if (fCurrentType.getTypeCategory() == XSTypeDefinition.COMPLEX_TYPE) {
+
+    XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+    attrGrp=ctype.getAttrGrp();
+
+  }
+
+  if (fIDCChecking) {
+
+    fValueStoreCache.startElement();
+
+    fMatcherStack.pushContext();
+
+    if (fCurrentElemDecl != null && fCurrentElemDecl.fIDCPos > 0) {
+
+      fIdConstraint=true;
+
+      fValueStoreCache.initValueStoresFor(fCurrentElemDecl,this);
+
+    }
+
+  }
+
+  processAttributes(element,attributes,attrGrp);
+
+  if (attrGrp != null) {
+
+    addDefaultAttributes(element,attributes,attrGrp);
+
+  }
+
+  int count=fMatcherStack.getMatcherCount();
+
+  for (int i=0; i < count; i++) {
+
+    XPathMatcher matcher=fMatcherStack.getMatcherAt(i);
+
+    matcher.startElement(element,attributes);
+
+  }
+
+  if (fAugPSVI) {
+
+    augs=getEmptyAugs(augs);
+
+    fCurrentPSVI.fValidationContext=fValidationRoot;
+
+    fCurrentPSVI.fDeclaration=fCurrentElemDecl;
+
+    fCurrentPSVI.fTypeDecl=fCurrentType;
+
+    fCurrentPSVI.fNotation=fNotation;
+
+    fCurrentPSVI.fNil=fNil;
+
+  }
+
+  return augs;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+private boolean hasSchemaComponent(SchemaGrammar grammar,short contextType,QName triggeringComponent){
+
+  if (grammar != null && triggeringComponent != null) {
+
+    String localName=triggeringComponent.localpart;
+
+    if (localName != null && localName.length() > 0) {
+
+switch (contextType) {
+
+case XSDDescription.CONTEXT_ELEMENT:
+
+        return grammar.getElementDeclaration(localName) != null;
+
+case XSDDescription.CONTEXT_ATTRIBUTE:
+
+      return grammar.getAttributeDeclaration(localName) != null;
+
+case XSDDescription.CONTEXT_XSITYPE:
+
+    return grammar.getTypeDefinition(localName) != null;
+
+}
+
+}
+
+}
+
+return false;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+private void normalizeWhitespace(String value,boolean collapse){
+
+  boolean skipSpace=collapse;
+
+  char c;
+
+  int size=value.length();
+
+  if (fNormalizedStr.ch == null || fNormalizedStr.ch.length < size) {
+
+    fNormalizedStr.ch=new char[size];
+
+  }
+
+  fNormalizedStr.offset=0;
+
+  fNormalizedStr.length=0;
+
+  for (int i=0; i < size; i++) {
+
+    c=value.charAt(i);
+
+    if (XMLChar.isSpace(c)) {
+
+      if (!skipSpace) {
+
+        fNormalizedStr.ch[fNormalizedStr.length++]=' ';
+
+        skipSpace=collapse;
+
+      }
+
+    }
+
+ else {
+
+      fNormalizedStr.ch[fNormalizedStr.length++]=c;
+
+      skipSpace=false;
+
+    }
+
+  }
+
+  if (skipSpace) {
+
+    if (fNormalizedStr.length != 0)     fNormalizedStr.length--;
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+/** 
+
+ * Normalize whitespace in an XMLString according to the rules defined in XML Schema specifications.
+
+ * @param value    The string to normalize.
+
+ * @param collapse replace or collapse
+
+ */
+
+private void normalizeWhitespace(XMLString value,boolean collapse){
+
+  boolean skipSpace=collapse;
+
+  boolean sawNonWS=false;
+
+  boolean leading=false;
+
+  boolean trailing=false;
+
+  char c;
+
+  int size=value.offset + value.length;
+
+  if (fNormalizedStr.ch == null || fNormalizedStr.ch.length < value.length + 1) {
+
+    fNormalizedStr.ch=new char[value.length + 1];
+
+  }
+
+  fNormalizedStr.offset=1;
+
+  fNormalizedStr.length=1;
+
+  for (int i=value.offset; i < size; i++) {
+
+    c=value.ch[i];
+
+    if (XMLChar.isSpace(c)) {
+
+      if (!skipSpace) {
+
+        fNormalizedStr.ch[fNormalizedStr.length++]=' ';
+
+        skipSpace=collapse;
+
+      }
+
+      if (!sawNonWS) {
+
+        leading=true;
+
+      }
+
+    }
+
+ else {
+
+      fNormalizedStr.ch[fNormalizedStr.length++]=c;
+
+      skipSpace=false;
+
+      sawNonWS=true;
+
+    }
+
+  }
+
+  if (skipSpace) {
+
+    if (fNormalizedStr.length > 1) {
+
+      fNormalizedStr.length--;
+
+      trailing=true;
+
+    }
+
+ else     if (leading && !fFirstChunk) {
+
+      trailing=true;
+
+    }
+
+  }
+
+  if (fNormalizedStr.length > 1) {
+
+    if (!fFirstChunk && (fWhiteSpace == XSSimpleType.WS_COLLAPSE)) {
+
+      if (fTrailing) {
+
+        fNormalizedStr.offset=0;
+
+        fNormalizedStr.ch[0]=' ';
+
+      }
+
+ else       if (leading) {
+
+        fNormalizedStr.offset=0;
+
+        fNormalizedStr.ch[0]=' ';
+
+      }
+
+    }
+
+  }
+
+  fNormalizedStr.length-=fNormalizedStr.offset;
+
+  fTrailing=trailing;
+
+  if (trailing || sawNonWS)   fFirstChunk=false;
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void processAttributes(QName element,XMLAttributes attributes,XSAttributeGroupDecl attrGrp){
+
+  if (DEBUG) {
+
+    System.out.println("==>processAttributes: " + attributes.getLength());
+
+  }
+
+  String wildcardIDName=null;
+
+  int attCount=attributes.getLength();
+
+  Augmentations augs=null;
+
+  AttributePSVImpl attrPSVI=null;
+
+  boolean isSimple=fCurrentType == null || fCurrentType.getTypeCategory() == XSTypeDefinition.SIMPLE_TYPE;
+
+  XSObjectList attrUses=null;
+
+  int useCount=0;
+
+  XSWildcardDecl attrWildcard=null;
+
+  if (!isSimple) {
+
+    attrUses=attrGrp.getAttributeUses();
+
+    useCount=attrUses.getLength();
+
+    attrWildcard=attrGrp.fAttributeWC;
+
+  }
+
+  for (int index=0; index < attCount; index++) {
+
+    attributes.getName(index,fTempQName);
+
+    if (DEBUG) {
+
+      System.out.println("==>process attribute: " + fTempQName);
+
+    }
+
+    if (fAugPSVI || fIdConstraint) {
+
+      augs=attributes.getAugmentations(index);
+
+      attrPSVI=(AttributePSVImpl)augs.getItem(Constants.ATTRIBUTE_PSVI);
+
+      if (attrPSVI != null) {
+
+        attrPSVI.reset();
+
+      }
+
+ else {
+
+        attrPSVI=new AttributePSVImpl();
+
+        augs.putItem(Constants.ATTRIBUTE_PSVI,attrPSVI);
+
+      }
+
+      attrPSVI.fValidationContext=fValidationRoot;
+
+    }
+
+    if (fTempQName.uri == SchemaSymbols.URI_XSI) {
+
+      XSAttributeDecl attrDecl=null;
+
+      if (fTempQName.localpart == SchemaSymbols.XSI_TYPE) {
+
+        attrDecl=XSI_TYPE;
+
+      }
+
+ else       if (fTempQName.localpart == SchemaSymbols.XSI_NIL) {
+
+        attrDecl=XSI_NIL;
+
+      }
+
+ else       if (fTempQName.localpart == SchemaSymbols.XSI_SCHEMALOCATION) {
+
+        attrDecl=XSI_SCHEMALOCATION;
+
+      }
+
+ else       if (fTempQName.localpart == SchemaSymbols.XSI_NONAMESPACESCHEMALOCATION) {
+
+        attrDecl=XSI_NONAMESPACESCHEMALOCATION;
+
+      }
+
+      if (attrDecl != null) {
+
+        processOneAttribute(element,attributes,index,attrDecl,null,attrPSVI);
+
+        continue;
+
+      }
+
+    }
+
+    if (fTempQName.rawname == XMLSymbols.PREFIX_XMLNS || fTempQName.rawname.startsWith("xmlns:")) {
+
+      continue;
+
+    }
+
+    if (isSimple) {
+
+      reportSchemaError("cvc-type.3.1.1",new Object[]{element.rawname,fTempQName.rawname});
+
+      continue;
+
+    }
+
+    XSAttributeUseImpl currUse=null, oneUse;
+
+    for (int i=0; i < useCount; i++) {
+
+      oneUse=(XSAttributeUseImpl)attrUses.item(i);
+
+      if (oneUse.fAttrDecl.fName == fTempQName.localpart && oneUse.fAttrDecl.fTargetNamespace == fTempQName.uri) {
+
+        currUse=oneUse;
+
+        break;
+
+      }
+
+    }
+
+    if (currUse == null) {
+
+      if (attrWildcard == null || !attrWildcard.allowNamespace(fTempQName.uri)) {
+
+        reportSchemaError("cvc-complex-type.3.2.2",new Object[]{element.rawname,fTempQName.rawname});
+
+        fNFullValidationDepth=fElementDepth;
+
+        continue;
+
+      }
+
+    }
+
+    XSAttributeDecl currDecl=null;
+
+    if (currUse != null) {
+
+      currDecl=currUse.fAttrDecl;
+
+    }
+
+ else {
+
+      if (attrWildcard.fProcessContents == XSWildcardDecl.PC_SKIP)       continue;
+
+      SchemaGrammar grammar=findSchemaGrammar(XSDDescription.CONTEXT_ATTRIBUTE,fTempQName.uri,element,fTempQName,attributes);
+
+      if (grammar != null) {
+
+        currDecl=grammar.getGlobalAttributeDecl(fTempQName.localpart);
+
+      }
+
+      if (currDecl == null) {
+
+        if (attrWildcard.fProcessContents == XSWildcardDecl.PC_STRICT) {
+
+          reportSchemaError("cvc-complex-type.3.2.2",new Object[]{element.rawname,fTempQName.rawname});
+
+        }
+
+        continue;
+
+      }
+
+ else {
+
+        if (currDecl.fType.getTypeCategory() == XSTypeDefinition.SIMPLE_TYPE && ((XSSimpleType)currDecl.fType).isIDType()) {
+
+          if (wildcardIDName != null) {
+
+            reportSchemaError("cvc-complex-type.5.1",new Object[]{element.rawname,currDecl.fName,wildcardIDName});
+
+          }
+
+ else           wildcardIDName=currDecl.fName;
+
+        }
+
+      }
+
+    }
+
+    processOneAttribute(element,attributes,index,currDecl,currUse,attrPSVI);
+
+  }
+
+  if (!isSimple && attrGrp.fIDAttrName != null && wildcardIDName != null) {
+
+    reportSchemaError("cvc-complex-type.5.2",new Object[]{element.rawname,wildcardIDName,attrGrp.fIDAttrName});
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+/** 
+
+ * If there is not text content, and there is a {value constraint} on the corresponding element decl, then return an XMLString representing the default value.
+
+ */
+
+void processElementContent(QName element){
+
+  if (fCurrentElemDecl != null && fCurrentElemDecl.fDefault != null && !fSawText && !fSubElement && !fNil) {
+
+    String strv=fCurrentElemDecl.fDefault.stringValue();
+
+    int bufLen=strv.length();
+
+    if (fNormalizedStr.ch == null || fNormalizedStr.ch.length < bufLen) {
+
+      fNormalizedStr.ch=new char[bufLen];
+
+    }
+
+    strv.getChars(0,bufLen,fNormalizedStr.ch,0);
+
+    fNormalizedStr.offset=0;
+
+    fNormalizedStr.length=bufLen;
+
+    fDefaultValue=fNormalizedStr;
+
+  }
+
+  fValidatedInfo.normalizedValue=null;
+
+  if (fNil) {
+
+    if (fSubElement || fSawText) {
+
+      reportSchemaError("cvc-elt.3.2.1",new Object[]{element.rawname,SchemaSymbols.URI_XSI + "," + SchemaSymbols.XSI_NIL});
+
+    }
+
+  }
+
+  this.fValidatedInfo.reset();
+
+  if (fCurrentElemDecl != null && fCurrentElemDecl.getConstraintType() != XSConstants.VC_NONE && !fSubElement && !fSawText && !fNil) {
+
+    if (fCurrentType != fCurrentElemDecl.fType) {
+
+      if (XSConstraints.ElementDefaultValidImmediate(fCurrentType,fCurrentElemDecl.fDefault.stringValue(),fState4XsiType,null) == null)       reportSchemaError("cvc-elt.5.1.1",new Object[]{element.rawname,fCurrentType.getName(),fCurrentElemDecl.fDefault.stringValue()});
+
+    }
+
+    elementLocallyValidType(element,fCurrentElemDecl.fDefault.stringValue());
+
+  }
+
+ else {
+
+    Object actualValue=elementLocallyValidType(element,fBuffer);
+
+    if (fCurrentElemDecl != null && fCurrentElemDecl.getConstraintType() == XSConstants.VC_FIXED && !fNil) {
+
+      String content=fBuffer.toString();
+
+      if (fSubElement)       reportSchemaError("cvc-elt.5.2.2.1",new Object[]{element.rawname});
+
+      if (fCurrentType.getTypeCategory() == XSTypeDefinition.COMPLEX_TYPE) {
+
+        XSComplexTypeDecl ctype=(XSComplexTypeDecl)fCurrentType;
+
+        if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_MIXED) {
+
+          if (!fCurrentElemDecl.fDefault.normalizedValue.equals(content))           reportSchemaError("cvc-elt.5.2.2.2.1",new Object[]{element.rawname,content,fCurrentElemDecl.fDefault.normalizedValue});
+
+        }
+
+ else         if (ctype.fContentType == XSComplexTypeDecl.CONTENTTYPE_SIMPLE) {
+
+          if (actualValue != null && (!ValidatedInfo.isComparable(fValidatedInfo,fCurrentElemDecl.fDefault) || !actualValue.equals(fCurrentElemDecl.fDefault.actualValue))) {
+
+            reportSchemaError("cvc-elt.5.2.2.2.2",new Object[]{element.rawname,content,fCurrentElemDecl.fDefault.stringValue()});
+
+          }
+
+        }
+
+      }
+
+ else       if (fCurrentType.getTypeCategory() == XSTypeDefinition.SIMPLE_TYPE) {
+
+        if (actualValue != null && (!ValidatedInfo.isComparable(fValidatedInfo,fCurrentElemDecl.fDefault) || !actualValue.equals(fCurrentElemDecl.fDefault.actualValue))) {
+
+          reportSchemaError("cvc-elt.5.2.2.2.2",new Object[]{element.rawname,content,fCurrentElemDecl.fDefault.stringValue()});
+
+        }
+
+      }
+
+    }
+
+  }
+
+  if (fDefaultValue == null && fNormalizeData && fDocumentHandler != null && fUnionType) {
+
+    String content=fValidatedInfo.normalizedValue;
+
+    if (content == null)     content=fBuffer.toString();
+
+    int bufLen=content.length();
+
+    if (fNormalizedStr.ch == null || fNormalizedStr.ch.length < bufLen) {
+
+      fNormalizedStr.ch=new char[bufLen];
+
+    }
+
+    content.getChars(0,bufLen,fNormalizedStr.ch,0);
+
+    fNormalizedStr.offset=0;
+
+    fNormalizedStr.length=bufLen;
+
+    fDocumentHandler.characters(fNormalizedStr,null);
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void processOneAttribute(QName element,XMLAttributes attributes,int index,XSAttributeDecl currDecl,XSAttributeUseImpl currUse,AttributePSVImpl attrPSVI){
+
+  String attrValue=attributes.getValue(index);
+
+  fXSIErrorReporter.pushContext();
+
+  XSSimpleType attDV=currDecl.fType;
+
+  Object actualValue=null;
+
+  try {
+
+    actualValue=attDV.validate(attrValue,fValidationState,fValidatedInfo);
+
+    if (fNormalizeData) {
+
+      attributes.setValue(index,fValidatedInfo.normalizedValue);
+
+    }
+
+    if (attDV.getVariety() == XSSimpleType.VARIETY_ATOMIC && attDV.getPrimitiveKind() == XSSimpleType.PRIMITIVE_NOTATION) {
+
+      QName qName=(QName)actualValue;
+
+      SchemaGrammar grammar=fGrammarBucket.getGrammar(qName.uri);
+
+      if (grammar != null) {
+
+        fNotation=grammar.getGlobalNotationDecl(qName.localpart);
+
+      }
+
+    }
+
+  }
+
+ catch (  InvalidDatatypeValueException idve) {
+
+    reportSchemaError(idve.getKey(),idve.getArgs());
+
+    reportSchemaError("cvc-attribute.3",new Object[]{element.rawname,fTempQName.rawname,attrValue,(attDV instanceof XSSimpleTypeDecl) ? ((XSSimpleTypeDecl)attDV).getTypeName() : attDV.getName()});
+
+  }
+
+  if (actualValue != null && currDecl.getConstraintType() == XSConstants.VC_FIXED) {
+
+    if (!ValidatedInfo.isComparable(fValidatedInfo,currDecl.fDefault) || !actualValue.equals(currDecl.fDefault.actualValue)) {
+
+      reportSchemaError("cvc-attribute.4",new Object[]{element.rawname,fTempQName.rawname,attrValue,currDecl.fDefault.stringValue()});
+
+    }
+
+  }
+
+  if (actualValue != null && currUse != null && currUse.fConstraintType == XSConstants.VC_FIXED) {
+
+    if (!ValidatedInfo.isComparable(fValidatedInfo,currUse.fDefault) || !actualValue.equals(currUse.fDefault.actualValue)) {
+
+      reportSchemaError("cvc-complex-type.3.1",new Object[]{element.rawname,fTempQName.rawname,attrValue,currUse.fDefault.stringValue()});
+
+    }
+
+  }
+
+  if (fIdConstraint) {
+
+    attrPSVI.fValue.copyFrom(fValidatedInfo);
+
+  }
+
+  if (fAugPSVI) {
+
+    attrPSVI.fDeclaration=currDecl;
+
+    attrPSVI.fTypeDecl=attDV;
+
+    attrPSVI.fValue.copyFrom(fValidatedInfo);
+
+    attrPSVI.fValidationAttempted=AttributePSVI.VALIDATION_FULL;
+
+    fNNoneValidationDepth=fElementDepth;
+
+    String[] errors=fXSIErrorReporter.mergeContext();
+
+    attrPSVI.fErrors=errors;
+
+    attrPSVI.fValidity=(errors == null) ? AttributePSVI.VALIDITY_VALID : AttributePSVI.VALIDITY_INVALID;
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void processRootElementDeclQName(final javax.xml.namespace.QName rootElementDeclQName,final QName element){
+
+  String rootElementDeclNamespace=rootElementDeclQName.getNamespaceURI();
+
+  rootElementDeclNamespace=fSymbolTable.addSymbol(rootElementDeclNamespace);
+
+  if (rootElementDeclNamespace != null && rootElementDeclNamespace.equals(XMLConstants.NULL_NS_URI)) {
+
+    rootElementDeclNamespace=null;
+
+  }
+
+  final SchemaGrammar grammarForRootElement=findSchemaGrammar(XSDDescription.CONTEXT_ELEMENT,rootElementDeclNamespace,null,null,null);
+
+  if (grammarForRootElement != null) {
+
+    fCurrentElemDecl=grammarForRootElement.getGlobalElementDecl(rootElementDeclQName.getLocalPart());
+
+  }
+
+  if (fCurrentElemDecl == null) {
+
+    String declName=(rootElementDeclQName.getPrefix().equals(XMLConstants.DEFAULT_NS_PREFIX)) ? rootElementDeclQName.getLocalPart() : rootElementDeclQName.getPrefix() + ":" + rootElementDeclQName.getLocalPart();
+
+    reportSchemaError("cvc-elt.1.a",new Object[]{declName});
+
+  }
+
+ else {
+
+    checkElementMatchesRootElementDecl(fCurrentElemDecl,element);
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void processRootTypeQName(final javax.xml.namespace.QName rootTypeQName){
+
+  String rootTypeNamespace=rootTypeQName.getNamespaceURI();
+
+  rootTypeNamespace=fSymbolTable.addSymbol(rootTypeNamespace);
+
+  if (rootTypeNamespace != null && rootTypeNamespace.equals(XMLConstants.NULL_NS_URI)) {
+
+    rootTypeNamespace=null;
+
+  }
+
+  if (SchemaSymbols.URI_SCHEMAFORSCHEMA.equals(rootTypeNamespace)) {
+
+    fCurrentType=SchemaGrammar.SG_SchemaNS.getGlobalTypeDecl(rootTypeQName.getLocalPart());
+
+  }
+
+ else {
+
+    final SchemaGrammar grammarForRootType=findSchemaGrammar(XSDDescription.CONTEXT_ELEMENT,rootTypeNamespace,null,null,null);
+
+    if (grammarForRootType != null) {
+
+      fCurrentType=grammarForRootType.getGlobalTypeDecl(rootTypeQName.getLocalPart());
+
+    }
+
+  }
+
+  if (fCurrentType == null) {
+
+    String typeName=(rootTypeQName.getPrefix().equals(XMLConstants.DEFAULT_NS_PREFIX)) ? rootTypeQName.getLocalPart() : rootTypeQName.getPrefix() + ":" + rootTypeQName.getLocalPart();
+
+    reportSchemaError("cvc-type.1",new Object[]{typeName});
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void reportSchemaError(String key,Object[] arguments){
+
+  if (fDoValidation)   fXSIErrorReporter.reportError(XSMessageFormatter.SCHEMA_DOMAIN,key,arguments,XMLErrorReporter.SEVERITY_ERROR);
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+private void setLocationHints(XSDDescription desc,String[] locations,SchemaGrammar grammar){
+
+  int length=locations.length;
+
+  if (grammar == null) {
+
+    fXSDDescription.fLocationHints=new String[length];
+
+    System.arraycopy(locations,0,fXSDDescription.fLocationHints,0,length);
+
+  }
+
+ else {
+
+    setLocationHints(desc,locations,grammar.getDocumentLocations());
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+private void setLocationHints(XSDDescription desc,String[] locations,StringList docLocations){
+
+  int length=locations.length;
+
+  String[] hints=new String[length];
+
+  int counter=0;
+
+  for (int i=0; i < length; i++) {
+
+    if (!docLocations.contains(locations[i])) {
+
+      hints[counter++]=locations[i];
+
+    }
+
+  }
+
+  if (counter > 0) {
+
+    if (counter == length) {
+
+      fXSDDescription.fLocationHints=hints;
+
+    }
+
+ else {
+
+      fXSDDescription.fLocationHints=new String[counter];
+
+      System.arraycopy(hints,0,fXSDDescription.fLocationHints,0,counter);
+
+    }
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+void storeLocations(String sLocation,String nsLocation){
+
+  if (sLocation != null) {
+
+    if (!XMLSchemaLoader.tokenizeSchemaLocationStr(sLocation,fLocationPairs,fLocator == null ? null : fLocator.getExpandedSystemId())) {
+
+      fXSIErrorReporter.reportError(XSMessageFormatter.SCHEMA_DOMAIN,"SchemaLocation",new Object[]{sLocation},XMLErrorReporter.SEVERITY_WARNING);
+
+    }
+
+  }
+
+  if (nsLocation != null) {
+
+    XMLSchemaLoader.LocationArray la=((XMLSchemaLoader.LocationArray)fLocationPairs.get(XMLSymbols.EMPTY_STRING));
+
+    if (la == null) {
+
+      la=new XMLSchemaLoader.LocationArray();
+
+      fLocationPairs.put(XMLSymbols.EMPTY_STRING,la);
+
+    }
+
+    if (fLocator != null) {
+
+      try {
+
+        nsLocation=XMLEntityManager.expandSystemId(nsLocation,fLocator.getExpandedSystemId(),false);
+
+      }
+
+ catch (      MalformedURIException e) {
+
+      }
+
+    }
+
+    la.addLocation(nsLocation);
+
+  }
+
+}
+
+Location: XMLSchemaValidator.java
+
+Content: 
+
+/** 
+
+ * Default constructor. 
+
+ */
+
+public XMLSchemaValidator(){
+
+  fState4XsiType.setExtraChecking(false);
+
+  fState4ApplyDefault.setFacetChecking(false);
+
+}
+

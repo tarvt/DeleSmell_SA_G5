@@ -1,0 +1,392 @@
+Location: XPath.java
+
+Content: 
+
+/** 
+
+ * Used by the  {@link #parseExpression(NamespaceContext)} methodto build a  {@link LocationPath} object from the accumulated{@link Step}s.
+
+ */
+
+private LocationPath buildLocationPath(Vector stepsVector) throws XPathException {
+
+  int size=stepsVector.size();
+
+  check(size != 0);
+
+  Step[] steps=new Step[size];
+
+  stepsVector.copyInto(steps);
+
+  stepsVector.removeAllElements();
+
+  return new LocationPath(steps);
+
+}
+
+Location: XPath.java
+
+Content: 
+
+/** 
+
+ * Used by the  {@link #parseExpression(NamespaceContext)} methodto verify the assumption. If <tt>b</tt> is false, this method throws XPathException to report the error.
+
+ */
+
+private static void check(boolean b) throws XPathException {
+
+  if (!b)   throw new XPathException("c-general-xpath");
+
+}
+
+Location: XPath.java
+
+Content: 
+
+/** 
+
+ * Returns a representation of the first location path for this XPath. 
+
+ */
+
+public LocationPath getLocationPath(){
+
+  return (LocationPath)fLocationPaths[0].clone();
+
+}
+
+Location: XPath.java
+
+Content: 
+
+/** 
+
+ * Returns a representation of all location paths for this XPath. XPath = locationPath ( '|' locationPath)
+
+ */
+
+public LocationPath[] getLocationPaths(){
+
+  LocationPath[] ret=new LocationPath[fLocationPaths.length];
+
+  for (int i=0; i < fLocationPaths.length; i++) {
+
+    ret[i]=(LocationPath)fLocationPaths[i].clone();
+
+  }
+
+  return ret;
+
+}
+
+Location: XPath.java
+
+Content: 
+
+/** 
+
+ * This method is implemented by using the XPathExprScanner and examining the list of tokens that it returns.
+
+ */
+
+private LocationPath[] parseExpression(final NamespaceContext context) throws XPathException {
+
+  final XPath.Tokens xtokens=new XPath.Tokens(fSymbolTable);
+
+  XPath.Scanner scanner=new XPath.Scanner(fSymbolTable){
+
+    protected void addToken(    XPath.Tokens tokens,    int token) throws XPathException {
+
+      if (token == XPath.Tokens.EXPRTOKEN_ATSIGN || token == XPath.Tokens.EXPRTOKEN_NAMETEST_QNAME || token == XPath.Tokens.EXPRTOKEN_OPERATOR_SLASH || token == XPath.Tokens.EXPRTOKEN_PERIOD || token == XPath.Tokens.EXPRTOKEN_NAMETEST_ANY || token == XPath.Tokens.EXPRTOKEN_NAMETEST_NAMESPACE || token == XPath.Tokens.EXPRTOKEN_OPERATOR_DOUBLE_SLASH || token == XPath.Tokens.EXPRTOKEN_OPERATOR_UNION || token == XPath.Tokens.EXPRTOKEN_AXISNAME_CHILD || token == XPath.Tokens.EXPRTOKEN_AXISNAME_ATTRIBUTE || token == XPath.Tokens.EXPRTOKEN_DOUBLE_COLON) {
+
+        super.addToken(tokens,token);
+
+        return;
+
+      }
+
+      throw new XPathException("c-general-xpath");
+
+    }
+
+  }
+
+;
+
+  int length=fExpression.length();
+
+  boolean success=scanner.scanExpr(fSymbolTable,xtokens,fExpression,0,length);
+
+  if (!success)   throw new XPathException("c-general-xpath");
+
+  Vector stepsVector=new Vector();
+
+  ArrayList locationPathsVector=new ArrayList();
+
+  boolean expectingStep=true;
+
+  while (xtokens.hasMore()) {
+
+    final int token=xtokens.nextToken();
+
+switch (token) {
+
+case XPath.Tokens.EXPRTOKEN_OPERATOR_UNION:
+
+{
+
+        check(!expectingStep);
+
+        locationPathsVector.add(buildLocationPath(stepsVector));
+
+        expectingStep=true;
+
+        break;
+
+      }
+
+case XPath.Tokens.EXPRTOKEN_ATSIGN:
+
+{
+
+      check(expectingStep);
+
+      Step step=new Step(new Axis(Axis.ATTRIBUTE),parseNodeTest(xtokens.nextToken(),xtokens,context));
+
+      stepsVector.addElement(step);
+
+      expectingStep=false;
+
+      break;
+
+    }
+
+case XPath.Tokens.EXPRTOKEN_AXISNAME_ATTRIBUTE:
+
+{
+
+    check(expectingStep);
+
+    if (xtokens.nextToken() != XPath.Tokens.EXPRTOKEN_DOUBLE_COLON) {
+
+      throw new XPathException("c-general-xpath");
+
+    }
+
+    Step step=new Step(new Axis(Axis.ATTRIBUTE),parseNodeTest(xtokens.nextToken(),xtokens,context));
+
+    stepsVector.addElement(step);
+
+    expectingStep=false;
+
+    break;
+
+  }
+
+case XPath.Tokens.EXPRTOKEN_NAMETEST_ANY:
+
+case XPath.Tokens.EXPRTOKEN_NAMETEST_NAMESPACE:
+
+case XPath.Tokens.EXPRTOKEN_NAMETEST_QNAME:
+
+{
+
+  check(expectingStep);
+
+  Step step=new Step(new Axis(Axis.CHILD),parseNodeTest(token,xtokens,context));
+
+  stepsVector.addElement(step);
+
+  expectingStep=false;
+
+  break;
+
+}
+
+case XPath.Tokens.EXPRTOKEN_AXISNAME_CHILD:
+
+{
+
+check(expectingStep);
+
+if (xtokens.nextToken() != XPath.Tokens.EXPRTOKEN_DOUBLE_COLON) {
+
+  throw new XPathException("c-general-xpath");
+
+}
+
+Step step=new Step(new Axis(Axis.CHILD),parseNodeTest(xtokens.nextToken(),xtokens,context));
+
+stepsVector.addElement(step);
+
+expectingStep=false;
+
+break;
+
+}
+
+case XPath.Tokens.EXPRTOKEN_PERIOD:
+
+{
+
+check(expectingStep);
+
+expectingStep=false;
+
+if (stepsVector.size() == 0) {
+
+Axis axis=new Axis(Axis.SELF);
+
+NodeTest nodeTest=new NodeTest(NodeTest.NODE);
+
+Step step=new Step(axis,nodeTest);
+
+stepsVector.addElement(step);
+
+if (xtokens.hasMore() && xtokens.peekToken() == XPath.Tokens.EXPRTOKEN_OPERATOR_DOUBLE_SLASH) {
+
+  xtokens.nextToken();
+
+  axis=new Axis(Axis.DESCENDANT);
+
+  nodeTest=new NodeTest(NodeTest.NODE);
+
+  step=new Step(axis,nodeTest);
+
+  stepsVector.addElement(step);
+
+  expectingStep=true;
+
+}
+
+}
+
+break;
+
+}
+
+case XPath.Tokens.EXPRTOKEN_OPERATOR_DOUBLE_SLASH:
+
+{
+
+throw new XPathException("c-general-xpath");
+
+}
+
+case XPath.Tokens.EXPRTOKEN_DOUBLE_COLON:
+
+{
+
+throw new XPathException("c-general-xpath");
+
+}
+
+case XPath.Tokens.EXPRTOKEN_OPERATOR_SLASH:
+
+{
+
+check(!expectingStep);
+
+expectingStep=true;
+
+break;
+
+}
+
+default :
+
+throw new InternalError();
+
+}
+
+}
+
+check(!expectingStep);
+
+locationPathsVector.add(buildLocationPath(stepsVector));
+
+return (LocationPath[])locationPathsVector.toArray(new LocationPath[locationPathsVector.size()]);
+
+}
+
+Location: XPath.java
+
+Content: 
+
+/** 
+
+ * Used by  {@link #parseExpression} to parse a node testfrom the token list.
+
+ */
+
+private NodeTest parseNodeTest(int typeToken,Tokens xtokens,NamespaceContext context) throws XPathException {
+
+switch (typeToken) {
+
+case XPath.Tokens.EXPRTOKEN_NAMETEST_ANY:
+
+    return new NodeTest(NodeTest.WILDCARD);
+
+case XPath.Tokens.EXPRTOKEN_NAMETEST_NAMESPACE:
+
+case XPath.Tokens.EXPRTOKEN_NAMETEST_QNAME:
+
+  String prefix=xtokens.nextTokenAsString();
+
+String uri=null;
+
+if (context != null && prefix != XMLSymbols.EMPTY_STRING) {
+
+uri=context.getURI(prefix);
+
+}
+
+if (prefix != XMLSymbols.EMPTY_STRING && context != null && uri == null) {
+
+throw new XPathException("c-general-xpath-ns");
+
+}
+
+if (typeToken == XPath.Tokens.EXPRTOKEN_NAMETEST_NAMESPACE) return new NodeTest(prefix,uri);
+
+String localpart=xtokens.nextTokenAsString();
+
+String rawname=prefix != XMLSymbols.EMPTY_STRING ? fSymbolTable.addSymbol(prefix + ':' + localpart) : localpart;
+
+return new NodeTest(new QName(prefix,localpart,rawname,uri));
+
+default :
+
+throw new XPathException("c-general-xpath");
+
+}
+
+}
+
+Location: XPath.java
+
+Content: 
+
+/** 
+
+ * Constructs an XPath object from the specified expression. 
+
+ */
+
+public XPath(String xpath,SymbolTable symbolTable,NamespaceContext context) throws XPathException {
+
+  fExpression=xpath;
+
+  fSymbolTable=symbolTable;
+
+  fLocationPaths=parseExpression(context);
+
+  if (DEBUG_XPATH_PARSE) {
+
+    System.out.println(">>> " + fLocationPaths);
+
+  }
+
+}
+

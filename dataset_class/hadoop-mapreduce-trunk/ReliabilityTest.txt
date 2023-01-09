@@ -1,0 +1,234 @@
+Location: ReliabilityTest.java
+
+Content: 
+
+private void checkJobExitStatus(int status,String jobName){
+
+  if (status != 0) {
+
+    LOG.info(jobName + " job failed with status: " + status);
+
+    System.exit(status);
+
+  }
+
+ else {
+
+    LOG.info(jobName + " done.");
+
+  }
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private void displayUsage(){
+
+  LOG.info("This must be run in only the distributed mode " + "(LocalJobRunner not supported).\n\tUsage: MRReliabilityTest " + "-libjars <path to hadoop-examples.jar> [-scratchdir <dir>]"+ "\n[-scratchdir] points to a scratch space on this host where temp"+ " files for this test will be created. Defaults to current working"+ " dir. \nPasswordless SSH must be set up between this host and the"+ " nodes which the test is going to use.\n"+ "The test should be run on a free cluster with no parallel job submission"+ " going on, as the test requires to restart TaskTrackers and kill tasks"+ " any job submission while the tests are running can cause jobs/tests to fail");
+
+  System.exit(-1);
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private String normalizeCommandPath(String command){
+
+  final String hadoopHome;
+
+  if ((hadoopHome=System.getenv("HADOOP_PREFIX")) != null) {
+
+    command=hadoopHome + "/" + command;
+
+  }
+
+  return command;
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private void runRandomWriterTest(final JobClient jc,final Configuration conf,final String inputPath) throws Exception {
+
+  runTest(jc,conf,"org.apache.hadoop.examples.RandomWriter",new String[]{inputPath},null,new KillTrackerThread(jc,0,0.4f,false,1));
+
+  LOG.info("RandomWriter job done");
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private void runSleepJobTest(final JobClient jc,final Configuration conf) throws Exception {
+
+  ClusterStatus c=jc.getClusterStatus();
+
+  int maxMaps=c.getMaxMapTasks() * 2;
+
+  int maxReduces=maxMaps;
+
+  int mapSleepTime=(int)c.getTTExpiryInterval();
+
+  int reduceSleepTime=mapSleepTime;
+
+  String[] sleepJobArgs=new String[]{"-m",Integer.toString(maxMaps),"-r",Integer.toString(maxReduces),"-mt",Integer.toString(mapSleepTime),"-rt",Integer.toString(reduceSleepTime)};
+
+  runTest(jc,conf,"org.apache.hadoop.mapreduce.SleepJob",sleepJobArgs,new KillTaskThread(jc,2,0.2f,false,2),new KillTrackerThread(jc,2,0.4f,false,1));
+
+  LOG.info("SleepJob done");
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private void runSortJobTests(final JobClient jc,final Configuration conf) throws Exception {
+
+  String inputPath="my_reliability_test_input";
+
+  String outputPath="my_reliability_test_output";
+
+  FileSystem fs=jc.getFs();
+
+  fs.delete(new Path(inputPath),true);
+
+  fs.delete(new Path(outputPath),true);
+
+  runRandomWriterTest(jc,conf,inputPath);
+
+  runSortTest(jc,conf,inputPath,outputPath);
+
+  runSortValidatorTest(jc,conf,inputPath,outputPath);
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private void runSortTest(final JobClient jc,final Configuration conf,final String inputPath,final String outputPath) throws Exception {
+
+  runTest(jc,conf,"org.apache.hadoop.examples.Sort",new String[]{inputPath,outputPath},new KillTaskThread(jc,2,0.2f,false,2),new KillTrackerThread(jc,2,0.8f,false,1));
+
+  LOG.info("Sort job done");
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private void runSortValidatorTest(final JobClient jc,final Configuration conf,final String inputPath,final String outputPath) throws Exception {
+
+  runTest(jc,conf,"org.apache.hadoop.mapred.SortValidator",new String[]{"-sortInput",inputPath,"-sortOutput",outputPath},new KillTaskThread(jc,2,0.2f,false,1),new KillTrackerThread(jc,2,0.8f,false,1));
+
+  LOG.info("SortValidator job done");
+
+}
+
+Location: ReliabilityTest.java
+
+Content: 
+
+private void runTest(final JobClient jc,final Configuration conf,final String jobClass,final String[] args,KillTaskThread killTaskThread,KillTrackerThread killTrackerThread) throws Exception {
+
+  Thread t=new Thread("Job Test"){
+
+    public void run(){
+
+      try {
+
+        Class<?> jobClassObj=conf.getClassByName(jobClass);
+
+        int status=ToolRunner.run(conf,(Tool)(jobClassObj.newInstance()),args);
+
+        checkJobExitStatus(status,jobClass);
+
+      }
+
+ catch (      Exception e) {
+
+        LOG.fatal("JOB " + jobClass + " failed to run");
+
+        System.exit(-1);
+
+      }
+
+    }
+
+  }
+
+;
+
+  t.setDaemon(true);
+
+  t.start();
+
+  JobStatus[] jobs;
+
+  while ((jobs=jc.jobsToComplete()).length == 0) {
+
+    LOG.info("Waiting for the job " + jobClass + " to start");
+
+    Thread.sleep(1000);
+
+  }
+
+  JobID jobId=jobs[jobs.length - 1].getJobID();
+
+  RunningJob rJob=jc.getJob(jobId);
+
+  if (rJob.isComplete()) {
+
+    LOG.error("The last job returned by the querying JobTracker is complete :" + rJob.getJobID() + " .Exiting the test");
+
+    System.exit(-1);
+
+  }
+
+  while (rJob.getJobState() == JobStatus.PREP) {
+
+    LOG.info("JobID : " + jobId + " not started RUNNING yet");
+
+    Thread.sleep(1000);
+
+    rJob=jc.getJob(jobId);
+
+  }
+
+  if (killTaskThread != null) {
+
+    killTaskThread.setRunningJob(rJob);
+
+    killTaskThread.start();
+
+    killTaskThread.join();
+
+    LOG.info("DONE WITH THE TASK KILL/FAIL TESTS");
+
+  }
+
+  if (killTrackerThread != null) {
+
+    killTrackerThread.setRunningJob(rJob);
+
+    killTrackerThread.start();
+
+    killTrackerThread.join();
+
+    LOG.info("DONE WITH THE TESTS TO DO WITH LOST TASKTRACKERS");
+
+  }
+
+  t.join();
+
+}
+

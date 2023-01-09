@@ -1,0 +1,134 @@
+Location: TestIndexerMapReduce.java
+
+Content: 
+
+/** 
+
+ * Run  {@link IndexerMapReduce.reduce(...)} to get a &quot;indexed&quot;{@link NutchDocument} by passing objects from segment and CrawlDb to theindexer.
+
+ * @param dbDatum crawl datum from CrawlDb
+
+ * @param fetchDatum crawl datum (fetch status) from segment
+
+ * @param parseText plain text from parsed document
+
+ * @param parseData parse data
+
+ * @param content (optional, if index binary content) protocol content
+
+ * @return &quot;indexed&quot; document
+
+ */
+
+public NutchDocument runIndexer(CrawlDatum dbDatum,CrawlDatum fetchDatum,ParseText parseText,ParseData parseData,Content content){
+
+  List<NutchWritable> values=new ArrayList<NutchWritable>();
+
+  values.add(new NutchWritable(dbDatum));
+
+  values.add(new NutchWritable(fetchDatum));
+
+  values.add(new NutchWritable(parseText));
+
+  values.add(new NutchWritable(parseData));
+
+  values.add(new NutchWritable(content));
+
+  reduceDriver=ReduceDriver.newReduceDriver(reducer);
+
+  reduceDriver.getConfiguration().addResource(configuration);
+
+  reduceDriver.withInput(testUrlText,values);
+
+  List<Pair<Text,NutchIndexAction>> reduceResult;
+
+  NutchDocument doc=null;
+
+  try {
+
+    reduceResult=reduceDriver.run();
+
+    for (    Pair<Text,NutchIndexAction> p : reduceResult) {
+
+      if (p.getSecond().action != NutchIndexAction.DELETE) {
+
+        doc=p.getSecond().doc;
+
+      }
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+  }
+
+  return doc;
+
+}
+
+Location: TestIndexerMapReduce.java
+
+Content: 
+
+/** 
+
+ * Test indexing of base64-encoded binary content.
+
+ */
+
+@Test public void testBinaryContentBase64(){
+
+  configuration=NutchConfiguration.create();
+
+  configuration.setBoolean(IndexerMapReduce.INDEXER_BINARY_AS_BASE64,true);
+
+  Charset[] testCharsets={StandardCharsets.UTF_8,Charset.forName("iso-8859-1"),Charset.forName("iso-8859-2")};
+
+  for (  Charset charset : testCharsets) {
+
+    LOG.info("Testing indexing binary content as base64 for charset {}",charset.name());
+
+    String htmlDoc=testHtmlDoc;
+
+    if (charset != StandardCharsets.UTF_8) {
+
+      htmlDoc=htmlDoc.replaceAll("utf-8",charset.name());
+
+      if (charset.name().equalsIgnoreCase("iso-8859-1")) {
+
+        htmlDoc=htmlDoc.replaceAll("\\s*<[^>]+\\slang=\"cs\".+?\\n","");
+
+      }
+
+ else       if (charset.name().equalsIgnoreCase("iso-8859-2")) {
+
+        htmlDoc=htmlDoc.replaceAll("\\s*<[^>]+\\slang=\"fr\".+?\\n","");
+
+      }
+
+    }
+
+    Content content=new Content(testUrl,testUrl,htmlDoc.getBytes(charset),htmlContentType,htmlMeta,configuration);
+
+    NutchDocument doc=runIndexer(crawlDatumDbFetched,crawlDatumFetchSuccess,parseText,parseData,content);
+
+    assertNotNull("No NutchDocument indexed",doc);
+
+    String binaryContentBase64=(String)doc.getField("binaryContent").getValues().get(0);
+
+    LOG.info("binary content (base64): {}",binaryContentBase64);
+
+    String binaryContent=new String(Base64.decodeBase64(binaryContentBase64),charset);
+
+    LOG.info("binary content (decoded): {}",binaryContent);
+
+    assertEquals("Binary content (" + charset + ") not correctly saved as base64",htmlDoc,binaryContent);
+
+  }
+
+}
+

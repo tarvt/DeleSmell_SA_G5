@@ -1,0 +1,238 @@
+Location: BlockingInputStream.java
+
+Content: 
+
+public BlockingInputStream(){
+
+  this(100000);
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+public BlockingInputStream(int capacity){
+
+  buf=new byte[capacity];
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+public int capacity(){
+
+  return buf.length;
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+/** 
+
+ * Moves the bytes between [read_pos and write_pos] read_pos bytes to the left, such that the new read_pos is 0 and the write_pos is write_pos - read_pos. Lock must be held.
+
+ */
+
+@GuardedBy("lock") protected void compact(){
+
+  if (read_pos == 0)   return;
+
+  if (size() == 0) {
+
+    read_pos=write_pos=0;
+
+    return;
+
+  }
+
+  int length=write_pos - read_pos;
+
+  System.arraycopy(buf,read_pos,buf,0,length);
+
+  write_pos-=read_pos;
+
+  read_pos=0;
+
+  not_full.signalAll();
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+public boolean isClosed(){
+
+  lock.lock();
+
+  try {
+
+    return closed;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+@GuardedBy("lock") protected int remaining(){
+
+  return buf.length - write_pos;
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+/** 
+
+ * Verifies that length doesn't exceed a buffer's length
+
+ * @param buf
+
+ * @param offset
+
+ * @param length
+
+ */
+
+protected static void sanityCheck(byte[] buf,int offset,int length){
+
+  if (buf == null)   throw new NullPointerException("buffer is null");
+
+  if (offset + length > buf.length)   throw new ArrayIndexOutOfBoundsException("length (" + length + ") + offset ("+ offset+ ") > buf.length ("+ buf.length+ ")");
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+@GuardedBy("lock") protected int size(){
+
+  return write_pos - read_pos;
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+public String toString(){
+
+  return size() + "/" + capacity()+ ", size="+ size()+ ", remaining="+ remaining()+ (closed ? " (closed)" : "");
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+/** 
+
+ * Appends bytes to the end of the stream
+
+ * @param buf
+
+ * @throws IOException
+
+ * @see #write(byte[],int,int) 
+
+ */
+
+public void write(byte[] buf) throws IOException {
+
+  if (buf != null)   write(buf,0,buf.length);
+
+}
+
+Location: BlockingInputStream.java
+
+Content: 
+
+/** 
+
+ * Appends bytes to the end of the stream. If the number of bytes to be written is greater than the remaining capacity, write() will block until the bytes can be added, or the stream is closed. <p/> This method will try to append partial buffers to the stream, e.g. if the remaining capacity is 2K, but the length of the buffer is 5K, 2K will be written and then write() will block until the remaining 3K can be added.
+
+ * @param buf The buffer to be added to the end of the stream
+
+ * @param offset The offset within buf at which bytes are read
+
+ * @param length The number of bytes to be added
+
+ * @throws IOException
+
+ */
+
+public void write(byte[] buf,int offset,int length) throws IOException {
+
+  if (buf == null)   return;
+
+  sanityCheck(buf,offset,length);
+
+  lock.lock();
+
+  try {
+
+    if (closed)     return;
+
+    int bytes_written=0;
+
+    while (bytes_written < length && !closed) {
+
+      if (read_pos > 0 && length - bytes_written > remaining())       compact();
+
+      if (remaining() > 0) {
+
+        int bytes_to_write=Math.min(length - bytes_written,remaining());
+
+        System.arraycopy(buf,offset + bytes_written,this.buf,write_pos,bytes_to_write);
+
+        write_pos+=bytes_to_write;
+
+        bytes_written+=bytes_to_write;
+
+        not_empty.signalAll();
+
+      }
+
+ else {
+
+        try {
+
+          not_full.await();
+
+        }
+
+ catch (        InterruptedException e) {
+
+        }
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+

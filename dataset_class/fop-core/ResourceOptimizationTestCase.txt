@@ -1,0 +1,200 @@
+Location: ResourceOptimizationTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests resource optimization.
+
+ * @throws Exception if an error occurs
+
+ */
+
+@Test public void testResourceOptimization() throws Exception {
+
+  FOUserAgent ua=fopFactory.newFOUserAgent();
+
+  PSDocumentHandler handler=new PSDocumentHandler(new IFContext(ua));
+
+  handler.getPSUtil().setOptimizeResources(true);
+
+  ua.setDocumentHandlerOverride(handler);
+
+  File outputFile=renderFile(ua,"ps-resources.fo","-if-l" + handler.getPSUtil().getLanguageLevel());
+
+  verifyPostScriptFile(outputFile);
+
+}
+
+Location: ResourceOptimizationTestCase.java
+
+Content: 
+
+private void verifyPostScriptFile(File psFile) throws IOException, DSCException {
+
+  InputStream in=new java.io.FileInputStream(psFile);
+
+  in=new java.io.BufferedInputStream(in);
+
+  try {
+
+    DSCParser parser=new DSCParser(in);
+
+    parser.setCheckEOF(false);
+
+    PSResource form1=new PSResource(PSResource.TYPE_FORM,"FOPForm:1");
+
+    PSResource helvetica=new PSResource(PSResource.TYPE_FONT,"Helvetica");
+
+    PSResource helveticaBold=new PSResource(PSResource.TYPE_FONT,"Helvetica-Bold");
+
+    PSResource res;
+
+    DSCCommentPages pages=(DSCCommentPages)gotoDSCComment(parser,DSCConstants.PAGES);
+
+    assertEquals(2,pages.getPageCount());
+
+    DSCCommentDocumentSuppliedResources supplied=(DSCCommentDocumentSuppliedResources)gotoDSCComment(parser,DSCConstants.DOCUMENT_SUPPLIED_RESOURCES);
+
+    Set resources=supplied.getResources();
+
+    assertEquals(5,resources.size());
+
+    assertTrue(resources.contains(form1));
+
+    assertTrue("Expected barcode.eps as supplied resource",resources.contains(new PSResource(PSResource.TYPE_FILE,"test/resources/images/barcode.eps")));
+
+    DSCCommentDocumentNeededResources needed=(DSCCommentDocumentNeededResources)gotoDSCComment(parser,DSCConstants.DOCUMENT_NEEDED_RESOURCES);
+
+    resources=needed.getResources();
+
+    assertEquals(2,resources.size());
+
+    assertTrue("Expected Helvetica as needed resource",resources.contains(new PSResource(PSResource.TYPE_FONT,"Helvetica")));
+
+    assertTrue("Expected Helvetica-Bold as needed resource",resources.contains(new PSResource(PSResource.TYPE_FONT,"Helvetica-Bold")));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.BEGIN_DEFAULTS));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.END_DEFAULTS));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.BEGIN_PROLOG));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.END_PROLOG));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.BEGIN_SETUP));
+
+    DSCCommentIncludeResource include;
+
+    Collection strings=new java.util.HashSet(Arrays.asList(new String[]{"Helvetica","Helvetica-Bold"}));
+
+    for (int i=0; i < 2; i++) {
+
+      include=(DSCCommentIncludeResource)gotoDSCComment(parser,DSCConstants.INCLUDE_RESOURCE);
+
+      res=include.getResource();
+
+      assertEquals(PSResource.TYPE_FONT,res.getType());
+
+      strings.remove(res.getName());
+
+    }
+
+    assertEquals(0,strings.size());
+
+    checkResourceComment(parser,DSCConstants.BEGIN_RESOURCE,new PSResource(PSResource.TYPE_ENCODING,"WinAnsiEncoding"));
+
+    checkResourceComment(parser,DSCConstants.BEGIN_RESOURCE,form1);
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.END_SETUP));
+
+    DSCCommentPage page=(DSCCommentPage)gotoDSCComment(parser,DSCConstants.PAGE);
+
+    assertEquals(1,page.getPagePosition());
+
+    assertEquals(DSCAtend.class,gotoDSCComment(parser,DSCConstants.PAGE_RESOURCES).getClass());
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.BEGIN_PAGE_SETUP));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.END_PAGE_SETUP));
+
+    PSResource form2=new PSResource(PSResource.TYPE_FORM,"FOPForm:2");
+
+    checkResourceComment(parser,DSCConstants.BEGIN_RESOURCE,form2);
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.PAGE_TRAILER));
+
+    AbstractResourcesDSCComment pageResources;
+
+    pageResources=(AbstractResourcesDSCComment)gotoDSCComment(parser,DSCConstants.PAGE_RESOURCES);
+
+    resources=pageResources.getResources();
+
+    assertEquals(5,resources.size());
+
+    assertTrue(resources.contains(form1));
+
+    assertTrue(resources.contains(form2));
+
+    assertTrue(resources.contains(helvetica));
+
+    assertTrue(resources.contains(helveticaBold));
+
+    page=(DSCCommentPage)gotoDSCComment(parser,DSCConstants.PAGE);
+
+    assertEquals(2,page.getPagePosition());
+
+    assertEquals(DSCAtend.class,gotoDSCComment(parser,DSCConstants.PAGE_RESOURCES).getClass());
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.BEGIN_PAGE_SETUP));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.END_PAGE_SETUP));
+
+    DSCCommentBeginDocument beginDocument;
+
+    beginDocument=(DSCCommentBeginDocument)gotoDSCComment(parser,DSCConstants.BEGIN_DOCUMENT);
+
+    assertEquals("test/resources/images/barcode.eps",beginDocument.getResource().getName());
+
+    DSCListener listener=new DefaultNestedDocumentHandler(null);
+
+    listener.processEvent(beginDocument,parser);
+
+    beginDocument=(DSCCommentBeginDocument)gotoDSCComment(parser,DSCConstants.BEGIN_DOCUMENT);
+
+    assertEquals("test/resources/images/barcode.eps",beginDocument.getResource().getName());
+
+    listener.processEvent(beginDocument,parser);
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.PAGE_TRAILER));
+
+    pageResources=(AbstractResourcesDSCComment)gotoDSCComment(parser,DSCConstants.PAGE_RESOURCES);
+
+    resources=pageResources.getResources();
+
+    assertEquals(6,resources.size());
+
+    assertTrue(resources.contains(form1));
+
+    assertFalse(resources.contains(form2));
+
+    assertTrue(resources.contains(helvetica));
+
+    assertTrue(resources.contains(helveticaBold));
+
+    assertTrue(resources.contains(beginDocument.getResource()));
+
+    assertNotNull(gotoDSCComment(parser,DSCConstants.TRAILER));
+
+    assertEquals(DSCCommentEndOfFile.class,parser.nextEvent().asDSCComment().getClass());
+
+  }
+
+  finally {
+
+    IOUtils.closeQuietly(in);
+
+  }
+
+}
+

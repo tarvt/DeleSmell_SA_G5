@@ -1,0 +1,312 @@
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * add all cells of given row to this set 
+
+ */
+
+private void addRow(RtfTableRow row,int rowIndex,int xOffset){
+
+  for (  Object o : row.getChildren()) {
+
+    final RtfElement e=(RtfElement)o;
+
+    if (e instanceof RtfTableCell) {
+
+      final RtfTableCell c=(RtfTableCell)e;
+
+      cells.add(new PositionedCell(c,rowIndex,xOffset));
+
+      xOffset+=c.getCellWidth();
+
+    }
+
+  }
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * Add all cells of given Table to this set for later rendering in extra rows
+
+ * @return index of extra row to use for elements that follow this table in the same cell
+
+ * @param rowIndex index of first extra row to create to hold cells of tbl
+
+ * @param xOffset horizontal position of left edge of first column of tbl
+
+ */
+
+int addTable(RtfTable tbl,int rowIndex,int xOffset){
+
+  for (  Object o : tbl.getChildren()) {
+
+    final RtfElement e=(RtfElement)o;
+
+    if (e instanceof RtfTableRow) {
+
+      addRow((RtfTableRow)e,rowIndex,xOffset);
+
+      rowIndex++;
+
+      maxRowIndex=Math.max(rowIndex,maxRowIndex);
+
+    }
+
+  }
+
+  return rowIndex;
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * true if all cells of given list are empty
+
+ * @param cells List of PositionedCell objects
+
+ */
+
+private static boolean allCellsEmpty(List cells){
+
+  boolean empty=true;
+
+  for (  Object cell : cells) {
+
+    final PositionedCell pc=(PositionedCell)cell;
+
+    if (pc.cell.containsText()) {
+
+      empty=false;
+
+      break;
+
+    }
+
+  }
+
+  return empty;
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * create an extra cell to hold content that comes after a nested table in a cell Modified by Boris Poudérous in order to permit the extra cell to have the attributes of its parent cell
+
+ */
+
+RtfTableCell createExtraCell(int rowIndex,int xOffset,int cellWidth,RtfAttributes parentCellAttributes) throws IOException {
+
+  final RtfTableCell c=new RtfTableCell(null,writer,cellWidth,parentCellAttributes,DEFAULT_IDNUM);
+
+  cells.add(new PositionedCell(c,rowIndex,xOffset));
+
+  return c;
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * @return The table context of the parent tableAdded by Boris Poudérous on july 2002 in order to process nested tables
+
+ */
+
+public ITableColumnsInfo getParentITableColumnsInfo(){
+
+  return this.parentITableColumnsInfo;
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * As this contains cells from several rows, we say that it's empty only if we have no cells. writeRow makes the decision about rendering specific rows
+
+ * @return false (always)
+
+ */
+
+public boolean isEmpty(){
+
+  return false;
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * an RtfExtraRowSet has no parent, it is only used temporary during generation of RTF for an RtfTableRow
+
+ */
+
+RtfExtraRowSet(Writer w) throws IOException {
+
+  super(null,w);
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * @param parentITableColumnsInfo table context to set
+
+ */
+
+public void setParentITableColumnsInfo(ITableColumnsInfo parentITableColumnsInfo){
+
+  this.parentITableColumnsInfo=parentITableColumnsInfo;
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * write one RtfTableRow containing given PositionedCells 
+
+ */
+
+private void writeRow(List cells) throws IOException {
+
+  if (allCellsEmpty(cells)) {
+
+    return;
+
+  }
+
+  final RtfTableRow row=new RtfTableRow(null,writer,DEFAULT_IDNUM);
+
+  int cellIndex=0;
+
+  ITableColumnsInfo parentITableColumnsInfo=getParentITableColumnsInfo();
+
+  parentITableColumnsInfo.selectFirstColumn();
+
+  float xOffset=0;
+
+  float xOffsetOfLastPositionedCell=0;
+
+  for (  Object cell : cells) {
+
+    final PositionedCell pc=(PositionedCell)cell;
+
+    if (cellIndex == 0 && pc.xOffset > 0) {
+
+      for (int i=0; (xOffset < pc.xOffset) && (i < parentITableColumnsInfo.getNumberOfColumns()); i++) {
+
+        xOffset+=parentITableColumnsInfo.getColumnWidth();
+
+        row.newTableCellMergedVertically((int)parentITableColumnsInfo.getColumnWidth(),pc.cell.attrib);
+
+        parentITableColumnsInfo.selectNextColumn();
+
+      }
+
+    }
+
+    row.addChild(pc.cell);
+
+    xOffsetOfLastPositionedCell=pc.xOffset + pc.cell.getCellWidth();
+
+    cellIndex++;
+
+  }
+
+  if (parentITableColumnsInfo.getColumnIndex() < (parentITableColumnsInfo.getNumberOfColumns() - 1)) {
+
+    parentITableColumnsInfo.selectNextColumn();
+
+    while (parentITableColumnsInfo.getColumnIndex() < parentITableColumnsInfo.getNumberOfColumns()) {
+
+      row.newTableCellMergedVertically((int)parentITableColumnsInfo.getColumnWidth(),attrib);
+
+      parentITableColumnsInfo.selectNextColumn();
+
+    }
+
+  }
+
+  row.writeRtf();
+
+}
+
+Location: RtfExtraRowSet.java
+
+Content: 
+
+/** 
+
+ * render extra RtfTableRows containing all the extra RtfTableCells that we contain
+
+ * @throws IOException for I/O problems
+
+ */
+
+protected void writeRtfContent() throws IOException {
+
+  Collections.sort(cells);
+
+  List rowCells=null;
+
+  int rowIndex=-1;
+
+  for (  Object cell : cells) {
+
+    final PositionedCell pc=(PositionedCell)cell;
+
+    if (pc.rowIndex != rowIndex) {
+
+      if (rowCells != null) {
+
+        writeRow(rowCells);
+
+      }
+
+      rowIndex=pc.rowIndex;
+
+      rowCells=new LinkedList();
+
+    }
+
+    rowCells.add(pc);
+
+  }
+
+  if (rowCells != null) {
+
+    writeRow(rowCells);
+
+  }
+
+}
+

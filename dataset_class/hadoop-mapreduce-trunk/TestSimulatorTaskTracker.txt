@@ -1,0 +1,322 @@
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+static private TaskAttemptID createTaskAttemptID(boolean isMap,int taskNumber){
+
+  String attempt=taskAttemptIdPrefix + (isMap ? "m" : "r") + "_00000"+ taskNumber+ "_0";
+
+  TaskAttemptID taskId=null;
+
+  try {
+
+    taskId=TaskAttemptID.forName(attempt);
+
+  }
+
+ catch (  IllegalArgumentException iae) {
+
+    Assert.fail("Invalid task attempt id string " + iae);
+
+  }
+
+  return taskId;
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+protected void genericTest(int numAccepts,int numMaps,int numReduces,boolean testKill){
+
+  LOG.debug("Generic test with numAccepts=" + numAccepts + ", numMaps="+ numMaps+ ", numReduces="+ numReduces+ ", testKill="+ testKill);
+
+  setUpHeartbeats(numAccepts);
+
+  for (int i=0; i < numMaps; i++) {
+
+    setUpMapTask(i,testKill);
+
+  }
+
+  for (int i=0; i < numReduces; i++) {
+
+    setUpReduceTask(i,testKill);
+
+  }
+
+  runTaskTracker();
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+private void runTaskTracker(){
+
+  long runUntil=eventQueue.getLastCheckTime();
+
+  LOG.debug("Running task tracker until simulation time=" + runUntil);
+
+  List<SimulatorEvent> events=taskTracker.init(simulationStartTime);
+
+  eventQueue.addAll(events);
+
+  while (true) {
+
+    SimulatorEvent currentEvent=eventQueue.get();
+
+    long now=currentEvent.getTimeStamp();
+
+    LOG.debug("Number of events to deliver=" + (eventQueue.getSize() + 1) + ", now="+ now);
+
+    if (now > runUntil) {
+
+      break;
+
+    }
+
+    LOG.debug("Calling accept(), event=" + currentEvent + ", now="+ now);
+
+    events=taskTracker.accept(currentEvent);
+
+    LOG.debug("Accept() returned " + events.size() + " new event(s)");
+
+    for (    SimulatorEvent newEvent : events) {
+
+      LOG.debug("New event " + newEvent);
+
+    }
+
+    eventQueue.addAll(events);
+
+    LOG.debug("Done checking and enqueuing new events");
+
+  }
+
+  eventQueue.checkMissingExpected();
+
+  jobTracker.checkMissingHeartbeats();
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+private void setUpHeartbeats(int numAccepts){
+
+  eventQueue.expectHeartbeats(taskTracker,numAccepts,heartbeatInterval);
+
+  jobTracker.expectEmptyHeartbeats(taskTrackerName,numAccepts);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+private void setUpMapTask(int idx,boolean testKill){
+
+  TaskAttemptID mapTaskId=createTaskAttemptID(true,idx);
+
+  long mapStart=simulationStartTime + heartbeatInterval * mapStarts[idx];
+
+  long mapKill=-1;
+
+  if (testKill && 0 <= mapKills[idx]) {
+
+    mapKill=mapStart + heartbeatInterval * mapKills[idx];
+
+  }
+
+  setUpMapTask(mapTaskId,mapStart,mapRuntimes[idx],mapKill);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+private void setUpMapTask(TaskAttemptID mapTaskId,long mapStart,long mapRuntime,long mapKill){
+
+  jobTracker.runMapTask(taskTrackerName,mapTaskId,mapStart,mapRuntime,mapKill);
+
+  eventQueue.expectMapTask(taskTracker,mapTaskId,mapStart,mapRuntime);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+private void setUpReduceTask(int idx,boolean testKill){
+
+  TaskAttemptID reduceTaskId=createTaskAttemptID(false,idx);
+
+  long reduceStart=simulationStartTime + heartbeatInterval * reduceStarts[idx];
+
+  long reduceKill=-1;
+
+  if (testKill && 0 <= reduceKills[idx]) {
+
+    reduceKill=reduceStart + heartbeatInterval * reduceKills[idx];
+
+  }
+
+  setUpReduceTask(reduceTaskId,reduceStart,mapDoneDelays[idx],reduceRuntimes[idx],reduceKill);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+private void setUpReduceTask(TaskAttemptID reduceTaskId,long reduceStart,long mapDoneDelay,long reduceRuntime,long reduceKill){
+
+  jobTracker.runReduceTask(taskTrackerName,reduceTaskId,reduceStart,mapDoneDelay,reduceRuntime,reduceKill);
+
+  long mapDone=jobTracker.nextHeartbeat(reduceStart + mapDoneDelay);
+
+  if (reduceKill < 0 || mapDone < reduceKill) {
+
+    eventQueue.expectReduceTask(taskTracker,reduceTaskId,mapDone,reduceRuntime);
+
+  }
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testInitAndHeartbeat(){
+
+  LOG.debug("Testing init and hearbeat mechanism");
+
+  genericTest(5,0,0,false);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testKillMultipleMapAndReduceTasks(){
+
+  LOG.debug("Testing killing multiple map and reduce tasks");
+
+  genericTest(20,mapStarts.length,reduceStarts.length,true);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testKillMultipleMapTasks(){
+
+  LOG.debug("Testing killing multiple map tasks");
+
+  genericTest(20,mapStarts.length,0,true);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testKillMultipleReduceTasks(){
+
+  LOG.debug("Testing killing multiple reduce tasks");
+
+  genericTest(20,0,reduceStarts.length,true);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testKillSingleMapTask(){
+
+  LOG.debug("Testing killing a single map task");
+
+  genericTest(20,1,0,true);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testKillSingleReduceTask(){
+
+  LOG.debug("Testing killing a single reduce task");
+
+  genericTest(20,0,1,true);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testMultipleMapAndReduceTasks(){
+
+  LOG.debug("Testing with multiple map and reduce tasks");
+
+  genericTest(20,mapStarts.length,reduceStarts.length,false);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testMultipleMapTasks(){
+
+  LOG.debug("Testing with multiple map tasks");
+
+  genericTest(20,mapStarts.length,0,false);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testMultipleReduceTasks(){
+
+  LOG.debug("Testing with multiple reduce tasks");
+
+  genericTest(20,0,reduceStarts.length,false);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testSingleMapTask(){
+
+  LOG.debug("Testing with a single map task");
+
+  genericTest(20,1,0,false);
+
+}
+
+Location: TestSimulatorTaskTracker.java
+
+Content: 
+
+@Test public void testSingleReduceTask(){
+
+  LOG.debug("Testing with a single reduce task");
+
+  genericTest(20,0,1,false);
+
+}
+

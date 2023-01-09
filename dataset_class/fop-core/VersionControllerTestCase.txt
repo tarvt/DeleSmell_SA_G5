@@ -1,0 +1,174 @@
+Location: VersionControllerTestCase.java
+
+Content: 
+
+/** 
+
+ * The dynamic implementation allows the version to be changed. However, the version given in the constructor will be the version set in the header of the PDF document. Any change to the version will then be made in the document catalog.
+
+ * @param originalVersion the version given to the constructor when PDFVersion instantiated
+
+ * @param setVersion the version being set
+
+ */
+
+private void testDynamicController(Version originalVersion,Version setVersion){
+
+  VersionController testSubj=VersionController.getDynamicVersionController(originalVersion,doc);
+
+  testSubj.setPDFVersion(setVersion);
+
+  PDFName nameVersion=new PDFName(setVersion.toString());
+
+  if (originalVersion.compareTo(setVersion) < 0) {
+
+    versionShouldChange(setVersion,testSubj,nameVersion);
+
+  }
+
+ else {
+
+    versionShouldNotChange(originalVersion,testSubj);
+
+  }
+
+  doc.getRoot().put("Version",null);
+
+}
+
+Location: VersionControllerTestCase.java
+
+Content: 
+
+/** 
+
+ * The fixed implementation will throw an exception if an attempt is made to change its version.
+
+ * @param originalVersion the version given to the constructor when PDFVersion instantiated
+
+ * @param setVersion the version being set
+
+ */
+
+private void testFixedController(Version originalVersion,Version setVersion){
+
+  if (originalVersion.compareTo(Version.V1_4) >= 0) {
+
+    VersionController fixedVC=VersionController.getFixedVersionController(originalVersion);
+
+    try {
+
+      fixedVC.setPDFVersion(setVersion);
+
+      if (setVersion.compareTo(originalVersion) != 0) {
+
+        fail("The FixedVersionController should throw an exception if an attempt to change " + "the version is made");
+
+      }
+
+    }
+
+ catch (    IllegalStateException e) {
+
+    }
+
+    assertEquals(originalVersion,fixedVC.getPDFVersion());
+
+    assertEquals(Version.V1_4,doc.getPDFVersion());
+
+    assertNull(doc.getRoot().get("Version"));
+
+  }
+
+ else {
+
+    try {
+
+      VersionController.getFixedVersionController(originalVersion);
+
+      fail("Versions < 1.4 aren't allowed.");
+
+    }
+
+ catch (    IllegalArgumentException e) {
+
+    }
+
+  }
+
+}
+
+Location: VersionControllerTestCase.java
+
+Content: 
+
+@Test public void testGetVersion(){
+
+  for (  Version version : Version.values()) {
+
+    if (version.compareTo(Version.V1_4) >= 0) {
+
+      VersionController fixedVC=VersionController.getFixedVersionController(version);
+
+      assertEquals(version,fixedVC.getPDFVersion());
+
+    }
+
+    VersionController dynamicVC=VersionController.getDynamicVersionController(version,doc);
+
+    assertEquals(version,dynamicVC.getPDFVersion());
+
+  }
+
+}
+
+Location: VersionControllerTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests that the setter methods work at setting the underlying version. Here there is a disparity between the two objects, the fixed version will throw an exception if the setter is invoked. The dynamic version will allow the version to be changed, if the new version is greater than the version already set.
+
+ */
+
+@Test public void testSetVersion(){
+
+  for (  Version originalVersion : Version.values()) {
+
+    for (    Version setVersion : Version.values()) {
+
+      testDynamicController(originalVersion,setVersion);
+
+      testFixedController(originalVersion,setVersion);
+
+    }
+
+  }
+
+}
+
+Location: VersionControllerTestCase.java
+
+Content: 
+
+private void versionShouldChange(Version setVersion,VersionController testSubj,PDFName nameVersion){
+
+  assertEquals(setVersion,testSubj.getPDFVersion());
+
+  assertEquals(nameVersion.toString(),doc.getRoot().get("Version").toString());
+
+}
+
+Location: VersionControllerTestCase.java
+
+Content: 
+
+private void versionShouldNotChange(Version originalVersion,VersionController testSubj){
+
+  assertEquals(originalVersion,testSubj.getPDFVersion());
+
+  assertNull(doc.getRoot().get("Version"));
+
+}
+

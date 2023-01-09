@@ -1,0 +1,1052 @@
+Location: SpaceResolver.java
+
+Content: 
+
+private void generate(ListIterator iter){
+
+  MinOptMax spaceBeforeBreak=sum(firstPartLengths);
+
+  MinOptMax spaceAfterBreak=sum(secondPartLengths);
+
+  boolean hasPrecedingNonBlock=false;
+
+  if (breakPoss != null) {
+
+    if (spaceBeforeBreak.isNonZero()) {
+
+      iter.add(new KnuthPenalty(0,KnuthPenalty.INFINITE,false,null,true));
+
+      iter.add(new KnuthGlue(spaceBeforeBreak,null,true));
+
+      if (breakPoss.isForcedBreak()) {
+
+        iter.add(new KnuthBox(0,null,true));
+
+      }
+
+    }
+
+    iter.add(new KnuthPenalty(breakPoss.getPenaltyWidth(),breakPoss.getPenaltyValue(),false,breakPoss.getBreakClass(),new SpaceHandlingBreakPosition(this,breakPoss),false));
+
+    if (breakPoss.getPenaltyValue() <= -KnuthPenalty.INFINITE) {
+
+      return;
+
+    }
+
+    MinOptMax noBreakLength=sum(noBreakLengths);
+
+    MinOptMax spaceSum=spaceBeforeBreak.plus(spaceAfterBreak);
+
+    int glue2width=noBreakLength.getOpt() - spaceSum.getOpt();
+
+    int glue2stretch=noBreakLength.getStretch() - spaceSum.getStretch();
+
+    int glue2shrink=noBreakLength.getShrink() - spaceSum.getShrink();
+
+    if (glue2width != 0 || glue2stretch != 0 || glue2shrink != 0) {
+
+      iter.add(new KnuthGlue(glue2width,glue2stretch,glue2shrink,null,true));
+
+    }
+
+  }
+
+ else {
+
+    if (spaceBeforeBreak.isNonZero()) {
+
+      throw new IllegalStateException("spaceBeforeBreak should be 0 in this case");
+
+    }
+
+  }
+
+  Position pos=null;
+
+  if (breakPoss == null) {
+
+    pos=new SpaceHandlingPosition(this);
+
+  }
+
+  if (spaceAfterBreak.isNonZero() || pos != null) {
+
+    iter.add(new KnuthBox(0,pos,true));
+
+  }
+
+  if (spaceAfterBreak.isNonZero()) {
+
+    iter.add(new KnuthPenalty(0,KnuthPenalty.INFINITE,false,null,true));
+
+    iter.add(new KnuthGlue(spaceAfterBreak,null,true));
+
+    hasPrecedingNonBlock=true;
+
+  }
+
+  if (isLast && hasPrecedingNonBlock) {
+
+    iter.add(new KnuthBox(0,null,true));
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private boolean hasFirstPart(){
+
+  return firstPart != null && firstPart.length > 0;
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private boolean hasSecondPart(){
+
+  return secondPart != null && secondPart.length > 0;
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+/** 
+
+ * Inspects an effective element list and notifies all layout managers about the state of the spaces and conditional lengths.
+
+ * @param effectiveList the effective element list
+
+ * @param startElementIndex index of the first element in the part to be processed
+
+ * @param endElementIndex index of the last element in the part to be processed
+
+ * @param prevBreak index of the the break possibility just before this part (used toidentify a break condition, lastBreak &lt;= 0 represents a no-break condition)
+
+ */
+
+public static void performConditionalsNotification(List effectiveList,int startElementIndex,int endElementIndex,int prevBreak){
+
+  KnuthElement el=null;
+
+  if (prevBreak > 0) {
+
+    el=(KnuthElement)effectiveList.get(prevBreak);
+
+  }
+
+  SpaceResolver.SpaceHandlingBreakPosition beforeBreak=null;
+
+  SpaceResolver.SpaceHandlingBreakPosition afterBreak=null;
+
+  if (el != null && el.isPenalty()) {
+
+    Position pos=el.getPosition();
+
+    if (pos instanceof SpaceResolver.SpaceHandlingBreakPosition) {
+
+      beforeBreak=(SpaceResolver.SpaceHandlingBreakPosition)pos;
+
+      beforeBreak.notifyBreakSituation(true,RelSide.BEFORE);
+
+    }
+
+  }
+
+  el=endElementIndex > -1 ? (KnuthElement)effectiveList.get(endElementIndex) : null;
+
+  if (el != null && el.isPenalty()) {
+
+    Position pos=el.getPosition();
+
+    if (pos instanceof SpaceResolver.SpaceHandlingBreakPosition) {
+
+      afterBreak=(SpaceResolver.SpaceHandlingBreakPosition)pos;
+
+      afterBreak.notifyBreakSituation(true,RelSide.AFTER);
+
+    }
+
+  }
+
+  for (int i=startElementIndex; i <= endElementIndex; i++) {
+
+    Position pos=((KnuthElement)effectiveList.get(i)).getPosition();
+
+    if (pos instanceof SpaceResolver.SpaceHandlingPosition) {
+
+      ((SpaceResolver.SpaceHandlingPosition)pos).notifySpaceSituation();
+
+    }
+
+ else     if (pos instanceof SpaceResolver.SpaceHandlingBreakPosition) {
+
+      SpaceResolver.SpaceHandlingBreakPosition noBreak;
+
+      noBreak=(SpaceResolver.SpaceHandlingBreakPosition)pos;
+
+      if (noBreak != beforeBreak && noBreak != afterBreak) {
+
+        noBreak.notifyBreakSituation(false,null);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private void performSpaceResolutionRule1(UnresolvedListElement[] elems,MinOptMax[] lengths,boolean reverse){
+
+  for (int i=0; i < elems.length; i++) {
+
+    int effIndex;
+
+    if (reverse) {
+
+      effIndex=elems.length - 1 - i;
+
+    }
+
+ else {
+
+      effIndex=i;
+
+    }
+
+    if (lengths[effIndex] == null) {
+
+      continue;
+
+    }
+
+ else     if (elems[effIndex] instanceof BorderOrPaddingElement) {
+
+      break;
+
+    }
+
+ else     if (!elems[effIndex].isConditional()) {
+
+      break;
+
+    }
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug("Nulling conditional element using 4.3.1, rule 1: " + elems[effIndex]);
+
+    }
+
+    lengths[effIndex]=null;
+
+  }
+
+  if (LOG.isTraceEnabled() && elems.length > 0) {
+
+    LOG.trace("-->Resulting list: " + toString(elems,lengths));
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private void performSpaceResolutionRules2to3(UnresolvedListElement[] elems,MinOptMax[] lengths){
+
+  int start=0;
+
+  int i=start;
+
+  while (i < elems.length) {
+
+    if (elems[i] instanceof SpaceElement) {
+
+      while (i < elems.length) {
+
+        if (elems[i] == null || elems[i] instanceof SpaceElement) {
+
+          i++;
+
+        }
+
+ else {
+
+          break;
+
+        }
+
+      }
+
+      performSpaceResolutionRules2to3(elems,lengths,start,i - 1);
+
+    }
+
+    i++;
+
+    start=i;
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private void performSpaceResolutionRules2to3(UnresolvedListElement[] elems,MinOptMax[] lengths,int start,int end){
+
+  if (LOG.isTraceEnabled()) {
+
+    LOG.trace("rule 2-3: " + start + "-"+ end);
+
+  }
+
+  SpaceElement space;
+
+  int remaining;
+
+  boolean hasForcing=false;
+
+  remaining=0;
+
+  for (int i=start; i <= end; i++) {
+
+    if (lengths[i] == null) {
+
+      continue;
+
+    }
+
+    remaining++;
+
+    space=(SpaceElement)elems[i];
+
+    if (space.isForcing()) {
+
+      hasForcing=true;
+
+      break;
+
+    }
+
+  }
+
+  if (remaining == 0) {
+
+    return;
+
+  }
+
+  if (hasForcing) {
+
+    for (int i=start; i <= end; i++) {
+
+      if (lengths[i] == null) {
+
+        continue;
+
+      }
+
+      space=(SpaceElement)elems[i];
+
+      if (!space.isForcing()) {
+
+        if (LOG.isDebugEnabled()) {
+
+          LOG.debug("Nulling non-forcing space-specifier using 4.3.1, rule 2: " + elems[i]);
+
+        }
+
+        lengths[i]=null;
+
+      }
+
+    }
+
+    return;
+
+  }
+
+  int highestPrecedence=Integer.MIN_VALUE;
+
+  for (int i=start; i <= end; i++) {
+
+    if (lengths[i] == null) {
+
+      continue;
+
+    }
+
+    space=(SpaceElement)elems[i];
+
+    highestPrecedence=Math.max(highestPrecedence,space.getPrecedence());
+
+  }
+
+  if (highestPrecedence != 0 && LOG.isDebugEnabled()) {
+
+    LOG.debug("Highest precedence is " + highestPrecedence);
+
+  }
+
+  remaining=0;
+
+  int greatestOptimum=Integer.MIN_VALUE;
+
+  for (int i=start; i <= end; i++) {
+
+    if (lengths[i] == null) {
+
+      continue;
+
+    }
+
+    space=(SpaceElement)elems[i];
+
+    if (space.getPrecedence() != highestPrecedence) {
+
+      if (LOG.isDebugEnabled()) {
+
+        LOG.debug("Nulling space-specifier with precedence " + space.getPrecedence() + " using 4.3.1, rule 3: "+ elems[i]);
+
+      }
+
+      lengths[i]=null;
+
+    }
+
+ else {
+
+      greatestOptimum=Math.max(greatestOptimum,space.getLength().getOpt());
+
+      remaining++;
+
+    }
+
+  }
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("Greatest optimum: " + greatestOptimum);
+
+  }
+
+  if (remaining <= 1) {
+
+    return;
+
+  }
+
+  remaining=0;
+
+  for (int i=start; i <= end; i++) {
+
+    if (lengths[i] == null) {
+
+      continue;
+
+    }
+
+    space=(SpaceElement)elems[i];
+
+    if (space.getLength().getOpt() < greatestOptimum) {
+
+      if (LOG.isDebugEnabled()) {
+
+        LOG.debug("Nulling space-specifier with smaller optimum length " + "using 4.3.1, rule 3: " + elems[i]);
+
+      }
+
+      lengths[i]=null;
+
+    }
+
+ else {
+
+      remaining++;
+
+    }
+
+  }
+
+  if (remaining <= 1) {
+
+    return;
+
+  }
+
+  int min=Integer.MIN_VALUE;
+
+  int max=Integer.MAX_VALUE;
+
+  for (int i=start; i <= end; i++) {
+
+    if (lengths[i] == null) {
+
+      continue;
+
+    }
+
+    space=(SpaceElement)elems[i];
+
+    min=Math.max(min,space.getLength().getMin());
+
+    max=Math.min(max,space.getLength().getMax());
+
+    if (remaining > 1) {
+
+      if (LOG.isDebugEnabled()) {
+
+        LOG.debug("Nulling non-last space-specifier using 4.3.1, rule 3, second part: " + elems[i]);
+
+      }
+
+      lengths[i]=null;
+
+      remaining--;
+
+    }
+
+ else {
+
+      lengths[i]=MinOptMax.getInstance(min,lengths[i].getOpt(),max);
+
+    }
+
+  }
+
+  if (LOG.isTraceEnabled() && elems.length > 0) {
+
+    LOG.trace("Remaining spaces: " + remaining);
+
+    LOG.trace("-->Resulting list: " + toString(elems,lengths));
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private void removeConditionalBorderAndPadding(UnresolvedListElement[] elems,MinOptMax[] lengths,boolean reverse){
+
+  for (int i=0; i < elems.length; i++) {
+
+    int effIndex;
+
+    if (reverse) {
+
+      effIndex=elems.length - 1 - i;
+
+    }
+
+ else {
+
+      effIndex=i;
+
+    }
+
+    if (elems[effIndex] instanceof BorderOrPaddingElement) {
+
+      BorderOrPaddingElement bop=(BorderOrPaddingElement)elems[effIndex];
+
+      if (bop.isConditional() && !(bop.isFirst() || bop.isLast())) {
+
+        if (LOG.isDebugEnabled()) {
+
+          LOG.debug("Nulling conditional element: " + bop);
+
+        }
+
+        lengths[effIndex]=null;
+
+      }
+
+    }
+
+  }
+
+  if (LOG.isTraceEnabled() && elems.length > 0) {
+
+    LOG.trace("-->Resulting list: " + toString(elems,lengths));
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private void resolve(){
+
+  if (breakPoss != null) {
+
+    if (hasFirstPart()) {
+
+      removeConditionalBorderAndPadding(firstPart,firstPartLengths,true);
+
+      performSpaceResolutionRule1(firstPart,firstPartLengths,true);
+
+      performSpaceResolutionRules2to3(firstPart,firstPartLengths);
+
+    }
+
+    if (hasSecondPart()) {
+
+      removeConditionalBorderAndPadding(secondPart,secondPartLengths,false);
+
+      performSpaceResolutionRule1(secondPart,secondPartLengths,false);
+
+      performSpaceResolutionRules2to3(secondPart,secondPartLengths);
+
+    }
+
+    if (noBreak != null) {
+
+      performSpaceResolutionRules2to3(noBreak,noBreakLengths);
+
+    }
+
+  }
+
+ else {
+
+    if (isFirst) {
+
+      removeConditionalBorderAndPadding(secondPart,secondPartLengths,false);
+
+      performSpaceResolutionRule1(secondPart,secondPartLengths,false);
+
+    }
+
+    if (isLast) {
+
+      removeConditionalBorderAndPadding(firstPart,firstPartLengths,true);
+
+      performSpaceResolutionRule1(firstPart,firstPartLengths,true);
+
+    }
+
+    if (hasFirstPart()) {
+
+      LOG.trace("Swapping first and second parts.");
+
+      UnresolvedListElementWithLength[] tempList;
+
+      MinOptMax[] tempLengths;
+
+      tempList=secondPart;
+
+      tempLengths=secondPartLengths;
+
+      secondPart=firstPart;
+
+      secondPartLengths=firstPartLengths;
+
+      firstPart=tempList;
+
+      firstPartLengths=tempLengths;
+
+      if (hasFirstPart()) {
+
+        throw new IllegalStateException("Didn't expect more than one parts in a" + "no-break condition.");
+
+      }
+
+    }
+
+    performSpaceResolutionRules2to3(secondPart,secondPartLengths);
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+/** 
+
+ * Resolves unresolved elements applying the space resolution rules defined in 4.3.1.
+
+ * @param elems the element list
+
+ */
+
+public static void resolveElementList(List elems){
+
+  if (LOG.isTraceEnabled()) {
+
+    LOG.trace(elems);
+
+  }
+
+  boolean first=true;
+
+  boolean last=false;
+
+  boolean skipNextElement=false;
+
+  List unresolvedFirst=new java.util.ArrayList();
+
+  List unresolvedSecond=new java.util.ArrayList();
+
+  List currentGroup;
+
+  ListIterator iter=elems.listIterator();
+
+  while (iter.hasNext()) {
+
+    ListElement el=(ListElement)iter.next();
+
+    if (el.isUnresolvedElement()) {
+
+      if (LOG.isTraceEnabled()) {
+
+        LOG.trace("unresolved found: " + el + " "+ first+ "/"+ last);
+
+      }
+
+      BreakElement breakPoss=null;
+
+      unresolvedFirst.clear();
+
+      unresolvedSecond.clear();
+
+      if (el instanceof BreakElement) {
+
+        breakPoss=(BreakElement)el;
+
+        currentGroup=unresolvedSecond;
+
+      }
+
+ else {
+
+        currentGroup=unresolvedFirst;
+
+        currentGroup.add(el);
+
+      }
+
+      iter.remove();
+
+      last=true;
+
+      skipNextElement=true;
+
+      while (iter.hasNext()) {
+
+        el=(ListElement)iter.next();
+
+        if (el instanceof BreakElement && breakPoss != null) {
+
+          skipNextElement=false;
+
+          last=false;
+
+          break;
+
+        }
+
+ else         if (currentGroup == unresolvedFirst && (el instanceof BreakElement)) {
+
+          breakPoss=(BreakElement)el;
+
+          iter.remove();
+
+          currentGroup=unresolvedSecond;
+
+        }
+
+ else         if (el.isUnresolvedElement()) {
+
+          currentGroup.add(el);
+
+          iter.remove();
+
+        }
+
+ else {
+
+          last=false;
+
+          break;
+
+        }
+
+      }
+
+      if (breakPoss == null && unresolvedSecond.isEmpty() && !last) {
+
+        LOG.trace("Swap first and second parts in no-break condition," + " second part is empty.");
+
+        List swapList=unresolvedSecond;
+
+        unresolvedSecond=unresolvedFirst;
+
+        unresolvedFirst=swapList;
+
+      }
+
+      LOG.debug("----start space resolution (first=" + first + ", last="+ last+ ")...");
+
+      SpaceResolver resolver=new SpaceResolver(unresolvedFirst,breakPoss,unresolvedSecond,first,last);
+
+      if (!last) {
+
+        iter.previous();
+
+      }
+
+      resolver.generate(iter);
+
+      if (!last && skipNextElement) {
+
+        iter.next();
+
+      }
+
+      LOG.debug("----end space resolution.");
+
+    }
+
+    first=false;
+
+  }
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+/** 
+
+ * Main constructor.
+
+ * @param first Element list before a break (optional)
+
+ * @param breakPoss Break possibility (optional)
+
+ * @param second Element list after a break (or if no break possibility in vicinity)
+
+ * @param isFirst Resolution at the beginning of a (full) element list
+
+ * @param isLast Resolution at the end of a (full) element list
+
+ */
+
+private SpaceResolver(List first,BreakElement breakPoss,List second,boolean isFirst,boolean isLast){
+
+  this.isFirst=isFirst;
+
+  this.isLast=isLast;
+
+  int c=0;
+
+  if (first != null) {
+
+    c+=first.size();
+
+  }
+
+  if (second != null) {
+
+    c+=second.size();
+
+  }
+
+  noBreak=new UnresolvedListElementWithLength[c];
+
+  noBreakLengths=new MinOptMax[c];
+
+  int i=0;
+
+  ListIterator iter;
+
+  if (first != null) {
+
+    iter=first.listIterator();
+
+    while (iter.hasNext()) {
+
+      noBreak[i]=(UnresolvedListElementWithLength)iter.next();
+
+      noBreakLengths[i]=noBreak[i].getLength();
+
+      i++;
+
+    }
+
+  }
+
+  if (second != null) {
+
+    iter=second.listIterator();
+
+    while (iter.hasNext()) {
+
+      noBreak[i]=(UnresolvedListElementWithLength)iter.next();
+
+      noBreakLengths[i]=noBreak[i].getLength();
+
+      i++;
+
+    }
+
+  }
+
+  if (breakPoss != null) {
+
+    if (breakPoss.getPendingAfterMarks() != null) {
+
+      if (LOG.isTraceEnabled()) {
+
+        LOG.trace("    adding pending before break: " + breakPoss.getPendingAfterMarks());
+
+      }
+
+      first.addAll(0,breakPoss.getPendingAfterMarks());
+
+    }
+
+    if (breakPoss.getPendingBeforeMarks() != null) {
+
+      if (LOG.isTraceEnabled()) {
+
+        LOG.trace("    adding pending after break: " + breakPoss.getPendingBeforeMarks());
+
+      }
+
+      second.addAll(0,breakPoss.getPendingBeforeMarks());
+
+    }
+
+  }
+
+  if (LOG.isTraceEnabled()) {
+
+    LOG.trace("before: " + first);
+
+    LOG.trace("  break: " + breakPoss);
+
+    LOG.trace("after: " + second);
+
+    LOG.trace("NO-BREAK: " + toString(noBreak,noBreakLengths));
+
+  }
+
+  if (first != null) {
+
+    firstPart=new UnresolvedListElementWithLength[first.size()];
+
+    firstPartLengths=new MinOptMax[firstPart.length];
+
+    first.toArray(firstPart);
+
+    for (i=0; i < firstPart.length; i++) {
+
+      firstPartLengths[i]=firstPart[i].getLength();
+
+    }
+
+  }
+
+  this.breakPoss=breakPoss;
+
+  if (second != null) {
+
+    secondPart=new UnresolvedListElementWithLength[second.size()];
+
+    secondPartLengths=new MinOptMax[secondPart.length];
+
+    second.toArray(secondPart);
+
+    for (i=0; i < secondPart.length; i++) {
+
+      secondPartLengths[i]=secondPart[i].getLength();
+
+    }
+
+  }
+
+  resolve();
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private MinOptMax sum(MinOptMax[] lengths){
+
+  MinOptMax sum=MinOptMax.ZERO;
+
+  for (  MinOptMax length : lengths) {
+
+    if (length != null) {
+
+      sum=sum.plus(length);
+
+    }
+
+  }
+
+  return sum;
+
+}
+
+Location: SpaceResolver.java
+
+Content: 
+
+private String toString(Object[] arr1,Object[] arr2){
+
+  if (arr1.length != arr2.length) {
+
+    throw new IllegalArgumentException("The length of both arrays must be equal");
+
+  }
+
+  StringBuffer sb=new StringBuffer("[");
+
+  for (int i=0; i < arr1.length; i++) {
+
+    if (i > 0) {
+
+      sb.append(", ");
+
+    }
+
+    sb.append(String.valueOf(arr1[i]));
+
+    sb.append("/");
+
+    sb.append(String.valueOf(arr2[i]));
+
+  }
+
+  sb.append("]");
+
+  return sb.toString();
+
+}
+

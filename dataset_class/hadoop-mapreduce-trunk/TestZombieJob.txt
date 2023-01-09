@@ -1,0 +1,294 @@
+Location: TestZombieJob.java
+
+Content: 
+
+private void assertRuntimeEqual(long expected,long generated){
+
+  if (expected == 0) {
+
+    assertTrue(generated > -1000 && generated < 1000);
+
+  }
+
+ else {
+
+    long epsilon=Math.max(expected / 10,5000);
+
+    assertTrue(expected - generated > -epsilon);
+
+    assertTrue(expected - generated < epsilon);
+
+  }
+
+}
+
+Location: TestZombieJob.java
+
+Content: 
+
+private void checkMakeUpTask(JobStory job,int taskNumber,int locality){
+
+  TaskAttemptInfo taInfo=null;
+
+  Histogram sampleSucceeded=new Histogram();
+
+  Histogram sampleFailed=new Histogram();
+
+  List<Integer> sampleAttempts=new ArrayList<Integer>();
+
+  for (int i=0; i < 100000; i++) {
+
+    int attemptId=0;
+
+    while (true) {
+
+      taInfo=job.getMapTaskAttemptInfoAdjusted(taskNumber,attemptId,1);
+
+      if (taInfo.getRunState() == State.SUCCEEDED) {
+
+        sampleSucceeded.enter(taInfo.getRuntime());
+
+        break;
+
+      }
+
+      sampleFailed.enter(taInfo.getRuntime());
+
+      attemptId++;
+
+    }
+
+    sampleAttempts.add(attemptId);
+
+  }
+
+  int[] countTries=new int[]{0,0,0,0};
+
+  for (  int attempts : sampleAttempts) {
+
+    assertTrue(attempts < 4);
+
+    countTries[attempts]++;
+
+  }
+
+  for (int i=0; i < 4; i++) {
+
+    int count=countTries[i];
+
+    double p=(double)count / sampleAttempts.size();
+
+    assertTrue(expectedPs[i] - p < epsilon);
+
+  }
+
+  long[] expectedCDF=succeededCDF;
+
+  LoggedDiscreteCDF cdf=new LoggedDiscreteCDF();
+
+  cdf.setCDF(sampleSucceeded,attemptTimesPercentiles,100);
+
+  assertRuntimeEqual(cdf.getMinimum(),expectedCDF[0]);
+
+  assertRuntimeEqual(cdf.getMaximum(),expectedCDF[4]);
+
+  for (int i=0; i < 3; i++) {
+
+    LoggedSingleRelativeRanking ranking=cdf.getRankings().get(i);
+
+    assertRuntimeEqual(expectedCDF[i + 1],ranking.getDatum());
+
+  }
+
+  expectedCDF=failedCDF;
+
+  cdf=new LoggedDiscreteCDF();
+
+  cdf.setCDF(sampleFailed,attemptTimesPercentiles,100);
+
+  System.out.println("generated failed map runtime distribution");
+
+  System.out.println(cdf.getNumberValues() + ": " + cdf.getMinimum()+ "--"+ cdf.getMaximum());
+
+  for (  LoggedSingleRelativeRanking ranking : cdf.getRankings()) {
+
+    System.out.println("   " + ranking.getRelativeRanking() + ":"+ ranking.getDatum());
+
+  }
+
+  assertRuntimeEqual(cdf.getMinimum(),expectedCDF[0]);
+
+  assertRuntimeEqual(cdf.getMaximum(),expectedCDF[4]);
+
+  for (int i=0; i < 3; i++) {
+
+    LoggedSingleRelativeRanking ranking=cdf.getRankings().get(i);
+
+    assertRuntimeEqual(expectedCDF[i + 1],ranking.getDatum());
+
+  }
+
+}
+
+Location: TestZombieJob.java
+
+Content: 
+
+@Test public void testFirstJob(){
+
+  JobStory job=jobStories.get(0);
+
+  assertEquals(1,job.getNumberMaps());
+
+  assertEquals(1,job.getNumberReduces());
+
+  TaskAttemptInfo taInfo=null;
+
+  long expectedRuntime=2423;
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(14,0,1);
+
+  assertEquals(expectedRuntime,taInfo.getRuntime());
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(14,0,2);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(14,0,0);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  expectedRuntime=97502;
+
+  taInfo=job.getTaskAttemptInfo(TaskType.REDUCE,14,0);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  taInfo=job.getTaskAttemptInfo(TaskType.REDUCE,14,0);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+}
+
+Location: TestZombieJob.java
+
+Content: 
+
+@Test public void testFourthJob(){
+
+  JobStory job=jobStories.get(3);
+
+  assertEquals(131,job.getNumberMaps());
+
+  assertEquals(47,job.getNumberReduces());
+
+  TaskAttemptInfo taInfo=null;
+
+  long runtime=5268;
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(113,1,1);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  assertEquals(runtime,taInfo.getRuntime());
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(113,1,2);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  assertEquals(runtime,taInfo.getRuntime() / 2);
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(113,1,0);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  assertEquals((long)(runtime / 1.5),taInfo.getRuntime());
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(113,0,1);
+
+  assertEquals(18592,taInfo.getRuntime());
+
+  assertEquals(State.FAILED,taInfo.getRunState());
+
+}
+
+Location: TestZombieJob.java
+
+Content: 
+
+@Test public void testMakeUpInfo(){
+
+  checkMakeUpTask(jobStories.get(3),113,1);
+
+}
+
+Location: TestZombieJob.java
+
+Content: 
+
+@Test public void testRecordIOInfo(){
+
+  JobStory job=jobStories.get(3);
+
+  TaskInfo mapTask=job.getTaskInfo(TaskType.MAP,113);
+
+  TaskInfo reduceTask=job.getTaskInfo(TaskType.REDUCE,0);
+
+  assertEquals(mapTaskCounts[0],mapTask.getInputBytes());
+
+  assertEquals(mapTaskCounts[1],mapTask.getInputRecords());
+
+  assertEquals(mapTaskCounts[2],mapTask.getOutputBytes());
+
+  assertEquals(mapTaskCounts[3],mapTask.getOutputRecords());
+
+  assertEquals(mapTaskCounts[4],mapTask.getTaskMemory());
+
+  assertEquals(reduceTaskCounts[0],reduceTask.getInputBytes());
+
+  assertEquals(reduceTaskCounts[1],reduceTask.getInputRecords());
+
+  assertEquals(reduceTaskCounts[2],reduceTask.getOutputBytes());
+
+  assertEquals(reduceTaskCounts[3],reduceTask.getOutputRecords());
+
+  assertEquals(reduceTaskCounts[4],reduceTask.getTaskMemory());
+
+}
+
+Location: TestZombieJob.java
+
+Content: 
+
+@Test public void testSecondJob(){
+
+  JobStory job=jobStories.get(1);
+
+  assertEquals(20,job.getNumberMaps());
+
+  assertEquals(1,job.getNumberReduces());
+
+  TaskAttemptInfo taInfo=null;
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(17,1,1);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(17,1,2);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(17,1,0);
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+  taInfo=job.getMapTaskAttemptInfoAdjusted(14,0,1);
+
+  assertEquals(1927,taInfo.getRuntime());
+
+  assertEquals(State.SUCCEEDED,taInfo.getRunState());
+
+}
+

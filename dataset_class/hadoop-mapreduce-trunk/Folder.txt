@@ -1,0 +1,284 @@
+Location: Folder.java
+
+Content: 
+
+private void adjustJobTimes(LoggedJob adjustee){
+
+  long offsetInCycle=(adjustee.getSubmitTime() - firstJobSubmitTime) % inputCycle;
+
+  long outputOffset=(long)((double)offsetInCycle * timeDilation);
+
+  long adjustment=firstJobSubmitTime + outputOffset - adjustee.getSubmitTime();
+
+  adjustee.adjustTimes(adjustment);
+
+}
+
+Location: Folder.java
+
+Content: 
+
+private int initialize(String[] args) throws IllegalArgumentException {
+
+  String tempDirName=null;
+
+  String inputPathName=null;
+
+  String outputPathName=null;
+
+  for (int i=0; i < args.length; ++i) {
+
+    String thisArg=args[i];
+
+    if (thisArg.equalsIgnoreCase("-starts-after")) {
+
+      startsAfter=parseDuration(args[++i]);
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-output-duration")) {
+
+      outputDuration=parseDuration(args[++i]);
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-input-cycle")) {
+
+      inputCycle=parseDuration(args[++i]);
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-concentration")) {
+
+      concentration=Double.parseDouble(args[++i]);
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-debug")) {
+
+      debug=true;
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-allow-missorting")) {
+
+      allowMissorting=true;
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-seed")) {
+
+      seeded=true;
+
+      randomSeed=Long.parseLong(args[++i]);
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-skew-buffer-length")) {
+
+      skewBufferLength=Integer.parseInt(args[++i]);
+
+    }
+
+ else     if (thisArg.equalsIgnoreCase("-temp-directory")) {
+
+      tempDirName=args[++i];
+
+    }
+
+ else     if (thisArg.equals("") || thisArg.startsWith("-")) {
+
+      throw new IllegalArgumentException("Illegal switch argument, " + thisArg + " at position "+ i);
+
+    }
+
+ else {
+
+      inputPathName=thisArg;
+
+      outputPathName=args[++i];
+
+      if (i != args.length - 1) {
+
+        throw new IllegalArgumentException("Too many non-switch arguments");
+
+      }
+
+    }
+
+  }
+
+  try {
+
+    Configuration conf=getConf();
+
+    Path inPath=new Path(inputPathName);
+
+    reader=new DeskewedJobTraceReader(new JobTraceReader(inPath,conf),skewBufferLength,!allowMissorting);
+
+    Path outPath=new Path(outputPathName);
+
+    ObjectMapper outMapper=new ObjectMapper();
+
+    outMapper.configure(SerializationConfig.Feature.CAN_OVERRIDE_ACCESS_MODIFIERS,true);
+
+    JsonFactory outFactory=outMapper.getJsonFactory();
+
+    FileSystem outFS=outPath.getFileSystem(conf);
+
+    CompressionCodec codec=new CompressionCodecFactory(conf).getCodec(outPath);
+
+    OutputStream output;
+
+    Compressor compressor=null;
+
+    if (codec != null) {
+
+      compressor=CodecPool.getCompressor(codec);
+
+      output=codec.createOutputStream(outFS.create(outPath),compressor);
+
+    }
+
+ else {
+
+      output=outFS.create(outPath);
+
+    }
+
+    outGen=outFactory.createJsonGenerator(output,JsonEncoding.UTF8);
+
+    outGen.useDefaultPrettyPrinter();
+
+    tempDir=tempDirName == null ? outPath.getParent() : new Path(tempDirName);
+
+    FileSystem fs=tempDir.getFileSystem(getConf());
+
+    if (!fs.getFileStatus(tempDir).isDirectory()) {
+
+      throw new IOException("Your temp directory is not a directory");
+
+    }
+
+    if (inputCycle <= 0) {
+
+      LOG.error("You must have an input cycle length.");
+
+      return NO_INPUT_CYCLE_LENGTH;
+
+    }
+
+    if (outputDuration <= 0) {
+
+      outputDuration=60L * 60L * TICKS_PER_SECOND;
+
+    }
+
+    if (inputCycle <= 0) {
+
+      inputCycle=outputDuration;
+
+    }
+
+    timeDilation=(double)outputDuration / (double)inputCycle;
+
+    random=seeded ? new Random(randomSeed) : new Random();
+
+    if (debug) {
+
+      randomSeed=random.nextLong();
+
+      LOG.warn("This run effectively has a -seed of " + randomSeed);
+
+      random=new Random(randomSeed);
+
+      seeded=true;
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    e.printStackTrace(System.err);
+
+    return NON_EXISTENT_FILES;
+
+  }
+
+  return 0;
+
+}
+
+Location: Folder.java
+
+Content: 
+
+private void maybeOutput(LoggedJob job) throws IOException {
+
+  for (int i=0; i < transcriptionRateInteger; ++i) {
+
+    outGen.writeObject(job);
+
+  }
+
+  if (random.nextDouble() < transcriptionRateFraction) {
+
+    outGen.writeObject(job);
+
+  }
+
+}
+
+Location: Folder.java
+
+Content: 
+
+static long parseDuration(String durationString){
+
+  String numeral=durationString.substring(0,durationString.length() - 1);
+
+  char durationCode=durationString.charAt(durationString.length() - 1);
+
+  long result=Integer.parseInt(numeral);
+
+  if (result <= 0) {
+
+    throw new IllegalArgumentException("Negative durations are not allowed");
+
+  }
+
+switch (durationCode) {
+
+case 'D':
+
+case 'd':
+
+    return 24L * 60L * 60L* TICKS_PER_SECOND* result;
+
+case 'H':
+
+case 'h':
+
+  return 60L * 60L * TICKS_PER_SECOND* result;
+
+case 'M':
+
+case 'm':
+
+return 60L * TICKS_PER_SECOND * result;
+
+case 'S':
+
+case 's':
+
+return TICKS_PER_SECOND * result;
+
+default :
+
+throw new IllegalArgumentException("Missing or invalid duration code");
+
+}
+
+}
+

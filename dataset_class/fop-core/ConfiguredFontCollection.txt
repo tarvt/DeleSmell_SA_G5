@@ -1,0 +1,110 @@
+Location: ConfiguredFontCollection.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param resourceResolver a font resolver
+
+ * @param customFonts the list of custom fonts
+
+ * @param useComplexScriptFeatures true if complex script features enabled
+
+ */
+
+public ConfiguredFontCollection(InternalResourceResolver resourceResolver,List<EmbedFontInfo> customFonts,boolean useComplexScriptFeatures){
+
+  this.resourceResolver=resourceResolver;
+
+  this.embedFontInfoList=customFonts;
+
+  this.useComplexScripts=useComplexScriptFeatures;
+
+}
+
+Location: ConfiguredFontCollection.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public int setup(int start,FontInfo fontInfo){
+
+  int num=start;
+
+  if (embedFontInfoList == null || embedFontInfoList.size() < 1) {
+
+    log.debug("No user configured fonts found.");
+
+    return num;
+
+  }
+
+  String internalName=null;
+
+  for (  EmbedFontInfo configFontInfo : embedFontInfoList) {
+
+    internalName="F" + num++;
+
+    try {
+
+      URI fontURI=configFontInfo.getEmbedURI();
+
+      FontMetricsMapper font;
+
+      URI metricsURI=configFontInfo.getMetricsURI();
+
+      if (metricsURI != null) {
+
+        LazyFont fontMetrics=new LazyFont(configFontInfo,resourceResolver,useComplexScripts);
+
+        InputStream fontSource=resourceResolver.getResource(fontURI);
+
+        font=new CustomFontMetricsMapper(fontMetrics,fontSource);
+
+      }
+
+ else {
+
+        FontUris fontUris=configFontInfo.getFontUris();
+
+        CustomFont fontMetrics=FontLoader.loadFont(fontUris,configFontInfo.getSubFontName(),true,configFontInfo.getEmbeddingMode(),configFontInfo.getEncodingMode(),configFontInfo.getKerning(),configFontInfo.getAdvanced(),resourceResolver,configFontInfo.getSimulateStyle(),configFontInfo.getEmbedAsType1());
+
+        font=new CustomFontMetricsMapper(fontMetrics);
+
+      }
+
+      fontInfo.addMetrics(internalName,font);
+
+      for (      FontTriplet triplet : configFontInfo.getFontTriplets()) {
+
+        if (log.isDebugEnabled()) {
+
+          log.debug("Registering: " + triplet + " under "+ internalName);
+
+        }
+
+        fontInfo.addFontProperties(internalName,triplet);
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+      log.warn("Unable to load custom font from file '" + configFontInfo.getEmbedURI() + "'",e);
+
+    }
+
+  }
+
+  return num;
+
+}
+

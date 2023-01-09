@@ -1,0 +1,614 @@
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Create a new Namespace context.
+
+ */
+
+Context2(Context2 parent){
+
+  if (parent == null) {
+
+    prefixTable=new Hashtable();
+
+    uriTable=new Hashtable();
+
+    elementNameTable=null;
+
+    attributeNameTable=null;
+
+  }
+
+ else   setParent(parent);
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Copy on write for the internal tables in this context. <p> This class is optimized for the normal case where most elements do not contain Namespace declarations. In that case, the Context2 will share data structures with its parent. New tables are obtained only when new declarations are issued, so they can be popped off the stack. </p> <p> JJK: **** Alternative: each Context2 might declare _only_ its local bindings, and delegate upward if not found. </p>
+
+ */
+
+private void copyTables(){
+
+  prefixTable=(Hashtable)prefixTable.clone();
+
+  uriTable=(Hashtable)uriTable.clone();
+
+  if (elementNameTable != null)   elementNameTable=new Hashtable();
+
+  if (attributeNameTable != null)   attributeNameTable=new Hashtable();
+
+  tablesDirty=true;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Declare a Namespace prefix for this context.
+
+ * @param prefix The prefix to declare.
+
+ * @param uri    The associated Namespace URI.
+
+ * @see org.xml.sax.helpers.NamespaceSupport2#declarePrefix
+
+ */
+
+void declarePrefix(String prefix,String uri){
+
+  if (!tablesDirty) {
+
+    copyTables();
+
+  }
+
+  if (declarations == null) {
+
+    declarations=new Vector();
+
+  }
+
+  prefix=prefix.intern();
+
+  uri=uri.intern();
+
+  if ("".equals(prefix)) {
+
+    if ("".equals(uri)) {
+
+      defaultNS=null;
+
+    }
+
+ else {
+
+      defaultNS=uri;
+
+    }
+
+  }
+
+ else {
+
+    prefixTable.put(prefix,uri);
+
+    uriTable.put(uri,prefix);
+
+  }
+
+  declarations.addElement(prefix);
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * @returns The child Namespace context object, or null if this is the lastcurrently on the chain.
+
+ */
+
+Context2 getChild(){
+
+  return child;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Return an enumeration of prefixes declared in this context.
+
+ * @return An enumeration of prefixes (possibly empty).
+
+ * @see org.xml.sax.helpers.NamespaceSupport2#getDeclaredPrefixes
+
+ */
+
+Enumeration getDeclaredPrefixes(){
+
+  if (declarations == null) {
+
+    return EMPTY_ENUMERATION;
+
+  }
+
+ else {
+
+    return declarations.elements();
+
+  }
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * @returns The parent Namespace context object, or null if this is the root.
+
+ */
+
+Context2 getParent(){
+
+  return parent;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Return an enumeration of all prefixes currently in force. <p> The default prefix, if in force, is <em>not</em> returned, and will have to be checked for separately. </p>
+
+ * @return An enumeration of prefixes (never empty).
+
+ * @see org.xml.sax.helpers.NamespaceSupport2#getPrefixes
+
+ */
+
+Enumeration getPrefixes(){
+
+  if (prefixTable == null) {
+
+    return EMPTY_ENUMERATION;
+
+  }
+
+ else {
+
+    return prefixTable.keys();
+
+  }
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Return an enumeration of all prefixes currently declared for a URI. <p> This method returns prefixes mapped to a specific Namespace URI. The xml: prefix will be included. If you want only one prefix that's mapped to the Namespace URI, and you don't care which one you get, use the {@link #getPrefix getPrefix} method instead.</p> <p> <strong>Note:</strong> the empty (default) prefix is <em>never</em> included in this enumeration; to check for the presence of a default Namespace, use the  {@link #getURI getURI} method with an argument of "".</p>
+
+ * @param uri The Namespace URI.
+
+ * @return An enumeration of all prefixes declared in the current context.
+
+ * @see #getPrefix
+
+ * @see #getDeclaredPrefixes
+
+ * @see #getURI
+
+ */
+
+public Enumeration getPrefixes(String uri){
+
+  return new PrefixForUriEnumerator(this,uri,getPrefixes());
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Look up one of the prefixes associated with a URI in this context. <p> Since many prefixes may be mapped to the same URI, the return value may be unreliable. </p>
+
+ * @param uri The URI to look up.
+
+ * @return The associated prefix, or null if none is declared.
+
+ * @see org.xml.sax.helpers.NamespaceSupport2#getPrefix
+
+ */
+
+String getPrefix(String uri){
+
+  if (uriTable == null) {
+
+    return null;
+
+  }
+
+ else {
+
+    return (String)uriTable.get(uri);
+
+  }
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Look up the URI associated with a prefix in this context.
+
+ * @param prefix The prefix to look up.
+
+ * @return The associated Namespace URI, or null if none is declared.
+
+ * @see org.xml.sax.helpers.NamespaceSupport2#getURI
+
+ */
+
+String getURI(String prefix){
+
+  if ("".equals(prefix)) {
+
+    return defaultNS;
+
+  }
+
+ else   if (prefixTable == null) {
+
+    return null;
+
+  }
+
+ else {
+
+    return (String)prefixTable.get(prefix);
+
+  }
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+public boolean hasMoreElements(){
+
+  if (lookahead != null)   return true;
+
+  while (allPrefixes.hasMoreElements()) {
+
+    String prefix=(String)allPrefixes.nextElement();
+
+    if (uri.equals(nsup.getURI(prefix))) {
+
+      lookahead=prefix;
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Create a new Namespace support object.
+
+ */
+
+public NamespaceSupport2(){
+
+  reset();
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+public Object nextElement(){
+
+  if (hasMoreElements()) {
+
+    String tmp=lookahead;
+
+    lookahead=null;
+
+    return tmp;
+
+  }
+
+ else   throw new java.util.NoSuchElementException();
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Revert to the previous Namespace context. <p> Normally, you should pop the context at the end of each XML element. After popping the context, all Namespace prefix mappings that were previously in force are restored. </p> <p> You must not attempt to declare additional Namespace prefixes after popping a context, unless you push another context first. </p>
+
+ * @see #pushContext
+
+ */
+
+public void popContext(){
+
+  Context2 parentContext=currentContext.getParent();
+
+  if (parentContext == null)   throw new EmptyStackException();
+
+ else   currentContext=parentContext;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+PrefixForUriEnumerator(NamespaceSupport2 nsup,String uri,Enumeration allPrefixes){
+
+  this.nsup=nsup;
+
+  this.uri=uri;
+
+  this.allPrefixes=allPrefixes;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Process a raw XML 1.0 name in this context.
+
+ * @param qName       The raw XML 1.0 name.
+
+ * @param isAttribute true if this is an attribute name.
+
+ * @return An array of three strings containing the URI part (or empty string),the local part, and the raw name, all internalized, or null if there is an undeclared prefix.
+
+ * @see org.xml.sax.helpers.NamespaceSupport2#processName
+
+ */
+
+String[] processName(String qName,boolean isAttribute){
+
+  String name[];
+
+  Hashtable table;
+
+  if (isAttribute) {
+
+    if (elementNameTable == null)     elementNameTable=new Hashtable();
+
+    table=elementNameTable;
+
+  }
+
+ else {
+
+    if (attributeNameTable == null)     attributeNameTable=new Hashtable();
+
+    table=attributeNameTable;
+
+  }
+
+  name=(String[])table.get(qName);
+
+  if (name != null) {
+
+    return name;
+
+  }
+
+  name=new String[3];
+
+  int index=qName.indexOf(':');
+
+  if (index == -1) {
+
+    if (isAttribute || defaultNS == null) {
+
+      name[0]="";
+
+    }
+
+ else {
+
+      name[0]=defaultNS;
+
+    }
+
+    name[1]=qName.intern();
+
+    name[2]=name[1];
+
+  }
+
+ else {
+
+    String prefix=qName.substring(0,index);
+
+    String local=qName.substring(index + 1);
+
+    String uri;
+
+    if ("".equals(prefix)) {
+
+      uri=defaultNS;
+
+    }
+
+ else {
+
+      uri=(String)prefixTable.get(prefix);
+
+    }
+
+    if (uri == null) {
+
+      return null;
+
+    }
+
+    name[0]=uri;
+
+    name[1]=local.intern();
+
+    name[2]=qName.intern();
+
+  }
+
+  table.put(name[2],name);
+
+  tablesDirty=true;
+
+  return name;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Process a raw XML 1.0 name. <p> This method processes a raw XML 1.0 name in the current context by removing the prefix and looking it up among the prefixes currently declared. The return value will be the array supplied by the caller, filled in as follows: </p> <dl> <dt>parts[0]</dt> <dd>The Namespace URI, or an empty string if none is in use.</dd> <dt>parts[1]</dt> <dd>The local name (without prefix).</dd> <dt>parts[2]</dt> <dd>The original raw name.</dd> </dl> <p> All of the strings in the array will be internalized. If the raw name has a prefix that has not been declared, then the return value will be null. </p> <p> Note that attribute names are processed differently than element names: an unprefixed element name will received the default Namespace (if any), while an unprefixed element name will not. </p>
+
+ * @param qName       The raw XML 1.0 name to be processed.
+
+ * @param parts       A string array supplied by the caller, capable of holdingat least three members.
+
+ * @param isAttribute A flag indicating whether this is an attribute name (true)or an element name (false).
+
+ * @return The supplied array holding three internalized strings representingthe Namespace URI (or empty string), the local name, and the raw XML 1.0 name; or null if there is an undeclared prefix.
+
+ * @see #declarePrefix
+
+ * @see java.lang.String#intern
+
+ */
+
+public String[] processName(String qName,String[] parts,boolean isAttribute){
+
+  String[] name=currentContext.processName(qName,isAttribute);
+
+  if (name == null)   return null;
+
+  System.arraycopy(name,0,parts,0,3);
+
+  return parts;
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * Start a new Namespace context. <p> Normally, you should push a new context at the beginning of each XML element: the new context will automatically inherit the declarations of its parent context, but it will also keep track of which declarations were made within this context. </p> <p> The Namespace support object always starts with a base context already in force: in this context, only the "xml" prefix is declared. </p>
+
+ * @see #popContext
+
+ */
+
+public void pushContext(){
+
+  Context2 parentContext=currentContext;
+
+  currentContext=parentContext.getChild();
+
+  if (currentContext == null) {
+
+    currentContext=new Context2(parentContext);
+
+  }
+
+ else {
+
+    currentContext.setParent(parentContext);
+
+  }
+
+}
+
+Location: NamespaceSupport2.java
+
+Content: 
+
+/** 
+
+ * (Re)set the parent of this Namespace context. This is separate from the c'tor because it's re-applied when a Context2 is reused by push-after-pop.
+
+ * @param context The parent Namespace context object.
+
+ */
+
+void setParent(Context2 parent){
+
+  this.parent=parent;
+
+  parent.child=this;
+
+  declarations=null;
+
+  prefixTable=parent.prefixTable;
+
+  uriTable=parent.uriTable;
+
+  elementNameTable=parent.elementNameTable;
+
+  attributeNameTable=parent.attributeNameTable;
+
+  defaultNS=parent.defaultNS;
+
+  tablesDirty=false;
+
+}
+

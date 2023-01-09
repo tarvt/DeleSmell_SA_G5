@@ -1,0 +1,248 @@
+Location: PostscriptParser.java
+
+Content: 
+
+public PSElement createElement(String operator,String elementID,int startPoint){
+
+  if (operator.equals("")) {
+
+    return null;
+
+  }
+
+  if (elementID.equals(FIXED_ARRAY)) {
+
+    return new PSFixedArray(operator,startPoint);
+
+  }
+
+ else   if (elementID.equals(VARIABLE_ARRAY)) {
+
+    return new PSVariableArray(operator,startPoint);
+
+  }
+
+ else   if (elementID.equals(SUBROUTINE)) {
+
+    return new PSSubroutine(operator,startPoint);
+
+  }
+
+ else   if (!operator.equals("/Private") && elementID.equals(DICTIONARY)) {
+
+    return new PSDictionary(operator,startPoint);
+
+  }
+
+  return null;
+
+}
+
+Location: PostscriptParser.java
+
+Content: 
+
+private boolean hasEndToken(String token){
+
+  return token.equals("currentdict");
+
+}
+
+Location: PostscriptParser.java
+
+Content: 
+
+private boolean hasMatch(String operator,List<PSElement> elements){
+
+  for (  PSElement element : elements) {
+
+    if (element.getOperator().equals(operator)) {
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: PostscriptParser.java
+
+Content: 
+
+/** 
+
+ * Parses the postscript document and returns a list of elements
+
+ * @param segment The byte array containing the postscript data
+
+ * @return A list of found Postscript elements
+
+ * @throws IOException
+
+ */
+
+public List<PSElement> parse(byte[] segment) throws IOException {
+
+  List<PSElement> parsedElements=new ArrayList<PSElement>();
+
+  PSElement foundElement=null;
+
+  String operator=null;
+
+  StringBuilder token=new StringBuilder();
+
+  List<String> tokens=new ArrayList<String>();
+
+  int startPoint=-1;
+
+  boolean specialDelimiter=false;
+
+  boolean lastWasSpecial=false;
+
+  for (int i=0; i < segment.length; i++) {
+
+    byte cur=segment[i];
+
+    if (foundElement != null && foundElement.hasMore()) {
+
+      foundElement.parse(cur,i);
+
+      continue;
+
+    }
+
+ else {
+
+      char c=(char)cur;
+
+      if (!lastWasSpecial) {
+
+        specialDelimiter=(c == '{' || c == '}' || c == '[' || c == ']' || (!token.toString().equals("") && c == '/'));
+
+        boolean isNotBreak=!(c == ' ' || c == '\r' || cur == 15 || cur == 12 || cur == 10);
+
+        if (isNotBreak && !specialDelimiter) {
+
+          token.append(c);
+
+          continue;
+
+        }
+
+      }
+
+ else {
+
+        lastWasSpecial=false;
+
+        token.append(c);
+
+        if (token.toString().equals("/")) {
+
+          continue;
+
+        }
+
+      }
+
+    }
+
+    try {
+
+      boolean setOp=false;
+
+      if ((foundElement == null || !foundElement.hasMore()) && token.length() > 1 && token.charAt(0) == '/' && tokens.size() != 1 || hasEndToken(token.toString())) {
+
+        operator=token.toString();
+
+        setOp=true;
+
+        if (tokens.size() > 2 && tokens.get(tokens.size() - 1).equals("def")) {
+
+          PSVariable newVar=new PSVariable(tokens.get(0),startPoint);
+
+          newVar.setValue(tokens.get(1));
+
+          newVar.setEndPoint(i - operator.length());
+
+          parsedElements.add(newVar);
+
+        }
+
+        tokens.clear();
+
+        startPoint=i - token.length();
+
+      }
+
+      if (operator != null) {
+
+        if (foundElement instanceof PSSubroutine) {
+
+          PSSubroutine sub=(PSSubroutine)foundElement;
+
+          subroutines.put(sub.getOperator(),sub);
+
+          parsedElements.add(sub);
+
+          if (!setOp) {
+
+            operator="";
+
+          }
+
+        }
+
+ else {
+
+          if (foundElement != null) {
+
+            if (!hasMatch(foundElement.getOperator(),parsedElements)) {
+
+              parsedElements.add(foundElement);
+
+            }
+
+ else {
+
+              LOG.warn("Duplicate " + foundElement.getOperator() + " in font file, Ignoring.");
+
+            }
+
+          }
+
+        }
+
+        foundElement=createElement(operator,token.toString(),startPoint);
+
+      }
+
+    }
+
+  finally {
+
+      tokens.add(token.toString());
+
+      token=new StringBuilder();
+
+      if (specialDelimiter) {
+
+        specialDelimiter=false;
+
+        lastWasSpecial=true;
+
+        i--;
+
+      }
+
+    }
+
+  }
+
+  return parsedElements;
+
+}
+

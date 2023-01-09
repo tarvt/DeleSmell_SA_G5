@@ -1,0 +1,68 @@
+Location: TestTaskOutputSize.java
+
+Content: 
+
+@Test public void testTaskOutputSize() throws Exception {
+
+  MiniMRCluster mr=new MiniMRCluster(1,"file:///",1);
+
+  Path inDir=new Path(rootDir,"input");
+
+  Path outDir=new Path(rootDir,"output");
+
+  Job job=MapReduceTestUtil.createJob(mr.createJobConf(),inDir,outDir,1,1);
+
+  job.waitForCompletion(true);
+
+  assertTrue("Job failed",job.isSuccessful());
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  for (  TaskCompletionEvent tce : job.getTaskCompletionEvents(0,100)) {
+
+    TaskStatus ts=jt.getTaskStatus(TaskAttemptID.downgrade(tce.getTaskAttemptId()));
+
+    if (tce.isMapTask()) {
+
+      assertTrue("map output size is not found for " + tce.getTaskAttemptId(),ts.getOutputSize() > 0);
+
+    }
+
+ else {
+
+      assertEquals("task output size not expected for " + tce.getTaskAttemptId(),-1,ts.getOutputSize());
+
+    }
+
+  }
+
+  job=MapReduceTestUtil.createJob(mr.createJobConf(),inDir,outDir,1,0);
+
+  job.waitForCompletion(true);
+
+  assertTrue("Job failed",job.isSuccessful());
+
+  for (  TaskCompletionEvent tce : job.getTaskCompletionEvents(0,100)) {
+
+    TaskStatus ts=jt.getTaskStatus(TaskAttemptID.downgrade(tce.getTaskAttemptId()));
+
+    assertEquals("task output size not expected for " + tce.getTaskAttemptId(),-1,ts.getOutputSize());
+
+  }
+
+  job=MapReduceTestUtil.createFailJob(mr.createJobConf(),outDir,inDir);
+
+  job.waitForCompletion(true);
+
+  assertFalse("Job not failed",job.isSuccessful());
+
+  for (  TaskCompletionEvent tce : job.getTaskCompletionEvents(0,100)) {
+
+    TaskStatus ts=jt.getTaskStatus(TaskAttemptID.downgrade(tce.getTaskAttemptId()));
+
+    assertEquals("task output size not expected for " + tce.getTaskAttemptId(),-1,ts.getOutputSize());
+
+  }
+
+}
+

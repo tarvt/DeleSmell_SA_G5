@@ -1,0 +1,248 @@
+Location: TestSeq.java
+
+Content: 
+
+/** 
+
+ * Compile the code for this test sequence. Compile patterns from highest to lowest priority. Note that since patterns can be share by multiple test sequences, instruction lists must be copied before backpatching.
+
+ */
+
+public InstructionHandle compile(ClassGenerator classGen,MethodGenerator methodGen,InstructionHandle continuation){
+
+  if (_start != null) {
+
+    return _start;
+
+  }
+
+  final int count=_patterns.size();
+
+  if (count == 0) {
+
+    return (_start=getTemplateHandle(_default));
+
+  }
+
+  InstructionHandle fail=(_default == null) ? continuation : getTemplateHandle(_default);
+
+  for (int n=count - 1; n >= 0; n--) {
+
+    final LocationPathPattern pattern=getPattern(n);
+
+    final Template template=pattern.getTemplate();
+
+    final InstructionList il=new InstructionList();
+
+    il.append(methodGen.loadCurrentNode());
+
+    InstructionList ilist=methodGen.getInstructionList(pattern);
+
+    if (ilist == null) {
+
+      ilist=pattern.compile(classGen,methodGen);
+
+      methodGen.addInstructionList(pattern,ilist);
+
+    }
+
+    InstructionList copyOfilist=ilist.copy();
+
+    FlowList trueList=pattern.getTrueList();
+
+    if (trueList != null) {
+
+      trueList=trueList.copyAndRedirect(ilist,copyOfilist);
+
+    }
+
+    FlowList falseList=pattern.getFalseList();
+
+    if (falseList != null) {
+
+      falseList=falseList.copyAndRedirect(ilist,copyOfilist);
+
+    }
+
+    il.append(copyOfilist);
+
+    final InstructionHandle gtmpl=getTemplateHandle(template);
+
+    final InstructionHandle success=il.append(new GOTO_W(gtmpl));
+
+    if (trueList != null) {
+
+      trueList.backPatch(success);
+
+    }
+
+    if (falseList != null) {
+
+      falseList.backPatch(fail);
+
+    }
+
+    fail=il.getStart();
+
+    if (_instructionList != null) {
+
+      il.append(_instructionList);
+
+    }
+
+    _instructionList=il;
+
+  }
+
+  return (_start=fail);
+
+}
+
+Location: TestSeq.java
+
+Content: 
+
+/** 
+
+ * Returns, by reference, the templates that are included in this test sequence. Note that a single template can occur in several test sequences if its pattern is a union.
+
+ */
+
+public void findTemplates(Dictionary templates){
+
+  if (_default != null) {
+
+    templates.put(_default,this);
+
+  }
+
+  for (int i=0; i < _patterns.size(); i++) {
+
+    final LocationPathPattern pattern=(LocationPathPattern)_patterns.elementAt(i);
+
+    templates.put(pattern.getTemplate(),this);
+
+  }
+
+}
+
+Location: TestSeq.java
+
+Content: 
+
+/** 
+
+ * Returns the instruction list for this test sequence
+
+ */
+
+public InstructionList getInstructionList(){
+
+  return _instructionList;
+
+}
+
+Location: TestSeq.java
+
+Content: 
+
+/** 
+
+ * Returns pattern n in this test sequence
+
+ */
+
+private LocationPathPattern getPattern(int n){
+
+  return (LocationPathPattern)_patterns.elementAt(n);
+
+}
+
+Location: TestSeq.java
+
+Content: 
+
+/** 
+
+ * Get the instruction handle to a template's code. This is used when a single template occurs in several test sequences; that is, if its pattern is a union of patterns (e.g. match="A/B | A/C").
+
+ */
+
+private InstructionHandle getTemplateHandle(Template template){
+
+  return (InstructionHandle)_mode.getTemplateInstructionHandle(template);
+
+}
+
+Location: TestSeq.java
+
+Content: 
+
+/** 
+
+ * Reduce the patterns in this test sequence. Creates a new vector of patterns and sets the default pattern if it finds a patterns that is fully reduced.
+
+ */
+
+public void reduce(){
+
+  final Vector newPatterns=new Vector();
+
+  final int count=_patterns.size();
+
+  for (int i=0; i < count; i++) {
+
+    final LocationPathPattern pattern=(LocationPathPattern)_patterns.elementAt(i);
+
+    pattern.reduceKernelPattern();
+
+    if (pattern.isWildcard()) {
+
+      _default=pattern.getTemplate();
+
+      break;
+
+    }
+
+ else {
+
+      newPatterns.addElement(pattern);
+
+    }
+
+  }
+
+  _patterns=newPatterns;
+
+}
+
+Location: TestSeq.java
+
+Content: 
+
+public TestSeq(Vector patterns,int kernelType,Mode mode){
+
+  _patterns=patterns;
+
+  _kernelType=kernelType;
+
+  _mode=mode;
+
+}
+
+Location: TestSeq.java
+
+Content: 
+
+/** 
+
+ * Creates a new test sequence given a set of patterns and a mode.
+
+ */
+
+public TestSeq(Vector patterns,Mode mode){
+
+  this(patterns,-2,mode);
+
+}
+

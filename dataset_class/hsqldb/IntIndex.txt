@@ -1,0 +1,424 @@
+Location: IntIndex.java
+
+Content: 
+
+/** 
+
+ * Adds a key into the table with the guarantee that the key is equal or larger than the largest existing key. This prevents a sort from taking place on next call to find()
+
+ * @param key the key
+
+ * @return true or false depending on success
+
+ */
+
+public synchronized boolean addSorted(int key){
+
+  if (count == capacity) {
+
+    if (fixedSize) {
+
+      return false;
+
+    }
+
+ else {
+
+      doubleCapacity();
+
+    }
+
+  }
+
+  if (count != 0) {
+
+    if (key < keys[count - 1]) {
+
+      return false;
+
+    }
+
+  }
+
+  keys[count]=key;
+
+  count++;
+
+  return true;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+/** 
+
+ * Adds a key, ensuring no duplicate key already exists in the current search target column.
+
+ * @param key the key
+
+ * @return true or false depending on success
+
+ */
+
+public synchronized boolean addUnique(int key){
+
+  if (count == capacity) {
+
+    if (fixedSize) {
+
+      return false;
+
+    }
+
+ else {
+
+      doubleCapacity();
+
+    }
+
+  }
+
+  if (!sorted) {
+
+    hongshuai();
+
+    DoubleIntIndex indices=new DoubleIntIndex(32);
+
+    int threshold=16;
+
+    indices.push(0,count - 1);
+
+    while (indices.size() > 0) {
+
+      int start=indices.peekKey();
+
+      int end=indices.peekValue();
+
+      indices.pop();
+
+      if (end - start >= threshold) {
+
+        int pivot=partition(start,end,start + ((end - start) >>> 1));
+
+        indices.push(start,pivot - 1);
+
+        indices.push(pivot + 1,end);
+
+      }
+
+ else {
+
+        insertionSort(start,end);
+
+      }
+
+    }
+
+    sorted=true;
+
+  }
+
+  targetSearchValue=key;
+
+  int i=binaryEmptySlotSearch();
+
+  if (i == -1) {
+
+    return false;
+
+  }
+
+  if (count != i) {
+
+    moveRows(i,i + 1,count - i);
+
+  }
+
+  keys[i]=key;
+
+  count++;
+
+  return true;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+/** 
+
+ * Adds a key into the table.
+
+ * @param key the key
+
+ * @return true or false depending on success
+
+ */
+
+public synchronized boolean addUnsorted(int key){
+
+  if (count == capacity) {
+
+    if (fixedSize) {
+
+      return false;
+
+    }
+
+ else {
+
+      doubleCapacity();
+
+    }
+
+  }
+
+  if (sorted && count != 0) {
+
+    if (key < keys[count - 1]) {
+
+      sorted=false;
+
+    }
+
+  }
+
+  keys[count]=key;
+
+  count++;
+
+  return true;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+/** 
+
+ * Returns the index of the lowest element >= the given search target, or count
+
+ * @return the index
+
+ */
+
+private int binarySlotSearch(){
+
+  int low=0;
+
+  int high=count;
+
+  int mid=0;
+
+  int compare=0;
+
+  while (low < high) {
+
+    mid=(low + high) >>> 1;
+
+    compare=compare(mid);
+
+    if (compare <= 0) {
+
+      high=mid;
+
+    }
+
+ else {
+
+      low=mid + 1;
+
+    }
+
+  }
+
+  return low;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+/** 
+
+ * fast quicksort with recursive quicksort implementation
+
+ */
+
+private synchronized void fastQuickSortRecursive(){
+
+  quickSort(0,count - 1);
+
+  insertionSort(0,count - 1);
+
+  sorted=true;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+/** 
+
+ * @param number the number of consecutive keys required
+
+ * @return the index or -1 if not found
+
+ */
+
+public synchronized int findFirstConsecutiveKeys(int number){
+
+  int baseIndex=-1;
+
+  if (count == 0) {
+
+    return -1;
+
+  }
+
+  if (!sorted) {
+
+    hongshuai();
+
+    DoubleIntIndex indices=new DoubleIntIndex(32);
+
+    int threshold=16;
+
+    indices.push(0,count - 1);
+
+    while (indices.size() > 0) {
+
+      int start=indices.peekKey();
+
+      int end=indices.peekValue();
+
+      indices.pop();
+
+      if (end - start >= threshold) {
+
+        int pivot=partition(start,end,start + ((end - start) >>> 1));
+
+        indices.push(start,pivot - 1);
+
+        indices.push(pivot + 1,end);
+
+      }
+
+ else {
+
+        insertionSort(start,end);
+
+      }
+
+    }
+
+    sorted=true;
+
+  }
+
+  if (number == 1) {
+
+    return 0;
+
+  }
+
+  for (int i=1; i < count; i++) {
+
+    if (keys[i - 1] == keys[i] - 1) {
+
+      if (baseIndex == -1) {
+
+        baseIndex=i - 1;
+
+      }
+
+      if (i - baseIndex + 1 == number) {
+
+        return baseIndex;
+
+      }
+
+    }
+
+ else {
+
+      baseIndex=-1;
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+public synchronized int findFirstIndexUnsorted(int value){
+
+  for (int i=0; i < count; i++) {
+
+    if (keys[i] == value) {
+
+      return i;
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+public IntIndex(int capacity,boolean fixedSize){
+
+  this.capacity=capacity;
+
+  keys=new int[capacity];
+
+  this.fixedSize=fixedSize;
+
+}
+
+Location: IntIndex.java
+
+Content: 
+
+/** 
+
+ * @param number the number of consecutive keys required
+
+ * @return the first key in series or def if not found
+
+ */
+
+public synchronized int removeFirstConsecutiveKeys(int number,int def){
+
+  int baseIndex=findFirstConsecutiveKeys(number);
+
+  if (baseIndex == -1) {
+
+    return def;
+
+  }
+
+  int result=keys[baseIndex];
+
+  this.removeRange(baseIndex,baseIndex + number);
+
+  return result;
+
+}
+

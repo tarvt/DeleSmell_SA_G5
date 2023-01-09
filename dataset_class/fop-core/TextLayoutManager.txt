@@ -1,0 +1,994 @@
+Location: TextLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public List addALetterSpaceTo(List oldList){
+
+  return addALetterSpaceTo(oldList,0);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public List addALetterSpaceTo(final List oldList,int depth){
+
+  ListIterator oldListIterator=oldList.listIterator();
+
+  KnuthElement knuthElement=(KnuthElement)oldListIterator.next();
+
+  Position pos=knuthElement.getPosition();
+
+  Position innerPosition=pos.getPosition(depth);
+
+  assert (innerPosition instanceof LeafPosition);
+
+  LeafPosition leafPos=(LeafPosition)innerPosition;
+
+  int index=leafPos.getLeafPos();
+
+  if (index > -1) {
+
+    GlyphMapping mapping=getGlyphMapping(index);
+
+    mapping.letterSpaceCount++;
+
+    mapping.addToAreaIPD(letterSpaceIPD);
+
+    if (TextLayoutManager.BREAK_CHARS.indexOf(foText.charAt(tempStart - 1)) >= 0) {
+
+      oldListIterator=oldList.listIterator(oldList.size());
+
+      oldListIterator.add(new KnuthPenalty(0,KnuthPenalty.FLAGGED_PENALTY,true,auxiliaryPosition,false));
+
+      oldListIterator.add(new KnuthGlue(letterSpaceIPD,auxiliaryPosition,false));
+
+    }
+
+ else     if (letterSpaceIPD.isStiff()) {
+
+      oldListIterator.set(new KnuthInlineBox(mapping.areaIPD.getOpt(),alignmentContext,pos,false));
+
+    }
+
+ else {
+
+      oldListIterator.next();
+
+      oldListIterator.next();
+
+      oldListIterator.set(new KnuthGlue(letterSpaceIPD.mult(mapping.letterSpaceCount),auxiliaryPosition,true));
+
+    }
+
+  }
+
+  return oldList;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void addElementsForAHyphen(List baseList,int alignment,int widthIfBreakOccurs,MinOptMax widthIfNoBreakOccurs,boolean unflagged){
+
+  if (widthIfNoBreakOccurs == null) {
+
+    widthIfNoBreakOccurs=MinOptMax.ZERO;
+
+  }
+
+switch (alignment) {
+
+case EN_CENTER:
+
+    baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+  baseList.add(new KnuthGlue(lineEndBAP,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,true));
+
+baseList.add(new KnuthPenalty(hyphIPD,unflagged ? TextLayoutManager.SOFT_HYPHEN_PENALTY : KnuthPenalty.FLAGGED_PENALTY,!unflagged,auxiliaryPosition,false));
+
+baseList.add(new KnuthGlue(-(lineEndBAP + lineStartBAP),-6 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false));
+
+baseList.add(makeAuxiliaryZeroWidthBox());
+
+baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+baseList.add(new KnuthGlue(lineStartBAP,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,true));
+
+break;
+
+case EN_START:
+
+case EN_END:
+
+if (lineStartBAP != 0 || lineEndBAP != 0) {
+
+baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+baseList.add(new KnuthGlue(lineEndBAP,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false));
+
+baseList.add(new KnuthPenalty(widthIfBreakOccurs,unflagged ? TextLayoutManager.SOFT_HYPHEN_PENALTY : KnuthPenalty.FLAGGED_PENALTY,!unflagged,auxiliaryPosition,false));
+
+baseList.add(new KnuthGlue(widthIfNoBreakOccurs.getOpt() - (lineStartBAP + lineEndBAP),-3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false));
+
+baseList.add(makeAuxiliaryZeroWidthBox());
+
+baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+baseList.add(new KnuthGlue(lineStartBAP,0,0,auxiliaryPosition,false));
+
+}
+
+ else {
+
+baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+baseList.add(new KnuthGlue(0,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false));
+
+baseList.add(new KnuthPenalty(widthIfBreakOccurs,unflagged ? TextLayoutManager.SOFT_HYPHEN_PENALTY : KnuthPenalty.FLAGGED_PENALTY,!unflagged,auxiliaryPosition,false));
+
+baseList.add(new KnuthGlue(widthIfNoBreakOccurs.getOpt(),-3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false));
+
+}
+
+break;
+
+default :
+
+if (lineStartBAP != 0 || lineEndBAP != 0) {
+
+baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+baseList.add(new KnuthGlue(lineEndBAP,0,0,auxiliaryPosition,false));
+
+baseList.add(new KnuthPenalty(widthIfBreakOccurs,unflagged ? TextLayoutManager.SOFT_HYPHEN_PENALTY : KnuthPenalty.FLAGGED_PENALTY,!unflagged,auxiliaryPosition,false));
+
+if (widthIfNoBreakOccurs.isNonZero()) {
+
+baseList.add(new KnuthGlue(widthIfNoBreakOccurs.getOpt() - (lineStartBAP + lineEndBAP),widthIfNoBreakOccurs.getStretch(),widthIfNoBreakOccurs.getShrink(),auxiliaryPosition,false));
+
+}
+
+ else {
+
+baseList.add(new KnuthGlue(-(lineStartBAP + lineEndBAP),0,0,auxiliaryPosition,false));
+
+}
+
+baseList.add(makeAuxiliaryZeroWidthBox());
+
+baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+baseList.add(new KnuthGlue(lineStartBAP,0,0,auxiliaryPosition,false));
+
+}
+
+ else {
+
+baseList.add(new KnuthPenalty(widthIfBreakOccurs,unflagged ? TextLayoutManager.SOFT_HYPHEN_PENALTY : KnuthPenalty.FLAGGED_PENALTY,!unflagged,auxiliaryPosition,false));
+
+if (widthIfNoBreakOccurs.isNonZero()) {
+
+baseList.add(new KnuthGlue(widthIfNoBreakOccurs,auxiliaryPosition,false));
+
+}
+
+}
+
+}
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void addElementsForASpace(List baseList,int alignment,GlyphMapping mapping,int leafValue){
+
+  LeafPosition mainPosition=new LeafPosition(this,leafValue);
+
+  if (!mapping.breakOppAfter) {
+
+    if (alignment == Constants.EN_JUSTIFY) {
+
+      baseList.add(makeAuxiliaryZeroWidthBox());
+
+      baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+      baseList.add(new KnuthGlue(mapping.areaIPD,mainPosition,false));
+
+    }
+
+ else {
+
+      baseList.add(new KnuthInlineBox(mapping.areaIPD.getOpt(),null,mainPosition,true));
+
+    }
+
+  }
+
+ else {
+
+    if (foText.charAt(mapping.startIndex) != CharUtilities.SPACE || foText.getWhitespaceTreatment() == Constants.EN_PRESERVE) {
+
+      baseList.addAll(getElementsForBreakingSpace(alignment,mapping,auxiliaryPosition,0,mainPosition,mapping.areaIPD.getOpt(),true));
+
+    }
+
+ else {
+
+      baseList.addAll(getElementsForBreakingSpace(alignment,mapping,mainPosition,mapping.areaIPD.getOpt(),auxiliaryPosition,0,false));
+
+    }
+
+  }
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void addElementsForAWordFragment(List baseList,int alignment,GlyphMapping mapping,int leafValue){
+
+  LeafPosition mainPosition=new LeafPosition(this,leafValue);
+
+  boolean suppressibleLetterSpace=mapping.breakOppAfter && !mapping.isHyphenated;
+
+  if (letterSpaceIPD.isStiff()) {
+
+    baseList.add(new KnuthInlineBox(suppressibleLetterSpace ? mapping.areaIPD.getOpt() - letterSpaceIPD.getOpt() : mapping.areaIPD.getOpt(),alignmentContext,notifyPos(mainPosition),false));
+
+  }
+
+ else {
+
+    int unsuppressibleLetterSpaces=suppressibleLetterSpace ? mapping.letterSpaceCount - 1 : mapping.letterSpaceCount;
+
+    baseList.add(new KnuthInlineBox(mapping.areaIPD.getOpt() - mapping.letterSpaceCount * letterSpaceIPD.getOpt(),alignmentContext,notifyPos(mainPosition),false));
+
+    baseList.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+    baseList.add(new KnuthGlue(letterSpaceIPD.mult(unsuppressibleLetterSpaces),auxiliaryPosition,true));
+
+    baseList.add(makeAuxiliaryZeroWidthBox());
+
+  }
+
+  if (mapping.isHyphenated) {
+
+    MinOptMax widthIfNoBreakOccurs=null;
+
+    if (mapping.endIndex < foText.length()) {
+
+      widthIfNoBreakOccurs=letterSpaceAdjustArray[mapping.endIndex];
+
+    }
+
+    addElementsForAHyphen(baseList,alignment,hyphIPD,widthIfNoBreakOccurs,mapping.breakOppAfter);
+
+  }
+
+ else   if (suppressibleLetterSpace) {
+
+    addElementsForAHyphen(baseList,alignment,0,letterSpaceIPD,true);
+
+  }
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void addGlyphMapping(GlyphMapping mapping){
+
+  addGlyphMapping(mappings.size(),mapping);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void addGlyphMapping(int index,GlyphMapping mapping){
+
+  mappings.add(index,mapping);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void addMappingAreas(GlyphMapping mapping,int wordSpaceCount,int letterSpaceCount,int firstMappingIndex,int lastMappingIndex,MinOptMax realWidth,LayoutContext context){
+
+  int textLength=mapping.getWordLength();
+
+  if (mapping.letterSpaceCount == textLength && !mapping.isHyphenated && context.isLastArea()) {
+
+    realWidth=realWidth.minus(letterSpaceIPD);
+
+    letterSpaceCount--;
+
+  }
+
+  for (int i=mapping.startIndex; i < mapping.endIndex; i++) {
+
+    MinOptMax letterSpaceAdjustment=letterSpaceAdjustArray[i + 1];
+
+    if (letterSpaceAdjustment != null && letterSpaceAdjustment.isElastic()) {
+
+      letterSpaceCount++;
+
+    }
+
+  }
+
+  if (context.isLastArea() && mapping.isHyphenated) {
+
+    realWidth=realWidth.plus(hyphIPD);
+
+  }
+
+  double ipdAdjust=context.getIPDAdjust();
+
+  int difference;
+
+  if (ipdAdjust > 0.0) {
+
+    difference=(int)(realWidth.getStretch() * ipdAdjust);
+
+  }
+
+ else {
+
+    difference=(int)(realWidth.getShrink() * ipdAdjust);
+
+  }
+
+  int letterSpaceDim=letterSpaceIPD.getOpt();
+
+  if (ipdAdjust > 0.0) {
+
+    letterSpaceDim+=(int)(letterSpaceIPD.getStretch() * ipdAdjust);
+
+  }
+
+ else {
+
+    letterSpaceDim+=(int)(letterSpaceIPD.getShrink() * ipdAdjust);
+
+  }
+
+  int totalAdjust=(letterSpaceDim - letterSpaceIPD.getOpt()) * letterSpaceCount;
+
+  int wordSpaceDim=wordSpaceIPD.getOpt();
+
+  if (wordSpaceCount > 0) {
+
+    wordSpaceDim+=(difference - totalAdjust) / wordSpaceCount;
+
+  }
+
+  totalAdjust+=(wordSpaceDim - wordSpaceIPD.getOpt()) * wordSpaceCount;
+
+  if (totalAdjust != difference) {
+
+    TextLayoutManager.LOG.trace("TextLM.addAreas: error in word / letter space adjustment = " + (totalAdjust - difference));
+
+    totalAdjust=difference;
+
+  }
+
+  TextArea textArea=new TextAreaBuilder(realWidth,totalAdjust,context,firstMappingIndex,lastMappingIndex,context.isLastArea(),mapping.font).build();
+
+  textArea.setChangeBarList(getChangeBarList());
+
+  textArea.setTextLetterSpaceAdjust(letterSpaceDim);
+
+  textArea.setTextWordSpaceAdjust(wordSpaceDim - spaceCharIPD - 2 * textArea.getTextLetterSpaceAdjust());
+
+  if (context.getIPDAdjust() != 0) {
+
+    textArea.setSpaceDifference(wordSpaceIPD.getOpt() - spaceCharIPD - 2 * textArea.getTextLetterSpaceAdjust());
+
+  }
+
+  parentLayoutManager.addChildArea(textArea);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean applyChanges(final List oldList){
+
+  return applyChanges(oldList,0);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean applyChanges(final List oldList,int depth){
+
+  setFinished(false);
+
+  if (oldList.isEmpty()) {
+
+    return false;
+
+  }
+
+  LeafPosition startPos=null;
+
+  LeafPosition endPos=null;
+
+  ListIterator oldListIter;
+
+  for (oldListIter=oldList.listIterator(); oldListIter.hasNext(); ) {
+
+    Position pos=((KnuthElement)oldListIter.next()).getPosition();
+
+    Position innerPosition=pos.getPosition(depth);
+
+    assert (innerPosition == null || innerPosition instanceof LeafPosition);
+
+    startPos=(LeafPosition)innerPosition;
+
+    if (startPos != null && startPos.getLeafPos() != -1) {
+
+      break;
+
+    }
+
+  }
+
+  for (oldListIter=oldList.listIterator(oldList.size()); oldListIter.hasPrevious(); ) {
+
+    Position pos=((KnuthElement)oldListIter.previous()).getPosition();
+
+    Position innerPosition=pos.getPosition(depth);
+
+    assert (innerPosition instanceof LeafPosition);
+
+    endPos=(LeafPosition)innerPosition;
+
+    if (endPos != null && endPos.getLeafPos() != -1) {
+
+      break;
+
+    }
+
+  }
+
+  returnedIndices[0]=(startPos != null ? startPos.getLeafPos() : -1) + changeOffset;
+
+  returnedIndices[1]=(endPos != null ? endPos.getLeafPos() : -1) + changeOffset;
+
+  int mappingsAdded=0;
+
+  int mappingsRemoved=0;
+
+  if (!changeList.isEmpty()) {
+
+    int oldIndex=-1;
+
+    int changeIndex;
+
+    PendingChange currChange;
+
+    for (    Object aChangeList : changeList) {
+
+      currChange=(PendingChange)aChangeList;
+
+      if (currChange.index == oldIndex) {
+
+        mappingsAdded++;
+
+        changeIndex=currChange.index + mappingsAdded - mappingsRemoved;
+
+      }
+
+ else {
+
+        mappingsRemoved++;
+
+        mappingsAdded++;
+
+        oldIndex=currChange.index;
+
+        changeIndex=currChange.index + mappingsAdded - mappingsRemoved;
+
+        removeGlyphMapping(changeIndex);
+
+      }
+
+      addGlyphMapping(changeIndex,currChange.mapping);
+
+    }
+
+    changeList.clear();
+
+  }
+
+  returnedIndices[1]+=(mappingsAdded - mappingsRemoved);
+
+  changeOffset+=(mappingsAdded - mappingsRemoved);
+
+  return hasChanged;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+@Override public List<ChangeBar> getChangeBarList(){
+
+  if (foText == null) {
+
+    return null;
+
+  }
+
+ else {
+
+    return foText.getChangeBarList();
+
+  }
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private List getElementsForBreakingSpace(int alignment,GlyphMapping mapping,Position pos2,int p2WidthOffset,Position pos3,int p3WidthOffset,boolean skipZeroCheck){
+
+  List elements=new ArrayList();
+
+switch (alignment) {
+
+case EN_CENTER:
+
+    elements.add(new KnuthGlue(lineEndBAP,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false));
+
+  elements.add(makeZeroWidthPenalty(0));
+
+elements.add(new KnuthGlue(p2WidthOffset - (lineStartBAP + lineEndBAP),-6 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,pos2,false));
+
+elements.add(makeAuxiliaryZeroWidthBox());
+
+elements.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+elements.add(new KnuthGlue(lineStartBAP + p3WidthOffset,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,pos3,false));
+
+break;
+
+case EN_START:
+
+case EN_END:
+
+KnuthGlue g;
+
+if (skipZeroCheck || lineStartBAP != 0 || lineEndBAP != 0) {
+
+g=new KnuthGlue(lineEndBAP,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false);
+
+elements.add(g);
+
+elements.add(makeZeroWidthPenalty(0));
+
+g=new KnuthGlue(p2WidthOffset - (lineStartBAP + lineEndBAP),-3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,pos2,false);
+
+elements.add(g);
+
+elements.add(makeAuxiliaryZeroWidthBox());
+
+elements.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+g=new KnuthGlue(lineStartBAP + p3WidthOffset,0,0,pos3,false);
+
+elements.add(g);
+
+}
+
+ else {
+
+g=new KnuthGlue(0,3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,auxiliaryPosition,false);
+
+elements.add(g);
+
+elements.add(makeZeroWidthPenalty(0));
+
+g=new KnuthGlue(mapping.areaIPD.getOpt(),-3 * LineLayoutManager.DEFAULT_SPACE_WIDTH,0,pos2,false);
+
+elements.add(g);
+
+}
+
+break;
+
+case EN_JUSTIFY:
+
+elements.addAll(getElementsForJustifiedText(mapping,pos2,p2WidthOffset,pos3,p3WidthOffset,skipZeroCheck,mapping.areaIPD.getShrink()));
+
+break;
+
+default :
+
+elements.addAll(getElementsForJustifiedText(mapping,pos2,p2WidthOffset,pos3,p3WidthOffset,skipZeroCheck,0));
+
+}
+
+return elements;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private List getElementsForJustifiedText(GlyphMapping mapping,Position pos2,int p2WidthOffset,Position pos3,int p3WidthOffset,boolean skipZeroCheck,int shrinkability){
+
+  int stretchability=mapping.areaIPD.getStretch();
+
+  List elements=new ArrayList();
+
+  if (skipZeroCheck || lineStartBAP != 0 || lineEndBAP != 0) {
+
+    elements.add(new KnuthGlue(lineEndBAP,0,0,auxiliaryPosition,false));
+
+    elements.add(makeZeroWidthPenalty(0));
+
+    elements.add(new KnuthGlue(p2WidthOffset - (lineStartBAP + lineEndBAP),stretchability,shrinkability,pos2,false));
+
+    elements.add(makeAuxiliaryZeroWidthBox());
+
+    elements.add(makeZeroWidthPenalty(KnuthElement.INFINITE));
+
+    elements.add(new KnuthGlue(lineStartBAP + p3WidthOffset,0,0,pos3,false));
+
+  }
+
+ else {
+
+    elements.add(new KnuthGlue(mapping.areaIPD.getOpt(),stretchability,shrinkability,pos2,false));
+
+  }
+
+  return elements;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private GlyphMapping getGlyphMapping(int index){
+
+  return mappings.get(index);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public String getWordChars(Position pos){
+
+  int leafValue=((LeafPosition)pos).getLeafPos() + changeOffset;
+
+  if (leafValue != -1) {
+
+    GlyphMapping mapping=getGlyphMapping(leafValue);
+
+    StringBuffer buffer=new StringBuffer(mapping.getWordLength());
+
+    for (int i=mapping.startIndex; i < mapping.endIndex; i++) {
+
+      buffer.append(foText.charAt(i));
+
+    }
+
+    return buffer.toString();
+
+  }
+
+ else {
+
+    return "";
+
+  }
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void hyphenate(Position pos,HyphContext hyphContext){
+
+  GlyphMapping mapping=getGlyphMapping(((LeafPosition)pos).getLeafPos() + changeOffset);
+
+  int startIndex=mapping.startIndex;
+
+  int stopIndex;
+
+  boolean nothingChanged=true;
+
+  Font font=mapping.font;
+
+  while (startIndex < mapping.endIndex) {
+
+    MinOptMax newIPD=MinOptMax.ZERO;
+
+    boolean hyphenFollows;
+
+    stopIndex=startIndex + hyphContext.getNextHyphPoint();
+
+    if (hyphContext.hasMoreHyphPoints() && stopIndex <= mapping.endIndex) {
+
+      hyphenFollows=true;
+
+    }
+
+ else {
+
+      hyphenFollows=false;
+
+      stopIndex=mapping.endIndex;
+
+    }
+
+    hyphContext.updateOffset(stopIndex - startIndex);
+
+    for (int i=startIndex; i < stopIndex; i++) {
+
+      int cp=Character.codePointAt(foText,i);
+
+      i+=Character.charCount(cp) - 1;
+
+      newIPD=newIPD.plus(font.getCharWidth(cp));
+
+      if (i < stopIndex) {
+
+        MinOptMax letterSpaceAdjust=letterSpaceAdjustArray[i + 1];
+
+        if (i == stopIndex - 1 && hyphenFollows) {
+
+          letterSpaceAdjust=null;
+
+        }
+
+        if (letterSpaceAdjust != null) {
+
+          newIPD=newIPD.plus(letterSpaceAdjust);
+
+        }
+
+      }
+
+    }
+
+    boolean isWordEnd=(stopIndex == mapping.endIndex) && (mapping.letterSpaceCount < mapping.getWordLength());
+
+    int letterSpaceCount=isWordEnd ? stopIndex - startIndex - 1 : stopIndex - startIndex;
+
+    assert letterSpaceCount >= 0;
+
+    newIPD=newIPD.plus(letterSpaceIPD.mult(letterSpaceCount));
+
+    if (!(nothingChanged && stopIndex == mapping.endIndex && !hyphenFollows)) {
+
+      changeList.add(new PendingChange(new GlyphMapping(startIndex,stopIndex,0,letterSpaceCount,newIPD,hyphenFollows,false,false,font,-1,null),((LeafPosition)pos).getLeafPos() + changeOffset));
+
+      nothingChanged=false;
+
+    }
+
+    startIndex=stopIndex;
+
+  }
+
+  hasChanged|=!nothingChanged;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private KnuthBox makeAuxiliaryZeroWidthBox(){
+
+  return new KnuthInlineBox(0,null,notifyPos(new LeafPosition(this,-1)),true);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private KnuthPenalty makeZeroWidthPenalty(int penaltyValue){
+
+  return new KnuthPenalty(0,penaltyValue,false,auxiliaryPosition,true);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void processLeftoverGlyphMapping(int alignment,KnuthSequence sequence,GlyphMapping mapping,boolean breakOpportunityAfter){
+
+  addGlyphMapping(mapping);
+
+  mapping.breakOppAfter=breakOpportunityAfter;
+
+  addElementsForASpace(sequence,alignment,mapping,mappings.size() - 1);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private KnuthSequence processLinebreak(List returnList,KnuthSequence sequence){
+
+  if (lineEndBAP != 0) {
+
+    sequence.add(new KnuthGlue(lineEndBAP,0,0,auxiliaryPosition,true));
+
+  }
+
+  sequence.endSequence();
+
+  sequence=new InlineKnuthSequence();
+
+  returnList.add(sequence);
+
+  return sequence;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private GlyphMapping processWhitespace(final int alignment,final KnuthSequence sequence,final boolean breakOpportunity,int level){
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("PS: [" + thisStart + ","+ nextStart+ "]");
+
+  }
+
+  assert nextStart >= thisStart;
+
+  GlyphMapping mapping=new GlyphMapping(thisStart,nextStart,nextStart - thisStart,0,wordSpaceIPD.mult(nextStart - thisStart),false,true,breakOpportunity,spaceFont,level,null);
+
+  addGlyphMapping(mapping);
+
+  addElementsForASpace(sequence,alignment,mapping,mappings.size() - 1);
+
+  thisStart=nextStart;
+
+  return mapping;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private GlyphMapping processWord(final int alignment,final KnuthSequence sequence,GlyphMapping prevMapping,final char ch,final boolean breakOpportunity,final boolean checkEndsWithHyphen,int level,boolean retainControls){
+
+  int lastIndex=nextStart;
+
+  while (lastIndex > 0 && foText.charAt(lastIndex - 1) == CharUtilities.SOFT_HYPHEN) {
+
+    lastIndex--;
+
+  }
+
+  final boolean endsWithHyphen=checkEndsWithHyphen && foText.charAt(lastIndex) == CharUtilities.SOFT_HYPHEN;
+
+  Font font=FontSelector.selectFontForCharactersInText(foText,thisStart,lastIndex,foText,this);
+
+  char breakOpportunityChar=breakOpportunity ? ch : 0;
+
+  char precedingChar=prevMapping != null && !prevMapping.isSpace && prevMapping.endIndex > 0 ? foText.charAt(prevMapping.endIndex - 1) : 0;
+
+  GlyphMapping mapping=GlyphMapping.doGlyphMapping(foText,thisStart,lastIndex,font,letterSpaceIPD,letterSpaceAdjustArray,precedingChar,breakOpportunityChar,endsWithHyphen,level,false,false,retainControls);
+
+  prevMapping=mapping;
+
+  addGlyphMapping(mapping);
+
+  tempStart=nextStart;
+
+  addElementsForAWordFragment(sequence,alignment,mapping,mappings.size() - 1);
+
+  thisStart=nextStart;
+
+  return prevMapping;
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+private void removeGlyphMapping(int index){
+
+  mappings.remove(index);
+
+}
+
+Location: TextLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Create a Text layout manager.
+
+ * @param node The FOText object to be rendered
+
+ */
+
+public TextLayoutManager(FOText node,FOUserAgent userAgent){
+
+  foText=node;
+
+  letterSpaceAdjustArray=new MinOptMax[node.length() + 1];
+
+  mappings=new ArrayList<GlyphMapping>();
+
+  this.userAgent=userAgent;
+
+}
+

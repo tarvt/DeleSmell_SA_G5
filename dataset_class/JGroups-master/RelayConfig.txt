@@ -1,0 +1,210 @@
+Location: RelayConfig.java
+
+Content: 
+
+protected static void parseBridgesAndForwards(SiteConfig site_config,Node root) throws Exception {
+
+  NodeList children=root.getChildNodes();
+
+  if (children == null || children.getLength() == 0)   return;
+
+  for (int i=0; i < children.getLength(); i++) {
+
+    Node node=children.item(i);
+
+    if (node.getNodeType() != Node.ELEMENT_NODE)     continue;
+
+    String node_name=node.getNodeName();
+
+    if (BRIDGES.equals(node_name))     parseBridges(site_config,node);
+
+ else     if (FORWARDS.equals(node_name))     parseForwards(site_config,node);
+
+ else     throw new Exception("expected \"" + BRIDGES + "\" or \""+ FORWARDS+ "\" keywords");
+
+  }
+
+}
+
+Location: RelayConfig.java
+
+Content: 
+
+protected static void parseBridges(SiteConfig site_config,Node root) throws Exception {
+
+  NodeList children=root.getChildNodes();
+
+  if (children == null || children.getLength() == 0)   return;
+
+  for (int i=0; i < children.getLength(); i++) {
+
+    Node node=children.item(i);
+
+    if (node.getNodeType() != Node.ELEMENT_NODE)     continue;
+
+    String node_name=node.getNodeName();
+
+    match(BRIDGE,node_name,true);
+
+    NamedNodeMap attrs=node.getAttributes();
+
+    if (attrs == null || attrs.getLength() == 0)     continue;
+
+    Attr name_attr=(Attr)attrs.getNamedItem("name");
+
+    Attr config_attr=(Attr)attrs.getNamedItem("config");
+
+    String name=name_attr != null ? name_attr.getValue() : null;
+
+    String config=config_attr.getValue();
+
+    BridgeConfig bridge_config=new PropertiesBridgeConfig(name,config);
+
+    site_config.addBridge(bridge_config);
+
+  }
+
+}
+
+Location: RelayConfig.java
+
+Content: 
+
+protected static void parseForwards(SiteConfig site_config,Node root) throws Exception {
+
+  NodeList children=root.getChildNodes();
+
+  if (children == null || children.getLength() == 0)   return;
+
+  for (int i=0; i < children.getLength(); i++) {
+
+    Node node=children.item(i);
+
+    if (node.getNodeType() != Node.ELEMENT_NODE)     continue;
+
+    String node_name=node.getNodeName();
+
+    match(FORWARD,node_name,true);
+
+    NamedNodeMap attrs=node.getAttributes();
+
+    if (attrs == null || attrs.getLength() == 0)     continue;
+
+    Attr to_attr=(Attr)attrs.getNamedItem("to");
+
+    Attr gw_attr=(Attr)attrs.getNamedItem("gateway");
+
+    String to=to_attr.getValue();
+
+    String gateway=gw_attr.getValue();
+
+    ForwardConfig forward_config=new ForwardConfig(to,gateway);
+
+    site_config.addForward(forward_config);
+
+  }
+
+}
+
+Location: RelayConfig.java
+
+Content: 
+
+protected static void parseSites(final Map<String,SiteConfig> map,Node root) throws Exception {
+
+  NodeList children=root.getChildNodes();
+
+  if (children == null || children.getLength() == 0)   return;
+
+  for (int i=0; i < children.getLength(); i++) {
+
+    Node node=children.item(i);
+
+    if (node.getNodeType() != Node.ELEMENT_NODE)     continue;
+
+    match(SITE,node.getNodeName(),true);
+
+    NamedNodeMap attrs=node.getAttributes();
+
+    if (attrs == null || attrs.getLength() == 0)     continue;
+
+    Attr name_attr=(Attr)attrs.getNamedItem("name");
+
+    String name=name_attr.getValue();
+
+    if (map.containsKey(name))     throw new Exception("Site \"" + name + "\" already defined");
+
+    SiteConfig site_config=new SiteConfig(name);
+
+    map.put(name,site_config);
+
+    parseBridgesAndForwards(site_config,node);
+
+  }
+
+}
+
+Location: RelayConfig.java
+
+Content: 
+
+/** 
+
+ * Parses site names and their configuration (e.g. "nyc" --> SiteConfig) into the map passed as argument 
+
+ */
+
+public static void parse(InputStream input,final Map<String,SiteConfig> map) throws Exception {
+
+  DocumentBuilderFactory factory=DocumentBuilderFactory.newInstance();
+
+  factory.setValidating(false);
+
+  DocumentBuilder builder=factory.newDocumentBuilder();
+
+  Document document=builder.parse(input);
+
+  Element root=document.getDocumentElement();
+
+  parse(root,map);
+
+}
+
+Location: RelayConfig.java
+
+Content: 
+
+public static void parse(Node root,final Map<String,SiteConfig> map) throws Exception {
+
+  match(RELAY_CONFIG,root.getNodeName(),true);
+
+  NodeList children=root.getChildNodes();
+
+  if (children == null || children.getLength() == 0)   return;
+
+  for (int i=0; i < children.getLength(); i++) {
+
+    Node node=children.item(i);
+
+    if (node.getNodeType() != Node.ELEMENT_NODE)     continue;
+
+    String element_name=node.getNodeName();
+
+    if (SITES.equals(element_name))     parseSites(map,node);
+
+ else     throw new Exception("expected <" + SITES + ">, but got "+ "<"+ element_name+ ">");
+
+  }
+
+}
+
+Location: RelayConfig.java
+
+Content: 
+
+private RelayConfig(){
+
+  throw new InstantiationError("Must not instantiate this class");
+
+}
+

@@ -1,0 +1,540 @@
+Location: StompConnection.java
+
+Content: 
+
+public void addCallback(ConnectionCallback cb){
+
+  if (cb != null)   callbacks.add(cb);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void addListener(Listener listener){
+
+  if (listener != null)   listeners.add(listener);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected Socket buildSocket(String host,int port) throws IOException {
+
+  sock=socket_factory.createSocket(host,port);
+
+  if (sock instanceof SSLSocket && this.sslParameters != null) {
+
+    ((SSLSocket)sock).setSSLParameters(this.sslParameters);
+
+  }
+
+  return sock;
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected void closeConnections(){
+
+  Util.close(in);
+
+  Util.close(out);
+
+  Util.close(sock);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected void connectToDestination(String dest) throws IOException {
+
+  int index=dest.lastIndexOf(':');
+
+  String host=dest.substring(0,index);
+
+  int port=Integer.parseInt(dest.substring(index + 1));
+
+  sock=buildSocket(host,port);
+
+  in=new DataInputStream(sock.getInputStream());
+
+  out=new DataOutputStream(sock.getOutputStream());
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void connectToSingleDestination(String destination) throws IOException {
+
+  try {
+
+synchronized (this) {
+
+      connectToDestination(destination);
+
+      sendConnect();
+
+    }
+
+    subscriptions.forEach(this::sendSubscribe);
+
+  }
+
+ catch (  IOException ex) {
+
+    hongshuai();
+
+    Util.close(in);
+
+    Util.close(out);
+
+    Util.close(sock);
+
+    throw ex;
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public String getSessionId(){
+
+  return session_id;
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected void notifyListeners(Map<String,String> info){
+
+  for (  Listener listener : listeners) {
+
+    try {
+
+      listener.onInfo(info);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error(Util.getMessage("FailedCallingListener"),t);
+
+    }
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected void notifyListeners(Map<String,String> headers,byte[] buf,int offset,int length){
+
+  for (  Listener listener : listeners) {
+
+    try {
+
+      listener.onMessage(headers,buf,offset,length);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error(Util.getMessage("FailedCallingListener"),t);
+
+    }
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void removeCallback(ConnectionCallback cb){
+
+  if (cb != null)   callbacks.remove(cb);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void removeListener(Listener listener){
+
+  if (listener != null)   listeners.remove(listener);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected void sendConnect() throws IOException {
+
+  StringBuilder sb=new StringBuilder();
+
+  sb.append(STOMP.ClientVerb.CONNECT.name()).append("\n");
+
+  if (userid != null)   sb.append("login: ").append(userid).append("\n");
+
+  if (password != null)   sb.append("passcode: ").append(password).append("\n");
+
+  sb.append("\n");
+
+  try {
+
+synchronized (this) {
+
+      out.write(sb.toString().getBytes());
+
+      out.write(STOMP.NULL_BYTE);
+
+      out.flush();
+
+    }
+
+  }
+
+ catch (  IOException ex) {
+
+    log.error(Util.getMessage("FailedToSendConnectMessage"),ex);
+
+    throw ex;
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected void sendSubscribe(String destination){
+
+  StringBuilder sb=new StringBuilder();
+
+  sb.append(STOMP.ClientVerb.SUBSCRIBE.name()).append("\n").append("destination: ").append(destination).append("\n\n");
+
+  try {
+
+synchronized (this) {
+
+      out.write(sb.toString().getBytes());
+
+      out.write(STOMP.NULL_BYTE);
+
+      out.flush();
+
+    }
+
+  }
+
+ catch (  IOException ex) {
+
+    log.error(Util.getMessage("FailedSubscribingTo") + destination + ": ",ex);
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected void sendUnsubscribe(String destination){
+
+  StringBuilder sb=new StringBuilder();
+
+  sb.append(STOMP.ClientVerb.UNSUBSCRIBE.name()).append("\n").append("destination: ").append(destination).append("\n\n");
+
+  try {
+
+synchronized (this) {
+
+      out.write(sb.toString().getBytes());
+
+      out.write(STOMP.NULL_BYTE);
+
+      out.flush();
+
+    }
+
+  }
+
+ catch (  IOException ex) {
+
+    log.error(Util.getMessage("FailedUnsubscribingFrom") + destination + ": ",ex);
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void send(String destination,byte[] buf){
+
+  send(destination,buf,0,buf.length);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void send(String destination,byte[] buf,int offset,int length){
+
+  send(destination,buf,offset,length,(String[])null);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void send(String destination,byte[] buf,int offset,int length,String... headers){
+
+  StringBuilder sb=new StringBuilder();
+
+  sb.append(STOMP.ClientVerb.SEND.name()).append("\n");
+
+  if (destination != null)   sb.append("destination: ").append(destination).append("\n");
+
+  if (buf != null)   sb.append("content-length: ").append(length).append("\n");
+
+  if (headers != null && (headers.length & 1) == 0) {
+
+    for (int i=0; i < headers.length; i++)     sb.append(headers[i]).append(": ").append(headers[++i]).append("\n");
+
+  }
+
+  sb.append("\n");
+
+  try {
+
+synchronized (this) {
+
+      out.write(sb.toString().getBytes());
+
+      if (buf != null)       out.write(buf,offset,length);
+
+      out.write(STOMP.NULL_BYTE);
+
+      out.flush();
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    log.error(Util.getMessage("FailedSendingMessageTo") + destination + ": ",e);
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+/** 
+
+ * Sends an INFO without body
+
+ */
+
+public void send(String destination,String... headers){
+
+  send(destination,null,0,0,headers);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void startReconnectingClient(){
+
+  startRunner();
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+protected synchronized void startRunner(){
+
+  if (runner == null || !runner.isAlive()) {
+
+    running=true;
+
+    runner=new Thread(this,"StompConnection receiver");
+
+    runner.start();
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+/** 
+
+ * @param dest IP address + ':' + port, e.g. "192.168.1.5:8787"
+
+ */
+
+public StompConnection(String dest){
+
+  this(dest,null,null,false,false);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public StompConnection(String dest,boolean reconnect,boolean ssl){
+
+  this(dest,null,null,reconnect,ssl);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public StompConnection(String dest,boolean reconnect,SSLContext ssl){
+
+  this(dest,null,null,reconnect,ssl);
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public StompConnection(String dest,String userid,String password,boolean reconnect,boolean ssl){
+
+  ;
+
+  server_destinations.add(dest);
+
+  this.userid=userid;
+
+  this.password=password;
+
+  this.reconnect=reconnect;
+
+  if (ssl)   socket_factory=SSLSocketFactory.getDefault();
+
+ else   socket_factory=SocketFactory.getDefault();
+
+  this.sslParameters=null;
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public StompConnection(String dest,String userid,String password,boolean reconnect,SSLContext sslcontext){
+
+  ;
+
+  server_destinations.add(dest);
+
+  this.userid=userid;
+
+  this.password=password;
+
+  this.reconnect=reconnect;
+
+  socket_factory=sslcontext.getSocketFactory();
+
+  this.sslParameters=null;
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public StompConnection(String dest,String userid,String password,boolean reconnect,SSLContext sslcontext,SSLParameters sslParameters){
+
+  ;
+
+  server_destinations.add(dest);
+
+  this.userid=userid;
+
+  this.password=password;
+
+  this.reconnect=reconnect;
+
+  socket_factory=sslcontext.getSocketFactory();
+
+  this.sslParameters=sslParameters;
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void subscribe(String destination){
+
+  if (destination == null)   return;
+
+  subscriptions.add(destination);
+
+  if (isConnected()) {
+
+    sendSubscribe(destination);
+
+  }
+
+}
+
+Location: StompConnection.java
+
+Content: 
+
+public void unsubscribe(String destination){
+
+  if (destination == null)   return;
+
+  subscriptions.remove(destination);
+
+  if (isConnected()) {
+
+    sendUnsubscribe(destination);
+
+  }
+
+}
+

@@ -1,0 +1,420 @@
+Location: AbstractBreaker.java
+
+Content: 
+
+/** 
+
+ * Phase 3 of Knuth algorithm: Adds the areas
+
+ * @param alg PageBreakingAlgorithm instance which determined the breaks
+
+ * @param partCount number of parts (pages) to be rendered
+
+ * @param originalList original Knuth element list
+
+ * @param effectiveList effective Knuth element list (after adjustments)
+
+ */
+
+protected void addAreas(PageBreakingAlgorithm alg,int partCount,BlockSequence originalList,BlockSequence effectiveList){
+
+  addAreas(alg,0,partCount,originalList,effectiveList);
+
+}
+
+Location: AbstractBreaker.java
+
+Content: 
+
+protected void addAreas(PageBreakingAlgorithm alg,int startPart,int partCount,BlockSequence originalList,BlockSequence effectiveList){
+
+  addAreas(alg,startPart,partCount,originalList,effectiveList,LayoutContext.newInstance());
+
+}
+
+Location: AbstractBreaker.java
+
+Content: 
+
+/** 
+
+ * Phase 3 of Knuth algorithm: Adds the areas
+
+ * @param alg PageBreakingAlgorithm instance which determined the breaks
+
+ * @param startPart index of the first part (page) to be rendered
+
+ * @param partCount number of parts (pages) to be rendered
+
+ * @param originalList original Knuth element list
+
+ * @param effectiveList effective Knuth element list (after adjustments)
+
+ */
+
+protected void addAreas(PageBreakingAlgorithm alg,int startPart,int partCount,BlockSequence originalList,BlockSequence effectiveList,final LayoutContext childLC){
+
+  int startElementIndex=0;
+
+  int endElementIndex=0;
+
+  int lastBreak=-1;
+
+  for (int p=startPart; p < startPart + partCount; p++) {
+
+    PageBreakPosition pbp=alg.getPageBreaks().get(p);
+
+    int lastBreakClass;
+
+    if (p == 0) {
+
+      lastBreakClass=effectiveList.getStartOn();
+
+    }
+
+ else {
+
+      ListElement lastBreakElement=effectiveList.getElement(endElementIndex);
+
+      if (lastBreakElement.isPenalty()) {
+
+        KnuthPenalty pen=(KnuthPenalty)lastBreakElement;
+
+        if (pen.getPenalty() == KnuthPenalty.INFINITE) {
+
+          lastBreakClass=Constants.EN_COLUMN;
+
+        }
+
+ else {
+
+          lastBreakClass=pen.getBreakClass();
+
+        }
+
+      }
+
+ else {
+
+        lastBreakClass=Constants.EN_COLUMN;
+
+      }
+
+    }
+
+    endElementIndex=pbp.getLeafPos();
+
+    startElementIndex+=(startElementIndex == 0) ? effectiveList.ignoreAtStart : 0;
+
+    log.debug("PLM> part: " + (p + 1) + ", start at pos "+ startElementIndex+ ", break at pos "+ endElementIndex+ ", break class = "+ getBreakClassName(lastBreakClass));
+
+    startPart(effectiveList,lastBreakClass,startElementIndex > endElementIndex);
+
+    int displayAlign=getCurrentDisplayAlign();
+
+    int notificationEndElementIndex=endElementIndex;
+
+    endElementIndex-=(endElementIndex == (originalList.size() - 1)) ? effectiveList.ignoreAtEnd : 0;
+
+    if (((KnuthElement)effectiveList.get(endElementIndex)).isGlue()) {
+
+      endElementIndex--;
+
+    }
+
+    startElementIndex=alg.par.getFirstBoxIndex(startElementIndex);
+
+    if (startElementIndex <= endElementIndex) {
+
+      if (log.isDebugEnabled()) {
+
+        log.debug("     addAreas from " + startElementIndex + " to "+ endElementIndex);
+
+      }
+
+      childLC.setSpaceAdjust(pbp.bpdAdjust);
+
+      if (pbp.difference != 0 && displayAlign == Constants.EN_CENTER) {
+
+        childLC.setSpaceBefore(pbp.difference / 2);
+
+      }
+
+ else       if (pbp.difference != 0 && displayAlign == Constants.EN_AFTER) {
+
+        childLC.setSpaceBefore(pbp.difference);
+
+      }
+
+      SpaceResolver.performConditionalsNotification(effectiveList,startElementIndex,notificationEndElementIndex,lastBreak);
+
+      addAreas(new KnuthPossPosIter(effectiveList,startElementIndex,endElementIndex + 1),childLC);
+
+    }
+
+ else {
+
+      handleEmptyContent();
+
+    }
+
+    finishPart(alg,pbp);
+
+    lastBreak=endElementIndex;
+
+    startElementIndex=pbp.getLeafPos() + 1;
+
+  }
+
+  if (alg.handlingFloat()) {
+
+    addAreasForFloats(alg,startPart,partCount,originalList,effectiveList,childLC,lastBreak,startElementIndex,endElementIndex);
+
+  }
+
+}
+
+Location: AbstractBreaker.java
+
+Content: 
+
+/** 
+
+ * Returns  {@code true} if the given position or one of its descendantscorresponds to a non-restartable LM.
+
+ * @param position a position
+
+ * @return {@code true} if there is a non-restartable LM in the hierarchy
+
+ */
+
+protected boolean containsNonRestartableLM(Position position){
+
+  LayoutManager lm=position.getLM();
+
+  if (lm != null && !lm.isRestartable()) {
+
+    return true;
+
+  }
+
+ else {
+
+    Position subPosition=position.getPosition();
+
+    return subPosition != null && containsNonRestartableLM(subPosition);
+
+  }
+
+}
+
+Location: AbstractBreaker.java
+
+Content: 
+
+/** 
+
+ * Starts the page breaking process.
+
+ * @param flowBPD the constant available block-progression-dimension (used for every part)
+
+ * @param autoHeight true if warnings about overflows should be disabled because thethe BPD is really undefined (for footnote-separators, for example)
+
+ */
+
+public boolean doLayout(int flowBPD,boolean autoHeight){
+
+  LayoutContext childLC=createLayoutContext();
+
+  childLC.setStackLimitBP(MinOptMax.getInstance(flowBPD));
+
+  alignment=Constants.EN_START;
+
+  alignmentLast=Constants.EN_START;
+
+  childLC.setBPAlignment(alignment);
+
+  BlockSequence blockList;
+
+  blockLists=new java.util.ArrayList<BlockSequence>();
+
+  log.debug("PLM> flow BPD =" + flowBPD);
+
+  int nextSequenceStartsOn=Constants.EN_ANY;
+
+  while (hasMoreContent()) {
+
+    blockLists.clear();
+
+    nextSequenceStartsOn=getNextBlockList(childLC,nextSequenceStartsOn);
+
+    empty=empty && blockLists.size() == 0;
+
+    log.debug("PLM> blockLists.size() = " + blockLists.size());
+
+    for (blockListIndex=0; blockListIndex < blockLists.size(); blockListIndex++) {
+
+      blockList=blockLists.get(blockListIndex);
+
+      if (log.isDebugEnabled()) {
+
+        log.debug("  blockListIndex = " + blockListIndex);
+
+        log.debug("  sequence starts on " + getBreakClassName(blockList.startOn));
+
+      }
+
+      observeElementList(blockList);
+
+      log.debug("PLM> start of algorithm (" + this.getClass().getName() + "), flow BPD ="+ flowBPD);
+
+      PageBreakingAlgorithm alg=new PageBreakingAlgorithm(getTopLevelLM(),getPageProvider(),createLayoutListener(),alignment,alignmentLast,footnoteSeparatorLength,isPartOverflowRecoveryActivated(),autoHeight,isSinglePartFavored());
+
+      alg.setConstantLineWidth(flowBPD);
+
+      int optimalPageCount=alg.findBreakingPoints(blockList,1,true,BreakingAlgorithm.ALL_BREAKS);
+
+      boolean ipdChangesOnNextPage=(alg.getIPDdifference() != 0);
+
+      boolean onLastPageAndIPDChanges=false;
+
+      if (!ipdChangesOnNextPage) {
+
+        onLastPageAndIPDChanges=(lastPageHasIPDChange() && !thereIsANonRestartableLM(alg) && (shouldRedoLayout() || (wasLayoutRedone() && optimalPageCount > 1)));
+
+      }
+
+      if ((ipdChangesOnNextPage || hasMoreContent() || optimalPageCount > 1) && pslm != null && pslm.getCurrentPage().isPagePositionOnly) {
+
+        return false;
+
+      }
+
+      if (alg.handlingFloat()) {
+
+        nextSequenceStartsOn=handleFloatLayout(alg,optimalPageCount,blockList,childLC);
+
+      }
+
+ else       if (ipdChangesOnNextPage || onLastPageAndIPDChanges) {
+
+        boolean visitedBefore=false;
+
+        if (onLastPageAndIPDChanges) {
+
+          visitedBefore=wasLayoutRedone();
+
+          prepareToRedoLayout(alg,optimalPageCount,blockList,blockList);
+
+        }
+
+        firstElementsForRestart=null;
+
+        RestartAtLM restartAtLMClass=new RestartAtLM();
+
+        LayoutManager restartAtLM=restartAtLMClass.getRestartAtLM(this,alg,ipdChangesOnNextPage,onLastPageAndIPDChanges,visitedBefore,blockList,1);
+
+        if (restartAtLMClass.invalidPosition) {
+
+          return false;
+
+        }
+
+        if (restartAtLM == null || restartAtLM.getChildLMs().isEmpty()) {
+
+          firstElementsForRestart=null;
+
+          LayoutManager restartAtLM2=new RestartAtLM().getRestartAtLM(this,alg,ipdChangesOnNextPage,onLastPageAndIPDChanges,visitedBefore,blockList,0);
+
+          if (restartAtLM2 != null) {
+
+            restartAtLM=restartAtLM2;
+
+          }
+
+        }
+
+        if (ipdChangesOnNextPage) {
+
+          addAreas(alg,optimalPageCount,blockList,blockList);
+
+        }
+
+        blockLists.clear();
+
+        blockListIndex=-1;
+
+        nextSequenceStartsOn=getNextBlockList(childLC,Constants.EN_COLUMN,positionAtBreak,restartAtLM,firstElementsForRestart);
+
+      }
+
+ else {
+
+        log.debug("PLM> optimalPageCount= " + optimalPageCount + " pageBreaks.size()= "+ alg.getPageBreaks().size());
+
+        doPhase3(alg,optimalPageCount,blockList,blockList);
+
+      }
+
+    }
+
+  }
+
+  blockLists=null;
+
+  return true;
+
+}
+
+Location: AbstractBreaker.java
+
+Content: 
+
+/** 
+
+ * @return true if one a single part should be produced if possible (ex. for block-containers)
+
+ */
+
+protected boolean isSinglePartFavored(){
+
+  return false;
+
+}
+
+Location: AbstractBreaker.java
+
+Content: 
+
+private boolean thereIsANonRestartableLM(PageBreakingAlgorithm alg){
+
+  KnuthNode optimalBreak=alg.getBestNodeForLastPage();
+
+  if (optimalBreak != null) {
+
+    int positionIndex=optimalBreak.position;
+
+    KnuthElement elementAtBreak=alg.getElement(positionIndex);
+
+    Position positionAtBreak=elementAtBreak.getPosition();
+
+    if (!(positionAtBreak instanceof SpaceResolver.SpaceHandlingBreakPosition)) {
+
+      return false;
+
+    }
+
+    positionAtBreak=positionAtBreak.getPosition();
+
+    if (positionAtBreak != null && containsNonRestartableLM(positionAtBreak)) {
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+

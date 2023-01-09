@@ -1,0 +1,280 @@
+Location: PDC.java
+
+Content: 
+
+protected void createDiskCacheFile() throws IOException {
+
+  root_dir=new File(this.cache_dir);
+
+  if (root_dir.exists()) {
+
+    if (!root_dir.isDirectory())     throw new IllegalArgumentException("location " + root_dir.getPath() + " is not a directory");
+
+  }
+
+ else {
+
+    root_dir.mkdirs();
+
+  }
+
+  if (!root_dir.exists())   throw new IllegalArgumentException("location " + root_dir.getPath() + " could not be accessed");
+
+  filter=(dir,name1) -> name1.endsWith(SUFFIX);
+
+}
+
+Location: PDC.java
+
+Content: 
+
+/** 
+
+ * Attempts to delete the provided file.<br> Logging is performed on the result
+
+ * @param file
+
+ * @return
+
+ */
+
+protected boolean deleteFile(File file){
+
+  boolean result=true;
+
+  if (file != null && file.exists()) {
+
+    try {
+
+      result=file.delete();
+
+      if (log.isTraceEnabled())       log.trace("Deleted file result: " + file.getAbsolutePath() + " : "+ result);
+
+    }
+
+ catch (    Throwable e) {
+
+      log.error(Util.getMessage("FailedToDeleteFile") + file.getAbsolutePath(),e);
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: PDC.java
+
+Content: 
+
+private synchronized Mapping readAddressMapping(File file){
+
+  DataInputStream in=null;
+
+  try {
+
+    in=new DataInputStream(new FileInputStream(file));
+
+    Mapping mapping=new Mapping();
+
+    mapping.readFrom(in);
+
+    return mapping;
+
+  }
+
+ catch (  Exception e) {
+
+    log.debug("failed to read file : " + file.getAbsolutePath(),e);
+
+    return null;
+
+  }
+
+ finally {
+
+    Util.close(in);
+
+  }
+
+}
+
+Location: PDC.java
+
+Content: 
+
+/** 
+
+ * Reads all mappings from disk 
+
+ */
+
+protected synchronized void readCacheFromDisk(){
+
+  if (log.isDebugEnabled())   log.debug("reading all mappings from disk cache " + root_dir);
+
+  File[] files=root_dir.listFiles(filter);
+
+  if (files == null)   return;
+
+  for (  File file : files) {
+
+    Mapping data=null;
+
+    for (int i=0; i < 3; i++) {
+
+      data=null;
+
+      if (file.exists())       data=readAddressMapping(file);
+
+      if (data != null)       break;
+
+ else       Util.sleep(100);
+
+    }
+
+    if (data == null) {
+
+      log.warn("failed parsing content in " + file.getAbsolutePath() + ": removing it ");
+
+      deleteFile(file);
+
+    }
+
+ else {
+
+      if (data != null && data.getLogicalAddr() != null && data.getPhysicalAddr() != null) {
+
+        cache.put(data.getLogicalAddr(),(PhysicalAddress)data.getPhysicalAddr());
+
+        if (data.getLogicalName() != null && NameCache.get(data.getLogicalAddr()) == null)         NameCache.add(data.getLogicalAddr(),data.getLogicalName());
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: PDC.java
+
+Content: 
+
+protected synchronized void removeNodeFromDisk(Address logical_addr){
+
+  String filename=addressAsString(logical_addr);
+
+  deleteFile(new File(root_dir,filename + SUFFIX));
+
+}
+
+Location: PDC.java
+
+Content: 
+
+protected synchronized void writeNodeToDisk(Address logical_addr,PhysicalAddress physical_addr){
+
+  String filename=addressAsString(logical_addr);
+
+  File tmpFile=null, destination=null;
+
+  try {
+
+    tmpFile=writeToTempFile(root_dir,logical_addr,physical_addr,NameCache.get(logical_addr));
+
+    if (tmpFile == null)     return;
+
+    destination=new File(root_dir,filename + SUFFIX);
+
+    FileChannel src_ch=new FileInputStream(tmpFile).getChannel();
+
+    FileChannel dest_ch=new FileOutputStream(destination).getChannel();
+
+    src_ch.transferTo(0,src_ch.size(),dest_ch);
+
+    src_ch.close();
+
+    dest_ch.close();
+
+    if (log.isTraceEnabled())     log.trace("Moved: " + tmpFile.getName() + "->"+ destination.getName());
+
+  }
+
+ catch (  Exception ioe) {
+
+    log.error(Util.getMessage("AttemptToMoveFailedAt") + tmpFile.getName() + "->"+ destination.getName(),ioe);
+
+  }
+
+ finally {
+
+    deleteFile(tmpFile);
+
+  }
+
+}
+
+Location: PDC.java
+
+Content: 
+
+/** 
+
+ * Writes the data to a temporary file.<br> The file is stored in the same directory as the other cluster files but is given the <tt>.tmp</tmp> suffix
+
+ * @param dir The disk cache root dir
+
+ * @param logical_addr The logical address
+
+ * @param physical_addr The physical address
+
+ * @return
+
+ */
+
+protected File writeToTempFile(File dir,Address logical_addr,Address physical_addr,String logical_name) throws Exception {
+
+  DataOutputStream out=null;
+
+  File file=null;
+
+  String filename=null;
+
+  try {
+
+    file=File.createTempFile("temp",null,dir);
+
+    filename=file.getName();
+
+    out=new DataOutputStream(new FileOutputStream(file));
+
+    Util.writeAddress(logical_addr,out);
+
+    Util.writeAddress(physical_addr,out);
+
+    Bits.writeString(logical_name,out);
+
+    Util.close(out);
+
+    if (log.isTraceEnabled())     log.trace("Stored temporary file: " + file.getAbsolutePath());
+
+  }
+
+ catch (  Exception e) {
+
+    Util.close(out);
+
+    log.error(Util.getMessage("FailedToWriteTemporaryFile") + filename,e);
+
+    deleteFile(file);
+
+    return null;
+
+  }
+
+  return file;
+
+}
+

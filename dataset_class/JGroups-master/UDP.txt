@@ -1,0 +1,704 @@
+Location: UDP.java
+
+Content: 
+
+@ManagedOperation(description="Clears the cache for dropped messages") public <T extends UDP>T clearDroppedMessagesCache(){
+
+  if (suppress_log_out_of_buffer_space != null)   suppress_log_out_of_buffer_space.getCache().clear();
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+void closeMulticastSocket(){
+
+  if (mcast_sock != null) {
+
+    try {
+
+      if (mcast_addr != null) {
+
+        mcast_sock.leaveGroup(mcast_addr.getIpAddress());
+
+      }
+
+      getSocketFactory().close(mcast_sock);
+
+      mcast_sock=null;
+
+      if (log.isDebugEnabled())       log.debug("%s: multicast socket closed",local_addr);
+
+    }
+
+ catch (    IOException ex) {
+
+    }
+
+    mcast_addr=null;
+
+  }
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void closeUnicastSocket(){
+
+  getSocketFactory().close(sock);
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected IpAddress createLocalAddress(){
+
+  if (sock == null || sock.isClosed())   return null;
+
+  if (external_addr != null) {
+
+    if (external_port > 0)     return new IpAddress(external_addr,external_port);
+
+    return new IpAddress(external_addr,sock.getLocalPort());
+
+  }
+
+  return new IpAddress(sock.getLocalAddress(),sock.getLocalPort());
+
+}
+
+Location: UDP.java
+
+Content: 
+
+/** 
+
+ * Creates a DatagramSocket when bind_port > 0. Attempts to allocate the socket with port == bind_port, and increments until it finds a valid port, or until port_range has been exceeded
+
+ * @return DatagramSocket The newly created socket
+
+ * @throws Exception
+
+ */
+
+protected MulticastSocket createMulticastSocketWithBindPort() throws Exception {
+
+  MulticastSocket tmp=null;
+
+  Exception saved_exception=null;
+
+  int rcv_port=bind_port, max_port=bind_port + port_range;
+
+  while (rcv_port <= max_port) {
+
+    try {
+
+      return createMulticastSocket("jgroups.udp.sock",rcv_port);
+
+    }
+
+ catch (    SocketException|SecurityException bind_ex) {
+
+      rcv_port++;
+
+      saved_exception=bind_ex;
+
+    }
+
+  }
+
+  if (rcv_port >= max_port + 1)   throw new Exception(String.format("failed to open a port in range %d-%d (last exception: %s)",bind_port,max_port,saved_exception));
+
+  return tmp;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected PacketReceiver[] createReceivers(int num,DatagramSocket sock,String name){
+
+  PacketReceiver[] receivers=new PacketReceiver[num];
+
+  for (int i=0; i < num; i++)   receivers[i]=new PacketReceiver(sock,name);
+
+  return receivers;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+/** 
+
+ * Creates the  UDP sender and receiver sockets 
+
+ */
+
+protected void createSockets() throws Exception {
+
+  if (bind_addr == null)   throw new IllegalArgumentException("bind_addr cannot be null");
+
+  Util.checkIfValidAddress(bind_addr,getName());
+
+  if (log.isDebugEnabled())   log.debug("sockets will use interface " + bind_addr.getHostAddress());
+
+  if (bind_port > 0)   sock=createMulticastSocketWithBindPort();
+
+ else   sock=createMulticastSocket("jgroups.udp.sock",0);
+
+  setTimeToLive(ip_ttl,sock);
+
+  if (tos > 0) {
+
+    try {
+
+      sock.setTrafficClass(tos);
+
+    }
+
+ catch (    SocketException e) {
+
+      log.warn(Util.getMessage("TrafficClass"),tos,e);
+
+    }
+
+  }
+
+  if (ip_mcast) {
+
+    if (can_bind_to_mcast_addr)     mcast_sock=Util.createMulticastSocket(getSocketFactory(),"jgroups.udp.mcast_sock",mcast_group_addr,mcast_port,log);
+
+ else     mcast_sock=getSocketFactory().createMulticastSocket("jgroups.udp.mcast_sock",mcast_port);
+
+    if (disable_loopback)     mcast_sock.setLoopbackMode(disable_loopback);
+
+    mcast_addr=new IpAddress(mcast_group_addr,mcast_port);
+
+    if (enable_diagnostics && diagnostics_addr.equals(mcast_group_addr) && diagnostics_port == mcast_port)     throw new IllegalArgumentException("diagnostics_addr:diagnostics_port and mcast_addr:mcast_port " + "have to be different");
+
+    if (tos > 0) {
+
+      try {
+
+        mcast_sock.setTrafficClass(tos);
+
+      }
+
+ catch (      SocketException e) {
+
+        log.warn(Util.getMessage("TrafficClass"),tos,e);
+
+      }
+
+    }
+
+    if (receive_on_all_interfaces || (receive_interfaces != null && !receive_interfaces.isEmpty())) {
+
+      List<NetworkInterface> interfaces;
+
+      if (receive_interfaces != null)       interfaces=receive_interfaces;
+
+ else       interfaces=Util.getAllAvailableInterfaces();
+
+      bindToInterfaces(interfaces,mcast_sock,mcast_addr.getIpAddress());
+
+    }
+
+ else {
+
+      if (bind_addr != null)       setInterface(bind_addr,mcast_sock);
+
+      mcast_sock.joinGroup(mcast_group_addr);
+
+    }
+
+  }
+
+  setBufferSizes();
+
+  log.debug("socket information:\n%s",dumpSocketInfo());
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void destroySockets(){
+
+  closeMulticastSocket();
+
+  closeUnicastSocket();
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected String dumpSocketInfo() throws Exception {
+
+  StringBuilder sb=new StringBuilder(128);
+
+  Formatter formatter=new Formatter(sb);
+
+  formatter.format("mcast_addr=%s, bind_addr=%s, ttl=%d",mcast_addr,bind_addr,ip_ttl);
+
+  if (sock != null)   formatter.format("\nsock: bound to %s:%d, receive buffer size=%d, send buffer size=%d",sock.getLocalAddress().getHostAddress(),sock.getLocalPort(),sock.getReceiveBufferSize(),sock.getSendBufferSize());
+
+  if (mcast_sock != null)   formatter.format("\nmcast_sock: bound to %s:%d, send buffer size=%d, receive buffer size=%d",mcast_sock.getInterface().getHostAddress(),mcast_sock.getLocalPort(),mcast_sock.getSendBufferSize(),mcast_sock.getReceiveBufferSize());
+
+  if (bind_port > 0)   formatter.format("\n%s: using the network interface '%s' with port range '%s-%s'",bind_addr,NetworkInterface.getByInetAddress(bind_addr).getName(),bind_port,(bind_port + port_range));
+
+ else   formatter.format("\n%s: using the network interface '%s' to any (ephemeral) port",bind_addr,NetworkInterface.getByInetAddress(bind_addr).getName());
+
+  return sb.toString();
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected static Method findMethod(Class<?> clazz,String method_name,Class<?>... parameters){
+
+  try {
+
+    Method method=clazz.getDeclaredMethod(method_name,parameters);
+
+    method.setAccessible(true);
+
+    return method;
+
+  }
+
+ catch (  Throwable t) {
+
+    return null;
+
+  }
+
+}
+
+Location: UDP.java
+
+Content: 
+
+@ManagedAttribute(description="Number of messages dropped when sending because of insufficient buffer space") public int getDroppedMessages(){
+
+  return suppress_log_out_of_buffer_space != null ? suppress_log_out_of_buffer_space.getCache().size() : 0;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+@Property(description="Number of multicast receiver threads, all reading from the same MulticastSocket. " + "If de-serialization is slow, increasing the number of receiver threads might yield better performance.") public int getMcastReceiverThreads(){
+
+  return multicast_receiver_threads;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+public InetAddress getMulticastAddress(){
+
+  return mcast_group_addr;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+public int getMulticastPort(){
+
+  return mcast_port;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+public int getMulticastTTL(){
+
+  return ip_ttl;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+@Property(description="Number of unicast receiver threads, all reading from the same DatagramSocket. " + "If de-serialization is slow, increasing the number of receiver threads might yield better performance.") public int getUcastReceiverThreads(){
+
+  return unicast_receiver_threads;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void handleConfigEvent(Map<String,Object> map){
+
+  boolean set_buffers=false;
+
+  if (map == null)   return;
+
+  if (map.containsKey("send_buf_size")) {
+
+    mcast_send_buf_size=(Integer)map.get("send_buf_size");
+
+    ucast_send_buf_size=mcast_send_buf_size;
+
+    set_buffers=true;
+
+  }
+
+  if (map.containsKey("recv_buf_size")) {
+
+    mcast_recv_buf_size=(Integer)map.get("recv_buf_size");
+
+    ucast_recv_buf_size=mcast_recv_buf_size;
+
+    set_buffers=true;
+
+  }
+
+  if (set_buffers)   setBufferSizes();
+
+}
+
+Location: UDP.java
+
+Content: 
+
+void setBufferSizes(){
+
+  if (sock != null)   setBufferSize(sock,ucast_send_buf_size,ucast_recv_buf_size);
+
+  if (mcast_sock != null)   setBufferSize(mcast_sock,mcast_send_buf_size,mcast_recv_buf_size);
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void setBufferSize(DatagramSocket sock,int send_buf_size,int recv_buf_size){
+
+  try {
+
+    sock.setSendBufferSize(send_buf_size);
+
+    int actual_size=sock.getSendBufferSize();
+
+    if (actual_size < send_buf_size && log.isWarnEnabled()) {
+
+      log.warn(Util.getMessage("IncorrectBufferSize"),"send",sock.getClass().getSimpleName(),Util.printBytes(send_buf_size),Util.printBytes(actual_size));
+
+    }
+
+  }
+
+ catch (  Throwable ex) {
+
+    log.warn(Util.getMessage("BufferSizeFailed"),"send",send_buf_size,sock,ex);
+
+  }
+
+  try {
+
+    sock.setReceiveBufferSize(recv_buf_size);
+
+    int actual_size=sock.getReceiveBufferSize();
+
+    if (actual_size < recv_buf_size && log.isWarnEnabled()) {
+
+      log.warn(Util.getMessage("IncorrectBufferSize"),"receive",sock.getClass().getSimpleName(),Util.printBytes(recv_buf_size),Util.printBytes(actual_size));
+
+    }
+
+  }
+
+ catch (  Throwable ex) {
+
+    log.warn(Util.getMessage("BufferSizeFailed"),"receive",recv_buf_size,sock,ex);
+
+  }
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected <T extends UDP>T setInterface(InetAddress intf,MulticastSocket s){
+
+  try {
+
+    if (s != null && intf != null)     s.setInterface(intf);
+
+  }
+
+ catch (  Throwable ex) {
+
+    log.error("failed setting interface to %s: %s",intf,ex);
+
+  }
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+@Override public <T extends TP>T setMaxBundleSize(int size){
+
+  if (size > Global.MAX_DATAGRAM_PACKET_SIZE)   throw new IllegalArgumentException("max_bundle_size (" + size + ") cannot exceed the max datagram "+ "packet size of "+ Global.MAX_DATAGRAM_PACKET_SIZE);
+
+  return super.setMaxBundleSize(size);
+
+}
+
+Location: UDP.java
+
+Content: 
+
+@Property(description="Number of multicast receiver threads, all reading from the same MulticastSocket. " + "If de-serialization is slow, increasing the number of receiver threads might yield better performance.") public <T extends UDP>T setMcastReceiverThreads(int num){
+
+  if (multicast_receiver_threads != num) {
+
+    multicast_receiver_threads=num;
+
+    if (mcast_receivers != null) {
+
+      stopMcastReceiverThreads();
+
+      mcast_receivers=createReceivers(multicast_receiver_threads,mcast_sock,MCAST_NAME);
+
+      startMcastReceiverThreads();
+
+    }
+
+  }
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+public <T extends UDP>T setMulticastAddress(InetAddress a){
+
+  this.mcast_group_addr=a;
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+public <T extends UDP>T setMulticasting(boolean fl){
+
+  this.ip_mcast=fl;
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+public <T extends UDP>T setMulticastPort(int mcast_port){
+
+  this.mcast_port=mcast_port;
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+/** 
+
+ * Set the ttl for multicast socket
+
+ * @param ttl the time to live for the socket.
+
+ */
+
+public <T extends UDP>T setMulticastTTL(int ttl){
+
+  this.ip_ttl=ttl;
+
+  setTimeToLive(ttl,sock);
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected <T extends UDP>T setTimeToLive(int ttl,MulticastSocket s){
+
+  try {
+
+    if (s != null)     s.setTimeToLive(ttl);
+
+  }
+
+ catch (  Throwable ex) {
+
+    log.error("failed setting ip_ttl to %d: %s",ttl,ex);
+
+  }
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+@Property(description="Number of unicast receiver threads, all reading from the same DatagramSocket. " + "If de-serialization is slow, increasing the number of receiver threads might yield better performance.") public <T extends UDP>T setUcastReceiverThreads(int num){
+
+  if (unicast_receiver_threads != num) {
+
+    unicast_receiver_threads=num;
+
+    if (ucast_receivers != null) {
+
+      stopUcastReceiverThreads();
+
+      ucast_receivers=createReceivers(unicast_receiver_threads,sock,UCAST_NAME);
+
+      startUcastReceiverThreads();
+
+    }
+
+  }
+
+  return (T)this;
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void startMcastReceiverThreads(){
+
+  if (mcast_receivers != null)   for (  PacketReceiver r : mcast_receivers)   r.start();
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void startThreads() throws Exception {
+
+  startUcastReceiverThreads();
+
+  startMcastReceiverThreads();
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void startUcastReceiverThreads(){
+
+  if (ucast_receivers != null)   for (  PacketReceiver r : ucast_receivers)   r.start();
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void stopMcastReceiverThreads(){
+
+  Util.close(mcast_receivers);
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void stopThreads(){
+
+  stopMcastReceiverThreads();
+
+  stopUcastReceiverThreads();
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void stopUcastReceiverThreads(){
+
+  Util.close(ucast_receivers);
+
+}
+
+Location: UDP.java
+
+Content: 
+
+protected void _send(InetAddress dest,int port,byte[] data,int offset,int length) throws Exception {
+
+  DatagramPacket packet=new DatagramPacket(data,offset,length,dest,port);
+
+  if (sock != null) {
+
+    try {
+
+      sock.send(packet);
+
+    }
+
+ catch (    IOException ex) {
+
+      if (suppress_log_out_of_buffer_space != null)       suppress_log_out_of_buffer_space.log(SuppressLog.Level.warn,dest,suppress_time_out_of_buffer_space,local_addr,dest == null ? "cluster" : dest,ex);
+
+ else       throw ex;
+
+    }
+
+  }
+
+}
+

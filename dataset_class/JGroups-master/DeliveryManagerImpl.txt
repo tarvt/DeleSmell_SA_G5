@@ -1,0 +1,328 @@
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+long addLocalMessageToDeliver(MessageID messageID,Message message,ToaHeader header){
+
+  MessageInfo messageInfo;
+
+  long sequenceNumber;
+
+synchronized (deliverySet) {
+
+    sequenceNumber=sequenceNumberManager.getAndIncrement();
+
+    messageInfo=new MessageInfo(messageID,message,sequenceNumber);
+
+    deliverySet.add(messageInfo);
+
+  }
+
+  header.setSequencerNumber(sequenceNumber);
+
+  messageCache.put(messageID,messageInfo);
+
+  return sequenceNumber;
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+long addRemoteMessageToDeliver(MessageID messageID,Message message,long remoteSequenceNumber,long viewId){
+
+  MessageInfo messageInfo;
+
+  long sequenceNumber;
+
+synchronized (deliverySet) {
+
+    long currentViewId=internalGetViewId();
+
+    if (currentViewId != -1 && viewId <= currentViewId && !currentView.containsMember(message.getSrc())) {
+
+      return -1;
+
+    }
+
+    sequenceNumber=sequenceNumberManager.updateAndGet(remoteSequenceNumber);
+
+    messageInfo=new MessageInfo(messageID,message,sequenceNumber);
+
+    deliverySet.add(messageInfo);
+
+  }
+
+  messageCache.put(messageID,messageInfo);
+
+  return sequenceNumber;
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+/** 
+
+ * delivers a message that has only as destination member this node
+
+ * @param msg the message
+
+ */
+
+void deliverSingleDestinationMessage(Message msg,MessageID messageID){
+
+synchronized (deliverySet) {
+
+    long sequenceNumber=sequenceNumberManager.get();
+
+    MessageInfo messageInfo=new MessageInfo(messageID,msg,sequenceNumber);
+
+    messageInfo.updateAndMarkReadyToDeliver(sequenceNumber);
+
+    deliverySet.add(messageInfo);
+
+    notifyIfNeeded();
+
+  }
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+public List<MessageInfo> getAllMessages(){
+
+synchronized (deliverySet) {
+
+    return new ArrayList<>(deliverySet);
+
+  }
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+@GuardedBy("deliverySet") private View getAndSetView(View newView){
+
+  View oldView=currentView;
+
+  currentView=newView;
+
+  return oldView;
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+/** 
+
+ * It is used for testing (see the messages in JMX)
+
+ * @return unmodifiable set of messages
+
+ */
+
+Set<MessageInfo> getMessageSet(){
+
+synchronized (deliverySet) {
+
+    return Collections.unmodifiableSet(deliverySet);
+
+  }
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+public SequenceNumberManager getSequenceNumberManager(){
+
+  return sequenceNumberManager;
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+/** 
+
+ * @return an unmodifiable collection with the current cluster members.
+
+ */
+
+final Collection<Address> getViewMembers(){
+
+synchronized (deliverySet) {
+
+    return currentView == null ? Collections.emptyList() : currentView.getMembers();
+
+  }
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+/** 
+
+ * Updates the current view in use and returns a  {@link Collection} with the members that left the cluster.
+
+ */
+
+public final Collection<Address> handleView(View newView){
+
+  View oldView;
+
+synchronized (deliverySet) {
+
+    oldView=getAndSetView(newView);
+
+    deliverySet.removeIf(this::removeMessage);
+
+    notifyIfNeeded();
+
+  }
+
+  return View.leftMembers(oldView,newView);
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+@GuardedBy("deliverSet") private long internalGetViewId(){
+
+  return currentView == null ? -1 : currentView.getViewId().getId();
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+private void markReadyToDeliverV2(MessageID messageID,long finalSequenceNumber){
+
+  MessageInfo messageInfo=messageCache.remove(messageID);
+
+  if (messageInfo == null) {
+
+    throw new IllegalStateException("Message ID not found in to deliver list. this can't happen. " + "Message ID is " + messageID);
+
+  }
+
+  boolean needsUpdatePosition=messageInfo.isUpdatePositionNeeded(finalSequenceNumber);
+
+synchronized (deliverySet) {
+
+    sequenceNumberManager.update(finalSequenceNumber);
+
+    if (needsUpdatePosition) {
+
+      deliverySet.remove(messageInfo);
+
+      messageInfo.updateAndMarkReadyToDeliver(finalSequenceNumber);
+
+      deliverySet.add(messageInfo);
+
+    }
+
+ else {
+
+      messageInfo.updateAndMarkReadyToDeliver(finalSequenceNumber);
+
+    }
+
+    notifyIfNeeded();
+
+  }
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+/** 
+
+ * marks the message as ready to deliver and set the final sequence number (to be ordered)
+
+ * @param messageID           the message ID
+
+ * @param finalSequenceNumber the final sequence number
+
+ */
+
+void markReadyToDeliver(MessageID messageID,long finalSequenceNumber){
+
+  markReadyToDeliverV2(messageID,finalSequenceNumber);
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+@GuardedBy("deliverySet") private void notifyIfNeeded(){
+
+  if (!deliverySet.isEmpty() && deliverySet.first().isReadyToDeliver()) {
+
+    deliverySet.notify();
+
+  }
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+/** 
+
+ * @return {@code true} if the member who sent the message left the cluster and the message isn't ready to be deliver.
+
+ */
+
+@GuardedBy("deliverySet") private boolean removeMessage(MessageInfo messageInfo){
+
+  if (currentView.containsMember(messageInfo.getMessage().getSrc()) || messageInfo.isReadyToDeliver()) {
+
+    return false;
+
+  }
+
+ else {
+
+    messageCache.remove(messageInfo.messageID);
+
+    return true;
+
+  }
+
+}
+
+Location: DeliveryManagerImpl.java
+
+Content: 
+
+void updateSequenceNumber(long sequenceNumber){
+
+synchronized (deliverySet) {
+
+    sequenceNumberManager.update(sequenceNumber);
+
+  }
+
+}
+

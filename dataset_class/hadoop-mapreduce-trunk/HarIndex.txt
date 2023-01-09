@@ -1,0 +1,156 @@
+Location: HarIndex.java
+
+Content: 
+
+/** 
+
+ * Finds the index entry corresponding to a file in the archive
+
+ */
+
+public IndexEntry findEntryByFileName(String fileName){
+
+  for (  IndexEntry e : entries) {
+
+    if (fileName.equals(e.fileName)) {
+
+      return e;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: HarIndex.java
+
+Content: 
+
+/** 
+
+ * Finds the index entry corresponding to a HAR partFile at an offset.
+
+ * @param partName The name of the part file (part-*).
+
+ * @param partFileOffset The offset into the part file.
+
+ * @return The entry corresponding to partName:partFileOffset.
+
+ */
+
+public IndexEntry findEntry(String partName,long partFileOffset){
+
+  for (  IndexEntry e : entries) {
+
+    boolean nameMatch=partName.equals(e.partFileName);
+
+    boolean inRange=(partFileOffset >= e.startOffset) && (partFileOffset < e.startOffset + e.length);
+
+    if (nameMatch && inRange) {
+
+      return e;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: HarIndex.java
+
+Content: 
+
+/** 
+
+ * Constructor that reads the contents of the index file.
+
+ * @param in An input stream to the index file.
+
+ * @param max The size of the index file.
+
+ * @throws IOException
+
+ */
+
+public HarIndex(InputStream in,long max) throws IOException {
+
+  LineReader lineReader=new LineReader(in);
+
+  Text text=new Text();
+
+  long nread=0;
+
+  while (nread < max) {
+
+    int n=lineReader.readLine(text);
+
+    nread+=n;
+
+    String line=text.toString();
+
+    try {
+
+      parseLine(line);
+
+    }
+
+ catch (    UnsupportedEncodingException e) {
+
+      throw new IOException("UnsupportedEncodingException after reading " + nread + "bytes");
+
+    }
+
+  }
+
+}
+
+Location: HarIndex.java
+
+Content: 
+
+/** 
+
+ * Parses each line and extracts relevant information.
+
+ * @param line
+
+ * @throws UnsupportedEncodingException
+
+ */
+
+void parseLine(String line) throws UnsupportedEncodingException {
+
+  String[] splits=line.split(" ");
+
+  boolean isDir="dir".equals(splits[1]) ? true : false;
+
+  if (!isDir && splits.length >= 6) {
+
+    String name=URLDecoder.decode(splits[0],"UTF-8");
+
+    String partName=URLDecoder.decode(splits[2],"UTF-8");
+
+    long startIndex=Long.parseLong(splits[3]);
+
+    long length=Long.parseLong(splits[4]);
+
+    String[] newsplits=URLDecoder.decode(splits[5],"UTF-8").split(" ");
+
+    if (newsplits != null && newsplits.length >= 4) {
+
+      long mtime=Long.parseLong(newsplits[0]);
+
+      IndexEntry entry=new IndexEntry(name,startIndex,length,mtime,partName);
+
+      entries.add(entry);
+
+    }
+
+  }
+
+}
+

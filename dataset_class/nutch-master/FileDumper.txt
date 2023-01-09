@@ -1,0 +1,310 @@
+Location: FileDumper.java
+
+Content: 
+
+/** 
+
+ * Dumps the reverse engineered raw content from the provided segment directories if a parent directory contains more than one segment, otherwise a single segment can be passed as an argument.
+
+ * @param outputDir the directory you wish to dump the raw content to. This directory will be created.
+
+ * @param segmentRootDir a directory containing one or more segments.
+
+ * @param mimeTypes an array of mime types we have to dump, all others will be filtered out.
+
+ * @param flatDir a boolean flag specifying whether the output directory should contain only files instead of using nested directories to prevent naming conflicts.
+
+ * @param mimeTypeStats a flag indicating whether mimetype stats should be displayed instead of dumping files.
+
+ * @param reverseURLDump whether to reverse the URLs when they are written to disk
+
+ * @throws Exception if there is a fatal error dumping files to disk
+
+ */
+
+public void dump(File outputDir,File segmentRootDir,String[] mimeTypes,boolean flatDir,boolean mimeTypeStats,boolean reverseURLDump) throws Exception {
+
+  if (mimeTypes == null)   LOG.info("Accepting all mimetypes.");
+
+  Map<String,Integer> typeCounts=new HashMap<>();
+
+  Map<String,Integer> filteredCounts=new HashMap<>();
+
+  Configuration conf=NutchConfiguration.create();
+
+  int fileCount=0;
+
+  File[] segmentDirs=segmentRootDir.listFiles(file -> file.canRead() && file.isDirectory());
+
+  if (segmentDirs == null) {
+
+    LOG.error("No segment directories found in [" + segmentRootDir.getAbsolutePath() + "]");
+
+    return;
+
+  }
+
+  for (  File segment : segmentDirs) {
+
+    LOG.info("Processing segment: [" + segment.getAbsolutePath() + "]");
+
+    DataOutputStream doutputStream=null;
+
+    Map<String,String> filenameToUrl=new HashMap<String,String>();
+
+    File segmentDir=new File(segment.getAbsolutePath(),Content.DIR_NAME);
+
+    File[] partDirs=segmentDir.listFiles(file -> file.canRead() && file.isDirectory());
+
+    if (partDirs == null) {
+
+      LOG.warn("Skipping Corrupt Segment: [{}]",segment.getAbsolutePath());
+
+      continue;
+
+    }
+
+    for (    File partDir : partDirs) {
+
+      try (FileSystem fs=FileSystem.get(conf)){
+
+        String segmentPath=partDir + "/data";
+
+        Path file=new Path(segmentPath);
+
+        if (!new File(file.toString()).exists()) {
+
+          LOG.warn("Skipping segment: [" + segmentPath + "]: no data directory present");
+
+          continue;
+
+        }
+
+        SequenceFile.Reader reader=new SequenceFile.Reader(conf,SequenceFile.Reader.file(file));
+
+        Writable key=(Writable)reader.getKeyClass().getConstructor().newInstance();
+
+        Content content=null;
+
+        while (reader.next(key)) {
+
+          content=new Content();
+
+          reader.getCurrentValue(content);
+
+          String url=key.toString();
+
+          String baseName=FilenameUtils.getBaseName(url);
+
+          String extension=FilenameUtils.getExtension(url);
+
+          if (extension == null || (extension != null && extension.equals(""))) {
+
+            extension="html";
+
+          }
+
+          ByteArrayInputStream bas=null;
+
+          Boolean filter=false;
+
+          try {
+
+            bas=new ByteArrayInputStream(content.getContent());
+
+            String mimeType=new Tika().detect(content.getContent());
+
+            collectStats(typeCounts,mimeType);
+
+            if (mimeType != null) {
+
+              if (mimeTypes == null || Arrays.asList(mimeTypes).contains(mimeType)) {
+
+                collectStats(filteredCounts,mimeType);
+
+                filter=true;
+
+              }
+
+            }
+
+          }
+
+ catch (          Exception e) {
+
+            e.printStackTrace();
+
+            LOG.warn("Tika is unable to detect type for: [" + url + "]");
+
+          }
+
+ finally {
+
+            if (bas != null) {
+
+              try {
+
+                bas.close();
+
+              }
+
+ catch (              Exception ignore) {
+
+              }
+
+            }
+
+          }
+
+          if (filter) {
+
+            if (!mimeTypeStats) {
+
+              String md5Ofurl=DumpFileUtil.getUrlMD5(url);
+
+              String fullDir=outputDir.getAbsolutePath();
+
+              if (!flatDir && !reverseURLDump) {
+
+                fullDir=DumpFileUtil.createTwoLevelsDirectory(fullDir,md5Ofurl);
+
+              }
+
+              if (!Strings.isNullOrEmpty(fullDir)) {
+
+                String outputFullPath;
+
+                if (reverseURLDump) {
+
+                  String[] reversedURL=TableUtil.reverseUrl(url).split(":");
+
+                  reversedURL[0]=reversedURL[0].replace('.','/');
+
+                  String reversedURLPath=reversedURL[0] + "/" + DigestUtils.sha256Hex(url).toUpperCase();
+
+                  outputFullPath=String.format("%s/%s",fullDir,reversedURLPath);
+
+                  String[] splitPath=outputFullPath.split("/");
+
+                  File fullOutputDir=new File(org.apache.commons.lang3.StringUtils.join(Arrays.copyOf(splitPath,splitPath.length - 1),"/"));
+
+                  if (!fullOutputDir.exists()) {
+
+                    if (!fullOutputDir.mkdirs())                     ;
+
+                    throw new Exception("Unable to create: [" + fullOutputDir.getAbsolutePath() + "]");
+
+                  }
+
+                }
+
+ else {
+
+                  outputFullPath=String.format("%s/%s",fullDir,DumpFileUtil.createFileName(md5Ofurl,baseName,extension));
+
+                }
+
+                filenameToUrl.put(outputFullPath,url);
+
+                File outputFile=new File(outputFullPath);
+
+                if (!outputFile.exists()) {
+
+                  LOG.info("Writing: [" + outputFullPath + "]");
+
+                  FileOutputStream output=null;
+
+                  try {
+
+                    output=new FileOutputStream(outputFile);
+
+                    IOUtils.write(content.getContent(),output);
+
+                  }
+
+ catch (                  Exception e) {
+
+                    LOG.warn("Write Error: [" + outputFullPath + "]");
+
+                    e.printStackTrace();
+
+                  }
+
+ finally {
+
+                    if (output != null) {
+
+                      output.flush();
+
+                      try {
+
+                        output.close();
+
+                      }
+
+ catch (                      Exception ignore) {
+
+                      }
+
+                    }
+
+                  }
+
+                  fileCount++;
+
+                }
+
+ else {
+
+                  LOG.info("Skipping writing: [" + outputFullPath + "]: file already exists");
+
+                }
+
+              }
+
+            }
+
+          }
+
+        }
+
+        reader.close();
+
+      }
+
+  finally {
+
+        if (doutputStream != null) {
+
+          try {
+
+            doutputStream.close();
+
+          }
+
+ catch (          Exception ignore) {
+
+          }
+
+        }
+
+      }
+
+    }
+
+    String filenameToUrlFilePath=String.format("%s/%s_filenameToUrl.json",outputDir.getAbsolutePath(),segment.getName());
+
+    new ObjectMapper().writeValue(new File(filenameToUrlFilePath),filenameToUrl);
+
+  }
+
+  LOG.info("Dumper File Stats: " + DumpFileUtil.displayFileTypes(typeCounts,filteredCounts));
+
+  if (mimeTypeStats) {
+
+    System.out.println("Dumper File Stats: " + DumpFileUtil.displayFileTypes(typeCounts,filteredCounts));
+
+  }
+
+}
+

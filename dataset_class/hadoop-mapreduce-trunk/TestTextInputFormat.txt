@@ -1,0 +1,166 @@
+Location: TestTextInputFormat.java
+
+Content: 
+
+private static LineReader makeStream(String str,int bufsz) throws IOException {
+
+  return new LineReader(new ByteArrayInputStream(str.getBytes("UTF-8")),bufsz);
+
+}
+
+Location: TestTextInputFormat.java
+
+Content: 
+
+/** 
+
+ * Test using the gzip codec and an empty input file
+
+ */
+
+@Test public void testGzipEmpty() throws IOException {
+
+  JobConf job=new JobConf(defaultConf);
+
+  CompressionCodec gzip=new GzipCodec();
+
+  ReflectionUtils.setConf(gzip,job);
+
+  localFs.delete(workDir,true);
+
+  writeFile(localFs,new Path(workDir,"empty.gz"),gzip,"");
+
+  FileInputFormat.setInputPaths(job,workDir);
+
+  TextInputFormat format=new TextInputFormat();
+
+  format.configure(job);
+
+  InputSplit[] splits=format.getSplits(job,100);
+
+  assertEquals("Compressed files of length 0 are not returned from FileInputFormat.getSplits().",1,splits.length);
+
+  List<Text> results=readSplit(format,splits[0],job);
+
+  assertEquals("Compressed empty file length == 0",0,results.size());
+
+}
+
+Location: TestTextInputFormat.java
+
+Content: 
+
+/** 
+
+ * Test readLine for correct interpretation of maxLineLength (returned string should be clipped at maxLineLength, and the remaining bytes on the same line should be thrown out). Also check that returned value matches the string length. Varies buffer size to stress test.
+
+ * @throws Exception
+
+ */
+
+@Test public void testMaxLineLength() throws Exception {
+
+  final String STR="a\nbb\n\nccc\rdddd\r\neeeee";
+
+  final int STRLENBYTES=STR.getBytes().length;
+
+  Text out=new Text();
+
+  for (int bufsz=1; bufsz < STRLENBYTES + 1; ++bufsz) {
+
+    LineReader in=makeStream(STR,bufsz);
+
+    int c=0;
+
+    c+=in.readLine(out,1);
+
+    assertEquals("line1 length, bufsz: " + bufsz,1,out.getLength());
+
+    c+=in.readLine(out,1);
+
+    assertEquals("line2 length, bufsz: " + bufsz,1,out.getLength());
+
+    c+=in.readLine(out,1);
+
+    assertEquals("line3 length, bufsz: " + bufsz,0,out.getLength());
+
+    c+=in.readLine(out,3);
+
+    assertEquals("line4 length, bufsz: " + bufsz,3,out.getLength());
+
+    c+=in.readLine(out,10);
+
+    assertEquals("line5 length, bufsz: " + bufsz,4,out.getLength());
+
+    c+=in.readLine(out,8);
+
+    assertEquals("line5 length, bufsz: " + bufsz,5,out.getLength());
+
+    assertEquals("end of file, bufsz: " + bufsz,0,in.readLine(out));
+
+    assertEquals("total bytes, bufsz: " + bufsz,c,STRLENBYTES);
+
+  }
+
+}
+
+Location: TestTextInputFormat.java
+
+Content: 
+
+@Test public void testMRMaxLine() throws Exception {
+
+  final int MAXPOS=1024 * 1024;
+
+  final int MAXLINE=10 * 1024;
+
+  final int BUF=64 * 1024;
+
+  final InputStream infNull=new InputStream(){
+
+    int position=0;
+
+    final int MAXPOSBUF=1024 * 1024 + BUF;
+
+    @Override public int read(){
+
+      ++position;
+
+      return 0;
+
+    }
+
+    @Override public int read(    byte[] b){
+
+      assertTrue("Read too many bytes from the stream",position < MAXPOSBUF);
+
+      Arrays.fill(b,(byte)0);
+
+      position+=b.length;
+
+      return b.length;
+
+    }
+
+  }
+
+;
+
+  final LongWritable key=new LongWritable();
+
+  final Text val=new Text();
+
+  LOG.info("Reading a line from /dev/null");
+
+  final Configuration conf=new Configuration(false);
+
+  conf.setInt(org.apache.hadoop.mapreduce.lib.input.LineRecordReader.MAX_LINE_LENGTH,MAXLINE);
+
+  conf.setInt("io.file.buffer.size",BUF);
+
+  final LineRecordReader lrr=new LineRecordReader(infNull,0,MAXPOS,conf);
+
+  assertFalse("Read a line from null",lrr.next(key,val));
+
+}
+

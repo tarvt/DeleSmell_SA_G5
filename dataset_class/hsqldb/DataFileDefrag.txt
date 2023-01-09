@@ -1,0 +1,230 @@
+Location: DataFileDefrag.java
+
+Content: 
+
+DataFileDefrag(Database db,DataFileCache cache){
+
+  this.database=db;
+
+  this.dataCache=cache;
+
+  this.dataFileName=cache.getFileName();
+
+}
+
+Location: DataFileDefrag.java
+
+Content: 
+
+public long[][] getIndexRoots(){
+
+  return rootsList;
+
+}
+
+Location: DataFileDefrag.java
+
+Content: 
+
+void process(Session session){
+
+  Throwable error=null;
+
+  database.logger.logDetailEvent("Defrag process begins");
+
+  HsqlArrayList allTables=database.schemaManager.getAllTables(true);
+
+  rootsList=new long[allTables.size()][];
+
+  long maxSize=0;
+
+  for (int i=0, tSize=allTables.size(); i < tSize; i++) {
+
+    Table table=(Table)allTables.get(i);
+
+    if (table.getTableType() == TableBase.CACHED_TABLE) {
+
+      PersistentStore store=database.persistentStoreCollection.getStore(table);
+
+      long size=store.elementCount();
+
+      if (size > maxSize) {
+
+        maxSize=size;
+
+      }
+
+    }
+
+  }
+
+  if (maxSize > Integer.MAX_VALUE) {
+
+    throw Error.error(ErrorCode.X_2200T);
+
+  }
+
+  try {
+
+    String baseFileName=database.getCanonicalPath();
+
+    dataFileOut=new DataFileCache(database,baseFileName,true);
+
+    if (dataCache.fileFreePosition < (long)Integer.MAX_VALUE * dataCache.dataFileScale) {
+
+      pointerLookup=new DoubleIntIndex((int)maxSize);
+
+    }
+
+ else {
+
+      pointerLookup=new DoubleLongIndex((int)maxSize);
+
+    }
+
+    for (int i=0, tSize=allTables.size(); i < tSize; i++) {
+
+      Table t=(Table)allTables.get(i);
+
+      if (t.getTableType() == TableBase.CACHED_TABLE) {
+
+        long[] rootsArray=writeTableToDataFile(t);
+
+        rootsList[i]=rootsArray;
+
+      }
+
+ else {
+
+        rootsList[i]=null;
+
+      }
+
+      database.logger.logDetailEvent("table complete " + t.getName().name);
+
+    }
+
+    dataFileOut.close();
+
+    dataFileOut=null;
+
+    for (int i=0, size=rootsList.length; i < size; i++) {
+
+      long[] roots=rootsList[i];
+
+      if (roots != null) {
+
+        database.logger.logDetailEvent("roots: " + StringUtil.getList(roots,",",""));
+
+      }
+
+    }
+
+  }
+
+ catch (  OutOfMemoryError e) {
+
+    error=e;
+
+    throw Error.error(ErrorCode.OUT_OF_MEMORY,e);
+
+  }
+
+catch (  Throwable t) {
+
+    error=t;
+
+    throw Error.error(ErrorCode.GENERAL_ERROR,t);
+
+  }
+
+ finally {
+
+    try {
+
+      if (dataFileOut != null) {
+
+        dataFileOut.release();
+
+      }
+
+    }
+
+ catch (    Throwable t) {
+
+    }
+
+    if (error instanceof OutOfMemoryError) {
+
+      database.logger.logInfoEvent("defrag failed - out of memory - required: " + maxSize * 8);
+
+    }
+
+    if (error == null) {
+
+      database.logger.logDetailEvent("Defrag transfer complete: " + stopw.elapsedTime());
+
+    }
+
+ else {
+
+      database.logger.logSevereEvent("defrag failed ",error);
+
+      DataFileCache.deleteFile(database,dataFileName + Logger.newFileExtension);
+
+    }
+
+  }
+
+}
+
+Location: DataFileDefrag.java
+
+Content: 
+
+long[] writeTableToDataFile(Table table){
+
+  RowStoreAVLDisk store=(RowStoreAVLDisk)table.database.persistentStoreCollection.getStore(table);
+
+  long[] rootsArray=table.getIndexRootsArray();
+
+  pointerLookup.clear();
+
+  database.logger.logDetailEvent("lookup begins " + table.getName().name + " "+ stopw.elapsedTime());
+
+  store.moveDataToSpace(dataFileOut,pointerLookup);
+
+  for (int i=0; i < table.getIndexCount(); i++) {
+
+    if (rootsArray[i] == -1) {
+
+      continue;
+
+    }
+
+    long pos=pointerLookup.lookup(rootsArray[i],-1);
+
+    if (pos == -1) {
+
+      throw Error.error(ErrorCode.DATA_FILE_ERROR);
+
+    }
+
+    rootsArray[i]=pos;
+
+  }
+
+  long count=store.elementCount();
+
+  if (count != pointerLookup.size()) {
+
+    database.logger.logSevereEvent("discrepency in row count " + table.getName().name + " "+ count+ " "+ pointerLookup.size(),null);
+
+  }
+
+  database.logger.logDetailEvent("table written " + table.getName().name);
+
+  return rootsArray;
+
+}
+

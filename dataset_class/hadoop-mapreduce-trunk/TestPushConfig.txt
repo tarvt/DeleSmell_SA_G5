@@ -1,0 +1,202 @@
+Location: TestPushConfig.java
+
+Content: 
+
+/** 
+
+ * This test about testing the pushConfig feature. The pushConfig functionality available as part of the cluster process manager. The functionality takes in local input directory and pushes all the files from the local to the  remote conf directory. This functionality is required is change the config on the fly and restart the cluster which will be used by other test cases
+
+ * @throws Exception is thrown if pushConfig fails. 
+
+ */
+
+@Test public void testPushConfig() throws Exception {
+
+  final String DUMMY_CONFIG_STRING="mapreduce.newdummy.conf";
+
+  final String DUMMY_CONFIG_STRING_VALUE="HerriotTestRules";
+
+  Configuration origconf=new Configuration(cluster.getConf());
+
+  origconf.set(DUMMY_CONFIG_STRING,DUMMY_CONFIG_STRING_VALUE);
+
+  String localDir=HadoopDaemonRemoteCluster.getDeployedHadoopConfDir() + File.separator + localConfDir;
+
+  File lFile=new File(localDir);
+
+  if (!lFile.exists()) {
+
+    lFile.mkdir();
+
+  }
+
+  String mapredConf=localDir + File.separator + "mapred-site.xml";
+
+  File file=new File(mapredConf);
+
+  origconf.writeXml(new FileOutputStream(file));
+
+  Configuration daemonConf=cluster.getJTClient().getProxy().getDaemonConf();
+
+  Assert.assertTrue("Dummy varialble is expected to be null before restart.",daemonConf.get(DUMMY_CONFIG_STRING) == null);
+
+  String newDir=cluster.getClusterManager().pushConfig(localDir);
+
+  cluster.stop();
+
+  AbstractDaemonClient cli=cluster.getJTClient();
+
+  waitForClusterStop(cli);
+
+  cluster.getClusterManager().start(newDir);
+
+  cli=cluster.getJTClient();
+
+  waitForClusterStart(cli);
+
+  Configuration newconf=cluster.getJTClient().getProxy().getDaemonConf();
+
+  Assert.assertTrue("Extra varialble is expected to be set",newconf.get(DUMMY_CONFIG_STRING).equals(DUMMY_CONFIG_STRING_VALUE));
+
+  cluster.getClusterManager().stop(newDir);
+
+  cli=cluster.getJTClient();
+
+  waitForClusterStop(cli);
+
+  cluster.getClusterManager().start();
+
+  cli=cluster.getJTClient();
+
+  waitForClusterStart(cli);
+
+  daemonConf=cluster.getJTClient().getProxy().getDaemonConf();
+
+  Assert.assertTrue("Dummy variable is expected to be null after restart.",daemonConf.get(DUMMY_CONFIG_STRING) == null);
+
+  lFile.delete();
+
+}
+
+Location: TestPushConfig.java
+
+Content: 
+
+private void waitForClusterStart(AbstractDaemonClient cli) throws Exception {
+
+  int i=1;
+
+  while (i < 40) {
+
+    try {
+
+      cli.ping();
+
+      break;
+
+    }
+
+ catch (    Exception e) {
+
+      i++;
+
+      Thread.sleep(1000);
+
+      LOG.info("Waiting for Jobtracker on host : " + cli.getHostName() + " to come up.");
+
+    }
+
+  }
+
+  for (  AbstractDaemonClient tcli : cluster.getTTClients()) {
+
+    i=1;
+
+    while (i < 40) {
+
+      try {
+
+        tcli.ping();
+
+        break;
+
+      }
+
+ catch (      Exception e) {
+
+        i++;
+
+        Thread.sleep(1000);
+
+        LOG.info("Waiting for Tasktracker on host : " + tcli.getHostName() + " to come up.");
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: TestPushConfig.java
+
+Content: 
+
+private void waitForClusterStop(AbstractDaemonClient cli) throws Exception {
+
+  int i=1;
+
+  while (i < 40) {
+
+    try {
+
+      cli.ping();
+
+      Thread.sleep(1000);
+
+      i++;
+
+    }
+
+ catch (    Exception e) {
+
+      break;
+
+    }
+
+  }
+
+  for (  AbstractDaemonClient tcli : cluster.getTTClients()) {
+
+    i=1;
+
+    while (i < 40) {
+
+      try {
+
+        tcli.ping();
+
+        Thread.sleep(1000);
+
+        i++;
+
+      }
+
+ catch (      Exception e) {
+
+        break;
+
+      }
+
+    }
+
+    if (i >= 40) {
+
+      Assert.fail("TT on " + tcli.getHostName() + " Should have been down.");
+
+    }
+
+  }
+
+}
+

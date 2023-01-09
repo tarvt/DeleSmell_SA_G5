@@ -1,0 +1,174 @@
+Location: ParseSegment.java
+
+Content: 
+
+/** 
+
+ * Checks if the page's content is truncated.
+
+ * @param content the response {@link org.apache.nutch.protocol.Content}
+
+ * @return If the page is truncated <code>true</code>. When it is not, or whenit couldn't be determined, <code>false</code>.
+
+ */
+
+public static boolean isTruncated(Content content){
+
+  byte[] contentBytes=content.getContent();
+
+  if (contentBytes == null)   return false;
+
+  Metadata metadata=content.getMetadata();
+
+  if (metadata == null)   return false;
+
+  String lengthStr=metadata.get(Response.CONTENT_LENGTH);
+
+  if (lengthStr != null)   lengthStr=lengthStr.trim();
+
+  if (StringUtil.isEmpty(lengthStr)) {
+
+    return false;
+
+  }
+
+  int inHeaderSize;
+
+  String url=content.getUrl();
+
+  try {
+
+    inHeaderSize=Integer.parseInt(lengthStr);
+
+  }
+
+ catch (  NumberFormatException e) {
+
+    LOG.warn("Wrong contentlength format for " + url,e);
+
+    return false;
+
+  }
+
+  int actualSize=contentBytes.length;
+
+  if (inHeaderSize > actualSize) {
+
+    LOG.info(url + " skipped. Content of size " + inHeaderSize+ " was truncated to "+ actualSize);
+
+    return true;
+
+  }
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug(url + " actualSize=" + actualSize+ " inHeaderSize="+ inHeaderSize);
+
+  }
+
+  return false;
+
+}
+
+Location: ParseSegment.java
+
+Content: 
+
+public ParseSegment(){
+
+  this(null);
+
+}
+
+Location: ParseSegment.java
+
+Content: 
+
+public ParseSegment(Configuration conf){
+
+  super(conf);
+
+}
+
+Location: ParseSegment.java
+
+Content: 
+
+public void parse(Path segment) throws IOException, InterruptedException, ClassNotFoundException {
+
+  if (SegmentChecker.isParsed(segment,segment.getFileSystem(getConf()))) {
+
+    LOG.warn("Segment: " + segment + " already parsed!! Skipped parsing this segment!!");
+
+    return;
+
+  }
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("ParseSegment: starting at {}",sdf.format(start));
+
+    LOG.info("ParseSegment: segment: {}",segment);
+
+  }
+
+  Job job=NutchJob.getInstance(getConf());
+
+  job.setJobName("parse " + segment);
+
+  Configuration conf=job.getConfiguration();
+
+  FileInputFormat.addInputPath(job,new Path(segment,Content.DIR_NAME));
+
+  conf.set(Nutch.SEGMENT_NAME_KEY,segment.getName());
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setJarByClass(ParseSegment.class);
+
+  job.setMapperClass(ParseSegment.ParseSegmentMapper.class);
+
+  job.setReducerClass(ParseSegment.ParseSegmentReducer.class);
+
+  FileOutputFormat.setOutputPath(job,segment);
+
+  job.setOutputFormatClass(ParseOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(ParseImpl.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Parse job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("ParseSegment: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+

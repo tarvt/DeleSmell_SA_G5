@@ -1,0 +1,170 @@
+Location: CombineFileRecordReader.java
+
+Content: 
+
+/** 
+
+ * A generic RecordReader that can hand out different recordReaders for each chunk in the CombineFileSplit.
+
+ */
+
+public CombineFileRecordReader(CombineFileSplit split,TaskAttemptContext context,Class<? extends RecordReader<K,V>> rrClass) throws IOException {
+
+  this.split=split;
+
+  this.context=context;
+
+  this.rrClass=rrClass;
+
+  this.idx=0;
+
+  this.curReader=null;
+
+  this.progress=0;
+
+  try {
+
+    rrConstructor=rrClass.getDeclaredConstructor(constructorSignature);
+
+    rrConstructor.setAccessible(true);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException(rrClass.getName() + " does not have valid constructor",e);
+
+  }
+
+  initNextRecordReader();
+
+}
+
+Location: CombineFileRecordReader.java
+
+Content: 
+
+/** 
+
+ * A generic RecordReader that can hand out different recordReaders for each chunk in the CombineFileSplit.
+
+ */
+
+public CombineFileRecordReader(JobConf job,CombineFileSplit split,Reporter reporter,Class<RecordReader<K,V>> rrClass) throws IOException {
+
+  this.split=split;
+
+  this.jc=job;
+
+  this.rrClass=rrClass;
+
+  this.reporter=reporter;
+
+  this.idx=0;
+
+  this.curReader=null;
+
+  this.progress=0;
+
+  try {
+
+    rrConstructor=rrClass.getDeclaredConstructor(constructorSignature);
+
+    rrConstructor.setAccessible(true);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException(rrClass.getName() + " does not have valid constructor",e);
+
+  }
+
+  initNextRecordReader();
+
+}
+
+Location: CombineFileRecordReader.java
+
+Content: 
+
+/** 
+
+ * Get the record reader for the next chunk in this CombineFileSplit.
+
+ */
+
+protected boolean initNextRecordReader() throws IOException {
+
+  if (curReader != null) {
+
+    curReader.close();
+
+    curReader=null;
+
+    if (idx > 0) {
+
+      progress+=split.getLength(idx - 1);
+
+    }
+
+  }
+
+  if (idx == split.getNumPaths()) {
+
+    return false;
+
+  }
+
+  try {
+
+    Configuration conf=context.getConfiguration();
+
+    conf.set(MRJobConfig.MAP_INPUT_FILE,split.getPath(idx).toString());
+
+    conf.setLong(MRJobConfig.MAP_INPUT_START,split.getOffset(idx));
+
+    conf.setLong(MRJobConfig.MAP_INPUT_PATH,split.getLength(idx));
+
+    curReader=rrConstructor.newInstance(new Object[]{split,context,Integer.valueOf(idx)});
+
+    if (idx > 0) {
+
+      curReader.initialize(split,context);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+  idx++;
+
+  return true;
+
+}
+
+Location: CombineFileRecordReader.java
+
+Content: 
+
+public boolean next(K key,V value) throws IOException {
+
+  while ((curReader == null) || !curReader.next(key,value)) {
+
+    if (!initNextRecordReader()) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+

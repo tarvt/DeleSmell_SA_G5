@@ -1,0 +1,330 @@
+Location: Digest.java
+
+Content: 
+
+protected void checkPostcondition(){
+
+  int size=members.length;
+
+  if (size * 2 != seqnos.length)   throw new IllegalArgumentException("seqnos.length (" + seqnos.length + ") is not twice the members size ("+ size+ ")");
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public boolean containsAll(Address... members){
+
+  for (  Address member : members)   if (!contains(member))   return false;
+
+  return true;
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public boolean contains(Address mbr){
+
+  if (mbr == null || members == null)   return false;
+
+  for (  Address member : members)   if (Objects.equals(member,mbr))   return true;
+
+  return false;
+
+}
+
+Location: Digest.java
+
+Content: 
+
+protected void createArrays(Map<Address,long[]> map){
+
+  int size=map.size();
+
+  members=new Address[size];
+
+  seqnos=new long[size * 2];
+
+  int index=0;
+
+  for (  Map.Entry<Address,long[]> entry : map.entrySet()) {
+
+    members[index]=entry.getKey();
+
+    seqnos[index * 2]=entry.getValue()[0];
+
+    seqnos[index * 2 + 1]=entry.getValue()[1];
+
+    index++;
+
+  }
+
+}
+
+Location: Digest.java
+
+Content: 
+
+/** 
+
+ * Used for serialization 
+
+ */
+
+public Digest(){
+
+}
+
+Location: Digest.java
+
+Content: 
+
+/** 
+
+ * Only used internally, don't use ! 
+
+ */
+
+public Digest(final Address[] members){
+
+  if (members == null)   throw new IllegalArgumentException("members is null");
+
+  this.members=members;
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public Digest(final Address[] members,long[] seqnos){
+
+  if (members == null)   throw new IllegalArgumentException("members is null");
+
+  if (seqnos == null)   throw new IllegalArgumentException("seqnos is null");
+
+  this.members=members;
+
+  this.seqnos=seqnos;
+
+  checkPostcondition();
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public Digest(Address sender,long highest_delivered,long highest_received){
+
+  members=new Address[]{sender};
+
+  seqnos=new long[]{highest_delivered,highest_received};
+
+}
+
+Location: Digest.java
+
+Content: 
+
+/** 
+
+ * Only used for testing 
+
+ */
+
+public Digest(Digest digest){
+
+  if (digest == null)   return;
+
+  this.members=digest.members;
+
+  this.seqnos=(digest instanceof MutableDigest || this instanceof MutableDigest) ? Arrays.copyOf((digest).seqnos,digest.seqnos.length) : digest.seqnos;
+
+  checkPostcondition();
+
+}
+
+Location: Digest.java
+
+Content: 
+
+/** 
+
+ * Creates a new digest from an existing map by copying the keys and values from map 
+
+ */
+
+public Digest(Map<Address,long[]> map){
+
+  createArrays(map);
+
+  checkPostcondition();
+
+}
+
+Location: Digest.java
+
+Content: 
+
+protected int find(Address mbr){
+
+  if (mbr == null || members == null)   return -1;
+
+  for (int i=0; i < members.length; i++) {
+
+    Address member=members[i];
+
+    if (Objects.equals(member,mbr))     return i;
+
+  }
+
+  return -1;
+
+}
+
+Location: Digest.java
+
+Content: 
+
+/** 
+
+ * Don't use, this method is reserved for Bela ! :-) 
+
+ */
+
+public Address[] getMembersRaw(){
+
+  return members;
+
+}
+
+Location: Digest.java
+
+Content: 
+
+/** 
+
+ * Returns the highest delivered and received seqnos associated with a member.
+
+ * @param member
+
+ * @return An array of 2 elements: highest_delivered and highest_received seqnos
+
+ */
+
+public long[] get(Address member){
+
+  int index=find(member);
+
+  if (index < 0)   return null;
+
+  return new long[]{seqnos[index * 2],seqnos[index * 2 + 1]};
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public void readFrom(DataInput in,boolean read_addrs) throws IOException, ClassNotFoundException {
+
+  if (read_addrs) {
+
+    members=Util.readAddresses(in);
+
+    seqnos=new long[capacity() * 2];
+
+  }
+
+ else   seqnos=new long[in.readShort() * 2];
+
+  for (int i=0; i < seqnos.length / 2; i++)   Bits.readLongSequence(in,seqnos,i * 2);
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public long serializedSize(boolean with_members){
+
+  long retval=with_members ? Util.size(members) : Global.SHORT_SIZE;
+
+  for (int i=0; i < members.length; i++)   retval+=Bits.size(seqnos[i * 2],seqnos[i * 2 + 1]);
+
+  return retval;
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public String toString(final Address[] order,boolean print_highest_received){
+
+  StringBuilder sb=new StringBuilder();
+
+  boolean first=true;
+
+  if (capacity() == 0)   return "[]";
+
+  int count=0, capacity=capacity();
+
+  for (  Address key : order) {
+
+    long[] tmp_seqnos=key != null ? get(key) : null;
+
+    if (key == null || tmp_seqnos == null)     continue;
+
+    if (!first)     sb.append(", ");
+
+ else     first=false;
+
+    sb.append(key).append(": ").append('[').append(tmp_seqnos[0]);
+
+    if (print_highest_received)     sb.append(" (").append(tmp_seqnos[1]).append(")");
+
+    sb.append("]");
+
+    if (Util.MAX_LIST_PRINT_SIZE > 0 && ++count >= Util.MAX_LIST_PRINT_SIZE) {
+
+      if (capacity > count)       sb.append(", ...");
+
+      break;
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public String toString(final Digest order){
+
+  return order != null ? toString(order.members,true) : toString(members,true);
+
+}
+
+Location: Digest.java
+
+Content: 
+
+public void writeTo(DataOutput out,boolean write_addrs) throws IOException {
+
+  if (write_addrs)   Util.writeAddresses(members,out);
+
+ else   out.writeShort(members.length);
+
+  for (int i=0; i < capacity(); i++)   Bits.writeLongSequence(seqnos[i * 2],seqnos[i * 2 + 1],out);
+
+}
+

@@ -1,0 +1,102 @@
+Location: TestMiniMRWithDFSWithDistinctUsers.java
+
+Content: 
+
+static void mkdir(FileSystem fs,String dir,String user,String group,short mode) throws IOException {
+
+  Path p=new Path(dir);
+
+  fs.mkdirs(p);
+
+  fs.setPermission(p,new FsPermission(mode));
+
+  fs.setOwner(p,user,group);
+
+}
+
+Location: TestMiniMRWithDFSWithDistinctUsers.java
+
+Content: 
+
+void runJobAsUser(final JobConf job,UserGroupInformation ugi) throws Exception {
+
+  RunningJob rj=ugi.doAs(new PrivilegedExceptionAction<RunningJob>(){
+
+    public RunningJob run() throws IOException {
+
+      return JobClient.runJob(job);
+
+    }
+
+  }
+
+);
+
+  rj.waitForCompletion();
+
+  assertEquals("SUCCEEDED",JobStatus.getJobRunState(rj.getJobState()));
+
+}
+
+Location: TestMiniMRWithDFSWithDistinctUsers.java
+
+Content: 
+
+public void testDistinctUsers() throws Exception {
+
+  JobConf job1=mr.createJobConf();
+
+  String input="The quick brown fox\nhas many silly\n" + "red fox sox\n";
+
+  Path inDir=new Path("/testing/distinct/input");
+
+  Path outDir=new Path("/user/alice/output");
+
+  TestMiniMRClasspath.configureWordCount(fs,jobTrackerName,job1,input,2,1,inDir,outDir);
+
+  runJobAsUser(job1,ALICE_UGI);
+
+  JobConf job2=mr.createJobConf();
+
+  Path inDir2=new Path("/testing/distinct/input2");
+
+  Path outDir2=new Path("/user/bob/output2");
+
+  TestMiniMRClasspath.configureWordCount(fs,jobTrackerName,job2,input,2,1,inDir2,outDir2);
+
+  runJobAsUser(job2,BOB_UGI);
+
+}
+
+Location: TestMiniMRWithDFSWithDistinctUsers.java
+
+Content: 
+
+/** 
+
+ * Regression test for MAPREDUCE-2327. Verifies that, even if a map task makes lots of spills (more than fit in the spill index cache) that it will succeed.
+
+ */
+
+public void testMultipleSpills() throws Exception {
+
+  JobConf job1=mr.createJobConf();
+
+  job1.setFloat(MRJobConfig.MAP_SORT_SPILL_PERCENT,0.0001f);
+
+  job1.setInt(MRJobConfig.IO_SORT_MB,1);
+
+  job1.setInt(MRJobConfig.INDEX_CACHE_MEMORY_LIMIT,0);
+
+  String input="The quick brown fox\nhas many silly\n" + "red fox sox\n";
+
+  Path inDir=new Path("/testing/distinct/input");
+
+  Path outDir=new Path("/user/alice/output");
+
+  TestMiniMRClasspath.configureWordCount(fs,jobTrackerName,job1,input,2,1,inDir,outDir);
+
+  runJobAsUser(job1,ALICE_UGI);
+
+}
+

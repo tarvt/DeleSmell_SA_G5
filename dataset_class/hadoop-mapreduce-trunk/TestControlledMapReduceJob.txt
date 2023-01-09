@@ -1,0 +1,68 @@
+Location: TestControlledMapReduceJob.java
+
+Content: 
+
+/** 
+
+ * Starts a job with 5 maps and 5 reduces. Then controls the finishing of tasks. Signals finishing tasks in batches and then verifies their completion.
+
+ * @throws Exception
+
+ */
+
+public void testControlledMapReduceJob() throws Exception {
+
+  Properties props=new Properties();
+
+  props.setProperty(TTConfig.TT_MAP_SLOTS,"2");
+
+  props.setProperty(TTConfig.TT_REDUCE_SLOTS,"2");
+
+  startCluster(true,props);
+
+  LOG.info("Started the cluster");
+
+  ControlledMapReduceJobRunner jobRunner=ControlledMapReduceJobRunner.getControlledMapReduceJobRunner(createJobConf(),7,6);
+
+  jobRunner.start();
+
+  ControlledMapReduceJob controlledJob=jobRunner.getJob();
+
+  JobInProgress jip=getMRCluster().getJobTrackerRunner().getJobTracker().getJob(jobRunner.getJobID());
+
+  ControlledMapReduceJob.waitTillNTasksStartRunning(jip,true,4);
+
+  LOG.info("Finishing 3 maps");
+
+  controlledJob.finishNTasks(true,3);
+
+  ControlledMapReduceJob.waitTillNTotalTasksFinish(jip,true,3);
+
+  ControlledMapReduceJob.waitTillNTasksStartRunning(jip,true,4);
+
+  LOG.info("Finishing 4 more maps");
+
+  controlledJob.finishNTasks(true,4);
+
+  ControlledMapReduceJob.waitTillNTotalTasksFinish(jip,true,7);
+
+  ControlledMapReduceJob.waitTillNTasksStartRunning(jip,false,4);
+
+  LOG.info("Finishing 2 reduces");
+
+  controlledJob.finishNTasks(false,2);
+
+  ControlledMapReduceJob.waitTillNTotalTasksFinish(jip,false,2);
+
+  ControlledMapReduceJob.waitTillNTasksStartRunning(jip,false,4);
+
+  LOG.info("Finishing 4 more reduces");
+
+  controlledJob.finishNTasks(false,4);
+
+  ControlledMapReduceJob.waitTillNTotalTasksFinish(jip,false,6);
+
+  jobRunner.join();
+
+}
+

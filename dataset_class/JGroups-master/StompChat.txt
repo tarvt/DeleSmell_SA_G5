@@ -1,0 +1,406 @@
+Location: StompChat.java
+
+Content: 
+
+String getAllClients(){
+
+  StringBuilder sb=new StringBuilder();
+
+  boolean first=true;
+
+  for (  String client : clients) {
+
+    if (first)     first=false;
+
+ else     sb.append(",");
+
+    sb.append(client);
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+int getNumberOfClients(){
+
+synchronized (clients) {
+
+    return clients.size();
+
+  }
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+void newView(String view){
+
+  cluster.setText("Cluster: " + view);
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+public void onInfo(Map<String,String> information){
+
+  String view=information.get("view");
+
+  Collection<String> list;
+
+  if (view != null) {
+
+    list=Util.parseCommaDelimitedStrings(view);
+
+    if (list != null) {
+
+      num_servers=list.size();
+
+      if (mainFrame != null)       setTitle();
+
+      servers.clear();
+
+      servers.addAll(list);
+
+      newView(view);
+
+    }
+
+ else {
+
+      String targets=information.get(ENDPOINTS);
+
+      if (targets != null) {
+
+        list=Util.parseCommaDelimitedStrings(targets);
+
+        if (list != null) {
+
+          num_servers=list.size();
+
+          if (mainFrame != null)           setTitle();
+
+          servers.clear();
+
+          servers.addAll(list);
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+public void onMessage(Map<String,String> headers,byte[] buf,int offset,int length){
+
+  String destination=headers.get(DESTINATION);
+
+  if (destination == null)   return;
+
+  if (destination.equals(MESSAGES)) {
+
+    showMessage(new String(buf,offset,length));
+
+    return;
+
+  }
+
+  if (destination.equals(CLIENT_JOINED)) {
+
+    String new_client=headers.get(CLIENT);
+
+    if (new_client != null) {
+
+synchronized (clients) {
+
+        if (clients.add(new_client)) {
+
+          num_clients=clients.size();
+
+          setTitle();
+
+        }
+
+      }
+
+      stomp_client.send(CLIENTS,null,0,0,CLIENTS_KW,getAllClients());
+
+    }
+
+    return;
+
+  }
+
+  if (destination.equals(CLIENT_LEFT)) {
+
+    String left_client=headers.get(CLIENT);
+
+    if (left_client != null) {
+
+synchronized (clients) {
+
+        if (clients.remove(left_client)) {
+
+          num_clients=clients.size();
+
+          setTitle();
+
+        }
+
+      }
+
+    }
+
+    return;
+
+  }
+
+  if (destination.equals(CLIENTS)) {
+
+    String all_clients=headers.get(CLIENTS_KW);
+
+    if (all_clients != null) {
+
+      List<String> list=Util.parseCommaDelimitedStrings(all_clients);
+
+      if (list != null) {
+
+synchronized (clients) {
+
+          if (clients.addAll(list)) {
+
+            num_clients=clients.size();
+
+            setTitle();
+
+          }
+
+        }
+
+      }
+
+    }
+
+    return;
+
+  }
+
+  if (destination.equals(USER_JOINED)) {
+
+    String name=headers.get(USER);
+
+    if (name != null)     userJoined(name);
+
+    return;
+
+  }
+
+  if (destination.equals(USER_LEFT)) {
+
+    String name=headers.get(USER);
+
+    if (name != null)     userLeft(name);
+
+    return;
+
+  }
+
+  if (destination.equals(GET_USERS)) {
+
+    stomp_client.send(USERS,USERS_KW,usersToStr());
+
+    return;
+
+  }
+
+  if (destination.equals(USERS)) {
+
+    String tmp=headers.get(USERS_KW);
+
+    if (tmp != null) {
+
+      List<String> list=Util.parseCommaDelimitedStrings(tmp);
+
+      if (list != null)       usersReceived(list);
+
+    }
+
+  }
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+public void sendGetUsers(){
+
+  stomp_client.send(GET_USERS);
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+protected void send(String msg){
+
+  try {
+
+    String tmp=username + ": " + msg;
+
+    byte[] buf=tmp.getBytes();
+
+    stomp_client.send(MESSAGES,buf,0,buf.length);
+
+  }
+
+ catch (  Exception e) {
+
+    System.err.println("Failed sending message: " + e);
+
+  }
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+void showMessage(String msg){
+
+  txtArea.append(msg + "\n");
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+protected void showStatus(final String msg){
+
+  new Thread(){
+
+    public void run(){
+
+synchronized (status) {
+
+        status.setText(msg);
+
+        Util.sleep(2000);
+
+        status.setText("");
+
+      }
+
+    }
+
+  }
+
+.start();
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+public StompChat(String host,int port,String user){
+
+  stomp_client=new StompConnection(host + ":" + port);
+
+  stomp_client.addListener(this);
+
+  username=user;
+
+  try {
+
+    if (username == null)     username=System.getProperty("user.name");
+
+  }
+
+ catch (  Throwable t) {
+
+  }
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+void userJoined(String name){
+
+  users.add(name);
+
+  showStatus(name + " joined the chat");
+
+  users_label.setText("Users: " + users);
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+void userLeft(String name){
+
+  users.remove(name);
+
+  showStatus(name + " left the chat");
+
+  users_label.setText("Users: " + users);
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+void usersReceived(Collection<String> users){
+
+  this.users.addAll(users);
+
+  users_label.setText("Users: " + this.users);
+
+}
+
+Location: StompChat.java
+
+Content: 
+
+private String usersToStr(){
+
+  StringBuilder sb=new StringBuilder();
+
+  boolean first=true;
+
+  for (  String user : users) {
+
+    if (first)     first=false;
+
+ else     sb.append(",");
+
+    sb.append(user);
+
+  }
+
+  return sb.toString();
+
+}
+

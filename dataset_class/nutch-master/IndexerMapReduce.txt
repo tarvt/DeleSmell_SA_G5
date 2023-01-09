@@ -1,0 +1,198 @@
+Location: IndexerMapReduce.java
+
+Content: 
+
+/** 
+
+ * Filters the given url.
+
+ * @param url The url to filter.
+
+ * @return The filtered url or null.
+
+ */
+
+private static String filterUrl(String url,boolean filter,URLFilters urlFilters){
+
+  if (!filter) {
+
+    return url;
+
+  }
+
+  try {
+
+    url=urlFilters.filter(url);
+
+  }
+
+ catch (  Exception e) {
+
+    url=null;
+
+  }
+
+  return url;
+
+}
+
+Location: IndexerMapReduce.java
+
+Content: 
+
+public static void initMRJob(Path crawlDb,Path linkDb,Collection<Path> segments,Job job,boolean addBinaryContent) throws IOException {
+
+  Configuration conf=job.getConfiguration();
+
+  if (crawlDb != null) {
+
+    LOG.info("IndexerMapReduce: crawldb: {}",crawlDb);
+
+    Path currentCrawlDb=new Path(crawlDb,CrawlDb.CURRENT_NAME);
+
+    try {
+
+      if (currentCrawlDb.getFileSystem(conf).exists(currentCrawlDb)) {
+
+        FileInputFormat.addInputPath(job,currentCrawlDb);
+
+      }
+
+ else {
+
+        LOG.warn("Ignoring crawlDb for indexing, no crawlDb found in path: {}",crawlDb);
+
+      }
+
+    }
+
+ catch (    IOException e) {
+
+      LOG.warn("Failed to use crawlDb ({}) for indexing",crawlDb,e);
+
+    }
+
+  }
+
+ else {
+
+    LOG.info("IndexerMapReduce: no crawldb provided for indexing");
+
+  }
+
+  for (  final Path segment : segments) {
+
+    LOG.info("IndexerMapReduces: adding segment: {}",segment);
+
+    FileInputFormat.addInputPath(job,new Path(segment,CrawlDatum.FETCH_DIR_NAME));
+
+    FileInputFormat.addInputPath(job,new Path(segment,CrawlDatum.PARSE_DIR_NAME));
+
+    FileInputFormat.addInputPath(job,new Path(segment,ParseData.DIR_NAME));
+
+    FileInputFormat.addInputPath(job,new Path(segment,ParseText.DIR_NAME));
+
+    if (addBinaryContent) {
+
+      FileInputFormat.addInputPath(job,new Path(segment,Content.DIR_NAME));
+
+    }
+
+  }
+
+  if (linkDb != null) {
+
+    LOG.info("IndexerMapReduce: linkdb: {}",linkDb);
+
+    Path currentLinkDb=new Path(linkDb,LinkDb.CURRENT_NAME);
+
+    try {
+
+      if (currentLinkDb.getFileSystem(conf).exists(currentLinkDb)) {
+
+        FileInputFormat.addInputPath(job,currentLinkDb);
+
+      }
+
+ else {
+
+        LOG.warn("Ignoring linkDb for indexing, no linkDb found in path: {}",linkDb);
+
+      }
+
+    }
+
+ catch (    IOException e) {
+
+      LOG.warn("Failed to use linkDb ({}) for indexing: {}",linkDb,org.apache.hadoop.util.StringUtils.stringifyException(e));
+
+    }
+
+  }
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setJarByClass(IndexerMapReduce.class);
+
+  job.setMapperClass(IndexerMapReduce.IndexerMapper.class);
+
+  job.setReducerClass(IndexerMapReduce.IndexerReducer.class);
+
+  job.setOutputFormatClass(IndexerOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(NutchWritable.class);
+
+  job.setOutputValueClass(NutchWritable.class);
+
+}
+
+Location: IndexerMapReduce.java
+
+Content: 
+
+/** 
+
+ * Normalizes and trims extra whitespace from the given url.
+
+ * @param url The url to normalize.
+
+ * @return The normalized url.
+
+ */
+
+private static String normalizeUrl(String url,boolean normalize,URLNormalizers urlNormalizers){
+
+  if (!normalize) {
+
+    return url;
+
+  }
+
+  String normalized=null;
+
+  if (urlNormalizers != null) {
+
+    try {
+
+      normalized=urlNormalizers.normalize(url,URLNormalizers.SCOPE_INDEXER);
+
+      normalized=normalized.trim();
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.warn("Skipping {}: {}",url,e);
+
+      normalized=null;
+
+    }
+
+  }
+
+  return normalized;
+
+}
+

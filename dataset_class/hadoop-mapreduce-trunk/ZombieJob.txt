@@ -1,0 +1,1012 @@
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * Build task mapping and task attempt mapping, to be later used to find information of a particular  {@link TaskID} or {@link TaskAttemptID}.
+
+ */
+
+private synchronized void buildMaps(){
+
+  if (loggedTaskMap == null) {
+
+    loggedTaskMap=new HashMap<TaskID,LoggedTask>();
+
+    loggedTaskAttemptMap=new HashMap<TaskAttemptID,LoggedTaskAttempt>();
+
+    for (    LoggedTask map : job.getMapTasks()) {
+
+      map=sanitizeLoggedTask(map);
+
+      if (map != null) {
+
+        loggedTaskMap.put(maskTaskID(TaskID.forName(map.taskID)),map);
+
+        for (        LoggedTaskAttempt mapAttempt : map.getAttempts()) {
+
+          mapAttempt=sanitizeLoggedTaskAttempt(mapAttempt);
+
+          if (mapAttempt != null) {
+
+            TaskAttemptID id=TaskAttemptID.forName(mapAttempt.getAttemptID());
+
+            loggedTaskAttemptMap.put(maskAttemptID(id),mapAttempt);
+
+          }
+
+        }
+
+      }
+
+    }
+
+    for (    LoggedTask reduce : job.getReduceTasks()) {
+
+      reduce=sanitizeLoggedTask(reduce);
+
+      if (reduce != null) {
+
+        loggedTaskMap.put(maskTaskID(TaskID.forName(reduce.taskID)),reduce);
+
+        for (        LoggedTaskAttempt reduceAttempt : reduce.getAttempts()) {
+
+          reduceAttempt=sanitizeLoggedTaskAttempt(reduceAttempt);
+
+          if (reduceAttempt != null) {
+
+            TaskAttemptID id=TaskAttemptID.forName(reduceAttempt.getAttemptID());
+
+            loggedTaskAttemptMap.put(maskAttemptID(id),reduceAttempt);
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private static State convertState(Values status){
+
+  if (status == Values.SUCCESS) {
+
+    return State.SUCCEEDED;
+
+  }
+
+ else   if (status == Values.FAILED) {
+
+    return State.FAILED;
+
+  }
+
+ else   if (status == Values.KILLED) {
+
+    return State.KILLED;
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException("unknown status " + status);
+
+  }
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private long doMakeUpReduceRuntime(State state){
+
+  long reduceTime;
+
+  try {
+
+    if (state == State.SUCCEEDED) {
+
+      reduceTime=makeUpRuntime(job.getSuccessfulReduceAttemptCDF());
+
+    }
+
+ else     if (state == State.FAILED) {
+
+      reduceTime=makeUpRuntime(job.getFailedReduceAttemptCDF());
+
+    }
+
+ else {
+
+      throw new IllegalArgumentException("state is neither SUCCEEDED nor FAILED: " + state);
+
+    }
+
+    return reduceTime;
+
+  }
+
+ catch (  NoValueToMakeUpRuntime e) {
+
+    return 0;
+
+  }
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private int getLocality(LoggedTask loggedTask,LoggedTaskAttempt loggedAttempt){
+
+  int distance=cluster.getMaximumDistance();
+
+  String rackHostName=loggedAttempt.getHostName();
+
+  if (rackHostName == null) {
+
+    return distance;
+
+  }
+
+  MachineNode mn=getMachineNode(rackHostName);
+
+  if (mn == null) {
+
+    return distance;
+
+  }
+
+  List<LoggedLocation> locations=loggedTask.getPreferredLocations();
+
+  if (locations != null) {
+
+    for (    LoggedLocation location : locations) {
+
+      List<String> layers=location.getLayers();
+
+      if ((layers == null) || (layers.isEmpty())) {
+
+        continue;
+
+      }
+
+      String dataNodeName=layers.get(layers.size() - 1);
+
+      MachineNode dataNode=cluster.getMachineByName(dataNodeName);
+
+      if (dataNode != null) {
+
+        distance=Math.min(distance,cluster.distance(mn,dataNode));
+
+      }
+
+    }
+
+  }
+
+  return distance;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * Get the underlining  {@link LoggedJob} object read directly from the trace.This is mainly for debugging.
+
+ * @return the underlining {@link LoggedJob} object
+
+ */
+
+public LoggedJob getLoggedJob(){
+
+  return job;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private LoggedTaskAttempt getLoggedTaskAttempt(TaskType taskType,int taskNumber,int taskAttemptNumber){
+
+  buildMaps();
+
+  TaskAttemptID id=new TaskAttemptID(getMaskedTaskID(taskType,taskNumber),taskAttemptNumber);
+
+  return loggedTaskAttemptMap.get(id);
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private LoggedTask getLoggedTask(TaskType taskType,int taskNumber){
+
+  buildMaps();
+
+  return loggedTaskMap.get(getMaskedTaskID(taskType,taskNumber));
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private MachineNode getMachineNode(String rackHostName){
+
+  ParsedHost parsedHost=ParsedHost.parse(rackHostName);
+
+  String hostName=(parsedHost == null) ? rackHostName : parsedHost.getNodeName();
+
+  if (hostName == null) {
+
+    return null;
+
+  }
+
+  return (cluster == null) ? null : cluster.getMachineByName(hostName);
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private TaskID getMaskedTaskID(TaskType taskType,int taskNumber){
+
+  return new TaskID(new JobID(),taskType,taskNumber);
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private synchronized long getNextRandomSeed(){
+
+  numRandomSeeds++;
+
+  return RandomSeedGenerator.getSeed("forZombieJob" + job.getJobID(),numRandomSeeds);
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * Getting the number of map tasks that are actually logged in the trace.
+
+ * @return The number of map tasks that are actually logged in the trace.
+
+ */
+
+public int getNumLoggedMaps(){
+
+  return job.getMapTasks().size();
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * Getting the number of reduce tasks that are actually logged in the trace.
+
+ * @return The number of map tasks that are actually logged in the trace.
+
+ */
+
+public int getNumLoggedReduces(){
+
+  return job.getReduceTasks().size();
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private TaskAttemptInfo getTaskAttemptInfo(LoggedTask loggedTask,LoggedTaskAttempt loggedAttempt){
+
+  TaskInfo taskInfo=getTaskInfo(loggedTask);
+
+  State state=convertState(loggedAttempt.getResult());
+
+  if (loggedTask.getTaskType() == Values.MAP) {
+
+    long taskTime;
+
+    if (loggedAttempt.getStartTime() == 0) {
+
+      int locality=getLocality(loggedTask,loggedAttempt);
+
+      taskTime=makeUpMapRuntime(state,locality);
+
+    }
+
+ else {
+
+      taskTime=loggedAttempt.getFinishTime() - loggedAttempt.getStartTime();
+
+    }
+
+    taskTime=sanitizeTaskRuntime(taskTime,loggedAttempt.getAttemptID());
+
+    return new MapTaskAttemptInfo(state,taskInfo,taskTime);
+
+  }
+
+ else   if (loggedTask.getTaskType() == Values.REDUCE) {
+
+    long startTime=loggedAttempt.getStartTime();
+
+    long mergeDone=loggedAttempt.getSortFinished();
+
+    long shuffleDone=loggedAttempt.getShuffleFinished();
+
+    long finishTime=loggedAttempt.getFinishTime();
+
+    if (startTime <= 0 || startTime >= finishTime) {
+
+      long reduceTime=makeUpReduceRuntime(state);
+
+      return new ReduceTaskAttemptInfo(state,taskInfo,0,0,reduceTime);
+
+    }
+
+ else {
+
+      if (shuffleDone <= 0) {
+
+        shuffleDone=startTime;
+
+      }
+
+      if (mergeDone <= 0) {
+
+        mergeDone=finishTime;
+
+      }
+
+      long shuffleTime=shuffleDone - startTime;
+
+      long mergeTime=mergeDone - shuffleDone;
+
+      long reduceTime=finishTime - mergeDone;
+
+      reduceTime=sanitizeTaskRuntime(reduceTime,loggedAttempt.getAttemptID());
+
+      return new ReduceTaskAttemptInfo(state,taskInfo,shuffleTime,mergeTime,reduceTime);
+
+    }
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException("taskType for " + loggedTask.getTaskID() + " is neither MAP nor REDUCE: "+ loggedTask.getTaskType());
+
+  }
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private TaskInfo getTaskInfo(LoggedTask loggedTask){
+
+  List<LoggedTaskAttempt> attempts=loggedTask.getAttempts();
+
+  long inputBytes=-1;
+
+  long inputRecords=-1;
+
+  long outputBytes=-1;
+
+  long outputRecords=-1;
+
+  long heapMegabytes=-1;
+
+  ResourceUsageMetrics metrics=new ResourceUsageMetrics();
+
+  Values type=loggedTask.getTaskType();
+
+  if ((type != Values.MAP) && (type != Values.REDUCE)) {
+
+    throw new IllegalArgumentException("getTaskInfo only supports MAP or REDUCE tasks: " + type.toString() + " for task = "+ loggedTask.getTaskID());
+
+  }
+
+  for (  LoggedTaskAttempt attempt : attempts) {
+
+    attempt=sanitizeLoggedTaskAttempt(attempt);
+
+    if ((attempt == null) || (attempt.getResult() != Values.SUCCESS)) {
+
+      continue;
+
+    }
+
+    if (type == Values.MAP) {
+
+      inputBytes=attempt.getHdfsBytesRead();
+
+      inputRecords=attempt.getMapInputRecords();
+
+      outputBytes=(job.getTotalReduces() > 0) ? attempt.getMapOutputBytes() : attempt.getHdfsBytesWritten();
+
+      outputRecords=attempt.getMapOutputRecords();
+
+      heapMegabytes=(job.getJobMapMB() > 0) ? job.getJobMapMB() : job.getHeapMegabytes();
+
+    }
+
+ else {
+
+      inputBytes=attempt.getReduceShuffleBytes();
+
+      inputRecords=attempt.getReduceInputRecords();
+
+      outputBytes=attempt.getHdfsBytesWritten();
+
+      outputRecords=attempt.getReduceOutputRecords();
+
+      heapMegabytes=(job.getJobReduceMB() > 0) ? job.getJobReduceMB() : job.getHeapMegabytes();
+
+    }
+
+    metrics=attempt.getResourceUsageMetrics();
+
+    break;
+
+  }
+
+  TaskInfo taskInfo=new TaskInfo(inputBytes,(int)inputRecords,outputBytes,(int)outputRecords,(int)heapMegabytes,metrics);
+
+  return taskInfo;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private TaskAttemptID makeTaskAttemptID(TaskType taskType,int taskNumber,int taskAttemptNumber){
+
+  return new TaskAttemptID(new TaskID(JobID.forName(job.getJobID()),taskType,taskNumber),taskAttemptNumber);
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private long makeUpMapRuntime(State state,int locality){
+
+  long runtime;
+
+  if (state == State.SUCCEEDED || state == State.FAILED) {
+
+    List<LoggedDiscreteCDF> cdfList=state == State.SUCCEEDED ? job.getSuccessfulMapAttemptCDFs() : job.getFailedMapAttemptCDFs();
+
+    if (cdfList == null) {
+
+      runtime=-1;
+
+      return runtime;
+
+    }
+
+    try {
+
+      runtime=makeUpRuntime(cdfList.get(locality));
+
+    }
+
+ catch (    NoValueToMakeUpRuntime e) {
+
+      runtime=makeUpRuntime(cdfList);
+
+    }
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException("state is neither SUCCEEDED nor FAILED: " + state);
+
+  }
+
+  return runtime;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private long makeUpReduceRuntime(State state){
+
+  long reduceTime=0;
+
+  for (int i=0; i < 5; i++) {
+
+    reduceTime=doMakeUpReduceRuntime(state);
+
+    if (reduceTime >= 0) {
+
+      return reduceTime;
+
+    }
+
+  }
+
+  return 0;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private long makeUpRuntimeCore(LoggedDiscreteCDF loggedDiscreteCDF){
+
+  CDFRandomGenerator interpolator;
+
+synchronized (interpolatorMap) {
+
+    interpolator=interpolatorMap.get(loggedDiscreteCDF);
+
+  }
+
+  if (interpolator == null) {
+
+    if (loggedDiscreteCDF.getNumberValues() == 0) {
+
+      throw new NoValueToMakeUpRuntime("no value to use to make up runtime");
+
+    }
+
+    interpolator=hasRandomSeed ? new CDFPiecewiseLinearRandomGenerator(loggedDiscreteCDF,getNextRandomSeed()) : new CDFPiecewiseLinearRandomGenerator(loggedDiscreteCDF);
+
+synchronized (interpolatorMap) {
+
+      interpolatorMap.put(loggedDiscreteCDF,interpolator);
+
+    }
+
+  }
+
+  return interpolator.randomValue();
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * Perform a weighted random selection on a list of CDFs, and produce a random variable using the selected CDF.
+
+ * @param mapAttemptCDFs A list of CDFs for the distribution of runtime for the 1st, 2nd, ... map attempts for the job.
+
+ */
+
+private long makeUpRuntime(List<LoggedDiscreteCDF> mapAttemptCDFs){
+
+  int total=0;
+
+  if (mapAttemptCDFs == null) {
+
+    return -1;
+
+  }
+
+  for (  LoggedDiscreteCDF cdf : mapAttemptCDFs) {
+
+    total+=cdf.getNumberValues();
+
+  }
+
+  if (total == 0) {
+
+    return -1;
+
+  }
+
+  int index=random.nextInt(total);
+
+  for (  LoggedDiscreteCDF cdf : mapAttemptCDFs) {
+
+    if (index >= cdf.getNumberValues()) {
+
+      index-=cdf.getNumberValues();
+
+    }
+
+ else {
+
+      if (index < 0) {
+
+        throw new IllegalStateException("application error");
+
+      }
+
+      return makeUpRuntime(cdf);
+
+    }
+
+  }
+
+  throw new IllegalStateException("not possible to get here");
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private long makeUpRuntime(LoggedDiscreteCDF loggedDiscreteCDF){
+
+  if (hasRandomSeed) {
+
+synchronized (interpolatorMap) {
+
+      return makeUpRuntimeCore(loggedDiscreteCDF);
+
+    }
+
+  }
+
+  return makeUpRuntimeCore(loggedDiscreteCDF);
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private State makeUpState(int taskAttemptNumber,double[] numAttempts){
+
+  if (numAttempts == null) {
+
+    return State.FAILED;
+
+  }
+
+  if (taskAttemptNumber >= numAttempts.length - 1) {
+
+    return State.SUCCEEDED;
+
+  }
+
+ else {
+
+    double pSucceed=numAttempts[taskAttemptNumber];
+
+    double pFail=0;
+
+    for (int i=taskAttemptNumber + 1; i < numAttempts.length; i++) {
+
+      pFail+=numAttempts[i];
+
+    }
+
+    return (random.nextDouble() < pSucceed / (pSucceed + pFail)) ? State.SUCCEEDED : State.FAILED;
+
+  }
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private TaskAttemptInfo makeUpTaskAttemptInfo(TaskType taskType,TaskInfo taskInfo,int taskAttemptNumber,int taskNumber,int locality){
+
+  if (taskType == TaskType.MAP) {
+
+    State state=State.SUCCEEDED;
+
+    long runtime=0;
+
+    state=makeUpState(taskAttemptNumber,job.getMapperTriesToSucceed());
+
+    runtime=makeUpMapRuntime(state,locality);
+
+    runtime=sanitizeTaskRuntime(runtime,makeTaskAttemptID(taskType,taskNumber,taskAttemptNumber).toString());
+
+    TaskAttemptInfo tai=new MapTaskAttemptInfo(state,taskInfo,runtime);
+
+    return tai;
+
+  }
+
+ else   if (taskType == TaskType.REDUCE) {
+
+    State state=State.SUCCEEDED;
+
+    long shuffleTime=0;
+
+    long sortTime=0;
+
+    long reduceTime=0;
+
+    reduceTime=makeUpReduceRuntime(state);
+
+    TaskAttemptInfo tai=new ReduceTaskAttemptInfo(state,taskInfo,shuffleTime,sortTime,reduceTime);
+
+    return tai;
+
+  }
+
+  throw new IllegalArgumentException("taskType is neither MAP nor REDUCE: " + taskType);
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * Mask the job ID part in a  {@link TaskAttemptID}.
+
+ * @param attemptId raw  {@link TaskAttemptID} read from trace
+
+ * @return masked {@link TaskAttemptID} with empty {@link JobID}.
+
+ */
+
+private TaskAttemptID maskAttemptID(TaskAttemptID attemptId){
+
+  JobID jobId=new JobID();
+
+  TaskType taskType=attemptId.getTaskType();
+
+  TaskID taskId=attemptId.getTaskID();
+
+  return new TaskAttemptID(jobId.getJtIdentifier(),jobId.getId(),taskType,taskId.getId(),attemptId.getId());
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * Mask the job ID part in a  {@link TaskID}.
+
+ * @param taskId raw  {@link TaskID} read from trace
+
+ * @return masked {@link TaskID} with empty {@link JobID}.
+
+ */
+
+private TaskID maskTaskID(TaskID taskId){
+
+  JobID jobId=new JobID();
+
+  TaskType taskType=taskId.getTaskType();
+
+  return new TaskID(jobId,taskType,taskId.getId());
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private LoggedTaskAttempt sanitizeLoggedTaskAttempt(LoggedTaskAttempt attempt){
+
+  if (attempt == null) {
+
+    return null;
+
+  }
+
+  if (attempt.getResult() == null) {
+
+    LOG.warn("TaskAttempt " + attempt.getResult() + " has nulll Result");
+
+    return null;
+
+  }
+
+  return attempt;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private LoggedTask sanitizeLoggedTask(LoggedTask task){
+
+  if (task == null) {
+
+    return null;
+
+  }
+
+  if (task.getTaskType() == null) {
+
+    LOG.warn("Task " + task.getTaskID() + " has nulll TaskType");
+
+    return null;
+
+  }
+
+  if (task.getTaskStatus() == null) {
+
+    LOG.warn("Task " + task.getTaskID() + " has nulll TaskStatus");
+
+    return null;
+
+  }
+
+  return task;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private long sanitizeTaskRuntime(long time,String id){
+
+  if (time < 0) {
+
+    LOG.warn("Negative running time for task " + id + ": "+ time);
+
+    return 100L;
+
+  }
+
+  return time;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+private int sanitizeValue(int oldVal,int defaultVal,String name,String id){
+
+  if (oldVal == -1) {
+
+    LOG.warn(name + " not defined for " + id);
+
+    return defaultVal;
+
+  }
+
+  return oldVal;
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+@SuppressWarnings("hiding") private TaskAttemptInfo scaleInfo(LoggedTask loggedTask,LoggedTaskAttempt loggedAttempt,int locality,int loggedLocality,double rackLocalOverNodeLocal,double rackRemoteOverNodeLocal){
+
+  TaskInfo taskInfo=getTaskInfo(loggedTask);
+
+  double[] factors=new double[]{1.0,rackLocalOverNodeLocal,rackRemoteOverNodeLocal};
+
+  double scaleFactor=factors[locality] / factors[loggedLocality];
+
+  State state=convertState(loggedAttempt.getResult());
+
+  if (loggedTask.getTaskType() == Values.MAP) {
+
+    long taskTime=0;
+
+    if (loggedAttempt.getStartTime() == 0) {
+
+      taskTime=makeUpMapRuntime(state,locality);
+
+    }
+
+ else {
+
+      taskTime=loggedAttempt.getFinishTime() - loggedAttempt.getStartTime();
+
+    }
+
+    taskTime=sanitizeTaskRuntime(taskTime,loggedAttempt.getAttemptID());
+
+    taskTime*=scaleFactor;
+
+    return new MapTaskAttemptInfo(state,taskInfo,taskTime);
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException("taskType can only be MAP: " + loggedTask.getTaskType());
+
+  }
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * This constructor creates a  {@link ZombieJob} with the same semantics as the{@link LoggedJob} passed in this parameter
+
+ * @param job The dead job this ZombieJob instance is based on.
+
+ * @param cluster The cluster topology where the dead job ran on. This argument can be null if we do not have knowledge of the cluster topology.
+
+ */
+
+public ZombieJob(LoggedJob job,ClusterStory cluster){
+
+  this(job,cluster,System.nanoTime());
+
+}
+
+Location: ZombieJob.java
+
+Content: 
+
+/** 
+
+ * This constructor creates a  {@link ZombieJob} with the same semantics as the{@link LoggedJob} passed in this parameter
+
+ * @param job The dead job this ZombieJob instance is based on.
+
+ * @param cluster The cluster topology where the dead job ran on. This argument can be null if we do not have knowledge of the cluster topology.
+
+ * @param seed Seed for the random number generator for filling in information not available from the ZombieJob.
+
+ */
+
+public ZombieJob(LoggedJob job,ClusterStory cluster,long seed){
+
+  if (job == null) {
+
+    throw new IllegalArgumentException("job is null");
+
+  }
+
+  this.job=job;
+
+  this.cluster=cluster;
+
+  random=new Random(seed);
+
+  this.seed=seed;
+
+  hasRandomSeed=true;
+
+}
+

@@ -1,0 +1,172 @@
+Location: RowStoreAVL.java
+
+Content: 
+
+public int compare(Session session,long key){
+
+  throw Error.runtimeError(ErrorCode.U_S0500,"RowStoreAVL");
+
+}
+
+Location: RowStoreAVL.java
+
+Content: 
+
+/** 
+
+ * Used with memory indexes
+
+ */
+
+void destroy(){
+
+  if (indexList.length == 0) {
+
+    return;
+
+  }
+
+  IndexAVL idx=(IndexAVL)indexList[0];
+
+  NodeAVL root=(NodeAVL)accessorList[0];
+
+  idx.unlinkNodes(this,root);
+
+}
+
+Location: RowStoreAVL.java
+
+Content: 
+
+void dropIndexFromRows(Index primaryIndex,Index oldIndex){
+
+  RowIterator it=primaryIndex.firstRow(this);
+
+  int position=oldIndex.getPosition() - 1;
+
+  while (it.next()) {
+
+    Row row=it.getCurrentRow();
+
+    int i=position;
+
+    NodeAVL backnode=((RowAVL)row).getNode(0);
+
+    while (i-- > 0) {
+
+      backnode=backnode.nNext;
+
+    }
+
+    backnode.nNext=backnode.nNext.nNext;
+
+  }
+
+  it.release();
+
+}
+
+Location: RowStoreAVL.java
+
+Content: 
+
+public CachedObject getRow(long key,boolean[] usedColumnCheck){
+
+  return get(key,false);
+
+}
+
+Location: RowStoreAVL.java
+
+Content: 
+
+boolean insertIndexNodes(Session session,Index primaryIndex,Index newIndex){
+
+  writeLock();
+
+  try {
+
+    int position=newIndex.getPosition();
+
+    RowIterator it=primaryIndex.firstRow(this);
+
+    int rowCount=0;
+
+    HsqlException error=null;
+
+    try {
+
+      while (it.next()) {
+
+        Row row=it.getCurrentRow();
+
+        ((RowAVL)row).insertNode(position);
+
+        rowCount++;
+
+        newIndex.insert(session,this,row);
+
+      }
+
+      it.release();
+
+      return true;
+
+    }
+
+ catch (    OutOfMemoryError e) {
+
+      error=Error.error(ErrorCode.OUT_OF_MEMORY);
+
+    }
+
+catch (    HsqlException e) {
+
+      error=e;
+
+    }
+
+    it=primaryIndex.firstRow(this);
+
+    while (it.next()) {
+
+      Row row=it.getCurrentRow();
+
+      NodeAVL backnode=((RowAVL)row).getNode(0);
+
+      int j=position;
+
+      while (--j > 0) {
+
+        backnode=backnode.nNext;
+
+      }
+
+      backnode.nNext=backnode.nNext.nNext;
+
+    }
+
+    it.release();
+
+    throw error;
+
+  }
+
+  finally {
+
+    writeUnlock();
+
+  }
+
+}
+
+Location: RowStoreAVL.java
+
+Content: 
+
+public boolean isRowSet(){
+
+  return false;
+
+}
+

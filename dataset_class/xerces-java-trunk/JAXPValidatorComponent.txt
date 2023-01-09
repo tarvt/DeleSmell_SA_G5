@@ -1,0 +1,154 @@
+Location: JAXPValidatorComponent.java
+
+Content: 
+
+/** 
+
+ * @param validatorHandler may not be null.
+
+ */
+
+public JAXPValidatorComponent(ValidatorHandler validatorHandler){
+
+  this.validator=validatorHandler;
+
+  TypeInfoProvider tip=validatorHandler.getTypeInfoProvider();
+
+  if (tip == null)   tip=noInfoProvider;
+
+  this.typeInfoProvider=tip;
+
+  xni2sax.setContentHandler(validator);
+
+  validator.setContentHandler(sax2xni);
+
+  this.setSide(xni2sax);
+
+  validator.setErrorHandler(new ErrorHandlerProxy(){
+
+    protected XMLErrorHandler getErrorHandler(){
+
+      XMLErrorHandler handler=fErrorReporter.getErrorHandler();
+
+      if (handler != null)       return handler;
+
+      return new ErrorHandlerWrapper(DraconianErrorHandler.getInstance());
+
+    }
+
+  }
+
+);
+
+  validator.setResourceResolver(new LSResourceResolver(){
+
+    public LSInput resolveResource(    String type,    String ns,    String publicId,    String systemId,    String baseUri){
+
+      if (fEntityResolver == null)       return null;
+
+      try {
+
+        XMLInputSource is=fEntityResolver.resolveEntity(new XMLResourceIdentifierImpl(publicId,systemId,baseUri,null));
+
+        if (is == null)         return null;
+
+        LSInput di=new DOMInputImpl();
+
+        di.setBaseURI(is.getBaseSystemId());
+
+        di.setByteStream(is.getByteStream());
+
+        di.setCharacterStream(is.getCharacterStream());
+
+        di.setEncoding(is.getEncoding());
+
+        di.setPublicId(is.getPublicId());
+
+        di.setSystemId(is.getSystemId());
+
+        return di;
+
+      }
+
+ catch (      IOException e) {
+
+        throw new XNIException(e);
+
+      }
+
+    }
+
+  }
+
+);
+
+}
+
+Location: JAXPValidatorComponent.java
+
+Content: 
+
+private String symbolize(String s){
+
+  return fSymbolTable.addSymbol(s);
+
+}
+
+Location: JAXPValidatorComponent.java
+
+Content: 
+
+/** 
+
+ * Compares the given  {@link Attributes} with {@link #fCurrentAttributes}and update the latter accordingly.
+
+ */
+
+private void updateAttributes(Attributes atts){
+
+  int len=atts.getLength();
+
+  for (int i=0; i < len; i++) {
+
+    String aqn=atts.getQName(i);
+
+    int j=fCurrentAttributes.getIndex(aqn);
+
+    String av=atts.getValue(i);
+
+    if (j == -1) {
+
+      String prefix;
+
+      int idx=aqn.indexOf(':');
+
+      if (idx < 0) {
+
+        prefix=null;
+
+      }
+
+ else {
+
+        prefix=symbolize(aqn.substring(0,idx));
+
+      }
+
+      j=fCurrentAttributes.addAttribute(new QName(prefix,symbolize(atts.getLocalName(i)),symbolize(aqn),symbolize(atts.getURI(i))),atts.getType(i),av);
+
+    }
+
+ else {
+
+      if (!av.equals(fCurrentAttributes.getValue(j))) {
+
+        fCurrentAttributes.setValue(j,av);
+
+      }
+
+    }
+
+  }
+
+}
+

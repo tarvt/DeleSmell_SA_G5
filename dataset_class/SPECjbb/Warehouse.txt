@@ -1,0 +1,344 @@
+Location: Warehouse.java
+
+Content: 
+
+public int getDistrictCount(){
+
+  return distCount;
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public District getDistrictPtr(byte inDistrictId,boolean lockFlag){
+
+  District result=null;
+
+  if (inDistrictId > 0) {
+
+    inDistrictId--;
+
+    if (inDistrictId < distCount)     result=(District)districts[inDistrictId];
+
+  }
+
+  ;
+
+  return result;
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public District getDistrict(int distId){
+
+  District result=null;
+
+  if (distId > 0) {
+
+    distId--;
+
+    if (distId < distCount)     result=(District)districts[distId];
+
+  }
+
+  ;
+
+  return result;
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public synchronized JBBDataStorage getHistoryTable(){
+
+  return historyTable;
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public void initWarehouse(Company inCompany,JBBDataStorage inItemTable,short warehouseId){
+
+  per_wh_r=JBButil.derived_random_init(warehouseId);
+
+  JBButil.register_warehouse_Random_stream(warehouseId,per_wh_r);
+
+  this.warehouseId=warehouseId;
+
+  ytd=BigDecimal.valueOf(0,2);
+
+  company=inCompany;
+
+  districts=new Object[20];
+
+  stockTable=Infrastructure.createStorage();
+
+  itemTable=inItemTable;
+
+  address=new Address();
+
+  historyTable=Infrastructure.createSortedStorage();
+
+  historyCount=0;
+
+  oldestHistory=0;
+
+  ytd=BigDecimal.valueOf(0,2);
+
+  loadStockTable();
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public synchronized void loadHistoryTable(){
+
+  String historyData;
+
+  for (byte districtId=1; districtId <= company.getMaxDistrictsPerWarehouse(); ++districtId) {
+
+    for (short customerId=1; customerId <= company.getMaxCustomersPerDistrict(); ++customerId) {
+
+      long uniqueCustomerNumber=company.buildUniqueCustomerKey(warehouseId,districtId,customerId);
+
+      Customer customerPtr=company.getCustomer(uniqueCustomerNumber,false);
+
+      BigDecimal amount=BigDecimal.valueOf(1000,2);
+
+      historyData=new String(JBButil.create_random_a_string(12,25,warehouseId));
+
+      Date creation_time=new Date();
+
+      History newHistory=new History(customerId,customerPtr.getDistrictId(),customerPtr.getWarehouseId(),districtId,warehouseId,creation_time,amount,historyData);
+
+      updateHistory(newHistory);
+
+    }
+
+  }
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public void loadStockTable(){
+
+  int numItems=itemTable.size();
+
+  Item currItem;
+
+  Stock newStock;
+
+  for (int i=1; i <= numItems; ++i) {
+
+    currItem=(Item)itemTable.get(i);
+
+    newStock=new Stock(company,currItem.getId(),warehouseId);
+
+    stockTable.put(newStock.getId(),newStock);
+
+  }
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public void removeOldestHistory(){
+
+synchronized (removeOldestHistorySynch) {
+
+    oldestHistory++;
+
+    historyTable.remove(oldestHistory);
+
+  }
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public Item retrieveItem(int inItemId){
+
+  return (Item)itemTable.get(inItemId);
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public Stock retrieveStock(int inItemId){
+
+  return (Stock)stockTable.get(inItemId);
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public synchronized void setUsingRandom(short inWarehouseId){
+
+  int i;
+
+  warehouseId=inWarehouseId;
+
+  name=new String(JBButil.create_random_a_string(6,10,per_wh_r));
+
+  address.setUsingRandom(per_wh_r);
+
+  float temp=JBButil.create_random_float_val_return(0.0f,0.2000f,0.0001f,per_wh_r);
+
+  taxRate=new BigDecimal(temp).setScale(4,BigDecimal.ROUND_HALF_UP);
+
+  ytd=BigDecimal.valueOf(30000000,2);
+
+  distCount=company.getMaxDistrictsPerWarehouse();
+
+  for (i=0; i < distCount; ++i) {
+
+    byte newDistrictId=(byte)(i + 1);
+
+    District newDistrict=new District(warehouseId,newDistrictId);
+
+    newDistrict.setUsingRandom();
+
+    districts[i]=newDistrict;
+
+  }
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public synchronized void trimOrdersForSteadyState(){
+
+  int initialOrders=company.getInitialOrders();
+
+  int initialNewOrders=company.getInitialNewOrders();
+
+  trimOrdersForSteadyState(initialOrders,initialNewOrders);
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public synchronized void trimOrdersForSteadyState(int initialOrders,int initialNewOrders){
+
+  int distCount=this.getDistrictCount();
+
+  int distId;
+
+  District currentDistrict;
+
+  for (distId=1; distId <= distCount; distId++) {
+
+    currentDistrict=this.getDistrict(distId);
+
+    if (Transaction.steadyStateMem) {
+
+      currentDistrict.removeOldNewOrders((initialOrders - initialNewOrders));
+
+      currentDistrict.removeOldOrders(initialOrders);
+
+    }
+
+  }
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public void updateHistory(History inHistory){
+
+synchronized (updateHistorySynch) {
+
+    historyCount++;
+
+    historyTable.put(historyCount,inHistory);
+
+  }
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public boolean validDistrict(byte inDistrictId){
+
+  District currentDistrict;
+
+  int i;
+
+  for (i=0; i < distCount; i++) {
+
+    currentDistrict=(District)districts[i];
+
+    if (currentDistrict.getId() == inDistrictId)     return true;
+
+  }
+
+  return false;
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public Warehouse(){
+
+}
+
+Location: Warehouse.java
+
+Content: 
+
+public Warehouse(Company inCompany,JBBDataStorage inItemTable){
+
+  company=inCompany;
+
+  districts=new Object[20];
+
+  stockTable=Infrastructure.createStorage();
+
+  itemTable=inItemTable;
+
+  address=new Address();
+
+  historyTable=Infrastructure.createSortedStorage();
+
+  historyCount=0;
+
+  oldestHistory=0;
+
+  ytd=BigDecimal.valueOf(0,2);
+
+  loadStockTable();
+
+}
+

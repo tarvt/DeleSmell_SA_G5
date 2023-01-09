@@ -1,0 +1,164 @@
+Location: TestFetcher.java
+
+Content: 
+
+private void addUrl(ArrayList<String> urls,String page){
+
+  urls.add("http://127.0.0.1:" + server.getConnectors()[0].getPort() + "/"+ page);
+
+}
+
+Location: TestFetcher.java
+
+Content: 
+
+@Test public void testAgentNameCheck(){
+
+  boolean failedNoAgentName=false;
+
+  conf.set("http.agent.name","");
+
+  try {
+
+    conf.setBoolean("fetcher.parse",false);
+
+    Fetcher fetcher=new Fetcher(conf);
+
+    fetcher.fetch(null,1);
+
+  }
+
+ catch (  IllegalArgumentException iae) {
+
+    String message=iae.getMessage();
+
+    failedNoAgentName=message.equals("Fetcher: No agents listed in " + "'http.agent.name' property.");
+
+  }
+
+catch (  Exception e) {
+
+  }
+
+  Assert.assertTrue(failedNoAgentName);
+
+}
+
+Location: TestFetcher.java
+
+Content: 
+
+@Test public void testFetch() throws IOException, ClassNotFoundException, InterruptedException {
+
+  ArrayList<String> urls=new ArrayList<String>();
+
+  addUrl(urls,"index.html");
+
+  addUrl(urls,"pagea.html");
+
+  addUrl(urls,"pageb.html");
+
+  addUrl(urls,"dup_of_pagea.html");
+
+  addUrl(urls,"nested_spider_trap.html");
+
+  addUrl(urls,"exception.html");
+
+  CrawlDBTestUtil.generateSeedList(fs,urlPath,urls);
+
+  Injector injector=new Injector(conf);
+
+  injector.inject(crawldbPath,urlPath);
+
+  Generator g=new Generator(conf);
+
+  Path[] generatedSegment=g.generate(crawldbPath,segmentsPath,1,Long.MAX_VALUE,Long.MAX_VALUE,false,false);
+
+  long time=System.currentTimeMillis();
+
+  Fetcher fetcher=new Fetcher(conf);
+
+  conf.setBoolean("fetcher.parse",true);
+
+  fetcher.fetch(generatedSegment[0],1);
+
+  time=System.currentTimeMillis() - time;
+
+  int minimumTime=(int)((urls.size() + 1) * 1000 * conf.getFloat("fetcher.server.delay",5));
+
+  Assert.assertTrue(time > minimumTime);
+
+  Path content=new Path(new Path(generatedSegment[0],Content.DIR_NAME),"part-r-00000/data");
+
+  @SuppressWarnings("resource") SequenceFile.Reader reader=new SequenceFile.Reader(conf,SequenceFile.Reader.file(content));
+
+  ArrayList<String> handledurls=new ArrayList<String>();
+
+  READ_CONTENT:   do {
+
+    Text key=new Text();
+
+    Content value=new Content();
+
+    if (!reader.next(key,value))     break READ_CONTENT;
+
+    String contentString=new String(value.getContent());
+
+    if (contentString.indexOf("Nutch fetcher test page") != -1) {
+
+      handledurls.add(key.toString());
+
+    }
+
+  }
+
+ while (true);
+
+  reader.close();
+
+  Collections.sort(urls);
+
+  Collections.sort(handledurls);
+
+  Assert.assertEquals(urls.size(),handledurls.size());
+
+  Assert.assertTrue(handledurls.containsAll(urls));
+
+  Assert.assertTrue(urls.containsAll(handledurls));
+
+  handledurls.clear();
+
+  Path parseData=new Path(new Path(generatedSegment[0],ParseData.DIR_NAME),"part-r-00000/data");
+
+  reader=new SequenceFile.Reader(conf,SequenceFile.Reader.file(parseData));
+
+  READ_PARSE_DATA:   do {
+
+    Text key=new Text();
+
+    ParseData value=new ParseData();
+
+    if (!reader.next(key,value))     break READ_PARSE_DATA;
+
+    Metadata contentMeta=value.getContentMeta();
+
+    if (contentMeta.get(Nutch.SEGMENT_NAME_KEY) != null && contentMeta.get(Nutch.SIGNATURE_KEY) != null) {
+
+      handledurls.add(key.toString());
+
+    }
+
+  }
+
+ while (true);
+
+  Collections.sort(handledurls);
+
+  Assert.assertEquals(urls.size(),handledurls.size());
+
+  Assert.assertTrue(handledurls.containsAll(urls));
+
+  Assert.assertTrue(urls.containsAll(handledurls));
+
+}
+

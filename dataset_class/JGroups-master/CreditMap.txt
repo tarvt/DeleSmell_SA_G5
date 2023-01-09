@@ -1,0 +1,288 @@
+Location: CreditMap.java
+
+Content: 
+
+/** 
+
+ * Needs to be called with lock held 
+
+ */
+
+protected long computeLowestCredit(){
+
+  long lowest=max_credits;
+
+  for (  long cred : credits.values())   lowest=Math.min(cred,lowest);
+
+  return lowest;
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public long computeLowestCreditWithAccumulated(){
+
+  long lowest=max_credits;
+
+  for (  long cred : credits.values())   lowest=Math.min(cred,lowest);
+
+  return lowest - accumulated_credits;
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public CreditMap(long max_credits){
+
+  this(max_credits,new ReentrantLock());
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public CreditMap(long max_credits,final Lock lock){
+
+  this.max_credits=max_credits;
+
+  this.min_credits=max_credits;
+
+  this.lock=lock;
+
+  this.credits_available=lock.newCondition();
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+/** 
+
+ * Decrements credits bytes from all elements and adds new_credits to member (if non null). The lowest credit needs to be greater than min_credits. Needs to be called with lock held
+
+ * @param member The member to which new_credits are added. NOP if null
+
+ * @param new_credits Number of bytes to add to member. NOP if 0.
+
+ */
+
+protected void decrementAndAdd(Address member,long new_credits){
+
+  boolean replenish=member != null && new_credits > 0;
+
+  if (accumulated_credits > 0) {
+
+    for (    Map.Entry<Address,Long> entry : this.credits.entrySet()) {
+
+      entry.setValue(Math.max(0,entry.getValue() - accumulated_credits));
+
+      if (replenish) {
+
+        Address tmp=entry.getKey();
+
+        if (tmp.equals(member))         entry.setValue(Math.min(max_credits,entry.getValue() + new_credits));
+
+      }
+
+    }
+
+    accumulated_credits=0;
+
+  }
+
+ else {
+
+    if (replenish) {
+
+      Long val=this.credits.get(member);
+
+      if (val != null)       this.credits.put(member,Math.min(max_credits,val + new_credits));
+
+    }
+
+  }
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+protected void flushAccumulatedCredits(){
+
+  if (accumulated_credits > 0) {
+
+    for (    Map.Entry<Address,Long> entry : this.credits.entrySet()) {
+
+      entry.setValue(Math.max(0,entry.getValue() - accumulated_credits));
+
+    }
+
+    accumulated_credits=0;
+
+  }
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public long getAccumulatedCredits(){
+
+  return accumulated_credits;
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public List<Tuple<Address,Long>> getMembersWithCreditsLessThan(long min_credits){
+
+  List<Tuple<Address,Long>> retval=new LinkedList<>();
+
+  lock.lock();
+
+  try {
+
+    flushAccumulatedCredits();
+
+    credits.entrySet().stream().filter(entry -> entry.getValue() <= min_credits).forEach(entry -> retval.add(new Tuple<>(entry.getKey(),entry.getValue())));
+
+    return retval;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public List<Address> getMembersWithInsufficientCredits(long credit_needed){
+
+  List<Address> retval=new LinkedList<>();
+
+  lock.lock();
+
+  try {
+
+    if (credit_needed > min_credits) {
+
+      flushAccumulatedCredits();
+
+      credits.entrySet().stream().filter(entry -> entry.getValue() < credit_needed).forEach(entry -> retval.add(entry.getKey()));
+
+    }
+
+    return retval;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public long getMinCredits(){
+
+  return min_credits;
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public Set<Address> keys(){
+
+  lock.lock();
+
+  try {
+
+    return credits.keySet();
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public Long putIfAbsent(Address key){
+
+  lock.lock();
+
+  try {
+
+    flushAccumulatedCredits();
+
+    Long val=credits.get(key);
+
+    return val != null ? val : credits.put(key,max_credits);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: CreditMap.java
+
+Content: 
+
+public void replenishAll(){
+
+  lock.lock();
+
+  try {
+
+    flushAccumulatedCredits();
+
+    for (    Map.Entry<Address,Long> entry : credits.entrySet())     entry.setValue(max_credits);
+
+    min_credits=computeLowestCredit();
+
+    credits_available.signalAll();
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+

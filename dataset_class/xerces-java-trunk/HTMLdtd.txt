@@ -1,0 +1,422 @@
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns the value of an HTML character reference by its name. If the reference is not found or was not defined as a character reference, returns EOF (-1).
+
+ * @param name Name of character reference
+
+ * @return Character code or EOF (-1)
+
+ */
+
+public static int charFromName(String name){
+
+  Object value;
+
+  initialize();
+
+  value=_byName.get(name);
+
+  if (value != null && value instanceof Integer) {
+
+    return ((Integer)value).intValue();
+
+  }
+
+  return -1;
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+private static void defineBoolean(String tagName,String[] attrNames){
+
+  _boolAttrs.put(tagName,attrNames);
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+private static void defineElement(String name,int flags){
+
+  _elemDefs.put(name,new Integer(flags));
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Defines a new character reference. The reference's name and value are supplied. Nothing happens if the character reference is already defined. <P> Unlike internal entities, character references are a string to single character mapping. They are used to map non-ASCII characters both on parsing and printing, primarily for HTML documents. '&lt;amp;' is an example of a character reference.
+
+ * @param name The entity's name
+
+ * @param value The entity's value
+
+ */
+
+private static void defineEntity(String name,char value){
+
+  if (_byName.get(name) == null) {
+
+    _byName.put(name,new Integer(value));
+
+    _byChar.put(new Integer(value),name);
+
+  }
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns the name of an HTML character reference based on its character value. Only valid for entities defined from character references. If no such character value was defined, return null.
+
+ * @param value Character value of entity
+
+ * @return Entity's name or null
+
+ */
+
+public static String fromChar(int value){
+
+  if (value > 0xffff)   return null;
+
+  String name;
+
+  initialize();
+
+  name=(String)_byChar.get(new Integer(value));
+
+  return name;
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Initialize upon first access. Will load all the HTML character references into a list that is accessible by name or character value and is optimized for character substitution. This method may be called any number of times but will execute only once.
+
+ */
+
+private static void initialize(){
+
+  InputStream is=null;
+
+  BufferedReader reader=null;
+
+  int index;
+
+  String name;
+
+  String value;
+
+  int code;
+
+  String line;
+
+  if (_byName != null)   return;
+
+  try {
+
+    _byName=new Hashtable();
+
+    _byChar=new Hashtable();
+
+    is=HTMLdtd.class.getResourceAsStream(ENTITIES_RESOURCE);
+
+    if (is == null) {
+
+      throw new RuntimeException(DOMMessageFormatter.formatMessage(DOMMessageFormatter.SERIALIZER_DOMAIN,"ResourceNotFound",new Object[]{ENTITIES_RESOURCE}));
+
+    }
+
+    reader=new BufferedReader(new InputStreamReader(is,"ASCII"));
+
+    line=reader.readLine();
+
+    while (line != null) {
+
+      if (line.length() == 0 || line.charAt(0) == '#') {
+
+        line=reader.readLine();
+
+        continue;
+
+      }
+
+      index=line.indexOf(' ');
+
+      if (index > 1) {
+
+        name=line.substring(0,index);
+
+        ++index;
+
+        if (index < line.length()) {
+
+          value=line.substring(index);
+
+          index=value.indexOf(' ');
+
+          if (index > 0)           value=value.substring(0,index);
+
+          code=Integer.parseInt(value);
+
+          defineEntity(name,(char)code);
+
+        }
+
+      }
+
+      line=reader.readLine();
+
+    }
+
+    is.close();
+
+  }
+
+ catch (  Exception except) {
+
+    throw new RuntimeException(DOMMessageFormatter.formatMessage(DOMMessageFormatter.SERIALIZER_DOMAIN,"ResourceNotLoaded",new Object[]{ENTITIES_RESOURCE,except.toString()}));
+
+  }
+
+ finally {
+
+    if (is != null) {
+
+      try {
+
+        is.close();
+
+      }
+
+ catch (      Exception except) {
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if the specified attribute is a boolean and should be printed without the value. This applies to attributes that are true if they exist, such as selected (OPTION/INPUT).
+
+ * @param tagName The element's tag name
+
+ * @param attrName The attribute's name
+
+ */
+
+public static boolean isBoolean(String tagName,String attrName){
+
+  String[] attrNames;
+
+  attrNames=(String[])_boolAttrs.get(tagName.toUpperCase(Locale.ENGLISH));
+
+  if (attrNames == null)   return false;
+
+  for (int i=0; i < attrNames.length; ++i)   if (attrNames[i].equalsIgnoreCase(attrName))   return true;
+
+  return false;
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if the opening of one element (<tt>tagName</tt>) implies the closing of another open element (<tt>openTag</tt>). For example, every opening <tt>LI</tt> will close the previously open <tt>LI</tt>, and every opening <tt>BODY</tt> will close the previously open <tt>HEAD</tt>.
+
+ * @param tagName The newly opened element
+
+ * @param openTag The already opened element
+
+ * @return True if closing tag closes opening tag
+
+ */
+
+public static boolean isClosing(String tagName,String openTag){
+
+  if (openTag.equalsIgnoreCase("HEAD"))   return !isElement(tagName,ALLOWED_HEAD);
+
+  if (openTag.equalsIgnoreCase("P"))   return isElement(tagName,CLOSE_P);
+
+  if (openTag.equalsIgnoreCase("DT") || openTag.equalsIgnoreCase("DD"))   return isElement(tagName,CLOSE_DD_DT);
+
+  if (openTag.equalsIgnoreCase("LI") || openTag.equalsIgnoreCase("OPTION"))   return isElement(tagName,CLOSE_SELF);
+
+  if (openTag.equalsIgnoreCase("THEAD") || openTag.equalsIgnoreCase("TFOOT") || openTag.equalsIgnoreCase("TBODY")|| openTag.equalsIgnoreCase("TR")|| openTag.equalsIgnoreCase("COLGROUP"))   return isElement(tagName,CLOSE_TABLE);
+
+  if (openTag.equalsIgnoreCase("TH") || openTag.equalsIgnoreCase("TD"))   return isElement(tagName,CLOSE_TH_TD);
+
+  return false;
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if element is declared to have element content. Whitespaces appearing inside element content will be ignored, other text will simply report an error.
+
+ * @param tagName The element tag name (upper case)
+
+ * @return True if element content
+
+ */
+
+public static boolean isElementContent(String tagName){
+
+  return isElement(tagName,ELEM_CONTENT);
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+private static boolean isElement(String name,int flag){
+
+  Integer flags;
+
+  flags=(Integer)_elemDefs.get(name.toUpperCase(Locale.ENGLISH));
+
+  if (flags == null) {
+
+    return false;
+
+  }
+
+  return ((flags.intValue() & flag) == flag);
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if element is declared to be empty. HTML elements are defines as empty in the DTD, not by the document syntax.
+
+ * @param tagName The element tag name (upper case)
+
+ * @return True if element is empty
+
+ */
+
+public static boolean isEmptyTag(String tagName){
+
+  return isElement(tagName,EMPTY);
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if element's closing tag is generally not printed. For example, <tt>LI</tt> should not print the closing tag.
+
+ * @param tagName The element tag name (upper case)
+
+ * @return True if only opening tag should be printed
+
+ */
+
+public static boolean isOnlyOpening(String tagName){
+
+  return isElement(tagName,ONLY_OPENING);
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if element's closing tag is optional and need not exist. An error will not be reported for such elements if they are not closed. For example, <tt>LI</tt> is most often not closed.
+
+ * @param tagName The element tag name (upper case)
+
+ * @return True if closing tag implied
+
+ */
+
+public static boolean isOptionalClosing(String tagName){
+
+  return isElement(tagName,OPT_CLOSING);
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if element's textual contents preserves spaces. This only applies to PRE and TEXTAREA, all other HTML elements do not preserve space.
+
+ * @param tagName The element tag name (upper case)
+
+ * @return True if element's text content preserves spaces
+
+ */
+
+public static boolean isPreserveSpace(String tagName){
+
+  return isElement(tagName,PRESERVE);
+
+}
+
+Location: HTMLdtd.java
+
+Content: 
+
+/** 
+
+ * Returns true if the specified attribute it a URI and should be escaped appropriately. In HTML URIs are escaped differently than normal attributes.
+
+ * @param tagName The element's tag name
+
+ * @param attrName The attribute's name
+
+ */
+
+public static boolean isURI(String tagName,String attrName){
+
+  return (attrName.equalsIgnoreCase("href") || attrName.equalsIgnoreCase("src"));
+
+}
+

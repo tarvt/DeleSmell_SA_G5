@@ -1,0 +1,302 @@
+Location: HashIndex.java
+
+Content: 
+
+/** 
+
+ * @param hash
+
+ */
+
+public int getHashIndex(int hash){
+
+  return (hash & 0x7fffffff) % hashTable.length;
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+/** 
+
+ * Return the pointer
+
+ */
+
+public int getNewNodePointer(){
+
+  return newNodePointer;
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+/** 
+
+ * This looks from a given node, so the parameter is always > -1.
+
+ * @param lookup A valid node to look from
+
+ * @return either -1 or the next node from this node
+
+ */
+
+public int getNextLookup(int lookup){
+
+  return linkTable[lookup];
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+public HashIndex(int hashTableSize,int capacity,boolean fixedSize){
+
+  if (capacity < hashTableSize) {
+
+    capacity=hashTableSize;
+
+  }
+
+  reset(hashTableSize,capacity);
+
+  this.fixedSize=fixedSize;
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+/** 
+
+ * Link a new node into the linked list for a hash index.
+
+ * @param index an index into hashTable
+
+ * @param lastLookup either -1 or the node to which the new node will be linked
+
+ * @return the new node
+
+ */
+
+public int linkNode(int index,final int lastLookup){
+
+  int lookup=reclaimedNodePointer;
+
+  if (lookup == -1) {
+
+    lookup=newNodePointer++;
+
+  }
+
+ else {
+
+    reclaimedNodePointer=linkTable[lookup];
+
+  }
+
+  int nextLookup;
+
+  if (lastLookup == -1) {
+
+    nextLookup=hashTable[index];
+
+    hashTable[index]=lookup;
+
+  }
+
+ else {
+
+    nextLookup=linkTable[lastLookup];
+
+    linkTable[lastLookup]=lookup;
+
+  }
+
+  linkTable[lookup]=nextLookup;
+
+  elementCount++;
+
+  modified=true;
+
+  return lookup;
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+/** 
+
+ * Remove a node that has already been unlinked. This is not required for index operations. It is used only when the row needs to be removed from the data structures that store the actual indexed data and the nodes need to be contiguous.
+
+ * @param lookup the node to remove
+
+ * @return true if node found in unlinked state
+
+ */
+
+public boolean removeEmptyNode(int lookup){
+
+  boolean found=false;
+
+  int lastLookup=-1;
+
+  for (int i=reclaimedNodePointer; i >= 0; lastLookup=i, i=linkTable[i]) {
+
+    if (i == lookup) {
+
+      if (lastLookup == -1) {
+
+        reclaimedNodePointer=linkTable[lookup];
+
+      }
+
+ else {
+
+        linkTable[lastLookup]=linkTable[lookup];
+
+      }
+
+      found=true;
+
+      break;
+
+    }
+
+  }
+
+  if (!found) {
+
+    return false;
+
+  }
+
+  for (int i=0; i < newNodePointer; i++) {
+
+    if (linkTable[i] > lookup) {
+
+      linkTable[i]--;
+
+    }
+
+  }
+
+  System.arraycopy(linkTable,lookup + 1,linkTable,lookup,newNodePointer - lookup - 1);
+
+  linkTable[newNodePointer - 1]=0;
+
+  newNodePointer--;
+
+  for (int i=0; i < hashTable.length; i++) {
+
+    if (hashTable[i] > lookup) {
+
+      hashTable[i]--;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+public void resetTables(){
+
+  newNodePointer=0;
+
+  elementCount=0;
+
+  reclaimedNodePointer=-1;
+
+  modified=false;
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+/** 
+
+ * Reset the structure with a new size as empty.
+
+ * @param hashTableSize
+
+ * @param capacity
+
+ */
+
+public void reset(int hashTableSize,int capacity){
+
+  int[] newHT=new int[hashTableSize];
+
+  int[] newLT=new int[capacity];
+
+  hashTable=newHT;
+
+  linkTable=newLT;
+
+  Arrays.fill(hashTable,-1);
+
+  resetTables();
+
+}
+
+Location: HashIndex.java
+
+Content: 
+
+/** 
+
+ * Unlink a node from a linked list and link into the reclaimed list.
+
+ * @param index an index into hashTable
+
+ * @param lastLookup either -1 or the node to which the target node is linked
+
+ * @param lookup the node to remove
+
+ */
+
+public void unlinkNode(int index,int lastLookup,int lookup){
+
+  if (lastLookup == -1) {
+
+    hashTable[index]=linkTable[lookup];
+
+  }
+
+ else {
+
+    linkTable[lastLookup]=linkTable[lookup];
+
+  }
+
+  linkTable[lookup]=reclaimedNodePointer;
+
+  reclaimedNodePointer=lookup;
+
+  elementCount--;
+
+  if (elementCount == 0) {
+
+    Arrays.fill(linkTable,0,newNodePointer,0);
+
+    resetTables();
+
+  }
+
+}
+

@@ -1,0 +1,210 @@
+Location: FileBench.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public static <T extends Enum<T>>EnumSet<T> add(Class<T> c,EnumSet<T> set,String s){
+
+  if (null != fullmap.get(c) && fullmap.get(c).get(s) != null) {
+
+    if (null == set) {
+
+      set=EnumSet.noneOf(c);
+
+    }
+
+    set.add((T)fullmap.get(c).get(s));
+
+  }
+
+  return set;
+
+}
+
+Location: FileBench.java
+
+Content: 
+
+private static void fillBlocks(JobConf conf){
+
+  Random r=new Random();
+
+  long seed=conf.getLong("filebench.seed",-1);
+
+  if (seed > 0) {
+
+    r.setSeed(seed);
+
+  }
+
+  int keylen=conf.getInt("filebench.key.words",5);
+
+  int vallen=conf.getInt("filebench.val.words",20);
+
+  int acc=(3 * conf.getInt("io.seqfile.compress.blocksize",1000000)) >> 1;
+
+  ArrayList<String> k=new ArrayList<String>();
+
+  ArrayList<String> v=new ArrayList<String>();
+
+  for (int i=0; acc > 0; ++i) {
+
+    String s=generateSentence(r,keylen);
+
+    acc-=s.length();
+
+    k.add(s);
+
+    s=generateSentence(r,vallen);
+
+    acc-=s.length();
+
+    v.add(s);
+
+  }
+
+  keys=k.toArray(new String[0]);
+
+  values=v.toArray(new String[0]);
+
+}
+
+Location: FileBench.java
+
+Content: 
+
+private static String generateSentence(Random r,int noWords){
+
+  sentence.setLength(0);
+
+  for (int i=0; i < noWords; ++i) {
+
+    sentence.append(words[r.nextInt(words.length)]);
+
+    sentence.append(" ");
+
+  }
+
+  return sentence.toString();
+
+}
+
+Location: FileBench.java
+
+Content: 
+
+@SuppressWarnings("unchecked") static long readBench(JobConf conf) throws IOException {
+
+  InputFormat inf=conf.getInputFormat();
+
+  final String fn=conf.get("test.filebench.name","");
+
+  Path pin=new Path(FileInputFormat.getInputPaths(conf)[0],fn);
+
+  FileStatus in=pin.getFileSystem(conf).getFileStatus(pin);
+
+  RecordReader rr=inf.getRecordReader(new FileSplit(pin,0,in.getLen(),(String[])null),conf,Reporter.NULL);
+
+  try {
+
+    Object key=rr.createKey();
+
+    Object val=rr.createValue();
+
+    Date start=new Date();
+
+    while (rr.next(key,val))     ;
+
+    Date end=new Date();
+
+    return end.getTime() - start.getTime();
+
+  }
+
+  finally {
+
+    rr.close();
+
+  }
+
+}
+
+Location: FileBench.java
+
+Content: 
+
+public static <T extends Enum<T>>EnumSet<T> rem(Class<T> c,EnumSet<T> set,String s){
+
+  if (null != fullmap.get(c) && fullmap.get(c).get(s) != null) {
+
+    if (null == set) {
+
+      set=EnumSet.allOf(c);
+
+    }
+
+    set.remove(fullmap.get(c).get(s));
+
+  }
+
+  return set;
+
+}
+
+Location: FileBench.java
+
+Content: 
+
+@SuppressWarnings("unchecked") static long writeBench(JobConf conf) throws IOException {
+
+  long filelen=conf.getLong("filebench.file.bytes",5 * 1024 * 1024* 1024);
+
+  Text key=new Text();
+
+  Text val=new Text();
+
+  final String fn=conf.get("test.filebench.name","");
+
+  final Path outd=FileOutputFormat.getOutputPath(conf);
+
+  conf.set("mapred.work.output.dir",outd.toString());
+
+  OutputFormat outf=conf.getOutputFormat();
+
+  RecordWriter<Text,Text> rw=outf.getRecordWriter(outd.getFileSystem(conf),conf,fn,Reporter.NULL);
+
+  try {
+
+    long acc=0L;
+
+    Date start=new Date();
+
+    for (int i=0; acc < filelen; ++i) {
+
+      i%=keys.length;
+
+      key.set(keys[i]);
+
+      val.set(values[i]);
+
+      rw.write(key,val);
+
+      acc+=keys[i].length();
+
+      acc+=values[i].length();
+
+    }
+
+    Date end=new Date();
+
+    return end.getTime() - start.getTime();
+
+  }
+
+  finally {
+
+    rw.close(Reporter.NULL);
+
+  }
+
+}
+

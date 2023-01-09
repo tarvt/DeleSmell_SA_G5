@@ -1,0 +1,138 @@
+Location: TestFileInputFormatPathFilter.java
+
+Content: 
+
+protected Set<Path> createFiles() throws IOException {
+
+  Set<Path> files=new HashSet<Path>();
+
+  files.add(createFile("a"));
+
+  files.add(createFile("b"));
+
+  files.add(createFile("aa"));
+
+  files.add(createFile("bb"));
+
+  files.add(createFile("_hello"));
+
+  files.add(createFile(".hello"));
+
+  return files;
+
+}
+
+Location: TestFileInputFormatPathFilter.java
+
+Content: 
+
+protected Path createFile(String fileName) throws IOException {
+
+  Path file=new Path(workDir,fileName);
+
+  Writer writer=new OutputStreamWriter(localFs.create(file));
+
+  writer.write("");
+
+  writer.close();
+
+  return localFs.makeQualified(file);
+
+}
+
+Location: TestFileInputFormatPathFilter.java
+
+Content: 
+
+public void testWithoutPathFilterWithGlob() throws Exception {
+
+  _testInputFiles(false,true);
+
+}
+
+Location: TestFileInputFormatPathFilter.java
+
+Content: 
+
+public void testWithoutPathFilterWithoutGlob() throws Exception {
+
+  _testInputFiles(false,false);
+
+}
+
+Location: TestFileInputFormatPathFilter.java
+
+Content: 
+
+public void testWithPathFilterWithGlob() throws Exception {
+
+  _testInputFiles(true,true);
+
+}
+
+Location: TestFileInputFormatPathFilter.java
+
+Content: 
+
+public void testWithPathFilterWithoutGlob() throws Exception {
+
+  _testInputFiles(true,false);
+
+}
+
+Location: TestFileInputFormatPathFilter.java
+
+Content: 
+
+private void _testInputFiles(boolean withFilter,boolean withGlob) throws Exception {
+
+  Set<Path> createdFiles=createFiles();
+
+  JobConf conf=new JobConf();
+
+  Path inputDir=(withGlob) ? new Path(workDir,"a*") : workDir;
+
+  FileInputFormat.setInputPaths(conf,inputDir);
+
+  conf.setInputFormat(DummyFileInputFormat.class);
+
+  if (withFilter) {
+
+    FileInputFormat.setInputPathFilter(conf,TestPathFilter.class);
+
+  }
+
+  DummyFileInputFormat inputFormat=(DummyFileInputFormat)conf.getInputFormat();
+
+  Set<Path> computedFiles=new HashSet<Path>();
+
+  for (  FileStatus file : inputFormat.listStatus(conf)) {
+
+    computedFiles.add(file.getPath());
+
+  }
+
+  createdFiles.remove(localFs.makeQualified(new Path(workDir,"_hello")));
+
+  createdFiles.remove(localFs.makeQualified(new Path(workDir,".hello")));
+
+  if (withFilter) {
+
+    createdFiles.remove(localFs.makeQualified(new Path(workDir,"aa")));
+
+    createdFiles.remove(localFs.makeQualified(new Path(workDir,"bb")));
+
+  }
+
+  if (withGlob) {
+
+    createdFiles.remove(localFs.makeQualified(new Path(workDir,"b")));
+
+    createdFiles.remove(localFs.makeQualified(new Path(workDir,"bb")));
+
+  }
+
+  assertEquals(createdFiles,computedFiles);
+
+}
+

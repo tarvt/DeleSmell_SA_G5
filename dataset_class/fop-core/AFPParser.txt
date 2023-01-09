@@ -1,0 +1,182 @@
+Location: AFPParser.java
+
+Content: 
+
+public AFPParser(boolean readText){
+
+  this.readText=readText;
+
+}
+
+Location: AFPParser.java
+
+Content: 
+
+private int getLength(int a,int b){
+
+  return (a * 256) + b;
+
+}
+
+Location: AFPParser.java
+
+Content: 
+
+private void readData(InputStream bis,StringBuilder sb) throws IOException {
+
+  Assert.assertEquals(bis.read(),0x2B);
+
+  Assert.assertEquals(bis.read(),0xD3);
+
+  while (bis.available() > 0) {
+
+    int len=bis.read();
+
+    int functionType=bis.read();
+
+    sb.append(" " + PTOCA_MAP.get(functionType));
+
+    if ("TRN".equals(PTOCA_MAP.get(functionType))) {
+
+      byte[] data=new byte[len - 2];
+
+      bis.read(data);
+
+      sb.append(" " + new String(data,"UTF-16BE"));
+
+    }
+
+ else {
+
+      bis.skip(len - 2);
+
+    }
+
+  }
+
+}
+
+Location: AFPParser.java
+
+Content: 
+
+private void readField(InputStream bis,StringBuilder sb) throws IOException {
+
+  bis.read();
+
+  int len=getLength(bis.read(),bis.read());
+
+  byte[] field=new byte[len - 2];
+
+  bis.read(field);
+
+  InputStream fieldStream=new ByteArrayInputStream(field);
+
+  fieldStream.read();
+
+  byte type=(byte)fieldStream.read();
+
+  byte category=(byte)fieldStream.read();
+
+  fieldStream.skip(3);
+
+  String typeStr=TYPE_MAP.get(type & 0xFF);
+
+  String catStr=CATEGORY_MAP.get(category & 0xFF);
+
+  if (typeStr != null && catStr != null) {
+
+    sb.append(typeStr + " " + catStr);
+
+    if (typeStr.equals("BEGIN") || typeStr.equals("END")) {
+
+      byte[] name=new byte[8];
+
+      fieldStream.read(name);
+
+      sb.append(" " + new String(name,AFPConstants.EBCIDIC_ENCODING));
+
+      fieldStream.skip(2);
+
+      readTriplet(fieldStream,sb);
+
+    }
+
+ else     if (typeStr.equals("MAP")) {
+
+      fieldStream.skip(2);
+
+      readTriplet(fieldStream,sb);
+
+    }
+
+ else     if (typeStr.equals("DESCRIPTOR") && catStr.equals("OBJECT_AREA")) {
+
+      readTriplet(fieldStream,sb);
+
+    }
+
+ else     if (typeStr.equals("DATA") && catStr.equals("PRESENTATION_TEXT") && readText) {
+
+      readData(fieldStream,sb);
+
+    }
+
+    sb.append("\n");
+
+  }
+
+}
+
+Location: AFPParser.java
+
+Content: 
+
+private void readTriplet(InputStream des,StringBuilder sb) throws IOException {
+
+  if (des.available() > 0) {
+
+    sb.append(" Triplets: ");
+
+  }
+
+  while (des.available() > 0) {
+
+    int len2=des.read();
+
+    int id=des.read();
+
+    int b=id & 0xFF;
+
+    if (TRIPLET_MAP.containsKey(b)) {
+
+      sb.append(TRIPLET_MAP.get(b) + ",");
+
+    }
+
+ else {
+
+      sb.append(String.format("0x%02X,",b));
+
+    }
+
+    des.skip(len2 - 2);
+
+  }
+
+}
+
+Location: AFPParser.java
+
+Content: 
+
+public void read(InputStream bis,StringBuilder sb) throws IOException {
+
+  while (bis.available() > 0) {
+
+    readField(bis,sb);
+
+  }
+
+}
+

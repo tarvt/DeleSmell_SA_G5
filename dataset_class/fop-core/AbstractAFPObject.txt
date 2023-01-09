@@ -1,0 +1,174 @@
+Location: AbstractAFPObject.java
+
+Content: 
+
+/** 
+
+ * Copies the template structured field data array to the given byte array
+
+ * @param data the structured field data byte array
+
+ * @param clazz the class code
+
+ * @param type the type code
+
+ * @param category the category code
+
+ */
+
+protected static void copySF(byte[] data,byte clazz,byte type,byte category){
+
+  System.arraycopy(SF_HEADER,0,data,0,SF_HEADER_LENGTH);
+
+  data[3]=clazz;
+
+  data[4]=type;
+
+  data[5]=category;
+
+}
+
+Location: AbstractAFPObject.java
+
+Content: 
+
+/** 
+
+ * Truncates the string as necessary
+
+ * @param str a character string
+
+ * @param maxLength the maximum length allowed for the string
+
+ * @return a possibly truncated string
+
+ */
+
+protected static String truncate(String str,int maxLength){
+
+  if (str.length() > maxLength) {
+
+    str=str.substring(0,maxLength);
+
+    LOG.warn("truncated character string '" + str + "', longer than "+ maxLength+ " chars");
+
+  }
+
+  return str;
+
+}
+
+Location: AbstractAFPObject.java
+
+Content: 
+
+/** 
+
+ * Writes data chunks to a given outputstream
+
+ * @param data the data byte array
+
+ * @param dataHeader the header data
+
+ * @param lengthOffset offset of length field in data chunk
+
+ * @param maxChunkLength the maximum chunk length
+
+ * @param os the outputstream to write to
+
+ * @throws IOException thrown if an I/O exception of some sort has occurred.
+
+ */
+
+protected static void writeChunksToStream(byte[] data,byte[] dataHeader,int lengthOffset,int maxChunkLength,OutputStream os) throws IOException {
+
+  int dataLength=data.length;
+
+  int numFullChunks=dataLength / maxChunkLength;
+
+  int lastChunkLength=dataLength % maxChunkLength;
+
+  int headerLen=dataHeader.length - lengthOffset;
+
+  if (headerLen == 2) {
+
+    headerLen=0;
+
+  }
+
+  byte[] len;
+
+  int off=0;
+
+  if (numFullChunks > 0) {
+
+    len=BinaryUtils.convert(headerLen + maxChunkLength,2);
+
+    dataHeader[lengthOffset]=len[0];
+
+    dataHeader[lengthOffset + 1]=len[1];
+
+    for (int i=0; i < numFullChunks; i++, off+=maxChunkLength) {
+
+      os.write(dataHeader);
+
+      os.write(data,off,maxChunkLength);
+
+    }
+
+  }
+
+  if (lastChunkLength > 0) {
+
+    len=BinaryUtils.convert(headerLen + lastChunkLength,2);
+
+    dataHeader[lengthOffset]=len[0];
+
+    dataHeader[lengthOffset + 1]=len[1];
+
+    os.write(dataHeader);
+
+    os.write(data,off,lastChunkLength);
+
+  }
+
+}
+
+Location: AbstractAFPObject.java
+
+Content: 
+
+/** 
+
+ * Writes a collection of Streamable to the AFP Datastream.
+
+ * @param objects a list of AFPObjects
+
+ * @param < S > Streamable view of an AFPObject
+
+ * @param os The stream to write to
+
+ * @throws java.io.IOException an I/O exception of some sort has occurred.
+
+ */
+
+protected <S extends Streamable>void writeObjects(Collection<S> objects,OutputStream os) throws IOException {
+
+  if (objects != null) {
+
+    Iterator<S> it=objects.iterator();
+
+    while (it.hasNext()) {
+
+      Streamable s=it.next();
+
+      s.writeToStream(os);
+
+      it.remove();
+
+    }
+
+  }
+
+}
+

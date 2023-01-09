@@ -1,0 +1,76 @@
+Location: MimeAdaptiveFetchSchedule.java
+
+Content: 
+
+/** 
+
+ * Reads the mime types and their associated INC/DEC factors in a HashMap
+
+ * @param mimeFile Reader
+
+ * @return void
+
+ */
+
+private void readMimeFile(Reader mimeFile) throws IOException {
+
+  mimeMap=new HashMap<>();
+
+  BufferedReader reader=new BufferedReader(mimeFile);
+
+  String line=null;
+
+  String[] splits=null;
+
+  while ((line=reader.readLine()) != null) {
+
+    if (StringUtils.isNotBlank(line) && !line.startsWith("#")) {
+
+      splits=line.split("\t");
+
+      if (splits.length == 3) {
+
+        mimeMap.put(StringUtils.lowerCase(splits[0]),new AdaptiveRate(Float.valueOf(splits[1]),Float.valueOf(splits[2])));
+
+      }
+
+ else {
+
+        LOG.warn("Invalid configuration line in: " + line);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: MimeAdaptiveFetchSchedule.java
+
+Content: 
+
+@Override public CrawlDatum setFetchSchedule(Text url,CrawlDatum datum,long prevFetchTime,long prevModifiedTime,long fetchTime,long modifiedTime,int state){
+
+  INC_RATE=defaultIncRate;
+
+  DEC_RATE=defaultDecRate;
+
+  if (datum.getMetaData().containsKey(HttpHeaders.WRITABLE_CONTENT_TYPE)) {
+
+    String currentMime=MimeUtil.cleanMimeType(datum.getMetaData().get(HttpHeaders.WRITABLE_CONTENT_TYPE).toString());
+
+    if (mimeMap.containsKey(currentMime)) {
+
+      INC_RATE=mimeMap.get(currentMime).inc;
+
+      DEC_RATE=mimeMap.get(currentMime).dec;
+
+    }
+
+  }
+
+  return super.setFetchSchedule(url,datum,prevFetchTime,prevModifiedTime,fetchTime,modifiedTime,state);
+
+}
+

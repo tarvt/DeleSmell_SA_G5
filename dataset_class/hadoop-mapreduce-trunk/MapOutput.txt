@@ -1,0 +1,214 @@
+Location: MapOutput.java
+
+Content: 
+
+public void abort(){
+
+  if (type == Type.MEMORY) {
+
+    merger.unreserve(memory.length);
+
+  }
+
+ else   if (type == Type.DISK) {
+
+    try {
+
+      localFS.delete(tmpOutputPath,false);
+
+    }
+
+ catch (    IOException ie) {
+
+      LOG.info("failure to clean up " + tmpOutputPath,ie);
+
+    }
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException("Cannot commit MapOutput with of type WAIT!");
+
+  }
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+public void commit() throws IOException {
+
+  if (type == Type.MEMORY) {
+
+    merger.closeInMemoryFile(this);
+
+  }
+
+ else   if (type == Type.DISK) {
+
+    localFS.rename(tmpOutputPath,outputPath);
+
+    merger.closeOnDiskFile(outputPath);
+
+  }
+
+ else {
+
+    throw new IOException("Cannot commit MapOutput of type WAIT!");
+
+  }
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+public BoundedByteArrayOutputStream getArrayStream(){
+
+  return byteStream;
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+public OutputStream getDisk(){
+
+  return disk;
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+public TaskAttemptID getMapId(){
+
+  return mapId;
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+public long getSize(){
+
+  return size;
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+public boolean isPrimaryMapOutput(){
+
+  return primaryMapOutput;
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+public MapOutput(TaskAttemptID mapId){
+
+  this.id=ID.incrementAndGet();
+
+  this.mapId=mapId;
+
+  type=Type.WAIT;
+
+  merger=null;
+
+  memory=null;
+
+  byteStream=null;
+
+  size=-1;
+
+  localFS=null;
+
+  disk=null;
+
+  outputPath=null;
+
+  tmpOutputPath=null;
+
+  this.primaryMapOutput=false;
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+MapOutput(TaskAttemptID mapId,MergeManager<K,V> merger,int size,boolean primaryMapOutput){
+
+  this.id=ID.incrementAndGet();
+
+  this.mapId=mapId;
+
+  this.merger=merger;
+
+  type=Type.MEMORY;
+
+  byteStream=new BoundedByteArrayOutputStream(size);
+
+  memory=byteStream.getBuffer();
+
+  this.size=size;
+
+  localFS=null;
+
+  disk=null;
+
+  outputPath=null;
+
+  tmpOutputPath=null;
+
+  this.primaryMapOutput=primaryMapOutput;
+
+}
+
+Location: MapOutput.java
+
+Content: 
+
+MapOutput(TaskAttemptID mapId,MergeManager<K,V> merger,long size,JobConf conf,LocalDirAllocator localDirAllocator,int fetcher,boolean primaryMapOutput) throws IOException {
+
+  this.id=ID.incrementAndGet();
+
+  this.mapId=mapId;
+
+  this.merger=merger;
+
+  type=Type.DISK;
+
+  memory=null;
+
+  byteStream=null;
+
+  this.size=size;
+
+  this.localFS=FileSystem.getLocal(conf);
+
+  String filename="map_" + mapId.getTaskID().getId() + ".out";
+
+  String tmpOutput=Path.SEPARATOR + TaskTracker.getJobCacheSubdir(conf.getUser()) + Path.SEPARATOR+ mapId.getJobID()+ Path.SEPARATOR+ merger.getReduceId()+ Path.SEPARATOR+ "output"+ Path.SEPARATOR+ filename+ "."+ fetcher;
+
+  tmpOutputPath=localDirAllocator.getLocalPathForWrite(tmpOutput,size,conf);
+
+  outputPath=new Path(tmpOutputPath.getParent(),filename);
+
+  disk=localFS.create(tmpOutputPath);
+
+  this.primaryMapOutput=primaryMapOutput;
+
+}
+

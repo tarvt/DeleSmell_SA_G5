@@ -1,0 +1,498 @@
+Location: MergeManager.java
+
+Content: 
+
+private boolean canShuffleToMemory(long requestedSize){
+
+  return (requestedSize < maxSingleShuffleLimit);
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+public synchronized void closeInMemoryFile(MapOutput<K,V> mapOutput){
+
+  inMemoryMapOutputs.add(mapOutput);
+
+  LOG.info("closeInMemoryFile -> map-output of size: " + mapOutput.getSize() + ", inMemoryMapOutputs.size() -> "+ inMemoryMapOutputs.size());
+
+synchronized (inMemoryMerger) {
+
+    if (!inMemoryMerger.isInProgress() && usedMemory >= mergeThreshold) {
+
+      LOG.info("Starting inMemoryMerger's merge since usedMemory=" + usedMemory + " > mergeThreshold="+ mergeThreshold);
+
+      inMemoryMapOutputs.addAll(inMemoryMergedMapOutputs);
+
+      inMemoryMergedMapOutputs.clear();
+
+      inMemoryMerger.startMerge(inMemoryMapOutputs);
+
+    }
+
+  }
+
+  if (memToMemMerger != null) {
+
+synchronized (memToMemMerger) {
+
+      if (!memToMemMerger.isInProgress() && inMemoryMapOutputs.size() >= memToMemMergeOutputsThreshold) {
+
+        memToMemMerger.startMerge(inMemoryMapOutputs);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+public synchronized void closeInMemoryMergedFile(MapOutput<K,V> mapOutput){
+
+  inMemoryMergedMapOutputs.add(mapOutput);
+
+  LOG.info("closeInMemoryMergedFile -> size: " + mapOutput.getSize() + ", inMemoryMergedMapOutputs.size() -> "+ inMemoryMergedMapOutputs.size());
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+public synchronized void closeOnDiskFile(Path file){
+
+  onDiskMapOutputs.add(file);
+
+synchronized (onDiskMerger) {
+
+    if (!onDiskMerger.isInProgress() && onDiskMapOutputs.size() >= (2 * ioSortFactor - 1)) {
+
+      onDiskMerger.startMerge(onDiskMapOutputs);
+
+    }
+
+  }
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+private void combineAndSpill(RawKeyValueIterator kvIter,Counters.Counter inCounter) throws IOException {
+
+  JobConf job=jobConf;
+
+  Reducer combiner=ReflectionUtils.newInstance(combinerClass,job);
+
+  Class<K> keyClass=(Class<K>)job.getMapOutputKeyClass();
+
+  Class<V> valClass=(Class<V>)job.getMapOutputValueClass();
+
+  RawComparator<K> comparator=(RawComparator<K>)job.getOutputKeyComparator();
+
+  try {
+
+    CombineValuesIterator values=new CombineValuesIterator(kvIter,comparator,keyClass,valClass,job,Reporter.NULL,inCounter);
+
+    while (values.more()) {
+
+      combiner.reduce(values.getKey(),values,combineCollector,Reporter.NULL);
+
+      values.nextKey();
+
+    }
+
+  }
+
+  finally {
+
+    combiner.close();
+
+  }
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+private long createInMemorySegments(List<MapOutput<K,V>> inMemoryMapOutputs,List<Segment<K,V>> inMemorySegments,long leaveBytes) throws IOException {
+
+  long totalSize=0L;
+
+  long fullSize=0L;
+
+  for (  MapOutput<K,V> mo : inMemoryMapOutputs) {
+
+    fullSize+=mo.getMemory().length;
+
+  }
+
+  while (fullSize > leaveBytes) {
+
+    MapOutput<K,V> mo=inMemoryMapOutputs.remove(0);
+
+    byte[] data=mo.getMemory();
+
+    long size=data.length;
+
+    totalSize+=size;
+
+    fullSize-=size;
+
+    Reader<K,V> reader=new InMemoryReader<K,V>(MergeManager.this,mo.getMapId(),data,0,(int)size);
+
+    inMemorySegments.add(new Segment<K,V>(reader,true,(mo.isPrimaryMapOutput() ? mergedMapOutputsCounter : null)));
+
+  }
+
+  return totalSize;
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+private RawKeyValueIterator finalMerge(JobConf job,FileSystem fs,List<MapOutput<K,V>> inMemoryMapOutputs,List<Path> onDiskMapOutputs) throws IOException {
+
+  LOG.info("finalMerge called with " + inMemoryMapOutputs.size() + " in-memory map-outputs and "+ onDiskMapOutputs.size()+ " on-disk map-outputs");
+
+  final float maxRedPer=job.getFloat(MRJobConfig.REDUCE_INPUT_BUFFER_PERCENT,0f);
+
+  if (maxRedPer > 1.0 || maxRedPer < 0.0) {
+
+    throw new IOException(MRJobConfig.REDUCE_INPUT_BUFFER_PERCENT + maxRedPer);
+
+  }
+
+  int maxInMemReduce=(int)Math.min(Runtime.getRuntime().maxMemory() * maxRedPer,Integer.MAX_VALUE);
+
+  Class<K> keyClass=(Class<K>)job.getMapOutputKeyClass();
+
+  Class<V> valueClass=(Class<V>)job.getMapOutputValueClass();
+
+  boolean keepInputs=job.getKeepFailedTaskFiles();
+
+  final Path tmpDir=new Path(reduceId.toString());
+
+  final RawComparator<K> comparator=(RawComparator<K>)job.getOutputKeyComparator();
+
+  List<Segment<K,V>> memDiskSegments=new ArrayList<Segment<K,V>>();
+
+  long inMemToDiskBytes=0;
+
+  boolean mergePhaseFinished=false;
+
+  if (inMemoryMapOutputs.size() > 0) {
+
+    TaskID mapId=inMemoryMapOutputs.get(0).getMapId().getTaskID();
+
+    inMemToDiskBytes=createInMemorySegments(inMemoryMapOutputs,memDiskSegments,maxInMemReduce);
+
+    final int numMemDiskSegments=memDiskSegments.size();
+
+    if (numMemDiskSegments > 0 && ioSortFactor > onDiskMapOutputs.size()) {
+
+      mergePhaseFinished=true;
+
+      final Path outputPath=mapOutputFile.getInputFileForWrite(mapId,inMemToDiskBytes).suffix(Task.MERGED_OUTPUT_PREFIX);
+
+      final RawKeyValueIterator rIter=Merger.merge(job,fs,keyClass,valueClass,memDiskSegments,numMemDiskSegments,tmpDir,comparator,reporter,spilledRecordsCounter,null,mergePhase);
+
+      final Writer<K,V> writer=new Writer<K,V>(job,fs,outputPath,keyClass,valueClass,codec,null);
+
+      try {
+
+        Merger.writeFile(rIter,writer,reporter,job);
+
+        onDiskMapOutputs.add(outputPath);
+
+      }
+
+ catch (      IOException e) {
+
+        if (null != outputPath) {
+
+          try {
+
+            fs.delete(outputPath,true);
+
+          }
+
+ catch (          IOException ie) {
+
+          }
+
+        }
+
+        throw e;
+
+      }
+
+ finally {
+
+        if (null != writer) {
+
+          writer.close();
+
+        }
+
+      }
+
+      LOG.info("Merged " + numMemDiskSegments + " segments, "+ inMemToDiskBytes+ " bytes to disk to satisfy "+ "reduce memory limit");
+
+      inMemToDiskBytes=0;
+
+      memDiskSegments.clear();
+
+    }
+
+ else     if (inMemToDiskBytes != 0) {
+
+      LOG.info("Keeping " + numMemDiskSegments + " segments, "+ inMemToDiskBytes+ " bytes in memory for "+ "intermediate, on-disk merge");
+
+    }
+
+  }
+
+  List<Segment<K,V>> diskSegments=new ArrayList<Segment<K,V>>();
+
+  long onDiskBytes=inMemToDiskBytes;
+
+  Path[] onDisk=onDiskMapOutputs.toArray(new Path[onDiskMapOutputs.size()]);
+
+  for (  Path file : onDisk) {
+
+    onDiskBytes+=fs.getFileStatus(file).getLen();
+
+    LOG.debug("Disk file: " + file + " Length is "+ fs.getFileStatus(file).getLen());
+
+    diskSegments.add(new Segment<K,V>(job,fs,file,codec,keepInputs,(file.toString().endsWith(Task.MERGED_OUTPUT_PREFIX) ? null : mergedMapOutputsCounter)));
+
+  }
+
+  LOG.info("Merging " + onDisk.length + " files, "+ onDiskBytes+ " bytes from disk");
+
+  Collections.sort(diskSegments,new Comparator<Segment<K,V>>(){
+
+    public int compare(    Segment<K,V> o1,    Segment<K,V> o2){
+
+      if (o1.getLength() == o2.getLength()) {
+
+        return 0;
+
+      }
+
+      return o1.getLength() < o2.getLength() ? -1 : 1;
+
+    }
+
+  }
+
+);
+
+  List<Segment<K,V>> finalSegments=new ArrayList<Segment<K,V>>();
+
+  long inMemBytes=createInMemorySegments(inMemoryMapOutputs,finalSegments,0);
+
+  LOG.info("Merging " + finalSegments.size() + " segments, "+ inMemBytes+ " bytes from memory into reduce");
+
+  if (0 != onDiskBytes) {
+
+    final int numInMemSegments=memDiskSegments.size();
+
+    diskSegments.addAll(0,memDiskSegments);
+
+    memDiskSegments.clear();
+
+    Progress thisPhase=(mergePhaseFinished) ? null : mergePhase;
+
+    RawKeyValueIterator diskMerge=Merger.merge(job,fs,keyClass,valueClass,diskSegments,ioSortFactor,numInMemSegments,tmpDir,comparator,reporter,false,spilledRecordsCounter,null,thisPhase);
+
+    diskSegments.clear();
+
+    if (0 == finalSegments.size()) {
+
+      return diskMerge;
+
+    }
+
+    finalSegments.add(new Segment<K,V>(new RawKVIteratorReader(diskMerge,onDiskBytes),true));
+
+  }
+
+  return Merger.merge(job,fs,keyClass,valueClass,finalSegments,finalSegments.size(),tmpDir,comparator,reporter,spilledRecordsCounter,null,null);
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+TaskAttemptID getReduceId(){
+
+  return reduceId;
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+public MergeManager(TaskAttemptID reduceId,JobConf jobConf,FileSystem localFS,LocalDirAllocator localDirAllocator,Reporter reporter,CompressionCodec codec,Class<? extends Reducer> combinerClass,CombineOutputCollector<K,V> combineCollector,Counters.Counter spilledRecordsCounter,Counters.Counter reduceCombineInputCounter,Counters.Counter mergedMapOutputsCounter,ExceptionReporter exceptionReporter,Progress mergePhase){
+
+  this.reduceId=reduceId;
+
+  this.jobConf=jobConf;
+
+  this.localDirAllocator=localDirAllocator;
+
+  this.exceptionReporter=exceptionReporter;
+
+  this.reporter=reporter;
+
+  this.codec=codec;
+
+  this.combinerClass=combinerClass;
+
+  this.combineCollector=combineCollector;
+
+  this.reduceCombineInputCounter=reduceCombineInputCounter;
+
+  this.spilledRecordsCounter=spilledRecordsCounter;
+
+  this.mergedMapOutputsCounter=mergedMapOutputsCounter;
+
+  this.mapOutputFile=new MapOutputFile();
+
+  this.mapOutputFile.setConf(jobConf);
+
+  this.localFS=localFS;
+
+  this.rfs=((LocalFileSystem)localFS).getRaw();
+
+  final float maxInMemCopyUse=jobConf.getFloat(MRJobConfig.SHUFFLE_INPUT_BUFFER_PERCENT,0.90f);
+
+  if (maxInMemCopyUse > 1.0 || maxInMemCopyUse < 0.0) {
+
+    throw new IllegalArgumentException("Invalid value for " + MRJobConfig.SHUFFLE_INPUT_BUFFER_PERCENT + ": "+ maxInMemCopyUse);
+
+  }
+
+  this.memoryLimit=(long)(jobConf.getLong(MRJobConfig.REDUCE_MEMORY_TOTAL_BYTES,Math.min(Runtime.getRuntime().maxMemory(),Integer.MAX_VALUE)) * maxInMemCopyUse);
+
+  this.ioSortFactor=jobConf.getInt(MRJobConfig.IO_SORT_FACTOR,100);
+
+  this.maxSingleShuffleLimit=(long)(memoryLimit * MAX_SINGLE_SHUFFLE_SEGMENT_FRACTION);
+
+  this.memToMemMergeOutputsThreshold=jobConf.getInt(MRJobConfig.REDUCE_MEMTOMEM_THRESHOLD,ioSortFactor);
+
+  this.mergeThreshold=(long)(this.memoryLimit * jobConf.getFloat(MRJobConfig.SHUFFLE_MERGE_EPRCENT,0.90f));
+
+  LOG.info("MergerManager: memoryLimit=" + memoryLimit + ", "+ "maxSingleShuffleLimit="+ maxSingleShuffleLimit+ ", "+ "mergeThreshold="+ mergeThreshold+ ", "+ "ioSortFactor="+ ioSortFactor+ ", "+ "memToMemMergeOutputsThreshold="+ memToMemMergeOutputsThreshold);
+
+  boolean allowMemToMemMerge=jobConf.getBoolean(MRJobConfig.REDUCE_MEMTOMEM_ENABLED,false);
+
+  if (allowMemToMemMerge) {
+
+    this.memToMemMerger=new IntermediateMemoryToMemoryMerger(this,memToMemMergeOutputsThreshold);
+
+    this.memToMemMerger.start();
+
+  }
+
+ else {
+
+    this.memToMemMerger=null;
+
+  }
+
+  this.inMemoryMerger=new InMemoryMerger(this);
+
+  this.inMemoryMerger.start();
+
+  this.onDiskMerger=new OnDiskMerger(this);
+
+  this.onDiskMerger.start();
+
+  this.mergePhase=mergePhase;
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+public synchronized MapOutput<K,V> reserve(TaskAttemptID mapId,long requestedSize,int fetcher) throws IOException {
+
+  if (!canShuffleToMemory(requestedSize)) {
+
+    LOG.info(mapId + ": Shuffling to disk since " + requestedSize+ " is greater than maxSingleShuffleLimit ("+ maxSingleShuffleLimit+ ")");
+
+    return new MapOutput<K,V>(mapId,this,requestedSize,jobConf,localDirAllocator,fetcher,true);
+
+  }
+
+  if (usedMemory > memoryLimit) {
+
+    LOG.debug(mapId + ": Stalling shuffle since usedMemory (" + usedMemory+ ") is greater than memoryLimit ("+ memoryLimit+ ")");
+
+    return stallShuffle;
+
+  }
+
+  LOG.debug(mapId + ": Proceeding with shuffle since usedMemory (" + usedMemory+ ") is lesser than memoryLimit ("+ memoryLimit+ ")");
+
+  return unconditionalReserve(mapId,requestedSize,true);
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+/** 
+
+ * Unconditional Reserve is used by the Memory-to-Memory thread
+
+ * @return
+
+ */
+
+private synchronized MapOutput<K,V> unconditionalReserve(TaskAttemptID mapId,long requestedSize,boolean primaryMapOutput){
+
+  usedMemory+=requestedSize;
+
+  return new MapOutput<K,V>(mapId,this,(int)requestedSize,primaryMapOutput);
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+synchronized void unreserve(long size){
+
+  usedMemory-=size;
+
+}
+
+Location: MergeManager.java
+
+Content: 
+
+public void waitForInMemoryMerge() throws InterruptedException {
+
+  inMemoryMerger.waitForMerge();
+
+}
+

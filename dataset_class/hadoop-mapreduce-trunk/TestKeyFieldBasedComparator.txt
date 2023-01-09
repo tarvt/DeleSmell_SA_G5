@@ -1,0 +1,158 @@
+Location: TestKeyFieldBasedComparator.java
+
+Content: 
+
+public void configure(String keySpec,int expect) throws Exception {
+
+  Path testdir=new Path("build/test/test.mapred.spill");
+
+  Path inDir=new Path(testdir,"in");
+
+  Path outDir=new Path(testdir,"out");
+
+  FileSystem fs=getFileSystem();
+
+  fs.delete(testdir,true);
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  conf.setOutputKeyClass(Text.class);
+
+  conf.setOutputValueClass(LongWritable.class);
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(2);
+
+  conf.setOutputFormat(TextOutputFormat.class);
+
+  conf.setOutputKeyComparatorClass(KeyFieldBasedComparator.class);
+
+  conf.setKeyFieldComparatorOptions(keySpec);
+
+  conf.setKeyFieldPartitionerOptions("-k1.1,1.1");
+
+  conf.set(JobContext.MAP_OUTPUT_KEY_FIELD_SEPERATOR," ");
+
+  conf.setMapperClass(InverseMapper.class);
+
+  conf.setReducerClass(IdentityReducer.class);
+
+  if (!fs.mkdirs(testdir)) {
+
+    throw new IOException("Mkdirs failed to create " + testdir.toString());
+
+  }
+
+  if (!fs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+  Path inFile=new Path(inDir,"part0");
+
+  FileOutputStream fos=new FileOutputStream(inFile.toString());
+
+  fos.write((line1 + "\n").getBytes());
+
+  fos.write((line2 + "\n").getBytes());
+
+  fos.close();
+
+  JobClient jc=new JobClient(conf);
+
+  RunningJob r_job=jc.submitJob(conf);
+
+  while (!r_job.isComplete()) {
+
+    Thread.sleep(1000);
+
+  }
+
+  if (!r_job.isSuccessful()) {
+
+    fail("Oops! The job broke due to an unexpected error");
+
+  }
+
+  Path[] outputFiles=FileUtil.stat2Paths(getFileSystem().listStatus(outDir,new Utils.OutputFileUtils.OutputFilesFilter()));
+
+  if (outputFiles.length > 0) {
+
+    InputStream is=getFileSystem().open(outputFiles[0]);
+
+    BufferedReader reader=new BufferedReader(new InputStreamReader(is));
+
+    String line=reader.readLine();
+
+    if (expect == 1) {
+
+      assertTrue(line.startsWith(line1));
+
+    }
+
+ else     if (expect == 2) {
+
+      assertTrue(line.startsWith(line2));
+
+    }
+
+    line=reader.readLine();
+
+    if (expect == 1) {
+
+      assertTrue(line.startsWith(line2));
+
+    }
+
+ else     if (expect == 2) {
+
+      assertTrue(line.startsWith(line1));
+
+    }
+
+    reader.close();
+
+  }
+
+}
+
+Location: TestKeyFieldBasedComparator.java
+
+Content: 
+
+public void localTestWithoutMRJob(String keySpec,int expect) throws Exception {
+
+  KeyFieldBasedComparator<Void,Void> keyFieldCmp=new KeyFieldBasedComparator<Void,Void>();
+
+  localConf.setKeyFieldComparatorOptions(keySpec);
+
+  keyFieldCmp.configure(localConf);
+
+  int result=keyFieldCmp.compare(line1_bytes,0,line1_bytes.length,line2_bytes,0,line2_bytes.length);
+
+  if ((expect >= 0 && result < 0) || (expect < 0 && result >= 0))   fail();
+
+}
+
+Location: TestKeyFieldBasedComparator.java
+
+Content: 
+
+public TestKeyFieldBasedComparator() throws IOException {
+
+  super(HadoopTestCase.LOCAL_MR,HadoopTestCase.LOCAL_FS,1,1);
+
+  conf=createJobConf();
+
+  localConf=createJobConf();
+
+  localConf.set(JobContext.MAP_OUTPUT_KEY_FIELD_SEPERATOR," ");
+
+}
+

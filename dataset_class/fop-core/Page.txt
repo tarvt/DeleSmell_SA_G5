@@ -1,0 +1,374 @@
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Call this method to force this page to pretend not to be empty.
+
+ */
+
+public void fakeNonEmpty(){
+
+  this.fakeNonEmpty=true;
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * @return the page viewport representing this page in the area tree 
+
+ */
+
+public PageViewport getPageViewport(){
+
+  return this.pageViewport;
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Get the region from this page.
+
+ * @param areaClass the region area class
+
+ * @return the region viewport or null if none
+
+ */
+
+public RegionViewport getRegionViewport(int areaClass){
+
+switch (areaClass) {
+
+case FO_REGION_BEFORE:
+
+    return regionBefore;
+
+case FO_REGION_START:
+
+  return regionStart;
+
+case FO_REGION_BODY:
+
+return regionBody;
+
+case FO_REGION_END:
+
+return regionEnd;
+
+case FO_REGION_AFTER:
+
+return regionAfter;
+
+default :
+
+throw new IllegalArgumentException("No such area class with ID = " + areaClass);
+
+}
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * @return the simple-page-master that created this page 
+
+ */
+
+public SimplePageMaster getSimplePageMaster(){
+
+  return this.spm;
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Get the map unresolved references from this page. This should be called after deserializing to retrieve the map of unresolved references that were serialized.
+
+ * @return the de-serialized HashMap of unresolved objects
+
+ */
+
+public Map<String,List<Resolvable>> getUnresolvedReferences(){
+
+  return unresolved;
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Creates a RegionViewport Area object for this pagination Region.
+
+ * @param r the region the viewport is to be created for
+
+ * @param reldims relative dimensions
+
+ * @param pageCTM page coordinate transformation matrix
+
+ * @return the new region viewport
+
+ */
+
+private static RegionViewport makeRegionViewport(Region r,FODimension reldims,CTM pageCTM){
+
+  Rectangle2D relRegionRect=r.getViewportRectangle(reldims);
+
+  Rectangle2D absRegionRect=pageCTM.transform(relRegionRect);
+
+  RegionViewport rv=new RegionViewport(absRegionRect);
+
+  rv.setBPD((int)relRegionRect.getHeight());
+
+  rv.setIPD((int)relRegionRect.getWidth());
+
+  TraitSetter.addBackground(rv,r.getCommonBorderPaddingBackground(),null);
+
+  rv.setClip(r.getOverflow() == EN_HIDDEN || r.getOverflow() == EN_ERROR_IF_OVERFLOW);
+
+  return rv;
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Empty constructor
+
+ */
+
+public Page(){
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Auxiliary constructor used when there's no SimplePageMaster.
+
+ * @param viewArea the view area of the page
+
+ * @param pageNumber the page number (as an int)
+
+ * @param pageNumberStr the page number (as a String)
+
+ * @param blank true if this is a blank page
+
+ */
+
+public Page(Rectangle viewArea,int pageNumber,String pageNumberStr,boolean blank){
+
+  this.spm=null;
+
+  this.pageViewport=new PageViewport(viewArea,pageNumber,pageNumberStr,null,blank);
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Constructor
+
+ * @param spm SimplePageMaster containing the dimensions for thispage-reference-area
+
+ */
+
+public Page(SimplePageMaster spm){
+
+  FODimension pageViewPortDims=new FODimension(spm.getPageWidth().getValue(),spm.getPageHeight().getValue());
+
+  CommonMarginBlock mProps=spm.getCommonMarginBlock();
+
+  SimplePercentBaseContext pageWidthContext=new SimplePercentBaseContext(null,LengthBase.CONTAINING_BLOCK_WIDTH,pageViewPortDims.ipd);
+
+  SimplePercentBaseContext pageHeightContext=new SimplePercentBaseContext(null,LengthBase.CONTAINING_BLOCK_WIDTH,pageViewPortDims.bpd);
+
+  Rectangle pageRefRect=new Rectangle(mProps.marginLeft.getValue(pageWidthContext),mProps.marginTop.getValue(pageHeightContext),pageViewPortDims.ipd - mProps.marginLeft.getValue(pageWidthContext) - mProps.marginRight.getValue(pageWidthContext),pageViewPortDims.bpd - mProps.marginTop.getValue(pageHeightContext) - mProps.marginBottom.getValue(pageHeightContext));
+
+  FODimension reldims=new FODimension(0,0);
+
+  CTM pageCTM=CTM.getCTMandRelDims(spm.getReferenceOrientation(),spm.getWritingMode(),pageRefRect,reldims);
+
+  RegionReference rr;
+
+  for (  Region r : spm.getRegions().values()) {
+
+    RegionViewport rvp=makeRegionViewport(r,reldims,pageCTM);
+
+    if (r.getNameId() == FO_REGION_BODY) {
+
+      rr=new BodyRegion((RegionBody)r,rvp);
+
+    }
+
+ else {
+
+      rr=new RegionReference(r,rvp);
+
+    }
+
+    TraitSetter.addBorders(rr,r.getCommonBorderPaddingBackground(),false,false,false,false,null);
+
+    TraitSetter.addPadding(rr,r.getCommonBorderPaddingBackground(),false,false,false,false,null);
+
+    setRegionReferencePosition(rr,r,rvp.getViewArea());
+
+    rvp.setRegionReference(rr);
+
+    setRegionViewport(r.getNameId(),rvp);
+
+  }
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param spm the simple-page-master used for this page
+
+ * @param pageNumber the page number (as an int)
+
+ * @param pageNumberStr the page number (as a String)
+
+ * @param blank true if this is a blank page
+
+ * @param spanAll true if the first span area spans all columns
+
+ */
+
+public Page(SimplePageMaster spm,int pageNumber,String pageNumberStr,boolean blank,boolean spanAll,boolean isPagePositionOnly){
+
+  this.spm=spm;
+
+  this.pageViewport=new PageViewport(spm,pageNumber,pageNumberStr,blank,spanAll);
+
+  this.isPagePositionOnly=isPagePositionOnly;
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Set the region reference position within the region viewport. This sets the transform that is used to place the contents of the region reference.
+
+ * @param rr the region reference area
+
+ * @param r the region-xxx formatting object
+
+ * @param absRegVPRect The region viewport rectangle in "absolute" coordinateswhere x=distance from left, y=distance from bottom, width=right-left height=top-bottom
+
+ */
+
+private static void setRegionReferencePosition(RegionReference rr,Region r,Rectangle2D absRegVPRect){
+
+  FODimension reldims=new FODimension(0,0);
+
+  rr.setCTM(CTM.getCTMandRelDims(r.getReferenceOrientation(),r.getWritingMode(),absRegVPRect,reldims));
+
+  rr.setIPD(reldims.ipd - rr.getBorderAndPaddingWidthStart() - rr.getBorderAndPaddingWidthEnd());
+
+  rr.setBPD(reldims.bpd - rr.getBorderAndPaddingWidthBefore() - rr.getBorderAndPaddingWidthAfter());
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Set the region on this page.
+
+ * @param areaclass the area class of the region to set
+
+ * @param port the region viewport to set
+
+ */
+
+public void setRegionViewport(int areaclass,RegionViewport port){
+
+  if (areaclass == FO_REGION_BEFORE) {
+
+    regionBefore=port;
+
+  }
+
+ else   if (areaclass == FO_REGION_START) {
+
+    regionStart=port;
+
+  }
+
+ else   if (areaclass == FO_REGION_BODY) {
+
+    regionBody=port;
+
+  }
+
+ else   if (areaclass == FO_REGION_END) {
+
+    regionEnd=port;
+
+  }
+
+ else   if (areaclass == FO_REGION_AFTER) {
+
+    regionAfter=port;
+
+  }
+
+}
+
+Location: Page.java
+
+Content: 
+
+/** 
+
+ * Set the unresolved references on this page for serializing.
+
+ * @param unres the Map of unresolved objects
+
+ */
+
+public void setUnresolvedReferences(Map<String,List<Resolvable>> unres){
+
+  unresolved=unres;
+
+}
+

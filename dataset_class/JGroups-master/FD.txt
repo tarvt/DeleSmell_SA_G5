@@ -1,0 +1,230 @@
+Location: FD.java
+
+Content: 
+
+/** 
+
+ * Computes pingable_mbrs (based on the current membership and the suspected members) and ping_dest
+
+ * @param remove The member to be removed from pingable_mbrs
+
+ */
+
+@GuardedBy("lock") protected void computePingDest(Address remove){
+
+  if (remove != null)   pingable_mbrs.remove(remove);
+
+ else {
+
+    pingable_mbrs.clear();
+
+    pingable_mbrs.addAll(members);
+
+    pingable_mbrs.removeAll(bcast_task.getSuspectedMembers());
+
+  }
+
+  Address old_ping_dest=ping_dest;
+
+  ping_dest=getPingDest(pingable_mbrs);
+
+  if (Util.different(old_ping_dest,ping_dest)) {
+
+    num_tries.set(1);
+
+    last_ack=System.nanoTime();
+
+  }
+
+}
+
+Location: FD.java
+
+Content: 
+
+public int getCurrentNumTries(){
+
+  return num_tries.get();
+
+}
+
+Location: FD.java
+
+Content: 
+
+public int getMaxTries(){
+
+  return max_tries;
+
+}
+
+Location: FD.java
+
+Content: 
+
+@ManagedAttribute(description="Number of heartbeats sent") public int getNumberOfHeartbeatsSent(){
+
+  return num_heartbeats;
+
+}
+
+Location: FD.java
+
+Content: 
+
+@ManagedAttribute(description="Number of suspect events received") public int getNumSuspectEventsGenerated(){
+
+  return num_suspect_events;
+
+}
+
+Location: FD.java
+
+Content: 
+
+@ManagedAttribute(description="List of pingable members of a cluster") public String getPingableMembers(){
+
+  return pingable_mbrs != null ? pingable_mbrs.toString() : "null";
+
+}
+
+Location: FD.java
+
+Content: 
+
+@ManagedAttribute(description="Ping destination") public String getPingDest(){
+
+  return ping_dest != null ? ping_dest.toString() : "null";
+
+}
+
+Location: FD.java
+
+Content: 
+
+protected Address getPingDest(List<Address> mbrs){
+
+  Address tmp, retval=null;
+
+  if (mbrs == null || mbrs.size() < 2 || local_addr == null)   return null;
+
+  for (int i=0; i < mbrs.size(); i++) {
+
+    tmp=mbrs.get(i);
+
+    if (local_addr.equals(tmp)) {
+
+      if (i + 1 >= mbrs.size())       retval=mbrs.get(0);
+
+ else       retval=mbrs.get(i + 1);
+
+      break;
+
+    }
+
+  }
+
+  return retval;
+
+}
+
+Location: FD.java
+
+Content: 
+
+@ManagedAttribute(description="Whether the failure detection monitor is running") public boolean isMonitorRunning(){
+
+  return monitor_future != null && !monitor_future.isDone();
+
+}
+
+Location: FD.java
+
+Content: 
+
+protected void sendHeartbeatResponse(Address dest){
+
+  Message hb_ack=new Message(dest).setFlag(Message.Flag.INTERNAL);
+
+  FdHeader tmp_hdr=new FdHeader(FdHeader.HEARTBEAT_ACK);
+
+  tmp_hdr.from=local_addr;
+
+  hb_ack.putHeader(this.id,tmp_hdr);
+
+  down_prot.down(hb_ack);
+
+}
+
+Location: FD.java
+
+Content: 
+
+public void setMaxTries(int max_tries){
+
+  this.max_tries=max_tries;
+
+}
+
+Location: FD.java
+
+Content: 
+
+/** 
+
+ * Requires lock to held by caller 
+
+ */
+
+@GuardedBy("lock") protected void startMonitor(){
+
+  if (monitor_future == null || monitor_future.isDone()) {
+
+    last_ack=System.nanoTime();
+
+    monitor_future=timer.scheduleWithFixedDelay(new Monitor(),timeout,timeout,TimeUnit.MILLISECONDS,false);
+
+    num_tries.set(1);
+
+  }
+
+}
+
+Location: FD.java
+
+Content: 
+
+/** 
+
+ * Requires lock to be held by caller 
+
+ */
+
+@GuardedBy("lock") protected void stopMonitor(){
+
+  if (monitor_future != null) {
+
+    monitor_future.cancel(true);
+
+    monitor_future=null;
+
+  }
+
+}
+
+Location: FD.java
+
+Content: 
+
+protected void updateTimestamp(Address sender){
+
+  if (Objects.equals(sender,ping_dest)) {
+
+    last_ack=System.nanoTime();
+
+    num_tries.set(1);
+
+  }
+
+}
+

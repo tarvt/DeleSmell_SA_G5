@@ -1,0 +1,338 @@
+Location: IFSerializer.java
+
+Content: 
+
+private void addForeignAttributes(AttributesImpl atts) throws SAXException {
+
+  Map foreignAttributes=getContext().getForeignAttributes();
+
+  if (!foreignAttributes.isEmpty()) {
+
+    for (    Object o : foreignAttributes.entrySet()) {
+
+      Map.Entry entry=(Map.Entry)o;
+
+      addAttribute(atts,(QName)entry.getKey(),entry.getValue().toString());
+
+    }
+
+  }
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void addID() throws SAXException {
+
+  String id=getContext().getID();
+
+  if (!currentID.equals(id)) {
+
+    AttributesImpl atts=new AttributesImpl();
+
+    addAttribute(atts,"name",id);
+
+    handler.startElement(EL_ID,atts);
+
+    handler.endElement(EL_ID);
+
+    currentID=id;
+
+  }
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void addStructRefAttribute(AttributesImpl atts,String id){
+
+  atts.addAttribute(InternalElementMapping.URI,InternalElementMapping.STRUCT_REF,InternalElementMapping.STANDARD_PREFIX + ":" + InternalElementMapping.STRUCT_REF,XMLConstants.CDATA,id);
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void addStructureReference(AttributesImpl atts){
+
+  IFStructureTreeElement structureTreeElement=(IFStructureTreeElement)getContext().getStructureTreeElement();
+
+  if (structureTreeElement != null) {
+
+    addStructRefAttribute(atts,structureTreeElement.getId());
+
+  }
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void finishDocumentNavigation(){
+
+  assert this.incompleteActions.size() == 0 : "Still holding incomplete actions!";
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+/** 
+
+ * Returns the document handler that is being mimicked by this serializer.
+
+ * @return the mimicked document handler or null if no such document handler has been set
+
+ */
+
+public IFDocumentHandler getMimickedDocumentHandler(){
+
+  return this.mimicHandler;
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private boolean hasRoundedCorners(BorderProps bpsBefore,BorderProps bpsAfter,BorderProps bpsStart,BorderProps bpsEnd){
+
+  boolean rtn=false;
+
+  if (bpsBefore != null && bpsBefore.getRadiusStart() > 0 && bpsStart != null && bpsStart.getRadiusStart() > 0) {
+
+    rtn=true;
+
+  }
+
+  if (bpsBefore != null && bpsBefore.getRadiusEnd() > 0 && bpsEnd != null && bpsEnd.getRadiusStart() > 0) {
+
+    rtn=true;
+
+  }
+
+  if (bpsEnd != null && bpsEnd.getRadiusEnd() > 0 && bpsAfter != null && bpsAfter.getRadiusEnd() > 0) {
+
+    rtn=true;
+
+  }
+
+  if (bpsAfter != null && bpsAfter.getRadiusStart() > 0 && bpsStart != null && bpsStart.getRadiusEnd() > 0) {
+
+    rtn=true;
+
+  }
+
+  return rtn;
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+public IFSerializer(IFContext context){
+
+  super(context);
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+/** 
+
+ * Tells this serializer to mimic the given document handler (mostly applies to the font set that is used during layout).
+
+ * @param targetHandler the document handler to mimic
+
+ */
+
+public void mimicDocumentHandler(IFDocumentHandler targetHandler){
+
+  this.mimicHandler=targetHandler;
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void noteAction(AbstractAction action){
+
+  if (action == null) {
+
+    throw new NullPointerException("action must not be null");
+
+  }
+
+  if (!action.isComplete()) {
+
+    assert action.hasID();
+
+    incompleteActions.put(action.getID(),action);
+
+  }
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void serializeBookmark(Bookmark bookmark) throws SAXException, IFException {
+
+  noteAction(bookmark.getAction());
+
+  AttributesImpl atts=new AttributesImpl();
+
+  atts.addAttribute("","title","title",XMLUtil.CDATA,bookmark.getTitle());
+
+  atts.addAttribute("","starting-state","starting-state",XMLUtil.CDATA,bookmark.isShown() ? "show" : "hide");
+
+  handler.startElement(DocumentNavigationExtensionConstants.BOOKMARK,atts);
+
+  serializeXMLizable(bookmark.getAction());
+
+  for (  Object o : bookmark.getChildBookmarks()) {
+
+    Bookmark b=(Bookmark)o;
+
+    if (b.getAction() != null) {
+
+      serializeBookmark(b);
+
+    }
+
+  }
+
+  handler.endElement(DocumentNavigationExtensionConstants.BOOKMARK);
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void serializeXMLizable(XMLizable object) throws IFException {
+
+  try {
+
+    object.toSAX(handler);
+
+  }
+
+ catch (  SAXException e) {
+
+    throw new IFException("SAX error serializing object",e);
+
+  }
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void startGroup(String transform,String layer) throws IFException {
+
+  try {
+
+    AttributesImpl atts=new AttributesImpl();
+
+    if (transform != null && transform.length() > 0) {
+
+      addAttribute(atts,"transform",transform);
+
+    }
+
+    if (layer != null && layer.length() > 0) {
+
+      addAttribute(atts,"layer",layer);
+
+    }
+
+    handler.startElement(EL_GROUP,atts);
+
+  }
+
+ catch (  SAXException e) {
+
+    throw new IFException("SAX error in startGroup()",e);
+
+  }
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private void startViewport(String transform,Dimension size,Rectangle clipRect) throws IFException {
+
+  try {
+
+    AttributesImpl atts=new AttributesImpl();
+
+    if (transform != null && transform.length() > 0) {
+
+      addAttribute(atts,"transform",transform);
+
+    }
+
+    addAttribute(atts,"width",Integer.toString(size.width));
+
+    addAttribute(atts,"height",Integer.toString(size.height));
+
+    if (clipRect != null) {
+
+      addAttribute(atts,"clip-rect",IFUtil.toString(clipRect));
+
+    }
+
+    if (getUserAgent().isAccessibilityEnabled() && getContext().getRegionType() != null) {
+
+      addAttribute(atts,"region-type",getContext().getRegionType());
+
+    }
+
+    handler.startElement(EL_VIEWPORT,atts);
+
+  }
+
+ catch (  SAXException e) {
+
+    throw new IFException("SAX error in startViewport()",e);
+
+  }
+
+}
+
+Location: IFSerializer.java
+
+Content: 
+
+private static String toString(Paint paint){
+
+  if (paint instanceof Color) {
+
+    return ColorUtil.colorToString((Color)paint);
+
+  }
+
+ else {
+
+    throw new UnsupportedOperationException("Paint not supported: " + paint);
+
+  }
+
+}
+

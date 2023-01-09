@@ -1,0 +1,204 @@
+Location: MODCAParserTestCase.java
+
+Content: 
+
+private static String byteArrayToString(byte[] byteArray){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  byte b : byteArray) {
+
+    sb.append(Integer.toHexString(b & 0xFF)).append(" ");
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: MODCAParserTestCase.java
+
+Content: 
+
+/** 
+
+ * Test that the MODCA parser recognises carriage control (0x5A) as the Structured Field delimeter
+
+ * @throws Exception 
+
+ */
+
+@Test public void testReadNextStructuredField1() throws Exception {
+
+  byte[][] goodInputStream=new byte[][]{new byte[]{CARRIAGE_CONTROL_CHAR}};
+
+  for (  byte[] b : goodInputStream) {
+
+    try {
+
+      new MODCAParser(new ByteArrayInputStream(b)).readNextStructuredField();
+
+      fail("BAD SF should throw EOF: " + byteArrayToString(b));
+
+    }
+
+ catch (    EOFException eof) {
+
+    }
+
+  }
+
+  byte[][] badInputStream=new byte[][]{new byte[]{},new byte[]{CARRIAGE_RETURN},new byte[]{LINE_FEED}};
+
+  for (  byte[] b : badInputStream) {
+
+    UnparsedStructuredField usf=new MODCAParser(new ByteArrayInputStream(b)).readNextStructuredField();
+
+    assertNull(usf);
+
+  }
+
+}
+
+Location: MODCAParserTestCase.java
+
+Content: 
+
+/** 
+
+ * Test that the MODCA parser correctly constructs an UnparsedStructuredField from a well formed structured field
+
+ * @throws Exception 
+
+ */
+
+@Test public void testReadNextStructuredField2() throws Exception {
+
+  testSF((byte)0xd3,(byte)0xa8,(byte)0x89,(byte)0,false,false,new byte[]{0,0},new byte[]{1},null);
+
+  testSF((byte)0xd3,(byte)0xa8,(byte)0x89,(byte)0,false,false,new byte[]{0,0},new byte[]{1},new byte[]{10});
+
+  testSF((byte)0xd3,(byte)0xa8,(byte)0x89,(byte)0,false,false,new byte[]{1,2},new byte[]{1},null);
+
+  testSF((byte)0xd3,(byte)0xa8,(byte)0x89,(byte)(1 << 3),true,true,new byte[]{0,0},new byte[]{1},null);
+
+  testSF((byte)0xd3,(byte)0xa8,(byte)0x89,(byte)(1 << 3),false,false,new byte[]{0,0},new byte[]{1},null);
+
+}
+
+Location: MODCAParserTestCase.java
+
+Content: 
+
+private void testSF(byte classCode,byte typeCode,byte categoryCode,byte flags,boolean segmentedData,boolean paddingPresent,byte[] reserved,byte[] data,byte[] extData) throws Exception {
+
+  byte extDataLength=0;
+
+  boolean extensionPresent=(extData != null);
+
+  if (extensionPresent) {
+
+    flags=(byte)(flags | 0x01);
+
+    extDataLength=(byte)(extData.length + 1);
+
+  }
+
+  if (segmentedData) {
+
+    flags=(byte)(flags | 0x04);
+
+  }
+
+  if (paddingPresent) {
+
+    flags=(byte)(flags | 0x10);
+
+  }
+
+  short length=(short)(INTRODUCER_LENGTH + data.length + extDataLength);
+
+  byte[] lengthBytes=new byte[]{(byte)(length >> 8),(byte)(length & 0xFF)};
+
+  byte[] sfBytes=new byte[length];
+
+  sfBytes[0]=lengthBytes[0];
+
+  sfBytes[1]=lengthBytes[1];
+
+  sfBytes[2]=classCode;
+
+  sfBytes[3]=typeCode;
+
+  sfBytes[4]=categoryCode;
+
+  sfBytes[5]=flags;
+
+  sfBytes[6]=reserved[0];
+
+  sfBytes[7]=reserved[1];
+
+  if (extDataLength > 0) {
+
+    sfBytes[8]=(byte)(extData.length + 1);
+
+    System.arraycopy(extData,0,sfBytes,9,extData.length);
+
+  }
+
+  System.arraycopy(data,0,sfBytes,length - data.length,data.length);
+
+  byte[] delimiteredSF=new byte[length + 1];
+
+  delimiteredSF[0]=(byte)0x5A;
+
+  System.arraycopy(sfBytes,0,delimiteredSF,1,length);
+
+  InputStream bis=new ByteArrayInputStream(delimiteredSF);
+
+  UnparsedStructuredField actual=new MODCAParser(bis).readNextStructuredField();
+
+  assertEquals(length,actual.getSfLength());
+
+  assertEquals(classCode,actual.getSfClassCode());
+
+  assertEquals(typeCode,actual.getSfTypeCode());
+
+  assertEquals(categoryCode,actual.getSfCategoryCode());
+
+  assertEquals(extensionPresent,actual.isSfiExtensionPresent());
+
+  assertEquals(segmentedData,actual.isSfiSegmentedData());
+
+  assertEquals(paddingPresent,actual.isSfiPaddingPresent());
+
+  byte[] introducerData=new byte[]{(byte)(length >> 8),(byte)(length & 0xFF),classCode,typeCode,categoryCode,flags,reserved[0],reserved[1]};
+
+  assertTrue(Arrays.equals(introducerData,actual.getIntroducerData()));
+
+  assertTrue(Arrays.equals(data,actual.getData()));
+
+  if (extData != null) {
+
+    assertTrue(Arrays.equals(extData,actual.getExtData()));
+
+  }
+
+  assertEquals((extData == null) ? 0 : extData.length + 1,actual.getExtLength());
+
+  assertTrue(Arrays.equals(data,actual.getData()));
+
+  int expectedSfTypeID=((classCode & 0xFF) << 16) | ((typeCode & 0xFF) << 8) | (categoryCode & 0xFF);
+
+  assertEquals(expectedSfTypeID,actual.getSfTypeID());
+
+  assertTrue(Arrays.equals(sfBytes,actual.getCompleteFieldAsBytes()));
+
+  ByteArrayOutputStream baos=new ByteArrayOutputStream();
+
+  actual.writeTo(baos);
+
+  assertTrue(Arrays.equals(sfBytes,baos.toByteArray()));
+
+}
+

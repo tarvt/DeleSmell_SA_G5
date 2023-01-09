@@ -1,0 +1,548 @@
+Location: Like.java
+
+Content: 
+
+private boolean compareAt(Session session,Object o,int i,int j,int iLen,int jLen,char[] cLike,int[] wildCardType){
+
+  for (; i < iLen; i++) {
+
+switch (wildCardType[i]) {
+
+case 0:
+
+      if ((j >= jLen) || (cLike[i] != getChar(session,o,j++))) {
+
+        return false;
+
+      }
+
+    break;
+
+case UNDERSCORE_CHAR:
+
+  if (j++ >= jLen) {
+
+    return false;
+
+  }
+
+break;
+
+case PERCENT_CHAR:
+
+if (++i >= iLen) {
+
+return true;
+
+}
+
+while (j < jLen) {
+
+if ((cLike[i] == getChar(session,o,j)) && compareAt(session,o,i,j,iLen,jLen,cLike,wildCardType)) {
+
+return true;
+
+}
+
+j++;
+
+}
+
+return false;
+
+}
+
+}
+
+if (j != jLen) {
+
+return false;
+
+}
+
+return true;
+
+}
+
+Location: Like.java
+
+Content: 
+
+Boolean compare(Session session,Object o){
+
+  if (o == null) {
+
+    return null;
+
+  }
+
+  if (isNull) {
+
+    return null;
+
+  }
+
+  if (isIgnoreCase) {
+
+    o=((CharacterType)dataType).upper(session,o);
+
+  }
+
+  int length=getLength(session,o);
+
+  if (o instanceof ClobData) {
+
+    o=((ClobData)o).getChars(session,0,(int)((ClobData)o).length(session));
+
+  }
+
+  return compareAt(session,o,0,0,iLen,length,cLike,wildCardType) ? Boolean.TRUE : Boolean.FALSE;
+
+}
+
+Location: Like.java
+
+Content: 
+
+public String describe(Session session){
+
+  StringBuffer sb=new StringBuffer();
+
+  sb.append(super.toString()).append("[\n");
+
+  sb.append("escapeChar=").append(escapeChar).append('\n');
+
+  sb.append("isNull=").append(isNull).append('\n');
+
+  sb.append("isIgnoreCase=").append(isIgnoreCase).append('\n');
+
+  sb.append("iLen=").append(iLen).append('\n');
+
+  sb.append("iFirstWildCard=").append(iFirstWildCard).append('\n');
+
+  sb.append("cLike=");
+
+  if (cLike != null) {
+
+    sb.append(StringUtil.arrayToString(cLike));
+
+  }
+
+  sb.append('\n');
+
+  sb.append("wildCardType=");
+
+  if (wildCardType != null) {
+
+    sb.append(StringUtil.arrayToString(wildCardType));
+
+  }
+
+  sb.append(']');
+
+  return sb.toString();
+
+}
+
+Location: Like.java
+
+Content: 
+
+char getChar(Session session,Object o,int i){
+
+  char c;
+
+  if (isBinary) {
+
+    c=(char)((BlobData)o).getBytes()[i];
+
+  }
+
+ else {
+
+    if (o instanceof char[]) {
+
+      c=((char[])o)[i];
+
+    }
+
+ else     if (o instanceof ClobData) {
+
+      c=((ClobData)o).getChars(session,i,1)[0];
+
+    }
+
+ else {
+
+      c=((String)o).charAt(i);
+
+    }
+
+  }
+
+  return c;
+
+}
+
+Location: Like.java
+
+Content: 
+
+int getFirstWildCardIndex(){
+
+  return iFirstWildCard;
+
+}
+
+Location: Like.java
+
+Content: 
+
+int getLength(SessionInterface session,Object o){
+
+  int l;
+
+  if (o instanceof LobData) {
+
+    l=(int)((LobData)o).length(session);
+
+  }
+
+ else {
+
+    l=((String)o).length();
+
+  }
+
+  return l;
+
+}
+
+Location: Like.java
+
+Content: 
+
+Object getRangeHigh(Session session){
+
+  Object o=getStartsWith();
+
+  if (o == null) {
+
+    return null;
+
+  }
+
+  if (isBinary) {
+
+    return new BinaryData(session,(BinaryData)o,maxByteValue);
+
+  }
+
+ else {
+
+    return dataType.concat(session,o,"\uffff");
+
+  }
+
+}
+
+Location: Like.java
+
+Content: 
+
+Object getRangeLow(){
+
+  return getStartsWith();
+
+}
+
+Location: Like.java
+
+Content: 
+
+private Object getStartsWith(){
+
+  if (iLen == 0) {
+
+    return isBinary ? (Object)BinaryData.zeroLengthBinary : "";
+
+  }
+
+  StringBuffer sb=null;
+
+  HsqlByteArrayOutputStream os=null;
+
+  if (isBinary) {
+
+    os=new HsqlByteArrayOutputStream();
+
+  }
+
+ else {
+
+    sb=new StringBuffer();
+
+  }
+
+  int i=0;
+
+  for (; i < iLen && wildCardType[i] == 0; i++) {
+
+    if (isBinary) {
+
+      os.writeByte(cLike[i]);
+
+    }
+
+ else {
+
+      sb.append(cLike[i]);
+
+    }
+
+  }
+
+  if (i == 0) {
+
+    return null;
+
+  }
+
+  return isBinary ? (Object)new BinaryData(os.toByteArray(),false) : sb.toString();
+
+}
+
+Location: Like.java
+
+Content: 
+
+boolean isEquivalentToEqualsPredicate(){
+
+  return !isVariable && iFirstWildCard == -1;
+
+}
+
+Location: Like.java
+
+Content: 
+
+boolean isEquivalentToNotNullPredicate(){
+
+  if (isVariable || isNull || iFirstWildCard == -1) {
+
+    return false;
+
+  }
+
+  for (int i=0; i < wildCardType.length; i++) {
+
+    if (wildCardType[i] != PERCENT_CHAR) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: Like.java
+
+Content: 
+
+boolean isEquivalentToUnknownPredicate(){
+
+  return !isVariable && isNull;
+
+}
+
+Location: Like.java
+
+Content: 
+
+Like(){
+
+}
+
+Location: Like.java
+
+Content: 
+
+void setParams(boolean collation){
+
+  hasCollation=collation;
+
+}
+
+Location: Like.java
+
+Content: 
+
+void setPattern(Session session,Object pattern,Object escape,boolean hasEscape){
+
+  isNull=pattern == null;
+
+  if (!hasEscape) {
+
+    escapeChar=-1;
+
+  }
+
+ else {
+
+    if (escape == null) {
+
+      isNull=true;
+
+      return;
+
+    }
+
+ else {
+
+      int length=getLength(session,escape);
+
+      if (length != 1) {
+
+        if (isBinary) {
+
+          throw Error.error(ErrorCode.X_2200D);
+
+        }
+
+ else {
+
+          throw Error.error(ErrorCode.X_22019);
+
+        }
+
+      }
+
+      escapeChar=getChar(session,escape,0);
+
+    }
+
+  }
+
+  if (isNull) {
+
+    return;
+
+  }
+
+  if (isIgnoreCase) {
+
+    pattern=(String)((CharacterType)dataType).upper(null,pattern);
+
+  }
+
+  iLen=0;
+
+  iFirstWildCard=-1;
+
+  int l=getLength(session,pattern);
+
+  cLike=new char[l];
+
+  wildCardType=new int[l];
+
+  boolean bEscaping=false, bPercent=false;
+
+  for (int i=0; i < l; i++) {
+
+    char c=getChar(session,pattern,i);
+
+    if (!bEscaping) {
+
+      if (escapeChar == c) {
+
+        bEscaping=true;
+
+        continue;
+
+      }
+
+ else       if (c == '_') {
+
+        wildCardType[iLen]=UNDERSCORE_CHAR;
+
+        if (iFirstWildCard == -1) {
+
+          iFirstWildCard=iLen;
+
+        }
+
+      }
+
+ else       if (c == '%') {
+
+        if (bPercent) {
+
+          continue;
+
+        }
+
+        bPercent=true;
+
+        wildCardType[iLen]=PERCENT_CHAR;
+
+        if (iFirstWildCard == -1) {
+
+          iFirstWildCard=iLen;
+
+        }
+
+      }
+
+ else {
+
+        bPercent=false;
+
+      }
+
+    }
+
+ else {
+
+      if (c == escapeChar || c == '_' || c == '%') {
+
+        bPercent=false;
+
+        bEscaping=false;
+
+      }
+
+ else {
+
+        throw Error.error(ErrorCode.X_22025);
+
+      }
+
+    }
+
+    cLike[iLen++]=c;
+
+  }
+
+  if (bEscaping) {
+
+    throw Error.error(ErrorCode.X_22025);
+
+  }
+
+  for (int i=0; i < iLen - 1; i++) {
+
+    if ((wildCardType[i] == PERCENT_CHAR) && (wildCardType[i + 1] == UNDERSCORE_CHAR)) {
+
+      wildCardType[i]=UNDERSCORE_CHAR;
+
+      wildCardType[i + 1]=PERCENT_CHAR;
+
+    }
+
+  }
+
+}
+

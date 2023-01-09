@@ -1,0 +1,66 @@
+Location: TestNoJobSetupCleanup.java
+
+Content: 
+
+private Job submitAndValidateJob(Configuration conf,int numMaps,int numReds) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Job job=MapReduceTestUtil.createJob(conf,inDir,outDir,numMaps,numReds);
+
+  job.setJobSetupCleanupNeeded(false);
+
+  job.setOutputFormatClass(MyOutputFormat.class);
+
+  job.waitForCompletion(true);
+
+  assertTrue(job.isSuccessful());
+
+  assertTrue(job.getTaskReports(TaskType.JOB_SETUP).length == 0);
+
+  assertTrue(job.getTaskReports(TaskType.JOB_CLEANUP).length == 0);
+
+  assertTrue(job.getTaskReports(TaskType.MAP).length == numMaps);
+
+  assertTrue(job.getTaskReports(TaskType.REDUCE).length == numReds);
+
+  FileSystem fs=FileSystem.get(conf);
+
+  assertTrue("Job output directory doesn't exit!",fs.exists(outDir));
+
+  FileStatus[] list=fs.listStatus(outDir,new OutputFilter());
+
+  int numPartFiles=numReds == 0 ? numMaps : numReds;
+
+  assertTrue("Number of part-files is " + list.length + " and not "+ numPartFiles,list.length == numPartFiles);
+
+  return job;
+
+}
+
+Location: TestNoJobSetupCleanup.java
+
+Content: 
+
+public void testNoJobSetupCleanup() throws Exception {
+
+  try {
+
+    Configuration conf=createJobConf();
+
+    submitAndValidateJob(conf,1,1);
+
+    submitAndValidateJob(conf,1,0);
+
+    submitAndValidateJob(conf,0,0);
+
+    submitAndValidateJob(conf,0,1);
+
+  }
+
+  finally {
+
+    tearDown();
+
+  }
+
+}
+

@@ -1,0 +1,304 @@
+Location: IndicScriptProcessor.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public String[] getOptionalPositioningFeatures(){
+
+  return GPOS_OPT_FEATURES;
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public String[] getOptionalSubstitutionFeatures(){
+
+  return GSUB_OPT_FEATURES;
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+IndicScriptProcessor(String script){
+
+  super(script);
+
+  this.subContextTester=new SubstitutionScriptContextTester();
+
+  this.posContextTester=new PositioningScriptContextTester();
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+private boolean isBasicShapingUse(GlyphTable.UseSpec us){
+
+  assert us != null;
+
+  if (basicShapingFeatures != null) {
+
+    return basicShapingFeatures.contains(us.getFeature());
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+private boolean isPresentationUse(GlyphTable.UseSpec us){
+
+  assert us != null;
+
+  if (presentationFeatures != null) {
+
+    return presentationFeatures.contains(us.getFeature());
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+/** 
+
+ * Make script specific flavor of Indic script processor.
+
+ * @param script tag
+
+ * @return script processor instance
+
+ */
+
+public static ScriptProcessor makeProcessor(String script){
+
+switch (CharScript.scriptCodeFromTag(script)) {
+
+case CharScript.SCRIPT_DEVANAGARI:
+
+case CharScript.SCRIPT_DEVANAGARI_2:
+
+    return new DevanagariScriptProcessor(script);
+
+case CharScript.SCRIPT_GUJARATI:
+
+case CharScript.SCRIPT_GUJARATI_2:
+
+  return new GujaratiScriptProcessor(script);
+
+case CharScript.SCRIPT_GURMUKHI:
+
+case CharScript.SCRIPT_GURMUKHI_2:
+
+return new GurmukhiScriptProcessor(script);
+
+case CharScript.SCRIPT_TAMIL:
+
+case CharScript.SCRIPT_TAMIL_2:
+
+return new TamilScriptProcessor(script);
+
+case CharScript.SCRIPT_KHMER:
+
+return new KhmerScriptProcessor(script);
+
+default :
+
+return new IndicScriptProcessor(script);
+
+}
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override public boolean position(GlyphSequence gs,String script,String language,int fontSize,GlyphTable.UseSpec[] usa,int[] widths,int[][] adjustments,ScriptContextTester sct){
+
+  boolean adjusted=super.position(gs,script,language,fontSize,usa,widths,adjustments,sct);
+
+  return adjusted;
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+private GlyphSequence reorderPreBaseMatra(GlyphSequence gs){
+
+  int source;
+
+  if ((source=findPreBaseMatra(gs)) >= 0) {
+
+    int target;
+
+    if ((target=findPreBaseMatraTarget(gs,source)) >= 0) {
+
+      if (target != source) {
+
+        gs=reorder(gs,source,target);
+
+      }
+
+    }
+
+  }
+
+  return gs;
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+private GlyphSequence reorderReph(GlyphSequence gs){
+
+  int source;
+
+  if ((source=findReph(gs)) >= 0) {
+
+    int target;
+
+    if ((target=findRephTarget(gs,source)) >= 0) {
+
+      if (target != source) {
+
+        gs=reorder(gs,source,target);
+
+      }
+
+    }
+
+  }
+
+  return gs;
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+private GlyphSequence reorder(GlyphSequence gs,int source,int target){
+
+  return GlyphSequence.reorder(gs,source,1,target);
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override public GlyphSequence substitute(GlyphSequence gs,String script,String language,GlyphTable.UseSpec[] usa,ScriptContextTester sct){
+
+  assert usa != null;
+
+  GlyphSequence[] sa=syllabize(gs,script,language);
+
+  for (int i=0, n=sa.length; i < n; i++) {
+
+    GlyphSequence s=sa[i];
+
+    for (    GlyphTable.UseSpec us : usa) {
+
+      if (isBasicShapingUse(us)) {
+
+        s.setPredications(true);
+
+        s=us.substitute(s,script,language,sct);
+
+      }
+
+    }
+
+    s=reorderPreBaseMatra(s);
+
+    s=reorderReph(s);
+
+    for (    GlyphTable.UseSpec us : usa) {
+
+      if (isPresentationUse(us)) {
+
+        s.setPredications(true);
+
+        s=us.substitute(s,script,language,sct);
+
+      }
+
+    }
+
+    sa[i]=s;
+
+  }
+
+  return unsyllabize(gs,sa);
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+private GlyphSequence[] syllabize(GlyphSequence gs,String script,String language){
+
+  return Syllabizer.getSyllabizer(script,language,getSyllabizerClass()).syllabize(gs);
+
+}
+
+Location: IndicScriptProcessor.java
+
+Content: 
+
+private GlyphSequence unsyllabize(GlyphSequence gs,GlyphSequence[] sa){
+
+  return GlyphSequence.join(gs,sa);
+
+}
+

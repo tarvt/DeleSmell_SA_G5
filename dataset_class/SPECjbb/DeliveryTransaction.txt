@@ -1,0 +1,334 @@
+Location: DeliveryTransaction.java
+
+Content: 
+
+public void delete(){
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+public DeliveryTransaction(Company aCompany,short aWarehouse){
+
+  company=aCompany;
+
+  warehouseId=aWarehouse;
+
+  warehousePtr=company.getWarehousePtr(warehouseId,false);
+
+  deliveryHandler=new DeliveryHandler(aCompany.getOutDeliveriesFile());
+
+  deliveryLog=new TransactionLogBuffer();
+
+  setupDeliveryLog();
+
+  xmlDeliveryLog=new XMLTransactionLog();
+
+  initLog=new TransactionLogBuffer(deliveryLog);
+
+  setupInitLog();
+
+  queuedLog=new TransactionLogBuffer(16,64);
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+public String getMenuName(){
+
+  return "Delivery";
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+public void initializeTransactionLog(){
+
+  JBButil.getLog().entering("spec.jbb.DeliveryTransaction","initializeTransactionLog");
+
+  if (Transaction.enableLogWrite)   initLog.display();
+
+  JBButil.getLog().exiting("spec.jbb.DeliveryTransaction","initializeTransactionLog");
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+public boolean preprocess(){
+
+  queuedLog.putText("Warehouse:",0,1,10);
+
+  queuedLog.putInt(warehouseId,11,1,4);
+
+  queuedLog.putText("Carrier ID:",16,1,12);
+
+  queuedLog.putInt(carrierId,28,1,2);
+
+  queuedLog.putText("Items Delivered",0,2,15);
+
+  queuedLog.putText("District            Order",0,3,25);
+
+  int distCount=warehousePtr.getDistrictCount();
+
+  int distId;
+
+  District currentDistrict;
+
+  Date delDate=new Date();
+
+  for (distId=1; distId <= distCount; distId++) {
+
+    currentDistrict=warehousePtr.getDistrict(distId);
+
+    ;
+
+    Iterator possibleOrderIter=currentDistrict.newOrderIter();
+
+    NewOrder possibleNewOrder=null;
+
+    Order possibleOrder=null;
+
+    Customer possibleCustomerPtr=null;
+
+    Orderline[] requiredOrderLine;
+
+    Orderline orderline;
+
+    while (possibleOrderIter.hasNext()) {
+
+      possibleNewOrder=(NewOrder)possibleOrderIter.next();
+
+      possibleOrder=(Order)possibleNewOrder.getOrderPtr();
+
+      possibleCustomerPtr=(Customer)possibleOrder.getCustomerPtr();
+
+      BigDecimal hisBalance=possibleCustomerPtr.getBalance();
+
+      BigDecimal orderAmount=possibleOrder.getTotalAmount();
+
+      if ((hisBalance.compareTo(orderAmount)) == -1) {
+
+        continue;
+
+      }
+
+      requiredOrderLine=possibleOrder.getOrderlineList();
+
+      for (int i=0; i < requiredOrderLine.length; i++) {
+
+        orderline=(Orderline)requiredOrderLine[i];
+
+        if (orderline == null) {
+
+          continue;
+
+        }
+
+        int requiredQuantity=orderline.getQuantity();
+
+        int itemId=orderline.getItemId();
+
+        Stock stock=warehousePtr.retrieveStock(itemId);
+
+        int availableQuantity=stock.getQuantity();
+
+        if (availableQuantity >= requiredQuantity) {
+
+          stock.changeQuantity(-requiredQuantity);
+
+          break;
+
+        }
+
+      }
+
+    }
+
+    if (possibleNewOrder != null) {
+
+      NewOrder currentNewOrder=currentDistrict.removeNewOrder(possibleNewOrder.getId());
+
+      if (Transaction.steadyStateMem) {
+
+        currentDistrict.removeOldNewOrders((company.getInitialOrders() - company.getInitialNewOrders()));
+
+        currentDistrict.removeOldOrders(company.getInitialOrders());
+
+      }
+
+      Order matchingOrder=currentNewOrder.getOrderPtr();
+
+      matchingOrder.setCarrierId(carrierId);
+
+      matchingOrder.dateOrderlines(delDate);
+
+      queuedLog.putInt(currentDistrict.getId(),6,distId + 3,2);
+
+      queuedLog.putInt(currentDistrict.getId(),20,distId + 3,5);
+
+      Customer customerPtr=matchingOrder.getCustomerPtr();
+
+      customerPtr.adjustBalance(matchingOrder.getTotalAmount());
+
+      customerPtr.incrementDeliveryCount();
+
+    }
+
+  }
+
+  Date dayTime=new Date();
+
+  queuedLog.putText("Processing finished at:",0,14,23);
+
+  queuedLog.putDate(dayTime,24,14,10);
+
+  queuedLog.putTime(dayTime,36,14,10);
+
+  return true;
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+public synchronized boolean process(){
+
+  JBButil.getLog().entering("spec.jbb.DeliveryTransaction","process");
+
+  Date dayTime=new Date();
+
+  queuedLog.clearBuffer();
+
+  queuedLog.putText("Queueing Time:",0,0,12);
+
+  queuedLog.putDate(dayTime,12,0,10);
+
+  queuedLog.putTime(dayTime,24,0,10);
+
+  deliveryHandler.handleDelivery(this);
+
+  JBButil.getLog().exiting("spec.jbb.DeliveryTransaction","process");
+
+  return true;
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+public synchronized void processTransactionLog(){
+
+  JBButil.getLog().entering("spec.jbb.DeliveryTransaction","processTransactionLog");
+
+  deliveryLog.clearBuffer();
+
+  xmlDeliveryLog.clear();
+
+  setupDeliveryLog();
+
+  deliveryLog.putInt(carrierId,16,3,2);
+
+  deliveryLog.putText("Delivery has been queued",18,5,25);
+
+  xmlDeliveryLog.populateXML(deliveryLog);
+
+  if (Transaction.enableLogWrite)   deliveryLog.display();
+
+  if (Transaction.validationFlag) {
+
+    String[] s=deliveryLog.validate();
+
+    if (s.length != validationLog.length) {
+
+      StringBuffer sb=new StringBuffer(200);
+
+      sb.append("VALIDATION ERROR:  mismatch in screen lengths for DeliveryTransaction");
+
+      sb.append(System.getProperty("line.separator"));
+
+      sb.append("    Screen length should be:  " + validationLog.length);
+
+      sb.append(System.getProperty("line.separator"));
+
+      sb.append("    Screen length is:  " + s.length);
+
+      JBButil.getLog().warning(sb.toString());
+
+      Transaction.invalidateRun();
+
+    }
+
+    for (int i=0; i < validationLog.length; i++) {
+
+      if (checkLine[i]) {
+
+        if (!s[i].equals(validationLog[i])) {
+
+          StringBuffer sb=new StringBuffer(200);
+
+          sb.append("VALIDATION ERROR:  incorrect output for DeliveryTransaction");
+
+          sb.append(System.getProperty("line.separator"));
+
+          sb.append("    Line " + (i + 1) + " should be:  |"+ validationLog[i]+ "|");
+
+          sb.append(System.getProperty("line.separator"));
+
+          sb.append("    Line " + (i + 1) + " is:  |"+ s[i]+ "|");
+
+          JBButil.getLog().warning(sb.toString());
+
+          Transaction.invalidateRun();
+
+        }
+
+      }
+
+    }
+
+  }
+
+  JBButil.getLog().exiting("spec.jbb.DeliveryTransaction","processTransactionLog");
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+private void setupDeliveryLog(){
+
+  deliveryLog.putText("Delivery",37,0,8);
+
+  deliveryLog.putText("Warehouse:",0,1,10);
+
+  deliveryLog.putInt(warehouseId,11,1,4);
+
+  deliveryLog.putText("Carrier Number:",0,3,15);
+
+  deliveryLog.putText("Execution Status:",0,5,17);
+
+}
+
+Location: DeliveryTransaction.java
+
+Content: 
+
+private void setupInitLog(){
+
+  initLog.putCharFill('9',16,3,2);
+
+  initLog.putCharFill('X',18,5,25);
+
+}
+

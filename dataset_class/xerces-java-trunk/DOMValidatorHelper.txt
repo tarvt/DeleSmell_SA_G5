@@ -1,0 +1,472 @@
+Location: DOMValidatorHelper.java
+
+Content: 
+
+/** 
+
+ * Do processing for the start of a node. 
+
+ */
+
+private void beginNode(Node node){
+
+switch (node.getNodeType()) {
+
+case Node.ELEMENT_NODE:
+
+    fCurrentElement=node;
+
+  fNamespaceContext.pushContext();
+
+fillQName(fElementQName,node);
+
+processAttributes(node.getAttributes());
+
+fSchemaValidator.startElement(fElementQName,fAttributes,null);
+
+break;
+
+case Node.TEXT_NODE:
+
+if (fDOMValidatorHandler != null) {
+
+fDOMValidatorHandler.setIgnoringCharacters(true);
+
+sendCharactersToValidator(node.getNodeValue());
+
+fDOMValidatorHandler.setIgnoringCharacters(false);
+
+fDOMValidatorHandler.characters((Text)node);
+
+}
+
+ else {
+
+sendCharactersToValidator(node.getNodeValue());
+
+}
+
+break;
+
+case Node.CDATA_SECTION_NODE:
+
+if (fDOMValidatorHandler != null) {
+
+fDOMValidatorHandler.setIgnoringCharacters(true);
+
+fSchemaValidator.startCDATA(null);
+
+sendCharactersToValidator(node.getNodeValue());
+
+fSchemaValidator.endCDATA(null);
+
+fDOMValidatorHandler.setIgnoringCharacters(false);
+
+fDOMValidatorHandler.cdata((CDATASection)node);
+
+}
+
+ else {
+
+fSchemaValidator.startCDATA(null);
+
+sendCharactersToValidator(node.getNodeValue());
+
+fSchemaValidator.endCDATA(null);
+
+}
+
+break;
+
+case Node.PROCESSING_INSTRUCTION_NODE:
+
+if (fDOMValidatorHandler != null) {
+
+fDOMValidatorHandler.processingInstruction((ProcessingInstruction)node);
+
+}
+
+break;
+
+case Node.COMMENT_NODE:
+
+if (fDOMValidatorHandler != null) {
+
+fDOMValidatorHandler.comment((Comment)node);
+
+}
+
+break;
+
+case Node.DOCUMENT_TYPE_NODE:
+
+if (fDOMValidatorHandler != null) {
+
+fDOMValidatorHandler.doctypeDecl((DocumentType)node);
+
+}
+
+break;
+
+default :
+
+break;
+
+}
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+public DOMValidatorHelper(XMLSchemaValidatorComponentManager componentManager){
+
+  fComponentManager=componentManager;
+
+  fErrorReporter=(XMLErrorReporter)fComponentManager.getProperty(ERROR_REPORTER);
+
+  fNamespaceContext=(NamespaceSupport)fComponentManager.getProperty(NAMESPACE_CONTEXT);
+
+  fSchemaValidator=(XMLSchemaValidator)fComponentManager.getProperty(SCHEMA_VALIDATOR);
+
+  fSymbolTable=(SymbolTable)fComponentManager.getProperty(SYMBOL_TABLE);
+
+  fValidationManager=(ValidationManager)fComponentManager.getProperty(VALIDATION_MANAGER);
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+private void fillQName(QName toFill,Node node){
+
+  final String prefix=node.getPrefix();
+
+  final String localName=node.getLocalName();
+
+  final String rawName=node.getNodeName();
+
+  final String namespace=node.getNamespaceURI();
+
+  toFill.prefix=(prefix != null) ? fSymbolTable.addSymbol(prefix) : XMLSymbols.EMPTY_STRING;
+
+  toFill.localpart=(localName != null) ? fSymbolTable.addSymbol(localName) : XMLSymbols.EMPTY_STRING;
+
+  toFill.rawname=(rawName != null) ? fSymbolTable.addSymbol(rawName) : XMLSymbols.EMPTY_STRING;
+
+  toFill.uri=(namespace != null && namespace.length() > 0) ? fSymbolTable.addSymbol(namespace) : null;
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+/** 
+
+ * Do processing for the end of a node. 
+
+ */
+
+private void finishNode(Node node){
+
+  if (node.getNodeType() == Node.ELEMENT_NODE) {
+
+    fCurrentElement=node;
+
+    fillQName(fElementQName,node);
+
+    fSchemaValidator.endElement(fElementQName,null);
+
+    fNamespaceContext.popContext();
+
+  }
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+/** 
+
+ * Returns the current element node.
+
+ */
+
+Node getCurrentElement(){
+
+  return fCurrentElement;
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+private void processAttributes(NamedNodeMap attrMap){
+
+  final int attrCount=attrMap.getLength();
+
+  fAttributes.removeAllAttributes();
+
+  for (int i=0; i < attrCount; ++i) {
+
+    Attr attr=(Attr)attrMap.item(i);
+
+    String value=attr.getValue();
+
+    if (value == null) {
+
+      value=XMLSymbols.EMPTY_STRING;
+
+    }
+
+    fillQName(fAttributeQName,attr);
+
+    fAttributes.addAttributeNS(fAttributeQName,XMLSymbols.fCDATASymbol,value);
+
+    fAttributes.setSpecified(i,attr.getSpecified());
+
+    if (fAttributeQName.uri == NamespaceContext.XMLNS_URI) {
+
+      if (fAttributeQName.prefix == XMLSymbols.PREFIX_XMLNS) {
+
+        fNamespaceContext.declarePrefix(fAttributeQName.localpart,value.length() != 0 ? fSymbolTable.addSymbol(value) : null);
+
+      }
+
+ else {
+
+        fNamespaceContext.declarePrefix(XMLSymbols.EMPTY_STRING,value.length() != 0 ? fSymbolTable.addSymbol(value) : null);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+private void sendCharactersToValidator(String str){
+
+  if (str != null) {
+
+    final int length=str.length();
+
+    final int remainder=length & CHUNK_MASK;
+
+    if (remainder > 0) {
+
+      str.getChars(0,remainder,fCharBuffer,0);
+
+      fTempString.setValues(fCharBuffer,0,remainder);
+
+      fSchemaValidator.characters(fTempString,null);
+
+    }
+
+    int i=remainder;
+
+    while (i < length) {
+
+      str.getChars(i,i+=CHUNK_SIZE,fCharBuffer,0);
+
+      fTempString.setValues(fCharBuffer,0,CHUNK_SIZE);
+
+      fSchemaValidator.characters(fTempString,null);
+
+    }
+
+  }
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+/** 
+
+ * Sets up handler for <code>DOMResult</code>.
+
+ */
+
+private void setupDOMResultHandler(DOMSource source,DOMResult result) throws SAXException {
+
+  if (result == null) {
+
+    fDOMValidatorHandler=null;
+
+    fSchemaValidator.setDocumentHandler(null);
+
+    return;
+
+  }
+
+  final Node nodeResult=result.getNode();
+
+  if (source.getNode() == nodeResult) {
+
+    fDOMValidatorHandler=fDOMResultAugmentor;
+
+    fDOMResultAugmentor.setDOMResult(result);
+
+    fSchemaValidator.setDocumentHandler(fDOMResultAugmentor);
+
+    return;
+
+  }
+
+  if (result.getNode() == null) {
+
+    try {
+
+      DocumentBuilderFactory factory=DocumentBuilderFactory.newInstance();
+
+      factory.setNamespaceAware(true);
+
+      DocumentBuilder builder=factory.newDocumentBuilder();
+
+      result.setNode(builder.newDocument());
+
+    }
+
+ catch (    ParserConfigurationException e) {
+
+      throw new SAXException(e);
+
+    }
+
+  }
+
+  fDOMValidatorHandler=fDOMResultBuilder;
+
+  fDOMResultBuilder.setDOMResult(result);
+
+  fSchemaValidator.setDocumentHandler(fDOMResultBuilder);
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+/** 
+
+ * Extracts NamedNodeMap of entities. We need this to validate elements and attributes of type xs:ENTITY, xs:ENTITIES or  types dervied from them.
+
+ */
+
+private void setupEntityMap(Document doc){
+
+  if (doc != null) {
+
+    DocumentType docType=doc.getDoctype();
+
+    if (docType != null) {
+
+      fEntities=docType.getEntities();
+
+      return;
+
+    }
+
+  }
+
+  fEntities=null;
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+/** 
+
+ * Use isSameNode() for testing node identity if the DOM implementation supports DOM Level 3 core and it isn't the Xerces implementation.
+
+ */
+
+private boolean useIsSameNode(Node node){
+
+  if (node instanceof NodeImpl) {
+
+    return false;
+
+  }
+
+  Document doc=node.getNodeType() == Node.DOCUMENT_NODE ? (Document)node : node.getOwnerDocument();
+
+  return (doc != null && doc.getImplementation().hasFeature("Core","3.0"));
+
+}
+
+Location: DOMValidatorHelper.java
+
+Content: 
+
+/** 
+
+ * Traverse the DOM and fire events to the schema validator. 
+
+ */
+
+private void validate(Node node){
+
+  final Node top=node;
+
+  final boolean useIsSameNode=useIsSameNode(top);
+
+  while (node != null) {
+
+    beginNode(node);
+
+    Node next=node.getFirstChild();
+
+    while (next == null) {
+
+      finishNode(node);
+
+      if (top == node) {
+
+        break;
+
+      }
+
+      next=node.getNextSibling();
+
+      if (next == null) {
+
+        node=node.getParentNode();
+
+        if (node == null || ((useIsSameNode) ? top.isSameNode(node) : top == node)) {
+
+          if (node != null) {
+
+            finishNode(node);
+
+          }
+
+          next=null;
+
+          break;
+
+        }
+
+      }
+
+    }
+
+    node=next;
+
+  }
+
+}
+

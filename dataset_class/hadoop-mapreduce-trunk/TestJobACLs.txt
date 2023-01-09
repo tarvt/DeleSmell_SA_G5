@@ -1,0 +1,544 @@
+Location: TestJobACLs.java
+
+Content: 
+
+private void startCluster(boolean reStart) throws Exception {
+
+  String[] queueNames={"default"};
+
+  createQueuesConfigFile(queueNames,new String[]{jobSubmitter},new String[]{qAdmin});
+
+  JobConf conf=new JobConf();
+
+  conf.setBoolean(MRConfig.MR_ACLS_ENABLED,true);
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  if (!reStart) {
+
+    fs.delete(TEST_DIR,true);
+
+  }
+
+  conf.set(JTConfig.JT_PERSIST_JOBSTATUS_DIR,fs.makeQualified(TEST_DIR).toString());
+
+  conf.setBoolean(JTConfig.JT_PERSIST_JOBSTATUS,true);
+
+  conf.set(JTConfig.JT_PERSIST_JOBSTATUS_HOURS,"1");
+
+  UserGroupInformation MR_UGI=UserGroupInformation.getLoginUser();
+
+  mr=new MiniMRCluster(0,0,1,"file:///",1,null,null,MR_UGI,conf);
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+/** 
+
+ * Submits a sleep job with 1 map task that runs for a long time(60 sec) and wait for the job to go into RUNNING state.
+
+ * @param clusterConf
+
+ * @param user the jobOwner
+
+ * @return Job that is started
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+private Job submitJobAsUser(final Configuration clusterConf,String user) throws IOException, InterruptedException {
+
+  UserGroupInformation ugi=UserGroupInformation.createUserForTesting(user,new String[]{});
+
+  Job job=(Job)ugi.doAs(new PrivilegedExceptionAction<Object>(){
+
+    @Override public Object run() throws Exception {
+
+      SleepJob sleepJob=new SleepJob();
+
+      sleepJob.setConf(clusterConf);
+
+      sleepJob.getConf().setBoolean(MRJobConfig.SETUP_CLEANUP_NEEDED,false);
+
+      Job myJob=sleepJob.createJob(1,0,60000,1,1,1);
+
+      myJob.submit();
+
+      return myJob;
+
+    }
+
+  }
+
+);
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  JobInProgress jip=jt.getJob(org.apache.hadoop.mapred.JobID.downgrade(job.getJobID()));
+
+  jt.initJob(jip);
+
+  return job;
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+/** 
+
+ * Test view-job-acl, modify-job-acl and acl persistence to the completed-jobs-store.
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ * @throws ClassNotFoundException
+
+ */
+
+@Test public void testACLS() throws Exception {
+
+  hongshuai();
+
+  final Configuration myConf=mr.createJobConf();
+
+  myConf.set(MRJobConfig.JOB_ACL_VIEW_JOB,viewColleague);
+
+  Job job=submitJobAsUser(myConf,jobSubmitter);
+
+  final JobID jobId=job.getJobID();
+
+  verifyViewJobAsUnauthorizedUser(myConf,jobId,modifyColleague);
+
+  verifyViewJobAsAuthorizedUser(myConf,jobId,viewColleague);
+
+  verifyViewJobAsAuthorizedUser(myConf,jobId,qAdmin);
+
+  job.killJob();
+
+  verifyACLModifyJob(modifyColleague);
+
+  verifyACLModifyJob(qAdmin);
+
+  verifyACLPersistence();
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+/** 
+
+ * Verify MRConfig.Job_ACL_MODIFY_JOB
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ * @throws ClassNotFoundException
+
+ */
+
+private void verifyACLModifyJob(String authorizedUser) throws IOException, InterruptedException, ClassNotFoundException {
+
+  final Configuration myConf=mr.createJobConf();
+
+  myConf.set(MRJobConfig.JOB_ACL_MODIFY_JOB,modifyColleague);
+
+  Job job=submitJobAsUser(myConf,jobSubmitter);
+
+  final JobID jobId=job.getJobID();
+
+  verifyModifyJobAsUnauthorizedUser(myConf,jobId,viewColleague);
+
+  verifyModifyJobAsAuthorizedUser(myConf,jobId,authorizedUser);
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+private void verifyACLPersistence() throws Exception {
+
+  final Configuration myConf=mr.createJobConf();
+
+  myConf.set(MRJobConfig.JOB_ACL_VIEW_JOB,viewColleague + " group2");
+
+  Job job=submitJobAsUser(myConf,jobSubmitter);
+
+  final JobID jobId=job.getJobID();
+
+  job.killJob();
+
+  while (job.getJobState() != JobStatus.State.KILLED) {
+
+    LOG.info("Waiting for the job to be killed successfully..");
+
+    Thread.sleep(200);
+
+  }
+
+  tearDown();
+
+  startCluster(true);
+
+  final Configuration myNewJobConf=mr.createJobConf();
+
+  verifyViewJobAsAuthorizedUser(myNewJobConf,jobId,viewColleague);
+
+  verifyViewJobAsAuthorizedUser(myNewJobConf,jobId,qAdmin);
+
+  UserGroupInformation unauthorizedUGI=UserGroupInformation.createUserForTesting(modifyColleague,new String[]{});
+
+  unauthorizedUGI.doAs(new PrivilegedExceptionAction<Object>(){
+
+    @SuppressWarnings("null") @Override public Object run(){
+
+      Job myJob=null;
+
+      try {
+
+        Cluster cluster=new Cluster(myNewJobConf);
+
+        myJob=cluster.getJob(jobId);
+
+      }
+
+ catch (      Exception e) {
+
+        fail("Exception .." + e);
+
+      }
+
+      assertNotNull("Job " + jobId + " is not known to the JobTracker!",myJob);
+
+      try {
+
+        myJob.getCounters();
+
+        fail("AccessControlException expected..");
+
+      }
+
+ catch (      IOException ioe) {
+
+        assertTrue(ioe.getMessage().contains(" cannot perform operation " + Operation.VIEW_JOB_COUNTERS));
+
+      }
+
+catch (      InterruptedException e) {
+
+        fail("Exception .. interrupted.." + e);
+
+      }
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+private void verifyModifyJobAsAuthorizedUser(final Configuration clusterConf,final JobID jobId,String authorizedUser) throws IOException, InterruptedException {
+
+  UserGroupInformation authorizedUGI=UserGroupInformation.createUserForTesting(authorizedUser,new String[]{});
+
+  authorizedUGI.doAs(new PrivilegedExceptionAction<Object>(){
+
+    @SuppressWarnings("null") @Override public Object run() throws Exception {
+
+      Job myJob=null;
+
+      try {
+
+        Cluster cluster=new Cluster(clusterConf);
+
+        myJob=cluster.getJob(jobId);
+
+      }
+
+ catch (      Exception e) {
+
+        fail("Exception .." + e);
+
+      }
+
+      assertNotNull("Job " + jobId + " is not known to the JobTracker!",myJob);
+
+      try {
+
+        myJob.setPriority(JobPriority.HIGH);
+
+        assertEquals(myJob.getPriority(),JobPriority.HIGH);
+
+      }
+
+ catch (      IOException ioe) {
+
+        fail("Unexpected.. exception.. " + ioe);
+
+      }
+
+      try {
+
+        myJob.killJob();
+
+      }
+
+ catch (      IOException ioe) {
+
+        fail("Unexpected.. exception.. " + ioe);
+
+      }
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+private void verifyModifyJobAsUnauthorizedUser(final Configuration clusterConf,final JobID jobId,String unauthorizedUser) throws IOException, InterruptedException {
+
+  UserGroupInformation unauthorizedUGI=UserGroupInformation.createUserForTesting(unauthorizedUser,new String[]{});
+
+  unauthorizedUGI.doAs(new PrivilegedExceptionAction<Object>(){
+
+    @SuppressWarnings("null") @Override public Object run(){
+
+      Job myJob=null;
+
+      try {
+
+        Cluster cluster=new Cluster(clusterConf);
+
+        myJob=cluster.getJob(jobId);
+
+      }
+
+ catch (      Exception e) {
+
+        fail("Exception .." + e);
+
+      }
+
+      assertNotNull("Job " + jobId + " is not known to the JobTracker!",myJob);
+
+      try {
+
+        myJob.killJob();
+
+        fail("AccessControlException expected..");
+
+      }
+
+ catch (      IOException ioe) {
+
+        assertTrue(ioe.getMessage().contains(" cannot perform operation " + Operation.KILL_JOB));
+
+      }
+
+catch (      InterruptedException e) {
+
+        fail("Exception .. interrupted.." + e);
+
+      }
+
+      try {
+
+        myJob.setPriority(JobPriority.HIGH);
+
+        fail("AccessControlException expected..");
+
+      }
+
+ catch (      IOException ioe) {
+
+        assertTrue(ioe.getMessage().contains(" cannot perform operation " + Operation.SET_JOB_PRIORITY));
+
+      }
+
+catch (      InterruptedException e) {
+
+        fail("Exception .. interrupted.." + e);
+
+      }
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+private void verifyViewJobAsAuthorizedUser(final Configuration myConf,final JobID jobId,String authorizedUser) throws IOException, InterruptedException {
+
+  UserGroupInformation authorizedUGI=UserGroupInformation.createUserForTesting(authorizedUser,new String[]{});
+
+  authorizedUGI.doAs(new PrivilegedExceptionAction<Object>(){
+
+    @SuppressWarnings("null") @Override public Object run() throws Exception {
+
+      Job myJob=null;
+
+      try {
+
+        Cluster cluster=new Cluster(myConf);
+
+        myJob=cluster.getJob(jobId);
+
+      }
+
+ catch (      Exception e) {
+
+        fail("Exception .." + e);
+
+      }
+
+      assertNotNull("Job " + jobId + " is not known to the JobTracker!",myJob);
+
+      try {
+
+        myJob.getCounters();
+
+      }
+
+ catch (      IOException ioe) {
+
+        fail("Unexpected.. exception.. " + ioe);
+
+      }
+
+      try {
+
+        myJob.getTaskReports(TaskType.JOB_CLEANUP);
+
+      }
+
+ catch (      IOException ioe) {
+
+        fail("Unexpected.. exception.. " + ioe);
+
+      }
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: TestJobACLs.java
+
+Content: 
+
+private void verifyViewJobAsUnauthorizedUser(final Configuration myConf,final JobID jobId,String unauthorizedUser) throws IOException, InterruptedException {
+
+  UserGroupInformation unauthorizedUGI=UserGroupInformation.createUserForTesting(unauthorizedUser,new String[]{});
+
+  unauthorizedUGI.doAs(new PrivilegedExceptionAction<Object>(){
+
+    @SuppressWarnings("null") @Override public Object run(){
+
+      Job myJob=null;
+
+      try {
+
+        Cluster cluster=new Cluster(myConf);
+
+        myJob=cluster.getJob(jobId);
+
+      }
+
+ catch (      Exception e) {
+
+        fail("Exception .." + e);
+
+      }
+
+      assertNotNull("Job " + jobId + " is not known to the JobTracker!",myJob);
+
+      try {
+
+        myJob.getCounters();
+
+        fail("AccessControlException expected..");
+
+      }
+
+ catch (      IOException ioe) {
+
+        assertTrue(ioe.getMessage().contains(" cannot perform operation " + JobACL.VIEW_JOB));
+
+      }
+
+catch (      InterruptedException e) {
+
+        fail("Exception .. interrupted.." + e);
+
+      }
+
+      try {
+
+        myJob.getTaskReports(TaskType.JOB_SETUP);
+
+        fail("AccessControlException expected..");
+
+      }
+
+ catch (      IOException ioe) {
+
+        assertTrue(ioe.getMessage().contains(" cannot perform operation " + JobACL.VIEW_JOB));
+
+      }
+
+catch (      InterruptedException e) {
+
+        fail("Exception .. interrupted.." + e);
+
+      }
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+

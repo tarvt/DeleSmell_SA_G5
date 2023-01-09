@@ -1,0 +1,462 @@
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * Compiles the predicate method
+
+ */
+
+private static void compileDefault(int defaultAction,ClassGenerator classGen){
+
+  final ConstantPoolGen cpg=classGen.getConstantPool();
+
+  final InstructionList il=new InstructionList();
+
+  final XSLTC xsltc=classGen.getParser().getXSLTC();
+
+  final MethodGenerator stripSpace=new MethodGenerator(ACC_PUBLIC | ACC_FINAL,org.apache.bcel.generic.Type.BOOLEAN,new org.apache.bcel.generic.Type[]{Util.getJCRefType(DOM_INTF_SIG),org.apache.bcel.generic.Type.INT,org.apache.bcel.generic.Type.INT},new String[]{"dom","node","type"},"stripSpace",classGen.getClassName(),il,cpg);
+
+  classGen.addInterface("org/apache/xalan/xsltc/StripFilter");
+
+  if (defaultAction == STRIP_SPACE)   il.append(ICONST_1);
+
+ else   il.append(ICONST_0);
+
+  il.append(IRETURN);
+
+  classGen.addMethod(stripSpace);
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * Compiles the predicate method
+
+ */
+
+private static void compilePredicate(Vector rules,int defaultAction,ClassGenerator classGen){
+
+  final ConstantPoolGen cpg=classGen.getConstantPool();
+
+  final InstructionList il=new InstructionList();
+
+  final XSLTC xsltc=classGen.getParser().getXSLTC();
+
+  final MethodGenerator stripSpace=new MethodGenerator(ACC_PUBLIC | ACC_FINAL,org.apache.bcel.generic.Type.BOOLEAN,new org.apache.bcel.generic.Type[]{Util.getJCRefType(DOM_INTF_SIG),org.apache.bcel.generic.Type.INT,org.apache.bcel.generic.Type.INT},new String[]{"dom","node","type"},"stripSpace",classGen.getClassName(),il,cpg);
+
+  classGen.addInterface("org/apache/xalan/xsltc/StripFilter");
+
+  final int paramDom=stripSpace.getLocalIndex("dom");
+
+  final int paramCurrent=stripSpace.getLocalIndex("node");
+
+  final int paramType=stripSpace.getLocalIndex("type");
+
+  BranchHandle strip[]=new BranchHandle[rules.size()];
+
+  BranchHandle preserve[]=new BranchHandle[rules.size()];
+
+  int sCount=0;
+
+  int pCount=0;
+
+  for (int i=0; i < rules.size(); i++) {
+
+    WhitespaceRule rule=(WhitespaceRule)rules.elementAt(i);
+
+    final int gns=cpg.addInterfaceMethodref(DOM_INTF,"getNamespaceName","(I)Ljava/lang/String;");
+
+    final int strcmp=cpg.addMethodref("java/lang/String","compareTo","(Ljava/lang/String;)I");
+
+    if (rule.getStrength() == RULE_NAMESPACE) {
+
+      il.append(new ALOAD(paramDom));
+
+      il.append(new ILOAD(paramCurrent));
+
+      il.append(new INVOKEINTERFACE(gns,2));
+
+      il.append(new PUSH(cpg,rule.getNamespace()));
+
+      il.append(new INVOKEVIRTUAL(strcmp));
+
+      il.append(ICONST_0);
+
+      if (rule.getAction() == STRIP_SPACE) {
+
+        strip[sCount++]=il.append(new IF_ICMPEQ(null));
+
+      }
+
+ else {
+
+        preserve[pCount++]=il.append(new IF_ICMPEQ(null));
+
+      }
+
+    }
+
+ else     if (rule.getStrength() == RULE_ELEMENT) {
+
+      final Parser parser=classGen.getParser();
+
+      QName qname;
+
+      if (rule.getNamespace() != Constants.EMPTYSTRING)       qname=parser.getQName(rule.getNamespace(),null,rule.getElement());
+
+ else       qname=parser.getQName(rule.getElement());
+
+      final int elementType=xsltc.registerElement(qname);
+
+      il.append(new ILOAD(paramType));
+
+      il.append(new PUSH(cpg,elementType));
+
+      if (rule.getAction() == STRIP_SPACE)       strip[sCount++]=il.append(new IF_ICMPEQ(null));
+
+ else       preserve[pCount++]=il.append(new IF_ICMPEQ(null));
+
+    }
+
+  }
+
+  if (defaultAction == STRIP_SPACE) {
+
+    compileStripSpace(strip,sCount,il);
+
+    compilePreserveSpace(preserve,pCount,il);
+
+  }
+
+ else {
+
+    compilePreserveSpace(preserve,pCount,il);
+
+    compileStripSpace(strip,sCount,il);
+
+  }
+
+  classGen.addMethod(stripSpace);
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+public static void compilePreserveSpace(BranchHandle preserve[],int pCount,InstructionList il){
+
+  final InstructionHandle target=il.append(ICONST_0);
+
+  il.append(IRETURN);
+
+  for (int i=0; i < pCount; i++) {
+
+    preserve[i].setTarget(target);
+
+  }
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+public static void compileStripSpace(BranchHandle strip[],int sCount,InstructionList il){
+
+  final InstructionHandle target=il.append(ICONST_1);
+
+  il.append(IRETURN);
+
+  for (int i=0; i < sCount; i++) {
+
+    strip[i].setTarget(target);
+
+  }
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * Scans through the rules vector and looks for a rule of higher priority that contradicts the current rule.
+
+ */
+
+private static WhitespaceRule findContradictingRule(Vector rules,WhitespaceRule rule){
+
+  for (int i=0; i < rules.size(); i++) {
+
+    WhitespaceRule currentRule=(WhitespaceRule)rules.elementAt(i);
+
+    if (currentRule == rule) {
+
+      return null;
+
+    }
+
+switch (currentRule.getStrength()) {
+
+case RULE_ALL:
+
+      return currentRule;
+
+case RULE_ELEMENT:
+
+    if (!rule.getElement().equals(currentRule.getElement())) {
+
+      break;
+
+    }
+
+case RULE_NAMESPACE:
+
+  if (rule.getNamespace().equals(currentRule.getNamespace())) {
+
+    return currentRule;
+
+  }
+
+break;
+
+}
+
+}
+
+return null;
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * De-tokenize the elements listed in the 'elements' attribute and instanciate a set of strip/preserve rules.
+
+ */
+
+public Vector getRules(){
+
+  final Vector rules=new Vector();
+
+  final StringTokenizer list=new StringTokenizer(_elementList);
+
+  while (list.hasMoreElements()) {
+
+    rules.add(new WhitespaceRule(_action,list.nextToken(),_importPrecedence));
+
+  }
+
+  return rules;
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * Used with quicksort method above
+
+ */
+
+private static int partition(Vector rules,int p,int r){
+
+  final WhitespaceRule x=(WhitespaceRule)rules.elementAt((p + r) >>> 1);
+
+  int i=p - 1, j=r + 1;
+
+  while (true) {
+
+    while (x.compareTo((WhitespaceRule)rules.elementAt(--j)) < 0) {
+
+    }
+
+    while (x.compareTo((WhitespaceRule)rules.elementAt(++i)) > 0) {
+
+    }
+
+    if (i < j) {
+
+      final WhitespaceRule tmp=(WhitespaceRule)rules.elementAt(i);
+
+      rules.setElementAt(rules.elementAt(j),i);
+
+      rules.setElementAt(tmp,j);
+
+    }
+
+ else {
+
+      return j;
+
+    }
+
+  }
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * Orders a set or rules by priority, removes redundant rules and rules that are shadowed by stronger, contradicting rules.
+
+ */
+
+private static int prioritizeRules(Vector rules){
+
+  WhitespaceRule currentRule;
+
+  int defaultAction=PRESERVE_SPACE;
+
+  quicksort(rules,0,rules.size() - 1);
+
+  boolean strip=false;
+
+  for (int i=0; i < rules.size(); i++) {
+
+    currentRule=(WhitespaceRule)rules.elementAt(i);
+
+    if (currentRule.getAction() == STRIP_SPACE) {
+
+      strip=true;
+
+    }
+
+  }
+
+  if (!strip) {
+
+    rules.removeAllElements();
+
+    return PRESERVE_SPACE;
+
+  }
+
+  for (int idx=0; idx < rules.size(); ) {
+
+    currentRule=(WhitespaceRule)rules.elementAt(idx);
+
+    if (findContradictingRule(rules,currentRule) != null) {
+
+      rules.remove(idx);
+
+    }
+
+ else {
+
+      if (currentRule.getStrength() == RULE_ALL) {
+
+        defaultAction=currentRule.getAction();
+
+        for (int i=idx; i < rules.size(); i++) {
+
+          rules.removeElementAt(i);
+
+        }
+
+      }
+
+      idx++;
+
+    }
+
+  }
+
+  if (rules.size() == 0) {
+
+    return defaultAction;
+
+  }
+
+  do {
+
+    currentRule=(WhitespaceRule)rules.lastElement();
+
+    if (currentRule.getAction() == defaultAction) {
+
+      rules.removeElementAt(rules.size() - 1);
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+ while (rules.size() > 0);
+
+  return defaultAction;
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * Sorts a range of rules with regard to PRIORITY only
+
+ */
+
+private static void quicksort(Vector rules,int p,int r){
+
+  while (p < r) {
+
+    final int q=partition(rules,p,r);
+
+    quicksort(rules,p,q);
+
+    p=q + 1;
+
+  }
+
+}
+
+Location: Whitespace.java
+
+Content: 
+
+/** 
+
+ * Takes a vector of WhitespaceRule objects and generates a predicate method. This method returns the translets default action for handling whitespace text-nodes: - USE_PREDICATE (run the method generated by this method) - STRIP_SPACE (always strip whitespace text-nodes) - PRESERVE_SPACE (always preserve whitespace text-nodes)
+
+ */
+
+public static int translateRules(Vector rules,ClassGenerator classGen){
+
+  final int defaultAction=prioritizeRules(rules);
+
+  if (rules.size() == 0) {
+
+    compileDefault(defaultAction,classGen);
+
+    return defaultAction;
+
+  }
+
+  compilePredicate(rules,defaultAction,classGen);
+
+  return USE_PREDICATE;
+
+}
+

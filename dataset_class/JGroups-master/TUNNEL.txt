@@ -1,0 +1,240 @@
+Location: TUNNEL.java
+
+Content: 
+
+private void disconnectStub(){
+
+  stubManager.disconnectStubs();
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public String getInfo(){
+
+  return stubManager.printStubs();
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public long getReconnectInterval(){
+
+  return reconnect_interval;
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public RouterStubManager getStubManager(){
+
+  return stubManager;
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public Object handleDownEvent(Event evt){
+
+  Object retEvent=super.handleDownEvent(evt);
+
+switch (evt.getType()) {
+
+case Event.CONNECT:
+
+case Event.CONNECT_WITH_STATE_TRANSFER:
+
+case Event.CONNECT_USE_FLUSH:
+
+case Event.CONNECT_WITH_STATE_TRANSFER_USE_FLUSH:
+
+    String group=evt.getArg();
+
+  Address local=local_addr;
+
+if (stubManager != null) stubManager.destroyStubs();
+
+PhysicalAddress physical_addr=getPhysicalAddressFromCache(local);
+
+String logical_name=org.jgroups.util.NameCache.get(local);
+
+stubManager=new RouterStubManager(this,group,local,logical_name,physical_addr,getReconnectInterval()).useNio(this.use_nio);
+
+for (InetSocketAddress gr : gossip_router_hosts) {
+
+stubManager.createAndRegisterStub(new IpAddress(bind_addr,bind_port),new IpAddress(gr.getAddress(),gr.getPort())).receiver(this).set("tcp_nodelay",tcp_nodelay);
+
+}
+
+stubManager.connectStubs();
+
+break;
+
+case Event.DISCONNECT:
+
+disconnectStub();
+
+break;
+
+}
+
+return retEvent;
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+@Override public void receive(GossipData data){
+
+switch (data.getType()) {
+
+case MESSAGE:
+
+    if (Objects.equals(local_addr,data.getSender()))     return;
+
+  byte[] msg=data.getBuffer();
+
+receive(data.getSender(),msg,0,msg.length);
+
+break;
+
+case SUSPECT:
+
+Address suspect=data.getAddress();
+
+if (suspect != null) {
+
+log.debug("%s: firing suspect event for %s",local_addr,suspect);
+
+up(new Event(Event.SUSPECT,Collections.singletonList(suspect)));
+
+}
+
+break;
+
+}
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public void sendMulticast(byte[] data,int offset,int length) throws Exception {
+
+  String group=cluster_name != null ? cluster_name.toString() : null;
+
+  tunnel_policy.sendToAllMembers(group,local_addr,data,offset,length);
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+protected void sendToSingleMember(final Address dest,byte[] buf,int offset,int length) throws Exception {
+
+  if (dest instanceof PhysicalAddress)   throw new IllegalArgumentException(String.format("destination %s cannot be a physical address",dest));
+
+  sendUnicast(dest,buf,offset,length);
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+protected void sendUnicast(Address dest,byte[] data,int offset,int length) throws Exception {
+
+  String group=cluster_name != null ? cluster_name.toString() : null;
+
+  tunnel_policy.sendToSingleMember(group,dest,local_addr,data,offset,length);
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public void sendUnicast(PhysicalAddress dest,byte[] data,int offset,int length) throws Exception {
+
+  String group=cluster_name != null ? cluster_name.toString() : null;
+
+  tunnel_policy.sendToSingleMember(group,dest,local_addr,data,offset,length);
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+@Property(description="A comma-separated list of GossipRouter hosts, e.g. HostA[12001],HostB[12001]") public void setGossipRouterHosts(String hosts) throws UnknownHostException {
+
+  gossip_router_hosts.clear();
+
+  if (hosts.startsWith("[") && hosts.endsWith("]")) {
+
+    hosts=hosts.substring(1,hosts.length() - 1);
+
+  }
+
+  gossip_router_hosts.addAll(Util.parseCommaDelimitedHosts2(hosts,1));
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public void setReconnectInterval(long reconnect_interval){
+
+  this.reconnect_interval=reconnect_interval;
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public synchronized void setTUNNELPolicy(TUNNELPolicy policy){
+
+  if (policy == null)   throw new IllegalArgumentException("Tunnel policy has to be non null");
+
+  tunnel_policy=policy;
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+/** 
+
+ * We can simply send a message with dest == null and the GossipRouter will take care of routing it to all members in the cluster 
+
+ */
+
+public boolean supportsMulticasting(){
+
+  return true;
+
+}
+
+Location: TUNNEL.java
+
+Content: 
+
+public TUNNEL(){
+
+}
+

@@ -1,0 +1,386 @@
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void forceSync(){
+
+  if (isClosed) {
+
+    return;
+
+  }
+
+  needsSync=false;
+
+synchronized (fileStreamOut) {
+
+    try {
+
+      fileStreamOut.flush();
+
+      outDescriptor.sync();
+
+      syncCount++;
+
+    }
+
+ catch (    IOException e) {
+
+      database.logger.logWarningEvent("ScriptWriter synch error: ",e);
+
+    }
+
+  }
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public int getWriteDelay(){
+
+  return writeDelay;
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+/** 
+
+ * File is opened in append mode although in current usage the file never pre-exists
+
+ */
+
+protected void openFile(){
+
+  try {
+
+    FileAccess fa=isUserScript ? FileUtil.getFileUtil() : database.logger.getFileAccess();
+
+    OutputStream fos=fa.openOutputStreamElement(outFile,true);
+
+    outDescriptor=fa.getFileSync(fos);
+
+    fileStreamOut=fos;
+
+    fileStreamOut=new BufferedOutputStream(fos,1 << 14);
+
+  }
+
+ catch (  IOException e) {
+
+    throw Error.error(e,ErrorCode.FILE_IO_ERROR,ErrorCode.M_Message_Pair,new Object[]{e.toString(),outFile});
+
+  }
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+ScriptWriterBase(Database db,OutputStream outputStream,FileAccess.FileSync descriptor,boolean includeCachedData){
+
+  initBuffers();
+
+  this.database=db;
+
+  this.includeCachedData=includeCachedData;
+
+  this.includeIndexRoots=!includeCachedData;
+
+  currentSession=database.sessionManager.getSysSession();
+
+  schemaToLog=currentSession.loggedSchema=currentSession.currentSchema;
+
+  fileStreamOut=new BufferedOutputStream(outputStream,1 << 14);
+
+  outDescriptor=descriptor;
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+ScriptWriterBase(Database db,String file,boolean includeCachedData,boolean isNewFile,boolean isUserScript){
+
+  initBuffers();
+
+  boolean exists=false;
+
+  if (isUserScript) {
+
+    exists=FileUtil.getFileUtil().exists(file);
+
+  }
+
+ else {
+
+    exists=db.logger.getFileAccess().isStreamElement(file);
+
+  }
+
+  if (exists && isNewFile) {
+
+    throw Error.error(ErrorCode.FILE_IO_ERROR,file);
+
+  }
+
+  this.database=db;
+
+  this.isUserScript=isUserScript;
+
+  this.includeCachedData=includeCachedData;
+
+  this.includeIndexRoots=!includeCachedData;
+
+  outFile=file;
+
+  currentSession=database.sessionManager.getSysSession();
+
+  schemaToLog=currentSession.loggedSchema=currentSession.currentSchema;
+
+  openFile();
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void setIncludeCachedData(boolean include){
+
+  this.includeCachedData=include;
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void setIncludeIndexRoots(boolean include){
+
+  this.includeIndexRoots=include;
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void setIncludeTableInit(boolean include){
+
+  this.includeTableInit=include;
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void setWriteDelay(int delay){
+
+  writeDelay=delay;
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+/** 
+
+ * Called internally or externally in write delay intervals.
+
+ */
+
+public void sync(){
+
+  if (isClosed) {
+
+    return;
+
+  }
+
+  if (needsSync) {
+
+    hongshuai();
+
+    if (isClosed) {
+
+      return;
+
+    }
+
+    needsSync=false;
+
+synchronized (fileStreamOut) {
+
+      try {
+
+        fileStreamOut.flush();
+
+        outDescriptor.sync();
+
+        syncCount++;
+
+      }
+
+ catch (      IOException e) {
+
+        database.logger.logWarningEvent("ScriptWriter synch error: ",e);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void writeAll(){
+
+  try {
+
+    writeDDL();
+
+    writeExistingData();
+
+  }
+
+ catch (  IOException e) {
+
+    throw Error.error(ErrorCode.FILE_IO_ERROR);
+
+  }
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void writeDDL() throws IOException {
+
+  Result ddlPart=database.getScript(includeIndexRoots);
+
+  writeSingleColumnResult(ddlPart);
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void writeExistingData() throws IOException {
+
+  currentSession.loggedSchema=null;
+
+  String[] schemas=database.schemaManager.getSchemaNamesArray();
+
+  for (int i=0; i < schemas.length; i++) {
+
+    String schema=schemas[i];
+
+    Iterator tables=database.schemaManager.databaseObjectIterator(schema,SchemaObject.TABLE);
+
+    while (tables.hasNext()) {
+
+      Table t=(Table)tables.next();
+
+      boolean script=false;
+
+switch (t.getTableType()) {
+
+case TableBase.MEMORY_TABLE:
+
+        script=true;
+
+      break;
+
+case TableBase.CACHED_TABLE:
+
+    script=includeCachedData;
+
+  break;
+
+case TableBase.TEXT_TABLE:
+
+script=includeCachedData && !t.isDataReadOnly();
+
+break;
+
+}
+
+try {
+
+if (script) {
+
+schemaToLog=t.getName().schema;
+
+writeTableInit(t);
+
+RowIterator it=t.rowIteratorClustered(currentSession);
+
+while (it.next()) {
+
+Row row=it.getCurrentRow();
+
+writeRow(currentSession,row,t);
+
+}
+
+writeTableTerm(t);
+
+}
+
+}
+
+ catch (Exception e) {
+
+throw Error.error(ErrorCode.FILE_IO_ERROR,e.toString());
+
+}
+
+}
+
+}
+
+writeDataTerm();
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+protected void writeSingleColumnResult(Result r) throws IOException {
+
+  RowSetNavigator nav=r.initialiseNavigator();
+
+  while (nav.next()) {
+
+    Object[] data=nav.getCurrent();
+
+    writeLogStatement(currentSession,(String)data[0]);
+
+  }
+
+}
+
+Location: ScriptWriterBase.java
+
+Content: 
+
+public void writeTableTerm(Table t) throws IOException {
+
+}
+

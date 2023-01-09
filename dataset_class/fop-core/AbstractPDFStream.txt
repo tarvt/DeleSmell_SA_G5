@@ -1,0 +1,280 @@
+Location: AbstractPDFStream.java
+
+Content: 
+
+protected AbstractPDFStream(){
+
+  this(true);
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+protected AbstractPDFStream(boolean encodeOnTheFly){
+
+  this(new PDFDictionary(),encodeOnTheFly);
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+protected AbstractPDFStream(PDFDictionary dictionary){
+
+  this(dictionary,true);
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+protected AbstractPDFStream(PDFDictionary dictionary,boolean encodeOnTheFly){
+
+  this.dictionary=dictionary;
+
+  dictionary.setParent(this);
+
+  this.encodeOnTheFly=encodeOnTheFly;
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+/** 
+
+ * Encodes and writes a stream directly to an OutputStream. The length of the stream, in this case, is set on a PDFNumber object that has to be prepared beforehand.
+
+ * @param out OutputStream to write to
+
+ * @param refLength PDFNumber object to receive the stream length
+
+ * @return number of bytes written (header and trailer included)
+
+ * @throws IOException in case of an I/O problem
+
+ */
+
+protected int encodeAndWriteStream(OutputStream out,PDFNumber refLength) throws IOException {
+
+  int bytesWritten=0;
+
+  byte[] buf=encode("\nstream\n");
+
+  out.write(buf);
+
+  bytesWritten+=buf.length;
+
+  CloseBlockerOutputStream cbout=new CloseBlockerOutputStream(out);
+
+  CountingOutputStream cout=new CountingOutputStream(cbout);
+
+  OutputStream filteredOutput=getFilterList().applyFilters(cout);
+
+  outputRawStreamData(filteredOutput);
+
+  filteredOutput.close();
+
+  refLength.setNumber(cout.getCount());
+
+  bytesWritten+=cout.getCount();
+
+  buf=encode("\nendstream");
+
+  out.write(buf);
+
+  bytesWritten+=buf.length;
+
+  return bytesWritten;
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+/** 
+
+ * Encodes the raw data stream for output to a PDF file.
+
+ * @return the encoded stream
+
+ * @throws IOException in case of an I/O problem
+
+ */
+
+protected StreamCache encodeStream() throws IOException {
+
+  final StreamCache encodedStream=StreamCacheFactory.getInstance().createStreamCache(getSizeHint());
+
+  OutputStream filteredOutput=getFilterList().applyFilters(encodedStream.getOutputStream());
+
+  outputRawStreamData(filteredOutput);
+
+  filteredOutput.flush();
+
+  filteredOutput.close();
+
+  return encodedStream;
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+/** 
+
+ * Returns the associated filter list.
+
+ * @return the filter list
+
+ */
+
+public PDFFilterList getFilterList(){
+
+  if (this.filters == null) {
+
+    if (getDocument() == null) {
+
+      this.filters=new PDFFilterList();
+
+    }
+
+ else {
+
+      this.filters=new PDFFilterList(getDocument().isEncryptionActive());
+
+    }
+
+    boolean hasFilterEntries=(get("Filter") != null);
+
+    if (hasFilterEntries) {
+
+      this.filters.setDisableAllFilters(true);
+
+    }
+
+  }
+
+  return this.filters;
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+/** 
+
+ * Output just the stream data enclosed by stream/endstream markers
+
+ * @param encodedStream already encoded/filtered stream to write
+
+ * @param out OutputStream to write to
+
+ * @return int number of bytes written
+
+ * @throws IOException in case of an I/O problem
+
+ */
+
+protected int outputStreamData(StreamCache encodedStream,OutputStream out) throws IOException {
+
+  int length=0;
+
+  byte[] p=encode("\nstream\n");
+
+  out.write(p);
+
+  length+=p.length;
+
+  encodedStream.outputContents(out);
+
+  length+=encodedStream.getSize();
+
+  p=encode("\nendstream");
+
+  out.write(p);
+
+  length+=p.length;
+
+  return length;
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+/** 
+
+ * Puts the given object in the dictionary associated to this stream.
+
+ * @param key the key in the dictionary
+
+ * @param value the value to store
+
+ */
+
+public void put(String key,Object value){
+
+  dictionary.put(key,value);
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+public void registerChildren(){
+
+  if (encodeOnTheFly) {
+
+    getDocument().registerObject(refLength);
+
+  }
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+@Override public void setDocument(PDFDocument doc){
+
+  dictionary.setDocument(doc);
+
+  super.setDocument(doc);
+
+}
+
+Location: AbstractPDFStream.java
+
+Content: 
+
+/** 
+
+ * Sets up the default filters for this stream if they haven't been set from outside.
+
+ */
+
+protected void setupFilterList(){
+
+  if (multipleFiltersAllowed() && !getFilterList().isInitialized()) {
+
+    getFilterList().addDefaultFilters(getDocumentSafely().getFilterMap(),getDefaultFilterName());
+
+  }
+
+  prepareImplicitFilters();
+
+  getDocument().applyEncryption(this);
+
+}
+

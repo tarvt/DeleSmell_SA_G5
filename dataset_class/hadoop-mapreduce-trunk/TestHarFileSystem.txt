@@ -1,0 +1,724 @@
+Location: TestHarFileSystem.java
+
+Content: 
+
+/** 
+
+ * check if the block size of the part files is what we had specified
+
+ */
+
+private void checkBlockSize(FileSystem fs,Path finalPath,long blockSize) throws IOException {
+
+  FileStatus[] statuses=fs.globStatus(new Path(finalPath,"part-*"));
+
+  for (  FileStatus status : statuses) {
+
+    assertTrue(status.getBlockSize() == blockSize);
+
+  }
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+private void checkBytes(Path harPath,Configuration conf) throws IOException {
+
+  Path harFilea=new Path(harPath,"a");
+
+  Path harFileb=new Path(harPath,"b");
+
+  Path harFilec=new Path(harPath,"c c");
+
+  FileSystem harFs=harFilea.getFileSystem(conf);
+
+  FSDataInputStream fin=harFs.open(harFilea);
+
+  byte[] b=new byte[4];
+
+  int readBytes=fin.read(b);
+
+  fin.close();
+
+  assertTrue("strings are equal ",(b[0] == "a".getBytes()[0]));
+
+  fin=harFs.open(harFileb);
+
+  fin.read(b);
+
+  fin.close();
+
+  assertTrue("strings are equal ",(b[0] == "b".getBytes()[0]));
+
+  fin=harFs.open(harFilec);
+
+  fin.read(b);
+
+  fin.close();
+
+  assertTrue("strings are equal ",(b[0] == "c".getBytes()[0]));
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+static void checkInvalidPath(String s,Configuration conf){
+
+  System.out.println("\ncheckInvalidPath: " + s);
+
+  final Path p=new Path(s);
+
+  try {
+
+    p.getFileSystem(conf);
+
+    Assert.fail(p + " is an invalid path.");
+
+  }
+
+ catch (  IOException e) {
+
+    System.out.println("GOOD: Got an exception.");
+
+    e.printStackTrace(System.out);
+
+  }
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+private void checkProperties(Path harPath,Configuration conf) throws IOException {
+
+  Path harFilea=new Path(harPath,"a");
+
+  Path harFileb=new Path(harPath,"b");
+
+  Path harFilec=new Path(harPath,"c c");
+
+  FileSystem harFs=harFilea.getFileSystem(conf);
+
+  Path nonharFilea=new Path(inputPath,"a");
+
+  Path nonharFileb=new Path(inputPath,"b");
+
+  Path nonharFilec=new Path(inputPath,"c c");
+
+  FileSystem nonharFs=nonharFilea.getFileSystem(conf);
+
+  assertEquals("Modification times do not match for a",harFs.getFileStatus(harFilea).getModificationTime(),nonharFs.getFileStatus(nonharFilea).getModificationTime());
+
+  assertEquals("Modification times do not match for b",harFs.getFileStatus(harFileb).getModificationTime(),nonharFs.getFileStatus(nonharFileb).getModificationTime());
+
+  assertEquals("Modification times do not match for c",harFs.getFileStatus(harFilec).getModificationTime(),nonharFs.getFileStatus(nonharFilec).getModificationTime());
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+public void testArchivesWithMapred() throws Exception {
+
+  fs.delete(archivePath,true);
+
+  Configuration conf=mapred.createJobConf();
+
+  HadoopArchives har=new HadoopArchives(conf);
+
+  String[] args=new String[4];
+
+  args[0]="-archiveName";
+
+  args[1]="foo.har";
+
+  args[2]="-p";
+
+  args[3]="/";
+
+  int ret=ToolRunner.run(har,args);
+
+  assertTrue(ret != 0);
+
+  args=new String[6];
+
+  args[0]="-archiveName";
+
+  args[1]="/d/foo.har";
+
+  args[2]="-p";
+
+  args[3]="/";
+
+  args[4]=inputrelPath.toString();
+
+  args[5]=archivePath.toString();
+
+  ret=ToolRunner.run(har,args);
+
+  assertTrue(ret != 0);
+
+  args[1]="foo.har";
+
+  args[5]=filec.toString();
+
+  ret=ToolRunner.run(har,args);
+
+  assertTrue(ret != 0);
+
+  args[0]="-archiveName";
+
+  args[1]="foo.har";
+
+  args[2]="-p";
+
+  args[3]="/";
+
+  args[4]=inputrelPath.toString();
+
+  args[5]=archivePath.toString();
+
+  ret=ToolRunner.run(har,args);
+
+  assertTrue(ret == 0);
+
+  ret=ToolRunner.run(har,args);
+
+  assertTrue(ret != 0);
+
+  Path finalPath=new Path(archivePath,"foo.har");
+
+  Path fsPath=new Path(inputPath.toUri().getPath());
+
+  String relative=fsPath.toString().substring(1);
+
+  Path filePath=new Path(finalPath,relative);
+
+  URI uri=fs.getUri();
+
+  Path harPath=new Path("har://" + "hdfs-" + uri.getHost() + ":"+ uri.getPort()+ filePath.toUri().getPath());
+
+  assertTrue(fs.exists(new Path(finalPath,"_index")));
+
+  assertTrue(fs.exists(new Path(finalPath,"_masterindex")));
+
+  assertTrue(!fs.exists(new Path(finalPath,"_logs")));
+
+  FsShell shell=new FsShell(conf);
+
+  args=new String[2];
+
+  args[0]="-ls";
+
+  args[1]=harPath.toString();
+
+  ret=ToolRunner.run(shell,args);
+
+  assertTrue((ret == 0));
+
+  Path harFilea=new Path(harPath,"a");
+
+  Path harFileb=new Path(harPath,"b");
+
+  Path harFilec=new Path(harPath,"c c");
+
+  FileSystem harFs=harFilea.getFileSystem(conf);
+
+  FSDataInputStream fin=harFs.open(harFilea);
+
+  byte[] b=new byte[4];
+
+  int readBytes=fin.read(b);
+
+  assertTrue("Empty read.",readBytes > 0);
+
+  fin.close();
+
+  assertTrue("strings are equal ",(b[0] == "a".getBytes()[0]));
+
+  fin=harFs.open(harFileb);
+
+  readBytes=fin.read(b);
+
+  assertTrue("Empty read.",readBytes > 0);
+
+  fin.close();
+
+  assertTrue("strings are equal ",(b[0] == "b".getBytes()[0]));
+
+  fin=harFs.open(harFilec);
+
+  readBytes=fin.read(b);
+
+  assertTrue("Empty read.",readBytes > 0);
+
+  fin.close();
+
+  assertTrue("strings are equal ",(b[0] == "c".getBytes()[0]));
+
+  FileSystem fsHar=harPath.getFileSystem(conf);
+
+  FileStatus[] bla=fsHar.listStatus(harPath);
+
+  Path outdir=new Path(fs.getHomeDirectory(),"mapout");
+
+  JobConf jobconf=mapred.createJobConf();
+
+  FileInputFormat.addInputPath(jobconf,harPath);
+
+  jobconf.setInputFormat(TextInputFormat.class);
+
+  jobconf.setOutputFormat(TextOutputFormat.class);
+
+  FileOutputFormat.setOutputPath(jobconf,outdir);
+
+  jobconf.setMapperClass(TextMapperReducer.class);
+
+  jobconf.setMapOutputKeyClass(Text.class);
+
+  jobconf.setMapOutputValueClass(Text.class);
+
+  jobconf.setReducerClass(TextMapperReducer.class);
+
+  jobconf.setNumReduceTasks(1);
+
+  JobClient.runJob(jobconf);
+
+  args[1]=outdir.toString();
+
+  ret=ToolRunner.run(shell,args);
+
+  FileStatus[] status=fs.globStatus(new Path(outdir,"part*"));
+
+  Path reduceFile=status[0].getPath();
+
+  FSDataInputStream reduceIn=fs.open(reduceFile);
+
+  b=new byte[6];
+
+  readBytes=reduceIn.read(b);
+
+  assertTrue("Should read 6 bytes instead of " + readBytes + ".",readBytes == 6);
+
+  Text readTxt=new Text(b);
+
+  assertTrue("a\nb\nc\n".equals(readTxt.toString()));
+
+  assertTrue("number of bytes left should be -1",reduceIn.read(b) == -1);
+
+  reduceIn.close();
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+@Test public void testFileChecksum(){
+
+  final Path p=new Path("har://file-localhost/foo.har/file1");
+
+  final HarFileSystem harfs=new HarFileSystem();
+
+  Assert.assertEquals(null,harfs.getFileChecksum(p));
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Test how block location offsets and lengths are fixed.
+
+ */
+
+@Test public void testFixBlockLocations(){
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,0,20,5);
+
+    assertEquals(b[0].getOffset(),5);
+
+    assertEquals(b[0].getLength(),10);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,0,20,15);
+
+    assertEquals(b[0].getOffset(),0);
+
+    assertEquals(b[0].getLength(),5);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,0,10,5);
+
+    assertEquals(b[0].getOffset(),5);
+
+    assertEquals(b[0].getLength(),5);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,0,6,12);
+
+    assertEquals(b[0].getOffset(),0);
+
+    assertEquals(b[0].getLength(),6);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,3,20,5);
+
+    assertEquals(b[0].getOffset(),5);
+
+    assertEquals(b[0].getLength(),10);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,3,20,15);
+
+    assertEquals(b[0].getOffset(),3);
+
+    assertEquals(b[0].getLength(),2);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,3,7,5);
+
+    assertEquals(b[0].getOffset(),5);
+
+    assertEquals(b[0].getLength(),5);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,10,10)};
+
+    HarFileSystem.fixBlockLocations(b,3,3,12);
+
+    assertEquals(b[0].getOffset(),3);
+
+    assertEquals(b[0].getLength(),3);
+
+  }
+
+{
+
+    BlockLocation[] b={new BlockLocation(null,null,512,512),new BlockLocation(null,null,1024,512)};
+
+    HarFileSystem.fixBlockLocations(b,0,512,896);
+
+    assertEquals(b[0].getOffset(),0);
+
+    assertEquals(b[0].getLength(),128);
+
+    assertEquals(b[1].getOffset(),128);
+
+    assertEquals(b[1].getLength(),384);
+
+  }
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+public void testGetFileBlockLocations() throws Exception {
+
+  fs.delete(archivePath,true);
+
+  Configuration conf=mapred.createJobConf();
+
+  HadoopArchives har=new HadoopArchives(conf);
+
+  String[] args=new String[8];
+
+  args[0]="-Dhar.block.size=512";
+
+  args[1]="-Dhar.partfile.size=1";
+
+  args[2]="-archiveName";
+
+  args[3]="foo bar.har";
+
+  args[4]="-p";
+
+  args[5]=fs.getHomeDirectory().toString();
+
+  args[6]="test";
+
+  args[7]=archivePath.toString();
+
+  int ret=ToolRunner.run(har,args);
+
+  assertTrue("failed test",ret == 0);
+
+  Path finalPath=new Path(archivePath,"foo bar.har");
+
+  Path fsPath=new Path(inputPath.toUri().getPath());
+
+  Path filePath=new Path(finalPath,"test");
+
+  Path filea=new Path(filePath,"a");
+
+  Path harPath=new Path("har://" + filea.toUri().getPath());
+
+  FileSystem harFs=harPath.getFileSystem(conf);
+
+  FileStatus[] statuses=harFs.listStatus(filePath);
+
+  for (  FileStatus status : statuses) {
+
+    BlockLocation[] locations=harFs.getFileBlockLocations(status,0,status.getLen());
+
+    long lastOffset=0;
+
+    assertEquals("Only one block location expected for files this small",1,locations.length);
+
+    assertEquals("Block location should start at offset 0",0,locations[0].getOffset());
+
+  }
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+@Test public void testHarUri(){
+
+  final Configuration conf=new Configuration();
+
+  checkInvalidPath("har://hdfs-/foo.har",conf);
+
+  checkInvalidPath("har://hdfs/foo.har",conf);
+
+  checkInvalidPath("har://-hdfs/foo.har",conf);
+
+  checkInvalidPath("har://-/foo.har",conf);
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+public void testRelativeArchives() throws Exception {
+
+  fs.delete(archivePath,true);
+
+  Configuration conf=mapred.createJobConf();
+
+  HadoopArchives har=new HadoopArchives(conf);
+
+{
+
+    String[] args=new String[6];
+
+    args[0]="-archiveName";
+
+    args[1]="foo1.har";
+
+    args[2]="-p";
+
+    args[3]=fs.getHomeDirectory().toString();
+
+    args[4]="test";
+
+    args[5]=archivePath.toString();
+
+    int ret=ToolRunner.run(har,args);
+
+    assertTrue("failed test",ret == 0);
+
+    Path finalPath=new Path(archivePath,"foo1.har");
+
+    Path fsPath=new Path(inputPath.toUri().getPath());
+
+    Path filePath=new Path(finalPath,"test");
+
+    Path harPath=new Path("har://" + filePath.toUri().getPath());
+
+    assertTrue(fs.exists(new Path(finalPath,"_index")));
+
+    assertTrue(fs.exists(new Path(finalPath,"_masterindex")));
+
+    assertTrue(fs.exists(new Path(finalPath,"part-0")));
+
+    assertTrue(!fs.exists(new Path(finalPath,"part-1")));
+
+    assertTrue(!fs.exists(new Path(finalPath,"part-2")));
+
+    assertTrue(!fs.exists(new Path(finalPath,"_logs")));
+
+    FileStatus[] statuses=fs.listStatus(finalPath);
+
+    args=new String[2];
+
+    args[0]="-ls";
+
+    args[1]=harPath.toString();
+
+    FsShell shell=new FsShell(conf);
+
+    ret=ToolRunner.run(shell,args);
+
+    assertTrue(ret == 0);
+
+    checkBytes(harPath,conf);
+
+    checkProperties(harPath,conf);
+
+    checkBlockSize(fs,finalPath,512 * 1024 * 1024l);
+
+  }
+
+{
+
+    String[] args=new String[8];
+
+    args[0]="-Dhar.block.size=512";
+
+    args[1]="-Dhar.partfile.size=1";
+
+    args[2]="-archiveName";
+
+    args[3]="foo.har";
+
+    args[4]="-p";
+
+    args[5]=fs.getHomeDirectory().toString();
+
+    args[6]="test";
+
+    args[7]=archivePath.toString();
+
+    int ret=ToolRunner.run(har,args);
+
+    assertTrue("failed test",ret == 0);
+
+    Path finalPath=new Path(archivePath,"foo.har");
+
+    Path fsPath=new Path(inputPath.toUri().getPath());
+
+    Path filePath=new Path(finalPath,"test");
+
+    Path harPath=new Path("har://" + filePath.toUri().getPath());
+
+    assertTrue(fs.exists(new Path(finalPath,"_index")));
+
+    assertTrue(fs.exists(new Path(finalPath,"_masterindex")));
+
+    assertTrue(fs.exists(new Path(finalPath,"part-0")));
+
+    assertTrue(fs.exists(new Path(finalPath,"part-1")));
+
+    assertTrue(fs.exists(new Path(finalPath,"part-2")));
+
+    assertTrue(!fs.exists(new Path(finalPath,"_logs")));
+
+    FileStatus[] statuses=fs.listStatus(finalPath);
+
+    args=new String[2];
+
+    args[0]="-ls";
+
+    args[1]=harPath.toString();
+
+    FsShell shell=new FsShell(conf);
+
+    ret=ToolRunner.run(shell,args);
+
+    assertTrue(ret == 0);
+
+    checkBytes(harPath,conf);
+
+    checkProperties(harPath,conf);
+
+    checkBlockSize(fs,finalPath,512);
+
+  }
+
+}
+
+Location: TestHarFileSystem.java
+
+Content: 
+
+public void testSpaces() throws Exception {
+
+  fs.delete(archivePath,true);
+
+  Configuration conf=mapred.createJobConf();
+
+  HadoopArchives har=new HadoopArchives(conf);
+
+  String[] args=new String[6];
+
+  args[0]="-archiveName";
+
+  args[1]="foo bar.har";
+
+  args[2]="-p";
+
+  args[3]=fs.getHomeDirectory().toString();
+
+  args[4]="test";
+
+  args[5]=archivePath.toString();
+
+  int ret=ToolRunner.run(har,args);
+
+  assertTrue("failed test",ret == 0);
+
+  Path finalPath=new Path(archivePath,"foo bar.har");
+
+  Path fsPath=new Path(inputPath.toUri().getPath());
+
+  Path filePath=new Path(finalPath,"test");
+
+  Path harPath=new Path("har://" + filePath.toUri().getPath());
+
+  FileSystem harFs=harPath.getFileSystem(conf);
+
+  FileStatus[] statuses=harFs.listStatus(finalPath);
+
+}
+

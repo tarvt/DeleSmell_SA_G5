@@ -1,0 +1,266 @@
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+private int readInt(byte[] bytes){
+
+  return ((0xFF & bytes[0]) << 8) | (0xFF & bytes[1]);
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+private int readLong(byte[] bytes){
+
+  return ((0xFF & bytes[0]) << 24) | ((0xFF & bytes[1]) << 16) | ((0xFF & bytes[2]) << 8)| (0xFF & bytes[3]);
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+private String readTag(byte[] tag){
+
+  return new String(tag);
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+/** 
+
+ * Verifies the font segment data copied originally from the TrueType font. Data was verified using TrueType Font Analyzer and PCLParaphernalia tool.
+
+ * @param reader The reader
+
+ * @throws IOException
+
+ */
+
+private void validateFontSegments(PCLTTFFontReader reader) throws IOException {
+
+  HashMap<Character,Integer> mappedChars=new HashMap<Character,Integer>();
+
+  mappedChars.put('H',1);
+
+  mappedChars.put('e',1);
+
+  mappedChars.put('l',1);
+
+  mappedChars.put('o',1);
+
+  List<PCLFontSegment> segments=reader.getFontSegments(mappedChars);
+
+  assertEquals(segments.size(),5);
+
+  for (  PCLFontSegment segment : segments) {
+
+    if (segment.getIdentifier() == SegmentID.PA) {
+
+      assertEquals(segment.getData().length,10);
+
+      byte[] panose={2,6,6,3,5,6,5,2,2,4};
+
+      assertArrayEquals(segment.getData(),panose);
+
+    }
+
+ else     if (segment.getIdentifier() == SegmentID.GT) {
+
+      verifyGlobalTrueTypeData(segment,mappedChars.size());
+
+    }
+
+ else     if (segment.getIdentifier() == SegmentID.NULL) {
+
+      assertEquals(segment.getData().length,0);
+
+    }
+
+  }
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+private void validateOffsets(PCLTTFFontReader reader) throws IOException {
+
+  Map<Integer,int[]> offsets=reader.getCharacterOffsets();
+
+  int[] charC={27644,144};
+
+  int[] charDollar={16044,264};
+
+  int[] charOne={17808,176};
+
+  int[] charUpperD={21236,148};
+
+  int[] charUpperJ={22140,176};
+
+  assertArrayEquals(offsets.get(99),charC);
+
+  assertArrayEquals(offsets.get(36),charDollar);
+
+  assertArrayEquals(offsets.get(49),charOne);
+
+  assertArrayEquals(offsets.get(68),charUpperD);
+
+  assertArrayEquals(offsets.get(74),charUpperJ);
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+@Test public void verifyFontAData() throws Exception {
+
+  CustomFont sbFont=mock(CustomFont.class);
+
+  when(sbFont.getInputStream()).thenReturn(new FileInputStream(new File(TEST_FONT_A)));
+
+  when(customFont.getRealFont()).thenReturn(sbFont);
+
+  SingleByteFont font=mock(SingleByteFont.class);
+
+  when(font.getGIDFromChar('h')).thenReturn(104);
+
+  when(font.getGIDFromChar('e')).thenReturn(101);
+
+  when(font.getGIDFromChar('l')).thenReturn(108);
+
+  when(font.getGIDFromChar('o')).thenReturn(111);
+
+  PCLTTFFontReader reader=new MockPCLTTFFontReader(customFont);
+
+  reader.setFont(font);
+
+  verifyFontData(reader);
+
+  validateOffsets(reader);
+
+  validateFontSegments(reader);
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+/** 
+
+ * Compares the input font data against a sample of the data read and calculated by the reader. The assertions are made against data taken from the TrueType Font Analyzer tool.
+
+ * @param reader The reader
+
+ */
+
+private void verifyFontData(PCLTTFFontReader reader){
+
+  assertEquals(reader.getCellWidth(),5015);
+
+  assertEquals(reader.getCellHeight(),3254);
+
+  assertEquals(reader.getCapHeight(),0);
+
+  assertEquals(reader.getFontName(),"DejaVu LGC Serif");
+
+  assertEquals(reader.getFirstCode(),32);
+
+  assertEquals(reader.getLastCode(),255);
+
+  assertEquals(reader.getStrokeWeight(),0);
+
+  assertEquals(reader.getSerifStyle(),128);
+
+  assertEquals(reader.getWidthType(),0);
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+private void verifyGlobalTrueTypeData(PCLFontSegment segment,int mappedCharsSize) throws IOException {
+
+  byte[] ttfData=segment.getData();
+
+  int currentPos=0;
+
+  assertEquals(readInt(new byte[]{ttfData[currentPos++],ttfData[currentPos++]}),1);
+
+  assertEquals(readInt(new byte[]{ttfData[currentPos++],ttfData[currentPos++]}),0);
+
+  int numTables=readInt(new byte[]{ttfData[currentPos++],ttfData[currentPos++]});
+
+  assertEquals(numTables,8);
+
+  assertEquals(readInt(new byte[]{ttfData[currentPos++],ttfData[currentPos++]}),128);
+
+  assertEquals(readInt(new byte[]{ttfData[currentPos++],ttfData[currentPos++]}),3);
+
+  assertEquals(readInt(new byte[]{ttfData[currentPos++],ttfData[currentPos++]}),0);
+
+  String[] validTags={"head","hhea","hmtx","maxp","gdir"};
+
+  int matches=0;
+
+  for (int i=0; i < numTables; i++) {
+
+    String tag=readTag(new byte[]{ttfData[currentPos++],ttfData[currentPos++],ttfData[currentPos++],ttfData[currentPos++]});
+
+    if (Arrays.asList(validTags).contains(tag)) {
+
+      matches++;
+
+    }
+
+    if (tag.equals("hmtx")) {
+
+      currentPos+=4;
+
+      int offset=readLong(new byte[]{ttfData[currentPos++],ttfData[currentPos++],ttfData[currentPos++],ttfData[currentPos++]});
+
+      int length=readLong(new byte[]{ttfData[currentPos++],ttfData[currentPos++],ttfData[currentPos++],ttfData[currentPos++]});
+
+      verifyHmtx(ttfData,offset,length,mappedCharsSize);
+
+    }
+
+ else {
+
+      currentPos+=12;
+
+    }
+
+  }
+
+  assertEquals(matches,5);
+
+}
+
+Location: PCLTTFFontReaderTestCase.java
+
+Content: 
+
+private void verifyHmtx(byte[] ttfData,int offset,int length,int mappedCharsSize) throws IOException {
+
+  ByteArrayInputStream bais=new ByteArrayInputStream(ttfData);
+
+  byte[] subsetHmtx=new byte[length];
+
+  bais.skip(offset);
+
+  bais.read(subsetHmtx);
+
+  assertEquals(subsetHmtx.length,(mappedCharsSize + 32) * 4);
+
+}
+

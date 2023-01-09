@@ -1,0 +1,260 @@
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Constructs a new FOP-style transcoder.
+
+ */
+
+public AbstractFOPTranscoder(){
+
+  hints.put(KEY_DOCUMENT_ELEMENT_NAMESPACE_URI,SVGConstants.SVG_NAMESPACE_URI);
+
+  hints.put(KEY_DOCUMENT_ELEMENT,SVGConstants.SVG_SVG_TAG);
+
+  hints.put(KEY_DOM_IMPLEMENTATION,SVGDOMImplementation.getDOMImplementation());
+
+}
+
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@link DocumentFactory} that is used to create an SVG DOMtree. The specified DOM Implementation is ignored and the Batik SVG DOM Implementation is automatically used.
+
+ * @param domImpl the DOM Implementation (not used)
+
+ * @param parserClassname the XML parser classname
+
+ * @return the document factory
+
+ */
+
+protected DocumentFactory createDocumentFactory(DOMImplementation domImpl,String parserClassname){
+
+  final FOPSAXSVGDocumentFactory factory=new FOPSAXSVGDocumentFactory(parserClassname);
+
+  if (this.resolver != null) {
+
+    factory.setAdditionalEntityResolver(this.resolver);
+
+  }
+
+  return factory;
+
+}
+
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Returns the default value for the KEY_AUTO_FONTS value.
+
+ * @return the default value
+
+ */
+
+protected boolean getAutoFontsDefault(){
+
+  return true;
+
+}
+
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Returns the device resolution that has been set up.
+
+ * @return the device resolution (in dpi)
+
+ */
+
+protected float getDeviceResolution(){
+
+  if (hints.containsKey(KEY_DEVICE_RESOLUTION)) {
+
+    return (Float)hints.get(KEY_DEVICE_RESOLUTION);
+
+  }
+
+ else {
+
+    return GraphicsConstants.DEFAULT_DPI;
+
+  }
+
+}
+
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Returns the effective configuration for the transcoder.
+
+ * @return the effective configuration
+
+ */
+
+protected Configuration getEffectiveConfiguration(){
+
+  Configuration effCfg=this.cfg;
+
+  if (effCfg == null) {
+
+    boolean autoFonts=getAutoFontsDefault();
+
+    if (hints.containsKey(KEY_AUTO_FONTS)) {
+
+      autoFonts=(Boolean)hints.get(KEY_AUTO_FONTS);
+
+    }
+
+    if (autoFonts) {
+
+      DefaultConfiguration c=new DefaultConfiguration("cfg");
+
+      DefaultConfiguration fonts=new DefaultConfiguration("fonts");
+
+      c.addChild(fonts);
+
+      DefaultConfiguration autodetect=new DefaultConfiguration("auto-detect");
+
+      fonts.addChild(autodetect);
+
+      effCfg=c;
+
+    }
+
+  }
+
+  return effCfg;
+
+}
+
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Indicates whether text should be stroked rather than painted using text operators. Stroking text (also referred to as "painting as shapes") can used in situations where the quality of text output is not satisfying. The downside of the work-around: The generated file will likely become bigger and you will lose copy/paste functionality for certain output formats such as PDF.
+
+ * @return true if text should be stroked rather than painted using text operators
+
+ */
+
+protected boolean isTextStroked(){
+
+  boolean stroke=false;
+
+  if (hints.containsKey(KEY_STROKE_TEXT)) {
+
+    stroke=(Boolean)hints.get(KEY_STROKE_TEXT);
+
+  }
+
+  return stroke;
+
+}
+
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Sets the EntityResolver that should be used when building SVG documents.
+
+ * @param resolver the resolver
+
+ */
+
+public void setEntityResolver(EntityResolver resolver){
+
+  this.resolver=resolver;
+
+}
+
+Location: AbstractFOPTranscoder.java
+
+Content: 
+
+/** 
+
+ * Sets up the image infrastructure (the image loading framework).
+
+ * @param baseURI the base URI of the current document
+
+ */
+
+protected void setupImageInfrastructure(final String baseURI){
+
+  final ImageContext imageContext=new ImageContext(){
+
+    public float getSourceResolution(){
+
+      return UnitConv.IN2MM / userAgent.getPixelUnitToMillimeter();
+
+    }
+
+  }
+
+;
+
+  this.imageManager=new ImageManager(imageContext);
+
+  this.imageSessionContext=new AbstractImageSessionContext(){
+
+    public ImageContext getParentContext(){
+
+      return imageContext;
+
+    }
+
+    public float getTargetResolution(){
+
+      return getDeviceResolution();
+
+    }
+
+    public Source resolveURI(    String uri){
+
+      try {
+
+        ParsedURL url=new ParsedURL(baseURI,uri);
+
+        InputStream in=url.openStream();
+
+        StreamSource source=new StreamSource(in,url.toString());
+
+        return source;
+
+      }
+
+ catch (      IOException ioe) {
+
+        userAgent.displayError(ioe);
+
+        return null;
+
+      }
+
+    }
+
+  }
+
+;
+
+}
+

@@ -1,0 +1,194 @@
+Location: NotificationTestCase.java
+
+Content: 
+
+protected JobConf createJobConf(){
+
+  JobConf conf=super.createJobConf();
+
+  conf.setJobEndNotificationURI(getNotificationUrlTemplate());
+
+  conf.setInt(JobContext.END_NOTIFICATION_RETRIES,3);
+
+  conf.setInt(JobContext.END_NOTIFICATION_RETRIE_INTERVAL,200);
+
+  return conf;
+
+}
+
+Location: NotificationTestCase.java
+
+Content: 
+
+private String getNotificationUrlTemplate(){
+
+  return "http://localhost:" + port + contextPath+ servletPath+ "?jobId=$jobId&amp;jobStatus=$jobStatus";
+
+}
+
+Location: NotificationTestCase.java
+
+Content: 
+
+private String launchWordCount(JobConf conf,String input,int numMaps,int numReduces) throws IOException {
+
+  Path inDir=new Path("testing/wc/input");
+
+  Path outDir=new Path("testing/wc/output");
+
+  if (isLocalFS()) {
+
+    String localPathRoot=System.getProperty("test.build.data","/tmp").toString().replace(' ','+');
+
+    ;
+
+    inDir=new Path(localPathRoot,inDir);
+
+    outDir=new Path(localPathRoot,outDir);
+
+  }
+
+  FileSystem fs=FileSystem.get(conf);
+
+  fs.delete(outDir,true);
+
+  if (!fs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+{
+
+    DataOutputStream file=fs.create(new Path(inDir,"part-0"));
+
+    file.writeBytes(input);
+
+    file.close();
+
+  }
+
+  conf.setJobName("wordcount");
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setOutputKeyClass(Text.class);
+
+  conf.setOutputValueClass(IntWritable.class);
+
+  conf.setMapperClass(WordCount.MapClass.class);
+
+  conf.setCombinerClass(WordCount.Reduce.class);
+
+  conf.setReducerClass(WordCount.Reduce.class);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  conf.setNumMapTasks(numMaps);
+
+  conf.setNumReduceTasks(numReduces);
+
+  JobClient.runJob(conf);
+
+  return MapReduceTestUtil.readOutput(outDir,conf);
+
+}
+
+Location: NotificationTestCase.java
+
+Content: 
+
+protected NotificationTestCase(int mode) throws IOException {
+
+  super(mode,HadoopTestCase.LOCAL_FS,1,1);
+
+}
+
+Location: NotificationTestCase.java
+
+Content: 
+
+private void startHttpServer() throws Exception {
+
+  if (webServer != null) {
+
+    webServer.stop();
+
+    webServer=null;
+
+  }
+
+  webServer=new Server(0);
+
+  Context context=new Context(webServer,contextPath);
+
+  context.addServlet(new ServletHolder(new NotificationServlet()),servletPath);
+
+  webServer.start();
+
+  port=webServer.getConnectors()[0].getLocalPort();
+
+}
+
+Location: NotificationTestCase.java
+
+Content: 
+
+private void stopHttpServer() throws Exception {
+
+  if (webServer != null) {
+
+    webServer.stop();
+
+    webServer.destroy();
+
+    webServer=null;
+
+  }
+
+}
+
+Location: NotificationTestCase.java
+
+Content: 
+
+public void testMR() throws Exception {
+
+  System.out.println(launchWordCount(this.createJobConf(),"a b c d e f g h",1,1));
+
+  Thread.sleep(2000);
+
+  assertEquals(2,NotificationServlet.counter);
+
+  Path inDir=new Path("notificationjob/input");
+
+  Path outDir=new Path("notificationjob/output");
+
+  if (isLocalFS()) {
+
+    String localPathRoot=System.getProperty("test.build.data","/tmp").toString().replace(' ','+');
+
+    ;
+
+    inDir=new Path(localPathRoot,inDir);
+
+    outDir=new Path(localPathRoot,outDir);
+
+  }
+
+  System.out.println(UtilsForTests.runJobKill(this.createJobConf(),inDir,outDir).getID());
+
+  Thread.sleep(2000);
+
+  assertEquals(4,NotificationServlet.counter);
+
+  System.out.println(UtilsForTests.runJobFail(this.createJobConf(),inDir,outDir).getID());
+
+  Thread.sleep(2000);
+
+  assertEquals(6,NotificationServlet.counter);
+
+}
+

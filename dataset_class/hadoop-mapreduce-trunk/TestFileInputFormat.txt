@@ -1,0 +1,274 @@
+Location: TestFileInputFormat.java
+
+Content: 
+
+private void createInputs(FileSystem fs,Path inDir,String fileName) throws IOException {
+
+  DataOutputStream out=fs.create(new Path(inDir,fileName),true,4096,(short)2,512,null);
+
+  for (int i=0; i < 1000; ++i) {
+
+    out.writeChars("Hello\n");
+
+  }
+
+  out.close();
+
+  System.out.println("Wrote file");
+
+}
+
+Location: TestFileInputFormat.java
+
+Content: 
+
+private MiniDFSCluster newDFSCluster(JobConf conf) throws Exception {
+
+  return new MiniDFSCluster(conf,4,true,new String[]{"/rack0","/rack0","/rack1","/rack1"},new String[]{"host0","host1","host2","host3"});
+
+}
+
+Location: TestFileInputFormat.java
+
+Content: 
+
+@Test public void testAddInputPath() throws IOException {
+
+  final Configuration conf=new Configuration();
+
+  conf.set("fs.default.name","s3://abc:xyz@hostname/");
+
+  final Job j=Job.getInstance(conf);
+
+  j.getConfiguration().set("fs.default.name","s3://abc:xyz@hostname/");
+
+  final FileSystem defaultfs=FileSystem.get(conf);
+
+  System.out.println("defaultfs.getUri() = " + defaultfs.getUri());
+
+{
+
+    final Path original=new Path("file:/foo");
+
+    System.out.println("original = " + original);
+
+    FileInputFormat.addInputPath(j,original);
+
+    final Path[] results=FileInputFormat.getInputPaths(j);
+
+    System.out.println("results = " + Arrays.asList(results));
+
+    assertEquals(1,results.length);
+
+    assertEquals(original,results[0]);
+
+  }
+
+{
+
+    final Path original=new Path("file:/bar");
+
+    System.out.println("original = " + original);
+
+    FileInputFormat.setInputPaths(j,original);
+
+    final Path[] results=FileInputFormat.getInputPaths(j);
+
+    System.out.println("results = " + Arrays.asList(results));
+
+    assertEquals(1,results.length);
+
+    assertEquals(original,results[0]);
+
+  }
+
+}
+
+Location: TestFileInputFormat.java
+
+Content: 
+
+public void testLocality() throws Exception {
+
+  JobConf job=new JobConf(conf);
+
+  dfs=newDFSCluster(job);
+
+  FileSystem fs=dfs.getFileSystem();
+
+  System.out.println("FileSystem " + fs.getUri());
+
+  Path inputDir=new Path("/foo/");
+
+  String fileName="part-0000";
+
+  createInputs(fs,inputDir,fileName);
+
+  TextInputFormat.addInputPath(job,inputDir);
+
+  TextInputFormat inFormat=new TextInputFormat();
+
+  inFormat.configure(job);
+
+  InputSplit[] splits=inFormat.getSplits(job,1);
+
+  FileStatus fileStatus=fs.getFileStatus(new Path(inputDir,fileName));
+
+  BlockLocation[] locations=fs.getFileBlockLocations(fileStatus,0,fileStatus.getLen());
+
+  System.out.println("Made splits");
+
+  for (int i=0; i < splits.length; ++i) {
+
+    FileSplit fileSplit=(FileSplit)splits[i];
+
+    System.out.println("File split: " + fileSplit);
+
+    for (    String h : fileSplit.getLocations()) {
+
+      System.out.println("Location: " + h);
+
+    }
+
+    System.out.println("Block: " + locations[i]);
+
+    assertEquals(locations[i].getOffset(),fileSplit.getStart());
+
+    assertEquals(locations[i].getLength(),fileSplit.getLength());
+
+    String[] blockLocs=locations[i].getHosts();
+
+    String[] splitLocs=fileSplit.getLocations();
+
+    assertEquals(2,blockLocs.length);
+
+    assertEquals(2,splitLocs.length);
+
+    assertTrue((blockLocs[0].equals(splitLocs[0]) && blockLocs[1].equals(splitLocs[1])) || (blockLocs[1].equals(splitLocs[0]) && blockLocs[0].equals(splitLocs[1])));
+
+  }
+
+  assertEquals("Expected value of " + FileInputFormat.NUM_INPUT_FILES,1,job.getLong(FileInputFormat.NUM_INPUT_FILES,0));
+
+}
+
+Location: TestFileInputFormat.java
+
+Content: 
+
+public void testMultiLevelInput() throws IOException {
+
+  JobConf job=new JobConf(conf);
+
+  job.setBoolean("dfs.replication.considerLoad",false);
+
+  dfs=new MiniDFSCluster(job,1,true,rack1,hosts1);
+
+  dfs.waitActive();
+
+  String namenode=(dfs.getFileSystem()).getUri().getHost() + ":" + (dfs.getFileSystem()).getUri().getPort();
+
+  FileSystem fileSys=dfs.getFileSystem();
+
+  if (!fileSys.mkdirs(dir1)) {
+
+    throw new IOException("Mkdirs failed to create " + root.toString());
+
+  }
+
+  writeFile(job,file1,(short)1,1);
+
+  writeFile(job,file2,(short)1,1);
+
+  DummyFileInputFormat inFormat=new DummyFileInputFormat();
+
+  inFormat.setInputPaths(job,root);
+
+  boolean exceptionThrown=false;
+
+  try {
+
+    InputSplit[] splits=inFormat.getSplits(job,1);
+
+  }
+
+ catch (  Exception e) {
+
+    exceptionThrown=true;
+
+  }
+
+  assertTrue("Exception should be thrown by default for scanning a " + "directory with directories inside.",exceptionThrown);
+
+  job.setBoolean("mapred.input.dir.recursive",true);
+
+  InputSplit[] splits=inFormat.getSplits(job,1);
+
+  assertEquals(splits.length,2);
+
+}
+
+Location: TestFileInputFormat.java
+
+Content: 
+
+@Test public void testNumInputFiles() throws Exception {
+
+  Configuration conf=spy(new Configuration());
+
+  Job job=make(stub(Job.class).returning(conf).from.getConfiguration());
+
+  FileStatus stat=make(stub(FileStatus.class).returning(0L).from.getLen());
+
+  TextInputFormat ispy=spy(new TextInputFormat());
+
+  doReturn(Arrays.asList(stat)).when(ispy).listStatus(job);
+
+  ispy.getSplits(job);
+
+  verify(conf).setLong(FileInputFormat.NUM_INPUT_FILES,1);
+
+}
+
+Location: TestFileInputFormat.java
+
+Content: 
+
+public void testNumInputs() throws Exception {
+
+  JobConf job=new JobConf(conf);
+
+  dfs=newDFSCluster(job);
+
+  FileSystem fs=dfs.getFileSystem();
+
+  System.out.println("FileSystem " + fs.getUri());
+
+  Path inputDir=new Path("/foo/");
+
+  final int numFiles=10;
+
+  String fileNameBase="part-0000";
+
+  for (int i=0; i < numFiles; ++i) {
+
+    createInputs(fs,inputDir,fileNameBase + String.valueOf(i));
+
+  }
+
+  createInputs(fs,inputDir,"_meta");
+
+  createInputs(fs,inputDir,"_temp");
+
+  TextInputFormat.addInputPath(job,inputDir);
+
+  TextInputFormat inFormat=new TextInputFormat();
+
+  inFormat.configure(job);
+
+  InputSplit[] splits=inFormat.getSplits(job,1);
+
+  assertEquals("Expected value of " + FileInputFormat.NUM_INPUT_FILES,numFiles,job.getLong(FileInputFormat.NUM_INPUT_FILES,0));
+
+}
+

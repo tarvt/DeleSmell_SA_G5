@@ -1,0 +1,202 @@
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Add a reference to this variable. Called by VariableRef when an expression contains a reference to this variable.
+
+ */
+
+public void addReference(VariableRefBase vref){
+
+  _refs.addElement(vref);
+
+}
+
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Returns the escaped qname of the variable or parameter
+
+ */
+
+public String getEscapedName(){
+
+  return _escapedName;
+
+}
+
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Returns the true if the variable is local
+
+ */
+
+public boolean isLocal(){
+
+  return _isLocal;
+
+}
+
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Returns an instruction for loading the value of this variable onto the JVM stack.
+
+ */
+
+public Instruction loadInstruction(){
+
+  final Instruction instr=_loadInstruction;
+
+  if (_loadInstruction == null) {
+
+    _loadInstruction=_type.LOAD(_local.getIndex());
+
+  }
+
+  return _loadInstruction;
+
+}
+
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Map this variable to a register
+
+ */
+
+public void mapRegister(MethodGenerator methodGen){
+
+  if (_local == null) {
+
+    final String name=getEscapedName();
+
+    final org.apache.bcel.generic.Type varType=_type.toJCType();
+
+    _local=methodGen.addLocalVariable2(name,varType,null);
+
+  }
+
+}
+
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Returns an instruction for storing a value from the JVM stack into this variable.
+
+ */
+
+public Instruction storeInstruction(){
+
+  final Instruction instr=_storeInstruction;
+
+  if (_storeInstruction == null) {
+
+    _storeInstruction=_type.STORE(_local.getIndex());
+
+  }
+
+  return _storeInstruction;
+
+}
+
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Compile the value of the variable, which is either in an expression in a 'select' attribute, or in the variable elements body
+
+ */
+
+public void translateValue(ClassGenerator classGen,MethodGenerator methodGen){
+
+  if (_select != null) {
+
+    _select.translate(classGen,methodGen);
+
+    if (_select.getType() instanceof NodeSetType) {
+
+      final ConstantPoolGen cpg=classGen.getConstantPool();
+
+      final InstructionList il=methodGen.getInstructionList();
+
+      final int initCNI=cpg.addMethodref(CACHED_NODE_LIST_ITERATOR_CLASS,"<init>","(" + NODE_ITERATOR_SIG + ")V");
+
+      il.append(new NEW(cpg.addClass(CACHED_NODE_LIST_ITERATOR_CLASS)));
+
+      il.append(DUP_X1);
+
+      il.append(SWAP);
+
+      il.append(new INVOKESPECIAL(initCNI));
+
+    }
+
+    _select.startIterator(classGen,methodGen);
+
+  }
+
+ else   if (hasContents()) {
+
+    compileResultTree(classGen,methodGen);
+
+  }
+
+ else {
+
+    final ConstantPoolGen cpg=classGen.getConstantPool();
+
+    final InstructionList il=methodGen.getInstructionList();
+
+    il.append(new PUSH(cpg,Constants.EMPTYSTRING));
+
+  }
+
+}
+
+Location: VariableBase.java
+
+Content: 
+
+/** 
+
+ * Remove the mapping of this variable to a register. Called when we leave the AST scope of the variable's declaration
+
+ */
+
+public void unmapRegister(MethodGenerator methodGen){
+
+  if (_local != null) {
+
+    _local.setEnd(methodGen.getInstructionList().getEnd());
+
+    methodGen.removeLocalVariable(_local);
+
+    _refs=null;
+
+    _local=null;
+
+  }
+
+}
+

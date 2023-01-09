@@ -1,0 +1,404 @@
+Location: SEQUENCER.java
+
+Content: 
+
+protected void broadcast(final Message msg,boolean copy,Address original_sender,long seqno,boolean resend){
+
+  Message bcast_msg=null;
+
+  if (!copy) {
+
+    bcast_msg=msg;
+
+  }
+
+ else {
+
+    SequencerHeader new_hdr=new SequencerHeader(SequencerHeader.WRAPPED_BCAST,seqno);
+
+    bcast_msg=new Message(null,msg.getRawBuffer(),msg.getOffset(),msg.getLength()).putHeader(this.id,new_hdr);
+
+    if (resend) {
+
+      new_hdr.flush_ack=true;
+
+      bcast_msg.setFlag(Message.Flag.DONT_BUNDLE);
+
+    }
+
+  }
+
+  if (log.isTraceEnabled())   log.trace(local_addr + ": broadcasting " + original_sender+ "::"+ seqno);
+
+  down_prot.down(bcast_msg);
+
+  bcast_msgs++;
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+protected void deliver(Message msg,SequencerHeader hdr){
+
+  Address sender=msg.getSrc();
+
+  if (sender == null) {
+
+    log.error("%s: sender is null, cannot deliver ::%d",local_addr,hdr.getSeqno());
+
+    return;
+
+  }
+
+  long msg_seqno=hdr.getSeqno();
+
+  if (sender.equals(local_addr)) {
+
+    forward_table.remove(msg_seqno);
+
+    if (hdr.flush_ack) {
+
+      ack_promise.setResult(msg_seqno);
+
+      if (ack_mode && !flushing && threshold > 0 && ++num_acks >= threshold) {
+
+        ack_mode=false;
+
+        num_acks=0;
+
+      }
+
+    }
+
+  }
+
+  if (!canDeliver(sender,msg_seqno)) {
+
+    log.warn("%s: dropped duplicate message %s::%d",local_addr,sender,msg_seqno);
+
+    return;
+
+  }
+
+  if (log.isTraceEnabled())   log.trace(local_addr + ": delivering " + sender+ "::"+ msg_seqno);
+
+  up_prot.up(msg);
+
+  delivered_bcasts++;
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+/** 
+
+ * Sends all messages currently in forward_table to the new coordinator (changing the dest field). This needs to be done, so the underlying reliable unicast protocol (e.g. UNICAST) adds these messages to its retransmission mechanism<br/> Note that we need to resend the messages in order of their seqnos! We also need to prevent other message from being inserted until we're done, that's why there's synchronization.<br/> Access to the forward_table doesn't need to be synchronized as there won't be any insertions during flushing (all down-threads are blocked)
+
+ */
+
+protected void flushMessagesInForwardTable(){
+
+  if (is_coord) {
+
+    for (    Map.Entry<Long,Message> entry : forward_table.entrySet()) {
+
+      Long key=entry.getKey();
+
+      Message msg=entry.getValue();
+
+      Buffer buf;
+
+      try {
+
+        buf=Util.streamableToBuffer(msg);
+
+      }
+
+ catch (      Exception e) {
+
+        log.error(Util.getMessage("FlushingBroadcastingFailed"),e);
+
+        continue;
+
+      }
+
+      SequencerHeader hdr=new SequencerHeader(SequencerHeader.WRAPPED_BCAST,key);
+
+      Message forward_msg=new Message(null,buf).putHeader(this.id,hdr);
+
+      if (log.isTraceEnabled())       log.trace(local_addr + ": flushing (broadcasting) " + local_addr+ "::"+ key);
+
+      down_prot.down(forward_msg);
+
+    }
+
+    return;
+
+  }
+
+  while (flushing && running && !forward_table.isEmpty()) {
+
+    Map.Entry<Long,Message> entry=forward_table.firstEntry();
+
+    final Long key=entry.getKey();
+
+    Message msg=entry.getValue();
+
+    Buffer buf;
+
+    try {
+
+      buf=Util.streamableToBuffer(msg);
+
+    }
+
+ catch (    Exception e) {
+
+      log.error(Util.getMessage("FlushingBroadcastingFailed"),e);
+
+      continue;
+
+    }
+
+    while (flushing && running && !forward_table.isEmpty()) {
+
+      SequencerHeader hdr=new SequencerHeader(SequencerHeader.FLUSH,key);
+
+      Message forward_msg=new Message(coord,buf).putHeader(this.id,hdr).setFlag(Message.Flag.DONT_BUNDLE);
+
+      if (log.isTraceEnabled())       log.trace(local_addr + ": flushing (forwarding) " + local_addr+ "::"+ key+ " to coord "+ coord);
+
+      ack_promise.reset();
+
+      down_prot.down(forward_msg);
+
+      Long ack=ack_promise.getResult(500);
+
+      if ((Objects.equals(ack,key)) || !forward_table.containsKey(key))       break;
+
+    }
+
+  }
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+protected void flush(final Address new_coord) throws InterruptedException {
+
+  while (flushing && running) {
+
+    if (in_flight_sends.get() == 0)     break;
+
+    Thread.sleep(100);
+
+  }
+
+  send_lock.lockInterruptibly();
+
+  try {
+
+    if (log.isTraceEnabled())     log.trace(local_addr + ": coord changed from " + coord+ " to "+ new_coord);
+
+    coord=new_coord;
+
+    is_coord=Objects.equals(local_addr,coord);
+
+    if (flush_forward_table)     flushMessagesInForwardTable();
+
+  }
+
+  finally {
+
+    if (log.isTraceEnabled())     log.trace(local_addr + ": flushing completed");
+
+    flushing=false;
+
+    ack_mode=true;
+
+    num_acks=0;
+
+    send_cond.signalAll();
+
+    send_lock.unlock();
+
+  }
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+protected void forwardToCoord(long seqno,Message msg){
+
+  if (is_coord) {
+
+    forward(msg,seqno,false);
+
+    return;
+
+  }
+
+  if (!running || flushing) {
+
+    forward_table.put(seqno,msg);
+
+    return;
+
+  }
+
+  if (!ack_mode) {
+
+    forward_table.put(seqno,msg);
+
+    forward(msg,seqno,false);
+
+    return;
+
+  }
+
+  send_lock.lock();
+
+  try {
+
+    forward_table.put(seqno,msg);
+
+    while (running && !flushing) {
+
+      ack_promise.reset();
+
+      forward(msg,seqno,true);
+
+      if (!ack_mode || !running || flushing)       break;
+
+      Long ack=ack_promise.getResult(500);
+
+      if ((Objects.equals(ack,seqno)) || !forward_table.containsKey(seqno))       break;
+
+    }
+
+  }
+
+  finally {
+
+    send_lock.unlock();
+
+  }
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+protected void forward(final Message msg,long seqno,boolean flush){
+
+  Address target=coord;
+
+  if (target == null)   return;
+
+  byte type=flush ? SequencerHeader.FLUSH : SequencerHeader.FORWARD;
+
+  try {
+
+    SequencerHeader hdr=new SequencerHeader(type,seqno);
+
+    Message forward_msg=new Message(target,Util.streamableToBuffer(msg)).putHeader(this.id,hdr);
+
+    down_prot.down(forward_msg);
+
+    forwarded_msgs++;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedForwardingMessageTo") + msg.getDest(),ex);
+
+  }
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+public Address getCoordinator(){
+
+  return coord;
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+@ManagedAttribute(description="Number of messages in the forward-table") public int getForwardTableSize(){
+
+  return forward_table.size();
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+private void handleTmpView(View v){
+
+  Address new_coord=v.getCoord();
+
+  if (new_coord != null && !new_coord.equals(coord) && local_addr != null && local_addr.equals(new_coord))   handleViewChange(v);
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+public void setThreshold(int new_threshold){
+
+  this.threshold=new_threshold;
+
+}
+
+Location: SEQUENCER.java
+
+Content: 
+
+/** 
+
+ * Unmarshal the original message (in the payload) and then pass it up (unless already delivered)
+
+ * @param msg
+
+ */
+
+protected void unwrapAndDeliver(final Message msg,boolean flush_ack){
+
+  try {
+
+    Message msg_to_deliver=Util.streamableFromBuffer(Message::new,msg.getRawBuffer(),msg.getOffset(),msg.getLength());
+
+    SequencerHeader hdr=msg_to_deliver.getHeader(this.id);
+
+    if (flush_ack)     hdr.flush_ack=true;
+
+    deliver(msg_to_deliver,hdr);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailureUnmarshallingBuffer"),ex);
+
+  }
+
+}
+

@@ -1,0 +1,206 @@
+Location: SAXParserImpl.java
+
+Content: 
+
+public Parser getParser() throws SAXException {
+
+  return (Parser)xmlReader;
+
+}
+
+Location: SAXParserImpl.java
+
+Content: 
+
+public void parse(InputSource is,DefaultHandler dh) throws SAXException, IOException {
+
+  if (is == null) {
+
+    throw new IllegalArgumentException();
+
+  }
+
+  if (dh != null) {
+
+    xmlReader.setContentHandler(dh);
+
+    xmlReader.setEntityResolver(dh);
+
+    xmlReader.setErrorHandler(dh);
+
+    xmlReader.setDTDHandler(dh);
+
+    xmlReader.setDocumentHandler(null);
+
+  }
+
+  xmlReader.parse(is);
+
+}
+
+Location: SAXParserImpl.java
+
+Content: 
+
+public void parse(InputSource is,HandlerBase hb) throws SAXException, IOException {
+
+  if (is == null) {
+
+    throw new IllegalArgumentException();
+
+  }
+
+  if (hb != null) {
+
+    xmlReader.setDocumentHandler(hb);
+
+    xmlReader.setEntityResolver(hb);
+
+    xmlReader.setErrorHandler(hb);
+
+    xmlReader.setDTDHandler(hb);
+
+    xmlReader.setContentHandler(null);
+
+  }
+
+  xmlReader.parse(is);
+
+}
+
+Location: SAXParserImpl.java
+
+Content: 
+
+/** 
+
+ * Create a SAX parser with the associated features
+
+ * @param features Hashtable of SAX features, may be null
+
+ */
+
+SAXParserImpl(SAXParserFactoryImpl spf,Hashtable features) throws SAXException {
+
+  this(spf,features,false);
+
+}
+
+Location: SAXParserImpl.java
+
+Content: 
+
+/** 
+
+ * Create a SAX parser with the associated features
+
+ * @param features Hashtable of SAX features, may be null
+
+ */
+
+SAXParserImpl(SAXParserFactoryImpl spf,Hashtable features,boolean secureProcessing) throws SAXException {
+
+  xmlReader=new JAXPSAXParser(this);
+
+  xmlReader.setFeature0(NAMESPACES_FEATURE,spf.isNamespaceAware());
+
+  xmlReader.setFeature0(NAMESPACE_PREFIXES_FEATURE,!spf.isNamespaceAware());
+
+  if (spf.isXIncludeAware()) {
+
+    xmlReader.setFeature0(XINCLUDE_FEATURE,true);
+
+  }
+
+  if (secureProcessing) {
+
+    xmlReader.setProperty0(SECURITY_MANAGER,new SecurityManager());
+
+  }
+
+  setFeatures(features);
+
+  if (spf.isValidating()) {
+
+    fInitErrorHandler=new DefaultValidationErrorHandler();
+
+    xmlReader.setErrorHandler(fInitErrorHandler);
+
+  }
+
+ else {
+
+    fInitErrorHandler=xmlReader.getErrorHandler();
+
+  }
+
+  xmlReader.setFeature0(VALIDATION_FEATURE,spf.isValidating());
+
+  this.grammar=spf.getSchema();
+
+  if (grammar != null) {
+
+    XMLParserConfiguration config=xmlReader.getXMLParserConfiguration();
+
+    XMLComponent validatorComponent=null;
+
+    if (grammar instanceof XSGrammarPoolContainer) {
+
+      validatorComponent=new XMLSchemaValidator();
+
+      fSchemaValidationManager=new ValidationManager();
+
+      fUnparsedEntityHandler=new UnparsedEntityHandler(fSchemaValidationManager);
+
+      config.setDTDHandler(fUnparsedEntityHandler);
+
+      fUnparsedEntityHandler.setDTDHandler(xmlReader);
+
+      xmlReader.setDTDSource(fUnparsedEntityHandler);
+
+      fSchemaValidatorComponentManager=new SchemaValidatorConfiguration(config,(XSGrammarPoolContainer)grammar,fSchemaValidationManager);
+
+    }
+
+ else {
+
+      validatorComponent=new JAXPValidatorComponent(grammar.newValidatorHandler());
+
+      fSchemaValidationManager=null;
+
+      fUnparsedEntityHandler=null;
+
+      fSchemaValidatorComponentManager=config;
+
+    }
+
+    config.addRecognizedFeatures(validatorComponent.getRecognizedFeatures());
+
+    config.addRecognizedProperties(validatorComponent.getRecognizedProperties());
+
+    config.setDocumentHandler((XMLDocumentHandler)validatorComponent);
+
+    ((XMLDocumentSource)validatorComponent).setDocumentHandler(xmlReader);
+
+    xmlReader.setDocumentSource((XMLDocumentSource)validatorComponent);
+
+    fSchemaValidator=validatorComponent;
+
+  }
+
+ else {
+
+    fSchemaValidationManager=null;
+
+    fUnparsedEntityHandler=null;
+
+    fSchemaValidatorComponentManager=null;
+
+    fSchemaValidator=null;
+
+  }
+
+  fInitEntityResolver=xmlReader.getEntityResolver();
+
+}
+

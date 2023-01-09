@@ -1,0 +1,128 @@
+Location: TestQueueManagerWithDeprecatedConf.java
+
+Content: 
+
+public void testMultipleQueues(){
+
+  JobConf conf=new JobConf();
+
+  conf.set(DeprecatedQueueConfigurationParser.MAPRED_QUEUE_NAMES_KEY,"q1,q2,Q3");
+
+  QueueManager qMgr=new QueueManager(conf);
+
+  Set<String> expQueues=new TreeSet<String>();
+
+  expQueues.add("q1");
+
+  expQueues.add("q2");
+
+  expQueues.add("Q3");
+
+  verifyQueues(expQueues,qMgr.getLeafQueueNames());
+
+}
+
+Location: TestQueueManagerWithDeprecatedConf.java
+
+Content: 
+
+public void testQueueManagerWithDeprecatedConf() throws IOException {
+
+  String queueConfigPath=System.getProperty("test.build.extraconf","build/test/extraconf");
+
+  File hadoopConfigFile=new File(queueConfigPath,"mapred-site.xml");
+
+  try {
+
+    Properties hadoopConfProps=new Properties();
+
+    hadoopConfProps.put(DeprecatedQueueConfigurationParser.MAPRED_QUEUE_NAMES_KEY,"default,q1,q2");
+
+    hadoopConfProps.put(MRConfig.MR_ACLS_ENABLED,"true");
+
+    UserGroupInformation ugi=UserGroupInformation.createRemoteUser("unknownUser");
+
+    hadoopConfProps.put(toFullPropertyName("default",submitAcl),ugi.getUserName());
+
+    hadoopConfProps.put(toFullPropertyName("q1",submitAcl),"u1");
+
+    hadoopConfProps.put(toFullPropertyName("q2",submitAcl),"*");
+
+    hadoopConfProps.put(toFullPropertyName("default",adminAcl),ugi.getUserName());
+
+    hadoopConfProps.put(toFullPropertyName("q1",adminAcl),"u2");
+
+    hadoopConfProps.put(toFullPropertyName("q2",adminAcl),"*");
+
+    UtilsForTests.setUpConfigFile(hadoopConfProps,hadoopConfigFile);
+
+    Configuration conf=new JobConf();
+
+    conf.setBoolean(MRConfig.MR_ACLS_ENABLED,true);
+
+    QueueManager queueManager=new QueueManager(conf);
+
+    assertTrue("User Job Submission failed.",queueManager.hasAccess("default",QueueACL.SUBMIT_JOB,ugi));
+
+    assertFalse("User Job Submission failed.",queueManager.hasAccess("q1",QueueACL.SUBMIT_JOB,ugi));
+
+    assertTrue("User Job Submission failed.",queueManager.hasAccess("q2",QueueACL.SUBMIT_JOB,ugi));
+
+    assertTrue("User Job Submission failed.",queueManager.hasAccess("default",QueueACL.ADMINISTER_JOBS,ugi));
+
+    assertFalse("User Job Submission failed.",queueManager.hasAccess("q1",QueueACL.ADMINISTER_JOBS,ugi));
+
+    assertTrue("User Job Submission failed.",queueManager.hasAccess("q2",QueueACL.ADMINISTER_JOBS,ugi));
+
+  }
+
+  finally {
+
+    if (hadoopConfigFile.exists()) {
+
+      hadoopConfigFile.delete();
+
+    }
+
+  }
+
+}
+
+Location: TestQueueManagerWithDeprecatedConf.java
+
+Content: 
+
+public void testSchedulerInfo(){
+
+  JobConf conf=new JobConf();
+
+  conf.set(DeprecatedQueueConfigurationParser.MAPRED_QUEUE_NAMES_KEY,"qq1,qq2");
+
+  QueueManager qMgr=new QueueManager(conf);
+
+  qMgr.setSchedulerInfo("qq1","queueInfoForqq1");
+
+  qMgr.setSchedulerInfo("qq2","queueInfoForqq2");
+
+  assertEquals(qMgr.getSchedulerInfo("qq2"),"queueInfoForqq2");
+
+  assertEquals(qMgr.getSchedulerInfo("qq1"),"queueInfoForqq1");
+
+}
+
+Location: TestQueueManagerWithDeprecatedConf.java
+
+Content: 
+
+private void verifyQueues(Set<String> expectedQueues,Set<String> actualQueues){
+
+  assertEquals(expectedQueues.size(),actualQueues.size());
+
+  for (  String queue : expectedQueues) {
+
+    assertTrue(actualQueues.contains(queue));
+
+  }
+
+}
+

@@ -1,0 +1,262 @@
+Location: TestPipes.java
+
+Content: 
+
+static void cleanup(FileSystem fs,Path p) throws IOException {
+
+  fs.delete(p,true);
+
+  assertFalse("output not cleaned up",fs.exists(p));
+
+}
+
+Location: TestPipes.java
+
+Content: 
+
+/** 
+
+ * Run a map/reduce word count that does all of the map input and reduce output directly rather than sending it back up to Java.
+
+ * @param mr The mini mr cluster
+
+ * @param dfs the dfs cluster
+
+ * @param program the program to run
+
+ * @throws IOException
+
+ */
+
+static void runNonPipedProgram(MiniMRCluster mr,MiniDFSCluster dfs,Path program,JobConf conf) throws IOException {
+
+  JobConf job;
+
+  if (conf == null) {
+
+    job=mr.createJobConf();
+
+  }
+
+ else {
+
+    job=new JobConf(conf);
+
+  }
+
+  job.setInputFormat(WordCountInputFormat.class);
+
+  FileSystem local=FileSystem.getLocal(job);
+
+  Path testDir=new Path("file:" + System.getProperty("test.build.data"),"pipes");
+
+  Path inDir=new Path(testDir,"input");
+
+  nonPipedOutDir=new Path(testDir,"output");
+
+  Path wordExec=new Path("testing/bin/application");
+
+  Path jobXml=new Path(testDir,"job.xml");
+
+{
+
+    FileSystem fs=dfs.getFileSystem();
+
+    fs.delete(wordExec.getParent(),true);
+
+    fs.copyFromLocalFile(program,wordExec);
+
+  }
+
+  DataOutputStream out=local.create(new Path(inDir,"part0"));
+
+  out.writeBytes("i am a silly test\n");
+
+  out.writeBytes("you are silly\n");
+
+  out.writeBytes("i am a cat test\n");
+
+  out.writeBytes("you is silly\n");
+
+  out.writeBytes("i am a billy test\n");
+
+  out.writeBytes("hello are silly\n");
+
+  out.close();
+
+  out=local.create(new Path(inDir,"part1"));
+
+  out.writeBytes("mall world things drink java\n");
+
+  out.writeBytes("hall silly cats drink java\n");
+
+  out.writeBytes("all dogs bow wow\n");
+
+  out.writeBytes("hello drink java\n");
+
+  out.close();
+
+  local.delete(nonPipedOutDir,true);
+
+  local.mkdirs(nonPipedOutDir,new FsPermission(FsAction.ALL,FsAction.ALL,FsAction.ALL));
+
+  out=local.create(jobXml);
+
+  job.writeXml(out);
+
+  out.close();
+
+  System.err.println("About to run: Submitter -conf " + jobXml + " -input "+ inDir+ " -output "+ nonPipedOutDir+ " -program "+ dfs.getFileSystem().makeQualified(wordExec));
+
+  try {
+
+    int ret=ToolRunner.run(new Submitter(),new String[]{"-conf",jobXml.toString(),"-input",inDir.toString(),"-output",nonPipedOutDir.toString(),"-program",dfs.getFileSystem().makeQualified(wordExec).toString(),"-reduces","2"});
+
+    assertEquals(0,ret);
+
+  }
+
+ catch (  Exception e) {
+
+    assertTrue("got exception: " + StringUtils.stringifyException(e),false);
+
+  }
+
+}
+
+Location: TestPipes.java
+
+Content: 
+
+static void runProgram(MiniMRCluster mr,MiniDFSCluster dfs,Path program,Path inputPath,Path outputPath,int numMaps,int numReduces,String[] expectedResults,JobConf conf) throws IOException {
+
+  Path wordExec=new Path("testing/bin/application");
+
+  JobConf job=null;
+
+  if (conf == null) {
+
+    job=mr.createJobConf();
+
+  }
+
+ else {
+
+    job=new JobConf(conf);
+
+  }
+
+  job.setNumMapTasks(numMaps);
+
+  job.setNumReduceTasks(numReduces);
+
+{
+
+    FileSystem fs=dfs.getFileSystem();
+
+    fs.delete(wordExec.getParent(),true);
+
+    fs.copyFromLocalFile(program,wordExec);
+
+    Submitter.setExecutable(job,fs.makeQualified(wordExec).toString());
+
+    Submitter.setIsJavaRecordReader(job,true);
+
+    Submitter.setIsJavaRecordWriter(job,true);
+
+    FileInputFormat.setInputPaths(job,inputPath);
+
+    FileOutputFormat.setOutputPath(job,outputPath);
+
+    RunningJob rJob=null;
+
+    if (numReduces == 0) {
+
+      rJob=Submitter.jobSubmit(job);
+
+      while (!rJob.isComplete()) {
+
+        try {
+
+          Thread.sleep(1000);
+
+        }
+
+ catch (        InterruptedException ie) {
+
+          throw new RuntimeException(ie);
+
+        }
+
+      }
+
+    }
+
+ else {
+
+      rJob=Submitter.runJob(job);
+
+    }
+
+    assertTrue("pipes job failed",rJob.isSuccessful());
+
+    Counters counters=rJob.getCounters();
+
+    Counters.Group wordCountCounters=counters.getGroup("WORDCOUNT");
+
+    int numCounters=0;
+
+    for (    Counter c : wordCountCounters) {
+
+      System.out.println(c);
+
+      ++numCounters;
+
+    }
+
+    assertTrue("No counters found!",(numCounters > 0));
+
+  }
+
+  List<String> results=new ArrayList<String>();
+
+  for (  Path p : FileUtil.stat2Paths(dfs.getFileSystem().listStatus(outputPath,new Utils.OutputFileUtils.OutputFilesFilter()))) {
+
+    results.add(MapReduceTestUtil.readOutput(p,job));
+
+  }
+
+  assertEquals("number of reduces is wrong",expectedResults.length,results.size());
+
+  for (int i=0; i < results.size(); i++) {
+
+    assertEquals("pipes program " + program + " output "+ i+ " wrong",expectedResults[i],results.get(i));
+
+  }
+
+}
+
+Location: TestPipes.java
+
+Content: 
+
+static void writeInputFile(FileSystem fs,Path dir) throws IOException {
+
+  DataOutputStream out=fs.create(new Path(dir,"part0"));
+
+  out.writeBytes("Alice was beginning to get very tired of sitting by her\n");
+
+  out.writeBytes("sister on the bank, and of having nothing to do: once\n");
+
+  out.writeBytes("or twice she had peeped into the book her sister was\n");
+
+  out.writeBytes("reading, but it had no pictures or conversations in\n");
+
+  out.writeBytes("it, `and what is the use of a book,' thought Alice\n");
+
+  out.writeBytes("`without pictures or conversation?'\n");
+
+  out.close();
+
+}
+

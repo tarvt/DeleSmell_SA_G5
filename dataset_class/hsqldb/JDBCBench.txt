@@ -1,0 +1,146 @@
+Location: JDBCBench.java
+
+Content: 
+
+public JDBCBench(String url,String user,String password,boolean init){
+
+  Vector vClient=new Vector();
+
+  Thread Client=null;
+
+  Enumeration e=null;
+
+  Connection guardian=null;
+
+  try {
+
+    java.util.Date start=new java.util.Date();
+
+    if (init) {
+
+      System.out.println("Start: " + start.toString());
+
+      System.out.print("Initializing dataset...");
+
+      createDatabase(url,user,password);
+
+      double seconds=(System.currentTimeMillis() - start.getTime()) / 1000D;
+
+      System.out.println("done. in " + seconds + " seconds\n");
+
+      System.out.println("Complete: " + (new java.util.Date()).toString());
+
+    }
+
+    System.out.println("* Starting Benchmark Run *");
+
+    MemoryWatcher=new MemoryWatcherThread();
+
+    MemoryWatcher.start();
+
+    oneRound(url,user,password,transactions,true);
+
+    oneRound(url,user,password,transactions,true);
+
+    oneRound(url,user,password,transactions,true);
+
+  }
+
+ catch (  Exception E) {
+
+    System.out.println(E.toString());
+
+    E.printStackTrace();
+
+  }
+
+ finally {
+
+    MemoryWatcher.end();
+
+    try {
+
+      MemoryWatcher.join();
+
+      if (ShutdownCommand.length() > 0) {
+
+        guardian=connect(url,user,password);
+
+        Statement Stmt=guardian.createStatement();
+
+        Stmt.execute("SHUTDOWN IMMEDIATELY");
+
+        Stmt.close();
+
+        connectClose(guardian);
+
+      }
+
+      if (TabFile != null) {
+
+        TabFile.close();
+
+      }
+
+    }
+
+ catch (    Exception E1) {
+
+    }
+
+  }
+
+}
+
+Location: JDBCBench.java
+
+Content: 
+
+void oneRound(String url,String user,String password,boolean transactions,boolean prepared) throws InterruptedException, SQLException {
+
+  Vector vClient=new Vector();
+
+  Thread Client=null;
+
+  Enumeration e=null;
+
+  Connection guardian=null;
+
+  this.transactions=transactions;
+
+  this.prepared_stmt=prepared;
+
+  start_time=System.currentTimeMillis();
+
+  for (int i=0; i < n_clients; i++) {
+
+    Client=new ClientThread(n_txn_per_client,url,user,password,Connection.TRANSACTION_READ_COMMITTED);
+
+    Client.start();
+
+    vClient.addElement(Client);
+
+  }
+
+  e=vClient.elements();
+
+  while (e.hasMoreElements()) {
+
+    Client=(Thread)e.nextElement();
+
+    Client.join();
+
+  }
+
+  vClient.removeAllElements();
+
+  reportDone();
+
+  guardian=connect(url,user,password);
+
+  checkSums(guardian);
+
+  connectClose(guardian);
+
+}
+

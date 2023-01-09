@@ -1,0 +1,516 @@
+Location: TimeScheduler3.java
+
+Content: 
+
+protected Task add(Task task){
+
+  queue.add(task);
+
+  removeCancelledTasks();
+
+  return task;
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+protected <T>T condGet(Function<ThreadPoolExecutor,T> getter,T default_value){
+
+  if (pool instanceof ThreadPoolExecutor)   return getter.apply((ThreadPoolExecutor)pool);
+
+  return default_value;
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+protected void condSet(Consumer<ThreadPoolExecutor> setter){
+
+  if (pool instanceof ThreadPoolExecutor)   setter.accept((ThreadPoolExecutor)pool);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+protected Future<?> doSchedule(Task task,long initial_delay){
+
+  if (task.getRunnable() == null)   throw new NullPointerException();
+
+  if (isShutdown())   return null;
+
+  if (initial_delay <= 0) {
+
+    submitToPool(task);
+
+    return task;
+
+  }
+
+  return add(task);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public String dumpTimerTasks(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Task task : queue) {
+
+    sb.append(task);
+
+    if (task.isCancelled())     sb.append(" (cancelled)");
+
+    sb.append("\n");
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void execute(Runnable task,boolean can_block){
+
+  submitToPool(task instanceof TimeScheduler.Task ? new RecurringTask(task,TaskType.dynamic,0,((TimeScheduler.Task)task).nextInterval(),TimeUnit.MILLISECONDS,can_block) : new Task(task,can_block));
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public int getCurrentThreads(){
+
+  return condGet(ThreadPoolExecutor::getPoolSize,0);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public long getKeepAliveTime(){
+
+  return condGet(p -> p.getKeepAliveTime(TimeUnit.MILLISECONDS),0L);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public int getMaxThreads(){
+
+  return condGet(ThreadPoolExecutor::getMaximumPoolSize,0);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public int getMinThreads(){
+
+  return condGet(ThreadPoolExecutor::getCorePoolSize,0);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public boolean getNonBlockingTaskHandling(){
+
+  return non_blocking_task_handling;
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public int getQueueSize(){
+
+  return condGet(p -> p.getQueue().size(),0);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+protected boolean isRunning(){
+
+  Thread tmp=runner;
+
+  return tmp != null && tmp.isAlive();
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public boolean isShutdown(){
+
+  return condGet(ThreadPoolExecutor::isShutdown,false);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void removeCancelledTasks(){
+
+  queue.removeIf(Task::isDone);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void run(){
+
+  while (Thread.currentThread() == runner) {
+
+    try {
+
+      Task task=queue.take();
+
+      if (!task.isDone())       submitToPool(task);
+
+    }
+
+ catch (    InterruptedException interrupted) {
+
+    }
+
+catch (    Throwable t) {
+
+      log.error(Util.getMessage("FailedSubmittingTaskToThreadPool"),t);
+
+    }
+
+  }
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public Future<?> scheduleAtFixedRate(Runnable work,long initial_delay,long delay,TimeUnit unit,boolean can_block){
+
+  return scheduleRecurring(work,TaskType.fixed_rate,initial_delay,delay,unit,can_block);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+protected Future<?> scheduleRecurring(Runnable work,TaskType type,long initial_delay,long delay,TimeUnit unit,boolean can_block){
+
+  return doSchedule(new RecurringTask(work,type,initial_delay,delay,unit,can_block),initial_delay);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+/** 
+
+ * Schedule a task for execution at varying intervals. After execution, the task will get rescheduled after {@link org.jgroups.util.TimeScheduler.Task#nextInterval()} milliseconds. The task is never done untilnextInterval() returns a value <= 0 or the task is cancelled.<p/> Note that the task is rescheduled relative to the last time is actually executed. This is similar to {@link #scheduleWithFixedDelay(Runnable,long,long,java.util.concurrent.TimeUnit)}.
+
+ * @param work the task to execute
+
+ */
+
+public Future<?> scheduleWithDynamicInterval(TimeScheduler.Task work,boolean can_block){
+
+  return scheduleRecurring(work,TaskType.dynamic,work.nextInterval(),0,TimeUnit.MILLISECONDS,can_block);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public Future<?> scheduleWithFixedDelay(Runnable work,long initial_delay,long delay,TimeUnit unit,boolean can_block){
+
+  return scheduleRecurring(work,TaskType.fixed_delay,initial_delay,delay,unit,can_block);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public Future<?> schedule(Runnable work,long initial_delay,TimeUnit unit,boolean can_block){
+
+  return doSchedule(new Task(work,initial_delay,unit,can_block),initial_delay);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void setKeepAliveTime(long time){
+
+  condSet(p -> p.setKeepAliveTime(time,TimeUnit.MILLISECONDS));
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void setMaxThreads(int size){
+
+  condSet(p -> p.setMaximumPoolSize(size));
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void setMinThreads(int size){
+
+  condSet(p -> p.setCorePoolSize(size));
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void setNonBlockingTaskHandling(boolean b){
+
+  this.non_blocking_task_handling=b;
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void setThreadFactory(ThreadFactory f){
+
+  condSet((p) -> p.setThreadFactory(f));
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public void setThreadPool(Executor new_pool){
+
+  pool=new_pool;
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public synchronized void start(){
+
+  if (runner == null || !runner.isAlive()) {
+
+    runner=timer_thread_factory != null ? timer_thread_factory.newThread(this,"Timer runner") : new Thread(this,"Timer runner");
+
+    runner.start();
+
+  }
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+/** 
+
+ * Stops the timer, cancelling all tasks 
+
+ */
+
+public synchronized void stop(){
+
+  Thread tmp=runner;
+
+  runner=null;
+
+  if (tmp != null) {
+
+    tmp.interrupt();
+
+    try {
+
+      tmp.join(500);
+
+    }
+
+ catch (    InterruptedException e) {
+
+    }
+
+  }
+
+  while (!queue.isEmpty()) {
+
+    for (    Task entry : queue) {
+
+      entry.cancel(true);
+
+      queue.remove(entry);
+
+    }
+
+  }
+
+  if (pool instanceof ThreadPoolExecutor && shut_down_pool) {
+
+    ThreadPoolExecutor p=(ThreadPoolExecutor)pool;
+
+    List<Runnable> remaining_tasks=p.shutdownNow();
+
+    remaining_tasks.stream().filter(task -> task instanceof Future).forEach(task -> ((Future)task).cancel(true));
+
+    p.getQueue().clear();
+
+    try {
+
+      p.awaitTermination(Global.THREADPOOL_SHUTDOWN_WAIT_TIME,TimeUnit.MILLISECONDS);
+
+    }
+
+ catch (    InterruptedException e) {
+
+    }
+
+  }
+
+  if (timer_thread_factory instanceof LazyThreadFactory)   ((LazyThreadFactory)timer_thread_factory).destroy();
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+protected void submitToPool(Task task){
+
+  if (non_blocking_task_handling && !task.canBlock()) {
+
+    task.run();
+
+    return;
+
+  }
+
+  try {
+
+    pool.execute(task);
+
+  }
+
+ catch (  RejectedExecutionException rejected) {
+
+    Thread thread=timer_thread_factory != null ? timer_thread_factory.newThread(task,"Timer temp thread") : new Thread(task,"Timer temp thread");
+
+    thread.start();
+
+  }
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+/** 
+
+ * Create a scheduler that executes tasks in dynamically adjustable intervals
+
+ */
+
+public TimeScheduler3(){
+
+  pool=new ThreadPoolExecutor(4,10,30000,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(100),Executors.defaultThreadFactory(),new ThreadPoolExecutor.CallerRunsPolicy());
+
+  shut_down_pool=true;
+
+  start();
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public TimeScheduler3(Executor thread_pool,ThreadFactory factory){
+
+  this(thread_pool,factory,true);
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public TimeScheduler3(Executor thread_pool,ThreadFactory factory,boolean start){
+
+  timer_thread_factory=factory;
+
+  pool=thread_pool;
+
+  if (start)   start();
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public TimeScheduler3(ThreadFactory factory,int min_threads,int max_threads,long keep_alive_time,BlockingQueue<Runnable> queue,String rejection_policy,boolean thread_pool_enabled){
+
+  timer_thread_factory=factory;
+
+  pool=thread_pool_enabled ? new ThreadPoolExecutor(min_threads,max_threads,keep_alive_time,TimeUnit.MILLISECONDS,queue,factory,Util.parseRejectionPolicy(rejection_policy)) : new DirectExecutor();
+
+  shut_down_pool=true;
+
+  start();
+
+}
+
+Location: TimeScheduler3.java
+
+Content: 
+
+public TimeScheduler3(ThreadFactory factory,int min_threads,int max_threads,long keep_alive_time,int max_queue_size,String rejection_policy){
+
+  this(factory,min_threads,max_threads,keep_alive_time,new ArrayBlockingQueue<>(max_queue_size),rejection_policy,true);
+
+}
+

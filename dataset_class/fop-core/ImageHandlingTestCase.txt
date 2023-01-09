@@ -1,0 +1,236 @@
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+private void assertAbsent(String text,String searchString){
+
+  assertTrue("Text contains '" + searchString + "'",text.indexOf(searchString) < 0);
+
+}
+
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+private void assertContains(String text,String searchString){
+
+  assertTrue("Text doesn't contain '" + searchString + "'",text.indexOf(searchString) >= 0);
+
+}
+
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+private String getResourceContent(DSCParser parser) throws IOException, DSCException {
+
+  StringBuffer sb=new StringBuffer();
+
+  while (parser.hasNext()) {
+
+    DSCEvent event=parser.nextEvent();
+
+    if (event.isLine()) {
+
+      sb.append(event.asLine().getLine()).append('\n');
+
+    }
+
+ else     if (event.isDSCComment()) {
+
+      if (DSCConstants.END_RESOURCE.equals(event.asDSCComment().getName())) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+private void innerTestJPEGImage(int level) throws Exception {
+
+  FOUserAgent ua=fopFactory.newFOUserAgent();
+
+  PSDocumentHandler handler=new PSDocumentHandler(new IFContext(ua));
+
+  PSRenderingUtil psUtil=handler.getPSUtil();
+
+  psUtil.setLanguageLevel(level);
+
+  psUtil.setOptimizeResources(true);
+
+  ua.setDocumentHandlerOverride(handler);
+
+  File outputFile=renderFile(ua,"ps-jpeg-image.fo","-if-l" + psUtil.getLanguageLevel());
+
+  verifyPostScriptFile(outputFile,psUtil.getLanguageLevel());
+
+}
+
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests JPEG handling.
+
+ * @throws Exception if an error occurs
+
+ */
+
+@Test public void testJPEGImageLevel2() throws Exception {
+
+  innerTestJPEGImage(2);
+
+}
+
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests JPEG handling.
+
+ * @throws Exception if an error occurs
+
+ */
+
+@Test public void testJPEGImageLevel3() throws Exception {
+
+  innerTestJPEGImage(3);
+
+}
+
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+@Test public void testPSImageHandlerSVG() throws IOException {
+
+  FOUserAgent ua=FopFactory.newInstance(new File(".").toURI()).newFOUserAgent();
+
+  String svg="<svg xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns=\"http://www.w3.org/2000/svg\" " + "width=\"210mm\" height=\"297mm\" font-size=\"20\" stroke-width=\"0.1mm\" font-family=\"Arial\">\n" + "  <filter id=\"drop-shadow-font\" width=\"150%\" height=\"150%\">\n"+ "    <feGaussianBlur in=\"SourceAlpha\" result=\"blur\" stdDeviation=\"1\"/>\n"+ "    <feOffset in=\"blur\" result=\"offsetBlur\" dy=\"1\" dx=\"1\"/>\n"+ "    <feBlend in=\"SourceGraphic\" in2=\"offsetBlur\" mode=\"normal\"/>\n"+ "  </filter>\n"+ "  <text x=\"4.9mm\" filter=\"url(#drop-shadow-font)\" y=\"10.5mm\" fill=\"black\" "+ "rotate=\"30 30 0 15\">Hello SVG with FOP</text>\n"+ "</svg>";
+
+  SAXSVGDocumentFactory factory=new SAXSVGDocumentFactory(null);
+
+  Document doc=factory.createDocument(null,IOUtils.toInputStream(svg));
+
+  ByteArrayOutputStream bos=new ByteArrayOutputStream();
+
+  new PSImageHandlerSVG().handleImage(new PSRenderingContext(ua,new PSGenerator(bos),new FontInfo()),new ImageXMLDOM(null,doc,""),new Rectangle());
+
+  assertTrue(bos.toString().contains("/DataSource Data"));
+
+}
+
+Location: ImageHandlingTestCase.java
+
+Content: 
+
+private void verifyPostScriptFile(File psFile,int level) throws IOException, DSCException {
+
+  InputStream in=new java.io.FileInputStream(psFile);
+
+  in=new java.io.BufferedInputStream(in);
+
+  try {
+
+    DSCParser parser=new DSCParser(in);
+
+    DSCCommentPages pages=(DSCCommentPages)gotoDSCComment(parser,DSCConstants.PAGES);
+
+    assertEquals(1,pages.getPageCount());
+
+    gotoDSCComment(parser,DSCConstants.BEGIN_RESOURCE);
+
+    gotoDSCComment(parser,DSCConstants.BEGIN_RESOURCE);
+
+    gotoDSCComment(parser,DSCConstants.BEGIN_RESOURCE);
+
+    gotoDSCComment(parser,DSCConstants.BEGIN_RESOURCE);
+
+    PSResource form2=new PSResource(PSResource.TYPE_FORM,"FOPForm:2");
+
+    checkResourceComment(parser,DSCConstants.BEGIN_RESOURCE,form2);
+
+    DSCCommentTitle title=(DSCCommentTitle)parser.nextEvent().asDSCComment();
+
+    assertEquals("image/jpeg test/resources/images/bgimg300dpi.jpg",title.getTitle());
+
+    String resourceContent=getResourceContent(parser);
+
+    if (level == 3) {
+
+      assertContains(resourceContent,"/FOPForm:2");
+
+      assertContains(resourceContent,"/DCTDecode filter");
+
+      assertContains(resourceContent,"/ReusableStreamDecode filter");
+
+    }
+
+ else {
+
+      assertContains(resourceContent,"/FOPForm:2");
+
+      assertContains(resourceContent,"/DCTDecode filter");
+
+      assertAbsent(resourceContent,"/ReusableStreamDecode filter");
+
+    }
+
+    DSCCommentPage page=(DSCCommentPage)gotoDSCComment(parser,DSCConstants.PAGE);
+
+    assertEquals(1,page.getPagePosition());
+
+    PSResource form1=new PSResource(PSResource.TYPE_FORM,"FOPForm:1");
+
+    checkResourceComment(parser,DSCConstants.BEGIN_RESOURCE,form1);
+
+    title=(DSCCommentTitle)parser.nextEvent().asDSCComment();
+
+    assertEquals("image/jpeg test/resources/images/bgimg72dpi.jpg",title.getTitle());
+
+    resourceContent=getResourceContent(parser);
+
+    if (level == 3) {
+
+      assertContains(resourceContent,"/FOPForm:1");
+
+      assertContains(resourceContent,"/DCTDecode filter");
+
+      assertContains(resourceContent,"/ReusableStreamDecode filter");
+
+    }
+
+ else {
+
+      assertContains(resourceContent,"/FOPForm:1");
+
+      assertContains(resourceContent,"/DCTDecode filter");
+
+      assertAbsent(resourceContent,"/ReusableStreamDecode filter");
+
+    }
+
+  }
+
+  finally {
+
+    IOUtils.closeQuietly(in);
+
+  }
+
+}
+

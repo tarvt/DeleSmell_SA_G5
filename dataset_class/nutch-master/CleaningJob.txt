@@ -1,0 +1,68 @@
+Location: CleaningJob.java
+
+Content: 
+
+public void delete(String crawldb,boolean noCommit) throws IOException, InterruptedException, ClassNotFoundException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("CleaningJob: starting at " + sdf.format(start));
+
+  Job job=NutchJob.getInstance(getConf());
+
+  Configuration conf=job.getConfiguration();
+
+  FileInputFormat.addInputPath(job,new Path(crawldb,CrawlDb.CURRENT_NAME));
+
+  conf.setBoolean("noCommit",noCommit);
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setOutputFormatClass(NullOutputFormat.class);
+
+  job.setMapOutputKeyClass(ByteWritable.class);
+
+  job.setMapOutputValueClass(Text.class);
+
+  job.setMapperClass(DBFilter.class);
+
+  job.setReducerClass(DeleterReducer.class);
+
+  job.setJarByClass(CleaningJob.class);
+
+  job.setJobName("CleaningJob");
+
+  conf.setBoolean(IndexerMapReduce.INDEXER_DELETE,true);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="CleaningJob did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  InterruptedException|ClassNotFoundException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("CleaningJob: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+

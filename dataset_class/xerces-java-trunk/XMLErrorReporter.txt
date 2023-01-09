@@ -1,0 +1,358 @@
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Returns the message formatter associated with the specified domain, or null if no message formatter is registered for that domain.
+
+ * @param domain The domain of the message formatter.
+
+ */
+
+public MessageFormatter getMessageFormatter(String domain){
+
+  return (MessageFormatter)fMessageFormatters.get(domain);
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Gets the internal XMLErrorHandler as SAX ErrorHandler.
+
+ */
+
+public ErrorHandler getSAXErrorHandler(){
+
+  if (fSaxProxy == null) {
+
+    fSaxProxy=new ErrorHandlerProxy(){
+
+      protected XMLErrorHandler getErrorHandler(){
+
+        return fErrorHandler;
+
+      }
+
+    }
+
+;
+
+  }
+
+  return fSaxProxy;
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Registers a message formatter for the specified domain. <p> <strong>Note:</strong> Registering a message formatter for a domain when there is already a formatter registered will cause the previous formatter to be lost. This method replaces any previously registered message formatter for the specified domain.
+
+ * @param domain 
+
+ * @param messageFormatter 
+
+ */
+
+public void putMessageFormatter(String domain,MessageFormatter messageFormatter){
+
+  fMessageFormatters.put(domain,messageFormatter);
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Removes the message formatter for the specified domain and returns the removed message formatter.
+
+ * @param domain The domain of the message formatter.
+
+ */
+
+public MessageFormatter removeMessageFormatter(String domain){
+
+  return (MessageFormatter)fMessageFormatters.remove(domain);
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Reports an error. The error message passed to the error handler is formatted for the locale by the message formatter installed for the specified error domain.
+
+ * @param domain    The error domain.
+
+ * @param key       The key of the error message.
+
+ * @param arguments The replacement arguments for the error message,if needed.
+
+ * @param severity  The severity of the error.
+
+ * @return          The formatted error message.
+
+ * @see #SEVERITY_WARNING
+
+ * @see #SEVERITY_ERROR
+
+ * @see #SEVERITY_FATAL_ERROR
+
+ */
+
+public String reportError(String domain,String key,Object[] arguments,short severity) throws XNIException {
+
+  return reportError(fLocator,domain,key,arguments,severity);
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Reports an error. The error message passed to the error handler is formatted for the locale by the message formatter installed for the specified error domain.
+
+ * @param domain    The error domain.
+
+ * @param key       The key of the error message.
+
+ * @param arguments The replacement arguments for the error message,if needed.
+
+ * @param severity  The severity of the error.
+
+ * @param exception The exception to wrap.
+
+ * @return          The formatted error message.
+
+ * @see #SEVERITY_WARNING
+
+ * @see #SEVERITY_ERROR
+
+ * @see #SEVERITY_FATAL_ERROR
+
+ */
+
+public String reportError(String domain,String key,Object[] arguments,short severity,Exception exception) throws XNIException {
+
+  return reportError(fLocator,domain,key,arguments,severity,exception);
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Reports an error at a specific location.
+
+ * @param location  The error location.
+
+ * @param domain    The error domain.
+
+ * @param key       The key of the error message.
+
+ * @param arguments The replacement arguments for the error message,if needed.
+
+ * @param severity  The severity of the error.
+
+ * @return          The formatted error message.
+
+ * @see #SEVERITY_WARNING
+
+ * @see #SEVERITY_ERROR
+
+ * @see #SEVERITY_FATAL_ERROR
+
+ */
+
+public String reportError(XMLLocator location,String domain,String key,Object[] arguments,short severity) throws XNIException {
+
+  return reportError(location,domain,key,arguments,severity,null);
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Reports an error at a specific location.
+
+ * @param location  The error location.
+
+ * @param domain    The error domain.
+
+ * @param key       The key of the error message.
+
+ * @param arguments The replacement arguments for the error message,if needed.
+
+ * @param severity  The severity of the error.
+
+ * @param exception The exception to wrap.
+
+ * @return          The formatted error message.
+
+ * @see #SEVERITY_WARNING
+
+ * @see #SEVERITY_ERROR
+
+ * @see #SEVERITY_FATAL_ERROR
+
+ */
+
+public String reportError(XMLLocator location,String domain,String key,Object[] arguments,short severity,Exception exception) throws XNIException {
+
+  MessageFormatter messageFormatter=getMessageFormatter(domain);
+
+  String message;
+
+  if (messageFormatter != null) {
+
+    message=messageFormatter.formatMessage(fLocale,key,arguments);
+
+  }
+
+ else {
+
+    StringBuffer str=new StringBuffer();
+
+    str.append(domain);
+
+    str.append('#');
+
+    str.append(key);
+
+    int argCount=arguments != null ? arguments.length : 0;
+
+    if (argCount > 0) {
+
+      str.append('?');
+
+      for (int i=0; i < argCount; i++) {
+
+        str.append(arguments[i]);
+
+        if (i < argCount - 1) {
+
+          str.append('&');
+
+        }
+
+      }
+
+    }
+
+    message=str.toString();
+
+  }
+
+  XMLParseException parseException=(exception != null) ? new XMLParseException(location,message,exception) : new XMLParseException(location,message);
+
+  XMLErrorHandler errorHandler=fErrorHandler;
+
+  if (errorHandler == null) {
+
+    if (fDefaultErrorHandler == null) {
+
+      fDefaultErrorHandler=new DefaultErrorHandler();
+
+    }
+
+    errorHandler=fDefaultErrorHandler;
+
+  }
+
+switch (severity) {
+
+case SEVERITY_WARNING:
+
+{
+
+      errorHandler.warning(domain,key,parseException);
+
+      break;
+
+    }
+
+case SEVERITY_ERROR:
+
+{
+
+    errorHandler.error(domain,key,parseException);
+
+    break;
+
+  }
+
+case SEVERITY_FATAL_ERROR:
+
+{
+
+  errorHandler.fatalError(domain,key,parseException);
+
+  if (!fContinueAfterFatalError) {
+
+    throw parseException;
+
+  }
+
+  break;
+
+}
+
+}
+
+return message;
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Sets the document locator.
+
+ * @param locator The locator.
+
+ */
+
+public void setDocumentLocator(XMLLocator locator){
+
+  fLocator=locator;
+
+}
+
+Location: XMLErrorReporter.java
+
+Content: 
+
+/** 
+
+ * Constructs an error reporter with a locator. 
+
+ */
+
+public XMLErrorReporter(){
+
+  fMessageFormatters=new Hashtable();
+
+}
+

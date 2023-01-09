@@ -1,0 +1,268 @@
+Location: ObjectFactory.java
+
+Content: 
+
+/** 
+
+ * Finds the implementation Class object in the specified order.  The specified order is the following: <ol> <li>query the system property using <code>System.getProperty</code> <li>read <code>META-INF/services/<i>factoryId</i></code> file <li>use fallback classname </ol>
+
+ * @return Class object of factory, never null
+
+ * @param factoryId             Name of the factory to find, same asa property name
+
+ * @param fallbackClassName     Implementation class name, if nothing elseis found.  Use null to mean no fallback.
+
+ * @exception ObjectFactory.ConfigurationError
+
+ */
+
+static Object createObject(String factoryId,String fallbackClassName) throws ConfigurationError {
+
+  return createObject(factoryId,null,fallbackClassName);
+
+}
+
+Location: ObjectFactory.java
+
+Content: 
+
+/** 
+
+ * Finds the implementation Class object in the specified order.  The specified order is the following: <ol> <li>query the system property using <code>System.getProperty</code> <li>read <code>$java.home/lib/<i>propertiesFilename</i></code> file <li>read <code>META-INF/services/<i>factoryId</i></code> file <li>use fallback classname </ol>
+
+ * @return Class object of factory, never null
+
+ * @param factoryId             Name of the factory to find, same asa property name
+
+ * @param propertiesFilename The filename in the $java.home/lib directoryof the properties file.  If none specified, ${java.home}/lib/xerces.properties will be used.
+
+ * @param fallbackClassName     Implementation class name, if nothing elseis found.  Use null to mean no fallback.
+
+ * @exception ObjectFactory.ConfigurationError
+
+ */
+
+static Object createObject(String factoryId,String propertiesFilename,String fallbackClassName) throws ConfigurationError {
+
+  try {
+
+    return Class.forName(fallbackClassName).newInstance();
+
+  }
+
+ catch (  Exception e) {
+
+    throw new ConfigurationError(e.getMessage(),e);
+
+  }
+
+}
+
+Location: ObjectFactory.java
+
+Content: 
+
+/** 
+
+ * Prints a message to standard error if debugging is enabled. 
+
+ */
+
+private static void debugPrintln(String msg){
+
+  if (DEBUG) {
+
+    System.err.println("XERCES: " + msg);
+
+  }
+
+}
+
+Location: ObjectFactory.java
+
+Content: 
+
+/** 
+
+ * Figure out which ClassLoader to use.  For JDK 1.2 and later use the context ClassLoader.
+
+ */
+
+static ClassLoader findClassLoader() throws ConfigurationError {
+
+  return ObjectFactory.class.getClassLoader();
+
+}
+
+Location: ObjectFactory.java
+
+Content: 
+
+private static Object findJarServiceProvider(String factoryId) throws ConfigurationError {
+
+  String serviceId="META-INF/services/" + factoryId;
+
+  InputStream is=null;
+
+  ClassLoader cl=findClassLoader();
+
+  is=SecuritySupport.getResourceAsStream(cl,serviceId);
+
+  if (is == null) {
+
+    ClassLoader current=ObjectFactory.class.getClassLoader();
+
+    if (cl != current) {
+
+      cl=current;
+
+      is=SecuritySupport.getResourceAsStream(cl,serviceId);
+
+    }
+
+  }
+
+  if (is == null) {
+
+    return null;
+
+  }
+
+  if (DEBUG)   debugPrintln("found jar resource=" + serviceId + " using ClassLoader: "+ cl);
+
+  BufferedReader rd;
+
+  try {
+
+    rd=new BufferedReader(new InputStreamReader(is,"UTF-8"),DEFAULT_LINE_LENGTH);
+
+  }
+
+ catch (  java.io.UnsupportedEncodingException e) {
+
+    rd=new BufferedReader(new InputStreamReader(is),DEFAULT_LINE_LENGTH);
+
+  }
+
+  String factoryClassName=null;
+
+  try {
+
+    factoryClassName=rd.readLine();
+
+  }
+
+ catch (  IOException x) {
+
+    return null;
+
+  }
+
+ finally {
+
+    try {
+
+      rd.close();
+
+    }
+
+ catch (    IOException exc) {
+
+    }
+
+  }
+
+  if (factoryClassName != null && !"".equals(factoryClassName)) {
+
+    if (DEBUG)     debugPrintln("found in resource, value=" + factoryClassName);
+
+    return newInstance(factoryClassName,cl,false);
+
+  }
+
+  return null;
+
+}
+
+Location: ObjectFactory.java
+
+Content: 
+
+/** 
+
+ * Find a Class using the specified ClassLoader
+
+ */
+
+static Class findProviderClass(String className,ClassLoader cl,boolean doFallback) throws ClassNotFoundException, ConfigurationError {
+
+  return Class.forName(className);
+
+}
+
+Location: ObjectFactory.java
+
+Content: 
+
+/** 
+
+ * Returns true if debug has been enabled. 
+
+ */
+
+private static boolean isDebugEnabled(){
+
+  try {
+
+    String val=SecuritySupport.getSystemProperty("xerces.debug");
+
+    return (val != null && (!"false".equals(val)));
+
+  }
+
+ catch (  SecurityException se) {
+
+  }
+
+  return false;
+
+}
+
+Location: ObjectFactory.java
+
+Content: 
+
+/** 
+
+ * Create an instance of a class using the specified ClassLoader
+
+ */
+
+static Object newInstance(String className,ClassLoader cl,boolean doFallback) throws ConfigurationError {
+
+  try {
+
+    Class providerClass=findProviderClass(className,cl,doFallback);
+
+    Object instance=providerClass.newInstance();
+
+    if (DEBUG)     debugPrintln("created new instance of " + providerClass + " using ClassLoader: "+ cl);
+
+    return instance;
+
+  }
+
+ catch (  ClassNotFoundException x) {
+
+    throw new ConfigurationError("Provider " + className + " not found",x);
+
+  }
+
+catch (  Exception x) {
+
+    throw new ConfigurationError("Provider " + className + " could not be instantiated: "+ x,x);
+
+  }
+
+}
+

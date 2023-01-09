@@ -1,0 +1,160 @@
+Location: TestMultipleInputs.java
+
+Content: 
+
+private Path getDir(Path dir){
+
+  if (isLocalFS()) {
+
+    String localPathRoot=System.getProperty("test.build.data","/tmp").replace(' ','+');
+
+    dir=new Path(localPathRoot,dir);
+
+  }
+
+  return dir;
+
+}
+
+Location: TestMultipleInputs.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public void testAddInputPathWithFormat() throws IOException {
+
+  final Job conf=Job.getInstance();
+
+  MultipleInputs.addInputPath(conf,new Path("/foo"),TextInputFormat.class);
+
+  MultipleInputs.addInputPath(conf,new Path("/bar"),KeyValueTextInputFormat.class);
+
+  final Map<Path,InputFormat> inputs=MultipleInputs.getInputFormatMap(conf);
+
+  assertEquals(TextInputFormat.class,inputs.get(new Path("/foo")).getClass());
+
+  assertEquals(KeyValueTextInputFormat.class,inputs.get(new Path("/bar")).getClass());
+
+}
+
+Location: TestMultipleInputs.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public void testAddInputPathWithMapper() throws IOException {
+
+  final Job conf=Job.getInstance();
+
+  MultipleInputs.addInputPath(conf,new Path("/foo"),TextInputFormat.class,MapClass.class);
+
+  MultipleInputs.addInputPath(conf,new Path("/bar"),KeyValueTextInputFormat.class,KeyValueMapClass.class);
+
+  final Map<Path,InputFormat> inputs=MultipleInputs.getInputFormatMap(conf);
+
+  final Map<Path,Class<? extends Mapper>> maps=MultipleInputs.getMapperTypeMap(conf);
+
+  assertEquals(TextInputFormat.class,inputs.get(new Path("/foo")).getClass());
+
+  assertEquals(KeyValueTextInputFormat.class,inputs.get(new Path("/bar")).getClass());
+
+  assertEquals(MapClass.class,maps.get(new Path("/foo")));
+
+  assertEquals(KeyValueMapClass.class,maps.get(new Path("/bar")));
+
+}
+
+Location: TestMultipleInputs.java
+
+Content: 
+
+@Test public void testDoMultipleInputs() throws IOException {
+
+  Path in1Dir=getDir(IN1_DIR);
+
+  Path in2Dir=getDir(IN2_DIR);
+
+  Path outDir=getDir(OUT_DIR);
+
+  Configuration conf=createJobConf();
+
+  FileSystem fs=FileSystem.get(conf);
+
+  fs.delete(outDir,true);
+
+  DataOutputStream file1=fs.create(new Path(in1Dir,"part-0"));
+
+  file1.writeBytes("a\nb\nc\nd\ne");
+
+  file1.close();
+
+  DataOutputStream file2=fs.create(new Path(in2Dir,"part-0"));
+
+  file2.writeBytes("a\tblah\nb\tblah\nc\tblah\nd\tblah\ne\tblah");
+
+  file2.close();
+
+  Job job=Job.getInstance(conf);
+
+  job.setJobName("mi");
+
+  MultipleInputs.addInputPath(job,in1Dir,TextInputFormat.class,MapClass.class);
+
+  MultipleInputs.addInputPath(job,in2Dir,KeyValueTextInputFormat.class,KeyValueMapClass.class);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(Text.class);
+
+  job.setOutputKeyClass(NullWritable.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setReducerClass(ReducerClass.class);
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  boolean success=false;
+
+  try {
+
+    success=job.waitForCompletion(true);
+
+  }
+
+ catch (  InterruptedException ie) {
+
+    throw new RuntimeException(ie);
+
+  }
+
+catch (  ClassNotFoundException instante) {
+
+    throw new RuntimeException(instante);
+
+  }
+
+  if (!success)   throw new RuntimeException("Job failed!");
+
+  BufferedReader output=new BufferedReader(new InputStreamReader(fs.open(new Path(outDir,"part-r-00000"))));
+
+  assertTrue(output.readLine().equals("a 2"));
+
+  assertTrue(output.readLine().equals("b 2"));
+
+  assertTrue(output.readLine().equals("c 2"));
+
+  assertTrue(output.readLine().equals("d 2"));
+
+  assertTrue(output.readLine().equals("e 2"));
+
+}
+
+Location: TestMultipleInputs.java
+
+Content: 
+
+public TestMultipleInputs() throws IOException {
+
+  super(HadoopTestCase.LOCAL_MR,HadoopTestCase.LOCAL_FS,1,1);
+
+}
+

@@ -1,0 +1,124 @@
+Location: TestDistributionPolicy.java
+
+Content: 
+
+private void onetest() throws IOException {
+
+  long versionNumber=-1;
+
+  long generation=-1;
+
+  Shard[] shards=new Shard[numShards];
+
+  for (int j=0; j < shards.length; j++) {
+
+    shards[j]=new Shard(versionNumber,new Path(indexPath,NUMBER_FORMAT.format(j)).toString(),generation);
+
+  }
+
+  if (fs.exists(outputPath)) {
+
+    fs.delete(outputPath,true);
+
+  }
+
+  IIndexUpdater updater=new IndexUpdater();
+
+  updater.run(conf,new Path[]{inputPath},outputPath,numMapTasks,shards);
+
+  if (fs.exists(outputPath)) {
+
+    fs.delete(outputPath,true);
+
+  }
+
+  updater.run(conf,new Path[]{updatePath},outputPath,numMapTasks,shards);
+
+  verify(shards);
+
+}
+
+Location: TestDistributionPolicy.java
+
+Content: 
+
+public void testDistributionPolicy() throws IOException {
+
+  IndexUpdateConfiguration iconf=new IndexUpdateConfiguration(conf);
+
+  iconf.setDistributionPolicyClass(HashingDistributionPolicy.class);
+
+  onetest();
+
+  if (fs.exists(indexPath)) {
+
+    fs.delete(indexPath,true);
+
+  }
+
+  iconf.setDistributionPolicyClass(RoundRobinDistributionPolicy.class);
+
+  onetest();
+
+}
+
+Location: TestDistributionPolicy.java
+
+Content: 
+
+private void verify(Shard[] shards) throws IOException {
+
+  IndexReader[] readers=new IndexReader[shards.length];
+
+  for (int i=0; i < shards.length; i++) {
+
+    Directory dir=new FileSystemDirectory(fs,new Path(shards[i].getDirectory()),false,conf);
+
+    readers[i]=IndexReader.open(dir);
+
+  }
+
+  IndexReader reader=new MultiReader(readers);
+
+  IndexSearcher searcher=new IndexSearcher(reader);
+
+  Hits hits=searcher.search(new TermQuery(new Term("content","apache")));
+
+  assertEquals(0,hits.length());
+
+  hits=searcher.search(new TermQuery(new Term("content","hadoop")));
+
+  assertEquals(numDocsPerRun / 2,hits.length());
+
+  int[] counts=new int[numDocsPerRun];
+
+  for (int i=0; i < hits.length(); i++) {
+
+    Document doc=hits.doc(i);
+
+    counts[Integer.parseInt(doc.get("id"))]++;
+
+  }
+
+  for (int i=0; i < numDocsPerRun; i++) {
+
+    if (i % 2 == 0) {
+
+      assertEquals(0,counts[i]);
+
+    }
+
+ else {
+
+      assertEquals(1,counts[i]);
+
+    }
+
+  }
+
+  searcher.close();
+
+  reader.close();
+
+}
+

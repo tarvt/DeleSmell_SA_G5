@@ -1,0 +1,266 @@
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+void addNewTaskStatus(FakeJobInProgress job,TaskType taskType,boolean useMapSlot,String tracker,List<TaskStatus> reports) throws IOException {
+
+  TaskAttemptID task=null;
+
+  TaskStatus status=null;
+
+  if (taskType == TaskType.MAP) {
+
+    task=job.findMapTask(tracker);
+
+    status=new MapTaskStatus(task,0.01f,2,TaskStatus.State.RUNNING,"","",tracker,TaskStatus.Phase.MAP,new Counters());
+
+  }
+
+ else   if (taskType == TaskType.TASK_CLEANUP) {
+
+    if (useMapSlot) {
+
+      status=job.maps[0].taskStatuses.get(new TaskAttemptID(job.maps[0].getTIPId(),0));
+
+    }
+
+ else {
+
+      status=job.reduces[0].taskStatuses.get(new TaskAttemptID(job.reduces[0].getTIPId(),0));
+
+    }
+
+  }
+
+ else {
+
+    task=job.findReduceTask(tracker);
+
+    status=new ReduceTaskStatus(task,0.01f,2,TaskStatus.State.RUNNING,"","",tracker,TaskStatus.Phase.REDUCE,new Counters());
+
+  }
+
+  reports.add(status);
+
+}
+
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+FakeJobInProgress createJob(TaskType taskType) throws IOException {
+
+  JobConf conf=new JobConf();
+
+  conf.setSpeculativeExecution(false);
+
+  conf.setNumMapTasks(2);
+
+  conf.setNumReduceTasks(2);
+
+  conf.set(JobContext.REDUCE_FAILURES_MAXPERCENT,".70");
+
+  conf.set(JobContext.MAP_FAILURES_MAX_PERCENT,".70");
+
+  FakeJobInProgress job=null;
+
+  if (taskType == null) {
+
+    conf.setBoolean(JobContext.SETUP_CLEANUP_NEEDED,false);
+
+    job=new FakeJobInProgress(conf,jobTracker);
+
+  }
+
+ else   if (taskType == TaskType.JOB_SETUP) {
+
+    job=new FakeJobWithSetupTask(conf,jobTracker);
+
+  }
+
+ else   if (taskType == TaskType.TASK_CLEANUP) {
+
+    job=new FakeJobWithTaskCleanupTask(conf,jobTracker);
+
+  }
+
+  job.setClusterSize(trackers.length);
+
+  job.initTasks();
+
+  return job;
+
+}
+
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+TaskTrackerStatus createTaskTrackerStatus(String tracker,List<TaskStatus> reports){
+
+  TaskTrackerStatus ttStatus=new TaskTrackerStatus(tracker,JobInProgress.convertTrackerNameToHostName(tracker),0,reports,0,2,2);
+
+  return ttStatus;
+
+}
+
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+/** 
+
+ * Test to check that map slots are counted when returning a setup task.
+
+ * @throws IOException
+
+ */
+
+public void testMapSlotsCountedForSetup() throws IOException {
+
+  FakeJobInProgress job=createJob(TaskType.JOB_SETUP);
+
+  jobTracker.jobs.put(job.getJobID(),job);
+
+  FakeJobInProgress job1=createJob(null);
+
+  jobTracker.jobs.put(job1.getJobID(),job1);
+
+  List<TaskStatus> taskStatuses=new ArrayList<TaskStatus>();
+
+  addNewTaskStatus(job,TaskType.MAP,true,trackers[0],taskStatuses);
+
+  TaskTrackerStatus ttStatus=createTaskTrackerStatus(trackers[0],taskStatuses);
+
+  List<Task> tasks=jobTracker.getSetupAndCleanupTasks(ttStatus);
+
+  assertEquals(1,tasks.size());
+
+  assertTrue(tasks.get(0).isJobSetupTask());
+
+  assertFalse(tasks.get(0).isMapTask());
+
+  jobTracker.jobs.clear();
+
+}
+
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+/** 
+
+ * Test to check that map slots are counted when returning a taskCleanup task.
+
+ * @throws IOException
+
+ */
+
+public void testNumSlotsUsedForTaskCleanup() throws IOException {
+
+  FakeJobInProgress job=createJob(TaskType.TASK_CLEANUP);
+
+  jobTracker.jobs.put(job.getJobID(),job);
+
+  List<TaskStatus> taskStatuses=new ArrayList<TaskStatus>();
+
+  TaskTrackerStatus ttStatus=createTaskTrackerStatus(trackers[0],taskStatuses);
+
+  validateNumSlotsUsedForTaskCleanup(ttStatus);
+
+  validateNumSlotsUsedForTaskCleanup(ttStatus);
+
+  jobTracker.jobs.clear();
+
+}
+
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+/** 
+
+ * Test to check that reduce slots are also counted when returning a setup task.
+
+ * @throws IOException
+
+ */
+
+public void testReduceSlotsCountedForSetup() throws IOException {
+
+  FakeJobInProgress job=createJob(TaskType.JOB_SETUP);
+
+  jobTracker.jobs.put(job.getJobID(),job);
+
+  FakeJobInProgress job1=createJob(null);
+
+  jobTracker.jobs.put(job1.getJobID(),job1);
+
+  List<TaskStatus> reports=new ArrayList<TaskStatus>();
+
+  addNewTaskStatus(job1,TaskType.MAP,true,trackers[1],reports);
+
+  addNewTaskStatus(job1,TaskType.REDUCE,false,trackers[1],reports);
+
+  TaskTrackerStatus ttStatus=createTaskTrackerStatus(trackers[1],reports);
+
+  List<Task> tasks=jobTracker.getSetupAndCleanupTasks(ttStatus);
+
+  assertNull(tasks);
+
+  jobTracker.jobs.clear();
+
+}
+
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+/** 
+
+ * Test that a setup task can be run against a map slot if it is free.
+
+ * @throws IOException
+
+ */
+
+public void testSetupTaskReturnedForFreeMapSlots() throws IOException {
+
+  FakeJobInProgress job=createJob(TaskType.JOB_SETUP);
+
+  jobTracker.jobs.put(job.getJobID(),job);
+
+  List<TaskStatus> reports=new ArrayList<TaskStatus>();
+
+  TaskTrackerStatus ttStatus=createTaskTrackerStatus(trackers[2],reports);
+
+  List<Task> tasks=jobTracker.getSetupAndCleanupTasks(ttStatus);
+
+  assertEquals(1,tasks.size());
+
+  assertTrue(tasks.get(0).isJobSetupTask());
+
+  assertTrue(tasks.get(0).isMapTask());
+
+  jobTracker.jobs.clear();
+
+}
+
+Location: TestSetupTaskScheduling.java
+
+Content: 
+
+void validateNumSlotsUsedForTaskCleanup(TaskTrackerStatus ttStatus) throws IOException {
+
+  List<Task> tasks=jobTracker.getSetupAndCleanupTasks(ttStatus);
+
+  assertEquals("Actual number of taskCleanup tasks is not same as expected",1,tasks.size());
+
+  LOG.info("taskCleanup task is " + tasks.get(0));
+
+  assertTrue(tasks.get(0).isTaskCleanupTask());
+
+  assertEquals("TaskCleanup task should not need more than 1 slot.",1,tasks.get(0).getNumSlotsRequired());
+
+}
+

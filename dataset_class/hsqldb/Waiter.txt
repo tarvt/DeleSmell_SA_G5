@@ -1,0 +1,128 @@
+Location: Waiter.java
+
+Content: 
+
+/** 
+
+ * It doesn't matter if the waiter or the waitee runs getWaiter() first.  Whoever requests it first will instantiate it.
+
+ * @return A Waiter instance.  Never returns nul.
+
+ */
+
+public synchronized static Waiter getWaiter(String key){
+
+  Waiter waiter=(Waiter)map.get(key);
+
+  if (waiter == null)   waiter=new Waiter(key);
+
+  return waiter;
+
+}
+
+Location: Waiter.java
+
+Content: 
+
+public boolean isNotified(){
+
+  return notified;
+
+}
+
+Location: Waiter.java
+
+Content: 
+
+public boolean isWaiting(){
+
+  return waiting;
+
+}
+
+Location: Waiter.java
+
+Content: 
+
+/** 
+
+ * @param enforceSequence  Fail if waitFor() called before resume()
+
+ */
+
+public synchronized void resume(boolean enforceSequence){
+
+  if (enforceSequence && !waiting) {
+
+    abort=true;
+
+    throw new RuntimeException("Requested to resume on '" + key + " ', but nothing is waiting for it");
+
+  }
+
+  notified=true;
+
+  notify();
+
+}
+
+Location: Waiter.java
+
+Content: 
+
+private Waiter(String key){
+
+  this.key=key;
+
+  map.put(key,this);
+
+}
+
+Location: Waiter.java
+
+Content: 
+
+/** 
+
+ * @param enforceSequence  Fail if waitFor() called before resume()
+
+ */
+
+public synchronized void waitFor(boolean enforceSequence){
+
+  if (abort)   throw new RuntimeException("Notifier side failed previously");
+
+  if (notified) {
+
+    if (enforceSequence)     throw new RuntimeException("Request to wait on '" + key + "', but this object has already been notified");
+
+    return;
+
+  }
+
+  waiting=true;
+
+  try {
+
+    wait();
+
+  }
+
+ catch (  InterruptedException ie) {
+
+    throw new RuntimeException("Unexpected interrupted while waiting for '" + key + "'",ie);
+
+  }
+
+ finally {
+
+    waiting=false;
+
+  }
+
+  map.remove(this);
+
+  if (!notified)   throw new RuntimeException("Exiting waitFor() on '" + key + "' even though not 'notified'");
+
+}
+

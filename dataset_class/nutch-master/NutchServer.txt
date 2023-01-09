@@ -1,0 +1,254 @@
+Location: NutchServer.java
+
+Content: 
+
+public boolean canStop(boolean force){
+
+  if (force)   return true;
+
+  Collection<JobInfo> jobs=getJobManager().list(null,State.RUNNING);
+
+  return jobs.isEmpty();
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+private static Options createOptions(){
+
+  Options options=new Options();
+
+  OptionBuilder.withDescription("Show this help");
+
+  options.addOption(OptionBuilder.create(CMD_HELP));
+
+  OptionBuilder.withArgName("port");
+
+  OptionBuilder.hasOptionalArg();
+
+  OptionBuilder.withDescription("The port to run the Nutch Server. Default port 8081");
+
+  options.addOption(OptionBuilder.create(CMD_PORT));
+
+  OptionBuilder.withArgName("host");
+
+  OptionBuilder.hasOptionalArg();
+
+  OptionBuilder.withDescription("The host to bind the Nutch Server to. Default is localhost.");
+
+  options.addOption(OptionBuilder.create(CMD_HOST));
+
+  return options;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+private List<Class<?>> getClasses(){
+
+  List<Class<?>> resources=new ArrayList<>();
+
+  resources.add(JobResource.class);
+
+  resources.add(ConfigResource.class);
+
+  resources.add(DbResource.class);
+
+  resources.add(AdminResource.class);
+
+  resources.add(SeedResource.class);
+
+  resources.add(ReaderResouce.class);
+
+  resources.add(ServicesResource.class);
+
+  return resources;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public ConfManager getConfManager(){
+
+  return configManager;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public FetchNodeDb getFetchNodeDb(){
+
+  return fetchNodeDb;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public JobManager getJobManager(){
+
+  return jobManager;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public int getPort(){
+
+  return port;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+private List<ResourceProvider> getResourceProviders(){
+
+  List<ResourceProvider> resourceProviders=new ArrayList<>();
+
+  resourceProviders.add(new SingletonResourceProvider(getConfManager()));
+
+  return resourceProviders;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public SeedManager getSeedManager(){
+
+  return seedManager;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public long getStarted(){
+
+  return started;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public boolean isRunning(){
+
+  return running;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+private NutchServer(){
+
+  configManager=new ConfManagerImpl();
+
+  seedManager=new SeedManagerImpl();
+
+  BlockingQueue<Runnable> runnables=Queues.newArrayBlockingQueue(JOB_CAPACITY);
+
+  NutchServerPoolExecutor executor=new NutchServerPoolExecutor(10,JOB_CAPACITY,1,TimeUnit.HOURS,runnables);
+
+  jobManager=new JobManagerImpl(new JobFactory(),configManager,executor);
+
+  fetchNodeDb=FetchNodeDb.getInstance();
+
+  sf=new JAXRSServerFactoryBean();
+
+  BindingFactoryManager manager=sf.getBus().getExtension(BindingFactoryManager.class);
+
+  JAXRSBindingFactory factory=new JAXRSBindingFactory();
+
+  factory.setBus(sf.getBus());
+
+  manager.registerBindingFactory(JAXRSBindingFactory.JAXRS_BINDING_ID,factory);
+
+  sf.setResourceClasses(getClasses());
+
+  sf.setResourceProviders(getResourceProviders());
+
+  sf.setProvider(new JacksonJaxbJsonProvider());
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+protected static void setPort(int port){
+
+  NutchServer.port=port;
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+private void start(){
+
+  LOG.info("Starting NutchServer on {}:{}  ...",host,port);
+
+  try {
+
+    String address="http://" + host + ":"+ port;
+
+    sf.setAddress(address);
+
+    sf.create();
+
+  }
+
+ catch (  Exception e) {
+
+    throw new IllegalStateException("Server could not be started",e);
+
+  }
+
+  started=System.currentTimeMillis();
+
+  running=true;
+
+  LOG.info("Started Nutch Server on {}:{} at {}",new Object[]{host,port,started});
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+protected static void startServer(){
+
+  server.start();
+
+}
+
+Location: NutchServer.java
+
+Content: 
+
+public void stop(){
+
+  System.exit(0);
+
+}
+

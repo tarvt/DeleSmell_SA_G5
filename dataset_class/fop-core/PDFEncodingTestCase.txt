@@ -1,0 +1,240 @@
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Check character encodings in the generated PDF data, by reading text lines identified by markers and checking their content
+
+ * @throws IOException
+
+ */
+
+private void checkEncoding(byte[] pdf,String[] testPattern) throws IOException {
+
+  String s=extractTextFromPDF(pdf);
+
+  int markersFound=0;
+
+  for (  String line : s.split("\n")) {
+
+    if (!line.contains(TEST_MARKER)) {
+
+      continue;
+
+    }
+
+    markersFound++;
+
+    for (int i=0; i < testPattern.length; i++) {
+
+      String marker=testPattern[i];
+
+      String pattern=testPattern[++i];
+
+      if (!line.contains(marker)) {
+
+        continue;
+
+      }
+
+      String msg=String.format("line containing '%s' must contain '%s'",marker,pattern);
+
+      assertTrue(msg,line.contains(pattern));
+
+    }
+
+  }
+
+  final int nMarkers=testPattern.length / 2;
+
+  assertEquals(nMarkers + " " + TEST_MARKER+ " markers must be found",nMarkers,markersFound);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+private static String extractTextFromPDF(byte[] pdfContent) throws IOException {
+
+  PDFTextStripper pdfStripper=new PDFTextStripper();
+
+  PDDocument pdDoc=PDDocument.load(pdfContent);
+
+  return pdfStripper.getText(pdDoc);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+public PDFEncodingTestCase() throws SAXException, IOException {
+
+  super(INPUT_FILE);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Test encoding using specified input file and test patterns array 
+
+ */
+
+private void runTest(String inputFile,String[] testPatterns) throws Exception {
+
+  File foFile=new File(foBaseDir,inputFile);
+
+  byte[] pdfData=convertFO(foFile,getUserAgent(),dumpPDF);
+
+  checkEncoding(pdfData,testPatterns);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests the createPDFEncoding method to ensure a null encoding type is handled correctly.
+
+ */
+
+@Test public void testCreatePDFEncodingForNull(){
+
+  Object encoding=PDFEncoding.createPDFEncoding(null,"Test");
+
+  assertEquals(encoding,null);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests that when the SymbolEncoding type is provided and there are no differences, the returned encoding string is that of SymbolEncoding.
+
+ */
+
+@Test public void testCreatePDFEncodingSymbol(){
+
+  Object encoding=PDFEncoding.createPDFEncoding(CodePointMapping.getMapping(CodePointMapping.SYMBOL_ENCODING),"Symbol");
+
+  assert (encoding instanceof String);
+
+  String pdfEncoding=(String)encoding;
+
+  assertEquals(pdfEncoding,"SymbolEncoding");
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Test encoding with a Custom Font using BMP characters. NB: The Gladiator font do not contain '_' Glyph
+
+ * @throws Exception checkstyle wants a comment here, even a silly one
+
+ */
+
+@Test public void testPDFEncodingWithCustomFont() throws Exception {
+
+  final String[] testPatterns={TEST_MARKER + "1","Gladiator",TEST_MARKER + "2","XX_\u00E9_XX",TEST_MARKER + "3","XX_\u00E2\u00EA\u00EE\u00F4\u00FB_XX"};
+
+  runTest("test-custom-font.fo",testPatterns);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Test encoding with a Custom Font using non-BMP characters
+
+ * @throws Exception checkstyle wants a comment here, even a silly one
+
+ */
+
+@Test public void testPDFEncodingWithNonBMPFont() throws Exception {
+
+  final String[] testPatterns={TEST_MARKER + "1","AndroidEmoji",TEST_MARKER + "2","\uD800\uDF00"};
+
+  runTest("test-custom-non-bmp-font.fo",testPatterns);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Test using a standard FOP font
+
+ * @throws Exception checkstyle wants a comment here, even a silly one
+
+ */
+
+@Test public void testPDFEncodingWithStandardFont() throws Exception {
+
+  final String[] testPatterns={TEST_MARKER + "1","Standard",TEST_MARKER + "2","XX_\u00E9_XX",TEST_MARKER + "3","XX_\u00E2\u00EA\u00EE\u00F4\u00FB_XX"};
+
+  runTest("test-standard-font.fo",testPatterns);
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests that when a PDFEncoding object is created, if the encoding type is that of StandardEncoding, the baseEncoding tag is omitted.
+
+ */
+
+@Test public void testStandardEncodingDiffs(){
+
+  Object encoding=PDFEncoding.createPDFEncoding(CodePointMapping.getMapping(CodePointMapping.SYMBOL_ENCODING),"Test");
+
+  if (encoding instanceof PDFEncoding) {
+
+    PDFEncoding pdfEncoding=(PDFEncoding)encoding;
+
+    assertFalse(pdfEncoding.entries.containsKey("BaseEncoding"));
+
+  }
+
+}
+
+Location: PDFEncodingTestCase.java
+
+Content: 
+
+/** 
+
+ * Tests that when the StandardEncoding type is provided and there are no differences, the returned encoding object is null.
+
+ */
+
+@Test public void testStandardEncodingNoDiff(){
+
+  Object encoding=PDFEncoding.createPDFEncoding(CodePointMapping.getMapping(CodePointMapping.STANDARD_ENCODING),"Test");
+
+  assertEquals(encoding,null);
+
+}
+

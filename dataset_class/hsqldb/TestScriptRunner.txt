@@ -1,0 +1,186 @@
+Location: TestScriptRunner.java
+
+Content: 
+
+public void establishConnections() throws SQLException {
+
+  for (int i=0; i < scriptRuns.size(); i++)   ((ScriptRun)scriptRuns.get(i)).connect();
+
+  if (verbose)   System.out.println(Integer.toString(scriptRuns.size()) + " connection threads connected");
+
+}
+
+Location: TestScriptRunner.java
+
+Content: 
+
+/** 
+
+ * Copied directly from TestCacheSize.main(). My goal is to configure population of this database by a properties file, not by command line (which would just be too many settings along with the main settings), nor by System Properties (ditto). I see nothing in the TestCacheSize source code to allow loading by a properties file, however.
+
+ */
+
+static protected TestCacheSize populate(){
+
+  TestCacheSize test=new TestCacheSize();
+
+  test.filepath="mem:test";
+
+  test.filedb=false;
+
+  test.shutdown=false;
+
+  test.setUp();
+
+  test.testFillUp();
+
+  return test;
+
+}
+
+Location: TestScriptRunner.java
+
+Content: 
+
+public boolean runScripts(){
+
+  ScriptRun scriptRun;
+
+  for (int i=0; i < scriptRuns.size(); i++) {
+
+    scriptRun=(ScriptRun)scriptRuns.get(i);
+
+    if (verbose)     System.out.print("Starting " + (++i) + " / "+ scriptRuns.size()+ "...");
+
+    scriptRun.start();
+
+    if (verbose)     System.out.println("  +");
+
+    if (!threaded)     try {
+
+      scriptRun.join();
+
+    }
+
+ catch (    InterruptedException ie) {
+
+      throw new RuntimeException("Interrupted while waiting for script '" + scriptRun.getName() + "' to execute",ie);
+
+    }
+
+  }
+
+  if (threaded) {
+
+    if (verbose)     System.out.println("All scripts started.  Will now wait for them.");
+
+    for (int i=0; i < scriptRuns.size(); i++)     try {
+
+      ((ScriptRun)scriptRuns.get(i)).join();
+
+    }
+
+ catch (    InterruptedException ie) {
+
+      throw new RuntimeException("Interrupted while waiting for script to execute",ie);
+
+    }
+
+  }
+
+  for (int i=0; i < scriptRuns.size(); i++) {
+
+    if (!((ScriptRun)scriptRuns.get(i)).getSuccess())     return false;
+
+  }
+
+  return true;
+
+}
+
+Location: TestScriptRunner.java
+
+Content: 
+
+public void setThreaded(boolean threaded){
+
+  this.threaded=threaded;
+
+}
+
+Location: TestScriptRunner.java
+
+Content: 
+
+public TestScriptRunner(String rcFileString,Map scriptFileMap) throws IOException {
+
+  TestUtil.setAbortOnErr(true);
+
+  Map rcdataMap=new HashMap();
+
+  File rcFile=new File(rcFileString);
+
+  if (!rcFile.isFile())   throw new IllegalArgumentException("RC file '" + rcFileString + "' not a file");
+
+  String scriptPath, urlid;
+
+  Iterator it;
+
+  File file;
+
+  Reader reader=null;
+
+  it=scriptFileMap.values().iterator();
+
+  while (it.hasNext()) {
+
+    urlid=(String)it.next();
+
+    if (rcdataMap.containsKey(urlid))     continue;
+
+    try {
+
+      rcdataMap.put(urlid,new RCData(rcFile,urlid));
+
+    }
+
+ catch (    Exception e) {
+
+      throw new RuntimeException("Failed to instantiate RCData with file '" + rcFile + "' for urlid '"+ urlid+ "'",e);
+
+    }
+
+  }
+
+  it=scriptFileMap.keySet().iterator();
+
+  while (it.hasNext()) {
+
+    scriptPath=(String)it.next();
+
+    urlid=(String)scriptFileMap.get(scriptPath);
+
+    if (scriptPath.equals("-")) {
+
+      reader=new InputStreamReader(System.in);
+
+    }
+
+ else {
+
+      file=new File(scriptPath);
+
+      if (!file.isFile())       throw new IOException("'" + file + "' is not a file");
+
+      if (!file.canRead())       throw new IOException("'" + file + "' is not readable");
+
+      reader=new FileReader(file);
+
+    }
+
+    scriptRuns.add(new ScriptRun(scriptPath,reader,(RCData)rcdataMap.get(urlid)));
+
+  }
+
+}
+

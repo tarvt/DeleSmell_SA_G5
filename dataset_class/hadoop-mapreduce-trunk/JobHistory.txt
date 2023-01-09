@@ -1,0 +1,626 @@
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Close the event writer for this id 
+
+ */
+
+public void closeWriter(JobID id){
+
+  try {
+
+    final MetaInfo mi=fileMap.get(id);
+
+    if (mi != null) {
+
+      mi.closeWriter();
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.info("Error closing writer for JobID: " + id);
+
+  }
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Get the history location for completed jobs
+
+ */
+
+public Path getCompletedJobHistoryLocation(){
+
+  return done;
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Get the job conf file for the given jobId
+
+ * @param logDir
+
+ * @param jobId
+
+ * @return the jobconf.xml path
+
+ */
+
+public static Path getConfFile(Path logDir,JobID jobId){
+
+  Path jobFilePath=null;
+
+  if (logDir != null) {
+
+    jobFilePath=new Path(logDir + File.separator + jobId.toString()+ "_conf.xml");
+
+  }
+
+  return jobFilePath;
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Given the job id, return the history file path from the cache
+
+ */
+
+public String getHistoryFilePath(JobID jobId){
+
+  MovedFileInfo info=jobHistoryFileMap.get(jobId);
+
+  if (info == null) {
+
+    return null;
+
+  }
+
+  return info.historyFile;
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Get the job history file path
+
+ */
+
+public static Path getJobHistoryFile(Path dir,JobID jobId,String user){
+
+  return new Path(dir,jobId.toString() + "_" + user);
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Get the history location
+
+ */
+
+public Path getJobHistoryLocation(){
+
+  return logDir;
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Get the JobID from the history file's name. See it's companion method {@link #getJobHistoryFile(Path,JobID,String)} for how history file's nameis constructed from a given JobID and userName.
+
+ * @param jobHistoryFilePath
+
+ * @return jobID
+
+ */
+
+public static JobID getJobIDFromHistoryFilePath(Path jobHistoryFilePath){
+
+  String[] jobDetails=jobHistoryFilePath.getName().split("_");
+
+  String jobId=jobDetails[0] + "_" + jobDetails[1]+ "_"+ jobDetails[2];
+
+  return JobID.forName(jobId);
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Generates a suffix for old/stale jobhistory files Pattern : . + identifier + .old
+
+ */
+
+public static String getOldFileSuffix(String identifier){
+
+  return "." + identifier + JobHistory.OLD_SUFFIX;
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Get the user name of the job-submitter from the history file's name. See it's companion method  {@link #getJobHistoryFile(Path,JobID,String)} forhow history file's name is constructed from a given JobID and username.
+
+ * @param jobHistoryFilePath
+
+ * @return the user-name
+
+ */
+
+public static String getUserFromHistoryFilePath(Path jobHistoryFilePath){
+
+  String[] jobDetails=jobHistoryFilePath.getName().split("_");
+
+  return jobDetails[3];
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+private String getUserName(JobConf jobConf){
+
+  String user=jobConf.getUser();
+
+  if (user == null) {
+
+    user="";
+
+  }
+
+  return user;
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Initialize the done directory and start the history cleaner thread 
+
+ */
+
+public void initDone(JobConf conf,FileSystem fs) throws IOException {
+
+  String doneLocation=conf.get(JTConfig.JT_JOBHISTORY_COMPLETED_LOCATION);
+
+  if (doneLocation != null) {
+
+    Path donePath=new Path(doneLocation);
+
+    doneDirFs=donePath.getFileSystem(conf);
+
+    done=doneDirFs.makeQualified(donePath);
+
+  }
+
+ else {
+
+    done=logDirFs.makeQualified(new Path(logDir,"done"));
+
+    doneDirFs=logDirFs;
+
+  }
+
+  if (!doneDirFs.exists(done)) {
+
+    LOG.info("Creating DONE folder at " + done);
+
+    if (!doneDirFs.mkdirs(done,new FsPermission(HISTORY_DIR_PERMISSION))) {
+
+      throw new IOException("Mkdirs failed to create " + done.toString());
+
+    }
+
+  }
+
+  LOG.info("Inited the done directory to " + done.toString());
+
+  moveOldFiles();
+
+  startFileMoverThreads();
+
+  long maxAgeOfHistoryFiles=conf.getLong(JTConfig.JT_JOBHISTORY_MAXAGE,DEFAULT_HISTORY_MAX_AGE);
+
+  historyCleanerThread=new HistoryCleaner(maxAgeOfHistoryFiles);
+
+  historyCleanerThread.start();
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Initialize Job History Module
+
+ * @param jt Job Tracker handle
+
+ * @param conf Configuration
+
+ * @param hostname Host name of JT
+
+ * @param jobTrackerStartTime Start time of JT
+
+ * @throws IOException
+
+ */
+
+public void init(JobTracker jt,JobConf conf,String hostname,long jobTrackerStartTime) throws IOException {
+
+  final String logDirLoc=conf.get(JTConfig.JT_JOBHISTORY_LOCATION,"file:///" + new File(System.getProperty("hadoop.log.dir")).getAbsolutePath() + File.separator+ "history");
+
+  LOG.info("History log directory is " + logDirLoc);
+
+  logDir=new Path(logDirLoc);
+
+  logDirFs=logDir.getFileSystem(conf);
+
+  if (!logDirFs.exists(logDir)) {
+
+    if (!logDirFs.mkdirs(logDir,new FsPermission(HISTORY_DIR_PERMISSION))) {
+
+      throw new IOException("Mkdirs failed to create " + logDir.toString());
+
+    }
+
+  }
+
+  conf.set(JTConfig.JT_JOBHISTORY_LOCATION,logDirLoc);
+
+  jobHistoryBlockSize=conf.getLong(JTConfig.JT_JOBHISTORY_BLOCK_SIZE,3 * 1024 * 1024);
+
+  jobTracker=jt;
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Method to log the specified event
+
+ * @param event The event to log
+
+ * @param id The Job ID of the event
+
+ */
+
+public void logEvent(HistoryEvent event,JobID id){
+
+  try {
+
+    final MetaInfo mi=fileMap.get(id);
+
+    if (mi != null) {
+
+      mi.writeEvent(event);
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.error("Error Logging event, " + e.getMessage());
+
+  }
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Move the completed job into the completed folder. This assumes that the job history file is closed and  all operations on the job history file is complete. This *should* be the last call to job history for a given job.
+
+ */
+
+public void markCompleted(JobID id) throws IOException {
+
+  moveToDone(id);
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+private void moveOldFiles() throws IOException {
+
+  FileStatus[] files=logDirFs.listStatus(logDir);
+
+  String fileSuffix=getOldFileSuffix(jobTracker.getTrackerIdentifier());
+
+  for (  FileStatus fileStatus : files) {
+
+    Path fromPath=fileStatus.getPath();
+
+    if (fromPath.equals(done)) {
+
+      continue;
+
+    }
+
+    LOG.info("Moving log file from last run: " + fromPath);
+
+    Path toPath=new Path(done,fromPath.getName() + fileSuffix);
+
+    try {
+
+      moveToDoneNow(fromPath,toPath);
+
+    }
+
+ catch (    ChecksumException e) {
+
+      LOG.warn("Unable to move " + fromPath + ", deleting it");
+
+      try {
+
+        boolean b=logDirFs.delete(fromPath,false);
+
+        if (LOG.isDebugEnabled()) {
+
+          LOG.debug("Deletion of corrupt file " + fromPath + " returned "+ b);
+
+        }
+
+      }
+
+ catch (      IOException ioe) {
+
+        LOG.warn("Unable to delete " + fromPath + "Exception: "+ ioe.getMessage());
+
+      }
+
+    }
+
+catch (    IOException e) {
+
+      LOG.warn("Error moving file " + fromPath + " to done folder."+ "Ignoring.");
+
+    }
+
+  }
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+private void moveToDoneNow(Path fromPath,Path toPath) throws IOException {
+
+  if (logDirFs.exists(fromPath)) {
+
+    LOG.info("Moving " + fromPath.toString() + " to "+ toPath.toString());
+
+    doneDirFs.moveFromLocalFile(fromPath,toPath);
+
+    doneDirFs.setPermission(toPath,new FsPermission(JobHistory.HISTORY_FILE_PERMISSION));
+
+  }
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+private void moveToDone(final JobID id){
+
+  final List<Path> paths=new ArrayList<Path>();
+
+  final MetaInfo metaInfo=fileMap.get(id);
+
+  if (metaInfo == null) {
+
+    LOG.info("No file for job-history with " + id + " found in cache!");
+
+    return;
+
+  }
+
+  final Path historyFile=metaInfo.getHistoryFile();
+
+  if (historyFile == null) {
+
+    LOG.info("No file for job-history with " + id + " found in cache!");
+
+  }
+
+ else {
+
+    paths.add(historyFile);
+
+  }
+
+  final Path confPath=metaInfo.getConfFile();
+
+  if (confPath == null) {
+
+    LOG.info("No file for jobconf with " + id + " found in cache!");
+
+  }
+
+ else {
+
+    paths.add(confPath);
+
+  }
+
+  executor.execute(new Runnable(){
+
+    public void run(){
+
+      try {
+
+        for (        Path path : paths) {
+
+          moveToDoneNow(path,new Path(done,path.getName()));
+
+        }
+
+      }
+
+ catch (      Throwable e) {
+
+        LOG.error("Unable to move history file to DONE folder.",e);
+
+      }
+
+      String historyFileDonePath=null;
+
+      if (historyFile != null) {
+
+        historyFileDonePath=new Path(done,historyFile.getName()).toString();
+
+      }
+
+      jobHistoryFileMap.put(id,new MovedFileInfo(historyFileDonePath,System.currentTimeMillis()));
+
+      jobTracker.retireJob(org.apache.hadoop.mapred.JobID.downgrade(id),historyFileDonePath);
+
+      fileMap.remove(id);
+
+    }
+
+  }
+
+);
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+/** 
+
+ * Create an event writer for the Job represented by the jobID. This should be the first call to history for a job
+
+ * @param jobId
+
+ * @param jobConf
+
+ * @throws IOException
+
+ */
+
+public void setupEventWriter(JobID jobId,JobConf jobConf) throws IOException {
+
+  Path logFile=getJobHistoryFile(logDir,jobId,getUserName(jobConf));
+
+  if (logDir == null) {
+
+    LOG.info("Log Directory is null, returning");
+
+    throw new IOException("Missing Log Directory for History");
+
+  }
+
+  int defaultBufferSize=logDirFs.getConf().getInt("io.file.buffer.size",4096);
+
+  LOG.info("SetupWriter, creating file " + logFile);
+
+  FSDataOutputStream out=logDirFs.create(logFile,new FsPermission(JobHistory.HISTORY_FILE_PERMISSION),true,defaultBufferSize,logDirFs.getDefaultReplication(),jobHistoryBlockSize,null);
+
+  EventWriter writer=new EventWriter(out);
+
+  Path logDirConfPath=getConfFile(logDir,jobId);
+
+  LOG.info("LogDirConfPath is " + logDirConfPath);
+
+  FSDataOutputStream jobFileOut=null;
+
+  try {
+
+    if (logDirConfPath != null) {
+
+      defaultBufferSize=logDirFs.getConf().getInt("io.file.buffer.size",4096);
+
+      if (!logDirFs.exists(logDirConfPath)) {
+
+        jobFileOut=logDirFs.create(logDirConfPath,new FsPermission(JobHistory.HISTORY_FILE_PERMISSION),true,defaultBufferSize,logDirFs.getDefaultReplication(),logDirFs.getDefaultBlockSize(),null);
+
+        jobConf.writeXml(jobFileOut);
+
+        jobFileOut.close();
+
+      }
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.info("Failed to close the job configuration file " + StringUtils.stringifyException(e));
+
+  }
+
+  MetaInfo fi=new MetaInfo(logFile,logDirConfPath,writer);
+
+  fileMap.put(jobId,fi);
+
+}
+
+Location: JobHistory.java
+
+Content: 
+
+private void startFileMoverThreads(){
+
+  executor=new ThreadPoolExecutor(1,3,1,TimeUnit.HOURS,new LinkedBlockingQueue<Runnable>());
+
+}
+

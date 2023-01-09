@@ -1,0 +1,146 @@
+Location: LocalBlockFixer.java
+
+Content: 
+
+void doFix() throws InterruptedException, IOException {
+
+  while (running) {
+
+    Thread.sleep(blockFixInterval);
+
+    purgeHistory();
+
+    List<Path> corruptFiles=getCorruptFiles();
+
+    filterUnfixableSourceFiles(corruptFiles.iterator());
+
+    if (corruptFiles.isEmpty()) {
+
+      continue;
+
+    }
+
+    LOG.info("Found " + corruptFiles.size() + " corrupt files.");
+
+    helper.sortCorruptFiles(corruptFiles);
+
+    for (    Path srcPath : corruptFiles) {
+
+      if (!running)       break;
+
+      try {
+
+        boolean fixed=helper.fixFile(srcPath);
+
+        LOG.info("Adding " + srcPath + " to history");
+
+        history.put(srcPath.toString(),new java.util.Date());
+
+        if (fixed) {
+
+          incrFilesFixed();
+
+        }
+
+      }
+
+ catch (      IOException ie) {
+
+        LOG.error("Hit error while processing " + srcPath + ": "+ StringUtils.stringifyException(ie));
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: LocalBlockFixer.java
+
+Content: 
+
+/** 
+
+ * @return A list of corrupt files as obtained from the namenode
+
+ */
+
+List<Path> getCorruptFiles() throws IOException {
+
+  DistributedFileSystem dfs=helper.getDFS(new Path("/"));
+
+  String[] files=RaidDFSUtil.getCorruptFiles(dfs);
+
+  List<Path> corruptFiles=new LinkedList<Path>();
+
+  for (  String f : files) {
+
+    Path p=new Path(f);
+
+    if (!history.containsKey(p.toString())) {
+
+      corruptFiles.add(p);
+
+    }
+
+  }
+
+  RaidUtils.filterTrash(getConf(),corruptFiles);
+
+  return corruptFiles;
+
+}
+
+Location: LocalBlockFixer.java
+
+Content: 
+
+public LocalBlockFixer(Configuration conf) throws IOException {
+
+  super(conf);
+
+  history=new java.util.HashMap<String,java.util.Date>();
+
+  helper=new BlockFixerHelper(getConf());
+
+}
+
+Location: LocalBlockFixer.java
+
+Content: 
+
+/** 
+
+ * We maintain history of fixed files because a fixed file may appear in the list of corrupt files if we loop around too quickly. This function removes the old items in the history so that we can recognize files that have actually become corrupt since being fixed.
+
+ */
+
+void purgeHistory(){
+
+  java.util.Date cutOff=new java.util.Date(System.currentTimeMillis() - historyInterval);
+
+  List<String> toRemove=new java.util.ArrayList<String>();
+
+  for (  String key : history.keySet()) {
+
+    java.util.Date item=history.get(key);
+
+    if (item.before(cutOff)) {
+
+      toRemove.add(key);
+
+    }
+
+  }
+
+  for (  String key : toRemove) {
+
+    LOG.info("Removing " + key + " from history");
+
+    history.remove(key);
+
+  }
+
+}
+

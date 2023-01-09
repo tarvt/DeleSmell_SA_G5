@@ -1,0 +1,256 @@
+Location: TestBadRecords.java
+
+Content: 
+
+private List<String> getProcessed(List<String> inputs,List<String> badRecs){
+
+  List<String> processed=new ArrayList<String>();
+
+  for (  String input : inputs) {
+
+    if (!badRecs.contains(input)) {
+
+      processed.add(input);
+
+    }
+
+  }
+
+  return processed;
+
+}
+
+Location: TestBadRecords.java
+
+Content: 
+
+private void runMapReduce(JobConf conf,List<String> mapperBadRecords,List<String> redBadRecords) throws Exception {
+
+  hongshuai();
+
+  OutputStream os=getFileSystem().create(new Path(getInputDir(),"text.txt"));
+
+  Writer wr=new OutputStreamWriter(os);
+
+  for (  String inp : input) {
+
+    wr.write(inp + "\n");
+
+  }
+
+  wr.close();
+
+  conf.setJobName("mr");
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(1);
+
+  conf.setInt(JobContext.TASK_TIMEOUT,30 * 1000);
+
+  SkipBadRecords.setMapperMaxSkipRecords(conf,Long.MAX_VALUE);
+
+  SkipBadRecords.setReducerMaxSkipGroups(conf,Long.MAX_VALUE);
+
+  SkipBadRecords.setAttemptsToStartSkipping(conf,0);
+
+  conf.setMaxMapAttempts(SkipBadRecords.getAttemptsToStartSkipping(conf) + 1 + mapperBadRecords.size());
+
+  conf.setMaxReduceAttempts(SkipBadRecords.getAttemptsToStartSkipping(conf) + 1 + redBadRecords.size());
+
+  FileInputFormat.setInputPaths(conf,getInputDir());
+
+  FileOutputFormat.setOutputPath(conf,getOutputDir());
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setMapOutputKeyClass(LongWritable.class);
+
+  conf.setMapOutputValueClass(Text.class);
+
+  conf.setOutputFormat(TextOutputFormat.class);
+
+  conf.setOutputKeyClass(LongWritable.class);
+
+  conf.setOutputValueClass(Text.class);
+
+  RunningJob runningJob=JobClient.runJob(conf);
+
+  validateOutput(conf,runningJob,mapperBadRecords,redBadRecords);
+
+}
+
+Location: TestBadRecords.java
+
+Content: 
+
+public void testBadMapRed() throws Exception {
+
+  JobConf conf=createJobConf();
+
+  conf.setMapperClass(BadMapper.class);
+
+  conf.setReducerClass(BadReducer.class);
+
+  runMapReduce(conf,MAPPER_BAD_RECORDS,REDUCER_BAD_RECORDS);
+
+}
+
+Location: TestBadRecords.java
+
+Content: 
+
+public TestBadRecords(){
+
+  input=new ArrayList<String>();
+
+  for (int i=1; i <= 10; i++) {
+
+    String str="" + i;
+
+    int zerosToPrepend=2 - str.length();
+
+    for (int j=0; j < zerosToPrepend; j++) {
+
+      str="0" + str;
+
+    }
+
+    input.add("hello" + str);
+
+  }
+
+}
+
+Location: TestBadRecords.java
+
+Content: 
+
+private void validateOutput(JobConf conf,RunningJob runningJob,List<String> mapperBadRecords,List<String> redBadRecords) throws Exception {
+
+  LOG.info(runningJob.getCounters().toString());
+
+  assertTrue(runningJob.isSuccessful());
+
+  Counters counters=runningJob.getCounters();
+
+  assertEquals(counters.findCounter(TaskCounter.MAP_SKIPPED_RECORDS).getCounter(),mapperBadRecords.size());
+
+  int mapRecs=input.size() - mapperBadRecords.size();
+
+  assertEquals(counters.findCounter(TaskCounter.MAP_INPUT_RECORDS).getCounter(),mapRecs);
+
+  assertEquals(counters.findCounter(TaskCounter.MAP_OUTPUT_RECORDS).getCounter(),mapRecs);
+
+  int redRecs=mapRecs - redBadRecords.size();
+
+  assertEquals(counters.findCounter(TaskCounter.REDUCE_SKIPPED_RECORDS).getCounter(),redBadRecords.size());
+
+  assertEquals(counters.findCounter(TaskCounter.REDUCE_SKIPPED_GROUPS).getCounter(),redBadRecords.size());
+
+  assertEquals(counters.findCounter(TaskCounter.REDUCE_INPUT_GROUPS).getCounter(),redRecs);
+
+  assertEquals(counters.findCounter(TaskCounter.REDUCE_INPUT_RECORDS).getCounter(),redRecs);
+
+  assertEquals(counters.findCounter(TaskCounter.REDUCE_OUTPUT_RECORDS).getCounter(),redRecs);
+
+  Path skipDir=SkipBadRecords.getSkipOutputPath(conf);
+
+  assertNotNull(skipDir);
+
+  Path[] skips=FileUtil.stat2Paths(getFileSystem().listStatus(skipDir));
+
+  List<String> mapSkipped=new ArrayList<String>();
+
+  List<String> redSkipped=new ArrayList<String>();
+
+  for (  Path skipPath : skips) {
+
+    LOG.info("skipPath: " + skipPath);
+
+    SequenceFile.Reader reader=new SequenceFile.Reader(getFileSystem(),skipPath,conf);
+
+    Object key=ReflectionUtils.newInstance(reader.getKeyClass(),conf);
+
+    Object value=ReflectionUtils.newInstance(reader.getValueClass(),conf);
+
+    key=reader.next(key);
+
+    while (key != null) {
+
+      value=reader.getCurrentValue(value);
+
+      LOG.debug("key:" + key + " value:"+ value.toString());
+
+      if (skipPath.getName().contains("_r_")) {
+
+        redSkipped.add(value.toString());
+
+      }
+
+ else {
+
+        mapSkipped.add(value.toString());
+
+      }
+
+      key=reader.next(key);
+
+    }
+
+    reader.close();
+
+  }
+
+  assertTrue(mapSkipped.containsAll(mapperBadRecords));
+
+  assertTrue(redSkipped.containsAll(redBadRecords));
+
+  Path[] outputFiles=FileUtil.stat2Paths(getFileSystem().listStatus(getOutputDir(),new Utils.OutputFileUtils.OutputFilesFilter()));
+
+  List<String> mapperOutput=getProcessed(input,mapperBadRecords);
+
+  LOG.debug("mapperOutput " + mapperOutput.size());
+
+  List<String> reducerOutput=getProcessed(mapperOutput,redBadRecords);
+
+  LOG.debug("reducerOutput " + reducerOutput.size());
+
+  if (outputFiles.length > 0) {
+
+    InputStream is=getFileSystem().open(outputFiles[0]);
+
+    BufferedReader reader=new BufferedReader(new InputStreamReader(is));
+
+    String line=reader.readLine();
+
+    int counter=0;
+
+    while (line != null) {
+
+      counter++;
+
+      StringTokenizer tokeniz=new StringTokenizer(line,"\t");
+
+      String key=tokeniz.nextToken();
+
+      String value=tokeniz.nextToken();
+
+      LOG.debug("Output: key:" + key + "  value:"+ value);
+
+      assertTrue(value.contains("hello"));
+
+      assertTrue(reducerOutput.contains(value));
+
+      line=reader.readLine();
+
+    }
+
+    reader.close();
+
+    assertEquals(reducerOutput.size(),counter);
+
+  }
+
+}
+

@@ -1,0 +1,948 @@
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private int convertFromTTFSerifStyle(){
+
+  if (os2Table != null) {
+
+    int serifStyle=os2Table.getPanose()[1];
+
+    return FONT_SERIF.get(serifStyle);
+
+  }
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private int convertTTFWeightClass(int weightClass){
+
+  if (FONT_WEIGHT.containsKey(weightClass)) {
+
+    return FONT_WEIGHT.get(weightClass);
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private int convertTTFWidthClass(int widthClass){
+
+  if (FONT_WIDTH.containsKey(widthClass)) {
+
+    return FONT_WIDTH.get(widthClass);
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private ByteArrayOutputStream copyTables(List<TableOffset> tableOffsets,ByteArrayOutputStream baos,byte[] hmtxTable,int hmtxSize) throws IOException {
+
+  Map<Integer,byte[]> offsetValues=new HashMap<Integer,byte[]>();
+
+  for (  TableOffset tableOffset : tableOffsets) {
+
+    offsetValues.put(tableOffset.getNewOffset(),PCLByteWriterUtil.unsignedLongInt(baos.size()));
+
+    if (tableOffset.getOriginOffset() == -1) {
+
+      baos.write(hmtxTable);
+
+    }
+
+ else {
+
+      byte[] tableData=reader.getBytes((int)tableOffset.getOriginOffset(),(int)tableOffset.getOriginLength());
+
+      int index=tableOffsets.indexOf(tableOffset);
+
+      if (index == 1) {
+
+        tableData=updateHHEA(tableData,hmtxSize + 33);
+
+      }
+
+      baos.write(tableData);
+
+    }
+
+  }
+
+  baos=updateOffsets(baos,offsetValues);
+
+  return baos;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+protected byte[] createHmtx(Map<Character,Integer> mappedGlyphs) throws IOException {
+
+  byte[] hmtxTable=new byte[((mappedGlyphs.size() + 32) * 4)];
+
+  OFDirTabEntry entry=ttfFont.getDirectoryEntry(OFTableName.HMTX);
+
+  if (entry != null) {
+
+    for (    Entry<Character,Integer> glyphSubset : mappedGlyphs.entrySet()) {
+
+      char unicode=glyphSubset.getKey();
+
+      int originalIndex=0;
+
+      int softFontGlyphIndex=glyphSubset.getValue();
+
+      if (font instanceof MultiByteFont) {
+
+        originalIndex=((MultiByteFont)font).getGIDFromChar(unicode);
+
+        writeUShort(hmtxTable,(softFontGlyphIndex) * 4,ttfFont.getMtx().get(originalIndex).getWx());
+
+        writeUShort(hmtxTable,(softFontGlyphIndex) * 4 + 2,ttfFont.getMtx().get(originalIndex).getLsb());
+
+      }
+
+ else {
+
+        originalIndex=((SingleByteFont)font).getGIDFromChar(unicode);
+
+        writeUShort(hmtxTable,(softFontGlyphIndex) * 4,font.getWidth(originalIndex,1));
+
+        writeUShort(hmtxTable,(softFontGlyphIndex) * 4 + 2,0);
+
+      }
+
+    }
+
+  }
+
+  return hmtxTable;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getBaselinePosition(){
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getCellHeight(){
+
+  int[] bbox=ttfFont.getBBoxRaw();
+
+  return bbox[3] - bbox[1];
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public Map<Integer,int[]> getCharacterOffsets() throws IOException {
+
+  if (charOffsets == null) {
+
+    List<OFMtxEntry> mtx=ttfFont.getMtx();
+
+    OFTableName glyfTag=OFTableName.GLYF;
+
+    charOffsets=new HashMap<Integer,int[]>();
+
+    OFDirTabEntry tabEntry=ttfFont.getDirectoryEntry(glyfTag);
+
+    if (ttfFont.seekTab(reader,glyfTag,0)) {
+
+      for (int i=1; i < mtx.size(); i++) {
+
+        OFMtxEntry entry=mtx.get(i);
+
+        OFMtxEntry nextEntry;
+
+        int nextOffset=0;
+
+        int charCode=0;
+
+        if (entry.getUnicodeIndex().size() > 0) {
+
+          charCode=entry.getUnicodeIndex().get(0);
+
+        }
+
+ else {
+
+          charCode=entry.getIndex();
+
+        }
+
+        if (i < mtx.size() - 1) {
+
+          nextEntry=mtx.get(i + 1);
+
+          nextOffset=(int)nextEntry.getOffset();
+
+        }
+
+ else {
+
+          nextOffset=(int)ttfFont.getLastGlyfLocation();
+
+        }
+
+        int glyphOffset=(int)entry.getOffset();
+
+        int glyphLength=nextOffset - glyphOffset;
+
+        charOffsets.put(charCode,new int[]{(int)tabEntry.getOffset() + glyphOffset,glyphLength});
+
+      }
+
+    }
+
+  }
+
+  return charOffsets;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+protected static int getCheckSum(byte[] data,int start,int size){
+
+  int remainder=size % 4;
+
+  if (remainder != 0) {
+
+    size+=remainder;
+
+  }
+
+  long sum=0;
+
+  for (int i=0; i < size; i+=4) {
+
+    long l=0;
+
+    for (int j=0; j < 4; j++) {
+
+      l<<=8;
+
+      if (data.length > (start + i + j)) {
+
+        l|=data[start + i + j] & 0xff;
+
+      }
+
+    }
+
+    sum+=l;
+
+  }
+
+  return (int)sum;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getDescriptorSize(){
+
+  return 72;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getFirstCode(){
+
+  return 32;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public OpenFont getFontFile(){
+
+  return ttfFont;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public FontFileReader getFontFileReader(){
+
+  return reader;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getFontScalingTechnology(){
+
+  return 1;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+public List<PCLFontSegment> getFontSegments(Map<Character,Integer> mappedGlyphs) throws IOException {
+
+  List<PCLFontSegment> fontSegments=new ArrayList<PCLFontSegment>();
+
+  fontSegments.add(new PCLFontSegment(SegmentID.CC,getCharacterComplement()));
+
+  fontSegments.add(new PCLFontSegment(SegmentID.PA,PCLByteWriterUtil.toByteArray(os2Table.getPanose())));
+
+  fontSegments.add(new PCLFontSegment(SegmentID.GT,getGlobalTrueTypeData(mappedGlyphs)));
+
+  fontSegments.add(new PCLFontSegment(SegmentID.CP,ttfFont.getCopyrightNotice().getBytes("US-ASCII")));
+
+  fontSegments.add(new PCLFontSegment(SegmentID.NULL,new byte[0]));
+
+  return fontSegments;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getFontType(){
+
+  if (symbolSet == PCLSymbolSet.Unbound) {
+
+    return 11;
+
+  }
+
+ else {
+
+    return 2;
+
+  }
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private byte[] getGlobalTrueTypeData(Map<Character,Integer> mappedGlyphs) throws IOException {
+
+  ByteArrayOutputStream baos=new ByteArrayOutputStream();
+
+  List<TableOffset> tableOffsets=new ArrayList<TableOffset>();
+
+  baos.write(PCLByteWriterUtil.unsignedInt(1));
+
+  baos.write(PCLByteWriterUtil.unsignedInt(0));
+
+  int numTables=5;
+
+  OFDirTabEntry headTable=ttfFont.getDirectoryEntry(OFTableName.CVT);
+
+  if (headTable != null) {
+
+    numTables++;
+
+  }
+
+  OFDirTabEntry fpgmTable=ttfFont.getDirectoryEntry(OFTableName.FPGM);
+
+  if (fpgmTable != null) {
+
+    numTables++;
+
+  }
+
+  OFDirTabEntry prepTable=ttfFont.getDirectoryEntry(OFTableName.PREP);
+
+  if (prepTable != null) {
+
+    numTables++;
+
+  }
+
+  baos.write(PCLByteWriterUtil.unsignedInt(numTables));
+
+  int maxPowerNumTables=PCLByteWriterUtil.maxPower2(numTables);
+
+  int searchRange=maxPowerNumTables * 16;
+
+  baos.write(PCLByteWriterUtil.unsignedInt(searchRange));
+
+  baos.write(PCLByteWriterUtil.unsignedInt(PCLByteWriterUtil.log(maxPowerNumTables,2)));
+
+  baos.write(PCLByteWriterUtil.unsignedInt(numTables * 16 - searchRange));
+
+  writeTrueTypeTable(baos,OFTableName.HEAD,tableOffsets);
+
+  writeTrueTypeTable(baos,OFTableName.HHEA,tableOffsets);
+
+  byte[] hmtxTable=createHmtx(mappedGlyphs);
+
+  writeSubsetHMTX(baos,OFTableName.HMTX,tableOffsets,hmtxTable);
+
+  writeTrueTypeTable(baos,OFTableName.MAXP,tableOffsets);
+
+  writeGDIR(baos);
+
+  writeTrueTypeTable(baos,OFTableName.CVT,tableOffsets);
+
+  writeTrueTypeTable(baos,OFTableName.FPGM,tableOffsets);
+
+  writeTrueTypeTable(baos,OFTableName.PREP,tableOffsets);
+
+  baos=copyTables(tableOffsets,baos,hmtxTable,mappedGlyphs.size());
+
+  return baos.toByteArray();
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getHeaderFormat(){
+
+  return 15;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getHeightExtended(){
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getLastCode(){
+
+  return 255;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getMasterUnderlinePosition() throws IOException {
+
+  return (int)Math.round(getScaleFactor() * 0.2);
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getMasterUnderlineThickness() throws IOException {
+
+  return (int)Math.round(getScaleFactor() * 0.05);
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getOrientation(){
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getPitchExtended(){
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getPlacement(){
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getQuality(){
+
+  return 2;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getScaleFactor() throws IOException {
+
+  if (scaleFactor == -1) {
+
+    OFTableName headTag=OFTableName.HEAD;
+
+    if (ttfFont.seekTab(reader,headTag,0)) {
+
+      reader.readTTFLong();
+
+      reader.readTTFLong();
+
+      reader.readTTFLong();
+
+      reader.readTTFLong();
+
+      reader.readTTFShort();
+
+      scaleFactor=reader.readTTFUShort();
+
+      return scaleFactor;
+
+    }
+
+  }
+
+ else {
+
+    return scaleFactor;
+
+  }
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getSpacing(){
+
+  if (os2Table != null) {
+
+    return (os2Table.getPanose()[4] == 9) ? 0 : 1;
+
+  }
+
+ else   if (postTable != null) {
+
+    return postTable.getIsFixedPitch();
+
+  }
+
+  return 1;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getStyleLSB(){
+
+  if (pcltTable != null) {
+
+    return getLSB(pcltTable.getStyle());
+
+  }
+
+  return 224;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getStyleMSB(){
+
+  if (pcltTable != null) {
+
+    return getMSB(pcltTable.getStyle());
+
+  }
+
+  return 3;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getTextHeight(){
+
+  return 2048;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getTextWidth(){
+
+  if (os2Table != null) {
+
+    return os2Table.getAvgCharWidth();
+
+  }
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private PCLTTFTableFactory getTTFTableFactory(){
+
+  if (ttfTableFactory == null) {
+
+    ttfTableFactory=PCLTTFTableFactory.getInstance(reader);
+
+  }
+
+  return ttfTableFactory;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getTypefaceLSB(){
+
+  if (pcltTable != null) {
+
+    return getLSB(pcltTable.getTypeFamily());
+
+  }
+
+  return 254;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getTypefaceMSB(){
+
+  if (pcltTable != null) {
+
+    return getMSB(pcltTable.getTypeFamily());
+
+  }
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+@Override public int getVariety(){
+
+  return 0;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+public PCLTTFFontReader(Typeface font) throws IOException {
+
+  super(font);
+
+  loadFont();
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+protected void readFontTables() throws IOException {
+
+  PCLTTFTable fontTable;
+
+  fontTable=readFontTable(OFTableName.PCLT);
+
+  if (fontTable instanceof PCLTTFPCLTFontTable) {
+
+    pcltTable=(PCLTTFPCLTFontTable)fontTable;
+
+  }
+
+  fontTable=readFontTable(OFTableName.OS2);
+
+  if (fontTable instanceof PCLTTFOS2FontTable) {
+
+    os2Table=(PCLTTFOS2FontTable)fontTable;
+
+  }
+
+  fontTable=readFontTable(OFTableName.POST);
+
+  if (fontTable instanceof PCLTTFPOSTFontTable) {
+
+    postTable=(PCLTTFPOSTFontTable)fontTable;
+
+  }
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private PCLTTFTable readFontTable(OFTableName tableName) throws IOException {
+
+  if (ttfFont.seekTab(reader,tableName,0)) {
+
+    return getTTFTableFactory().newInstance(tableName);
+
+  }
+
+  return null;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+public Map<Integer,Integer> scanMtxCharacters() throws IOException {
+
+  if (charMtxOffsets == null) {
+
+    charMtxOffsets=new HashMap<Integer,Integer>();
+
+    List<OFMtxEntry> mtx=ttfFont.getMtx();
+
+    OFTableName glyfTag=OFTableName.GLYF;
+
+    if (ttfFont.seekTab(reader,glyfTag,0)) {
+
+      for (int i=1; i < mtx.size(); i++) {
+
+        OFMtxEntry entry=mtx.get(i);
+
+        int charCode=0;
+
+        if (entry.getUnicodeIndex().size() > 0) {
+
+          charCode=entry.getUnicodeIndex().get(0);
+
+        }
+
+ else {
+
+          charCode=entry.getIndex();
+
+        }
+
+        charMtxOffsets.put(charCode,i);
+
+      }
+
+    }
+
+  }
+
+  return charMtxOffsets;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private byte[] updateHHEA(byte[] tableData,int hmtxSize){
+
+  writeUShort(tableData,tableData.length - 2,hmtxSize);
+
+  return tableData;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private ByteArrayOutputStream updateOffsets(ByteArrayOutputStream baos,Map<Integer,byte[]> offsets) throws IOException {
+
+  byte[] softFont=baos.toByteArray();
+
+  for (  Entry<Integer,byte[]> integerEntry : offsets.entrySet()) {
+
+    PCLByteWriterUtil.updateDataAtLocation(softFont,integerEntry.getValue(),integerEntry.getKey());
+
+  }
+
+  baos=new ByteArrayOutputStream();
+
+  baos.write(softFont);
+
+  return baos;
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private void writeGDIR(ByteArrayOutputStream baos) throws UnsupportedEncodingException, IOException {
+
+  baos.write("gdir".getBytes("ISO-8859-1"));
+
+  baos.write(PCLByteWriterUtil.unsignedLongInt(0));
+
+  baos.write(PCLByteWriterUtil.unsignedLongInt(0));
+
+  baos.write(PCLByteWriterUtil.unsignedLongInt(0));
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private void writeSubsetHMTX(ByteArrayOutputStream baos,OFTableName table,List<TableOffset> tableOffsets,byte[] hmtxTable) throws IOException {
+
+  OFDirTabEntry tabEntry=ttfFont.getDirectoryEntry(table);
+
+  if (tabEntry != null) {
+
+    baos.write(tabEntry.getTag());
+
+    baos.write(PCLByteWriterUtil.unsignedLongInt(getCheckSum(hmtxTable,0,hmtxTable.length)));
+
+    TableOffset newTableOffset=new TableOffset(-1,hmtxTable.length,baos.size());
+
+    tableOffsets.add(newTableOffset);
+
+    baos.write(PCLByteWriterUtil.unsignedLongInt(0));
+
+    baos.write(PCLByteWriterUtil.unsignedLongInt(hmtxTable.length));
+
+  }
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+private void writeTrueTypeTable(ByteArrayOutputStream baos,OFTableName table,List<TableOffset> tableOffsets) throws IOException, UnsupportedEncodingException {
+
+  OFDirTabEntry tabEntry=ttfFont.getDirectoryEntry(table);
+
+  if (tabEntry != null) {
+
+    baos.write(tabEntry.getTag());
+
+    baos.write(PCLByteWriterUtil.unsignedLongInt(tabEntry.getChecksum()));
+
+    TableOffset newTableOffset=new TableOffset(tabEntry.getOffset(),tabEntry.getLength(),baos.size());
+
+    tableOffsets.add(newTableOffset);
+
+    baos.write(PCLByteWriterUtil.unsignedLongInt(0));
+
+    baos.write(PCLByteWriterUtil.unsignedLongInt(tabEntry.getLength()));
+
+  }
+
+}
+
+Location: PCLTTFFontReader.java
+
+Content: 
+
+/** 
+
+ * Appends a USHORT to the output array, updates currentPost but not realSize
+
+ */
+
+private void writeUShort(byte[] out,int offset,int s){
+
+  byte b1=(byte)((s >> 8) & 0xff);
+
+  byte b2=(byte)(s & 0xff);
+
+  out[offset]=b1;
+
+  out[offset + 1]=b2;
+
+}
+

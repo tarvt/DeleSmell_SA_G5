@@ -1,0 +1,144 @@
+Location: AFPStreamer.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param factory a factory
+
+ * @param resourceResolver resource resolver
+
+ */
+
+public AFPStreamer(Factory factory,InternalResourceResolver resourceResolver){
+
+  this.factory=factory;
+
+  this.resourceResolver=resourceResolver;
+
+  this.tempUri=TEMP_URI_GENERATOR.generate();
+
+  defaultResourceGroupUri=URI.create(DEFAULT_EXTERNAL_RESOURCE_FILENAME);
+
+}
+
+Location: AFPStreamer.java
+
+Content: 
+
+/** 
+
+ * Creates a new DataStream
+
+ * @param paintingState the AFP painting state
+
+ * @return a new {@link DataStream}
+
+ * @throws IOException thrown if an I/O exception of some sort has occurred
+
+ */
+
+public DataStream createDataStream(AFPPaintingState paintingState) throws IOException {
+
+  this.tempOutputStream=new BufferedOutputStream(resourceResolver.getOutputStream(tempUri));
+
+  this.dataStream=factory.createDataStream(paintingState,tempOutputStream);
+
+  return dataStream;
+
+}
+
+Location: AFPStreamer.java
+
+Content: 
+
+/** 
+
+ * Returns the resource group for a given resource info
+
+ * @param level a resource level
+
+ * @return a resource group for the given resource info
+
+ */
+
+public ResourceGroup getResourceGroup(AFPResourceLevel level){
+
+  ResourceGroup resourceGroup=null;
+
+  if (level.isInline()) {
+
+    return null;
+
+  }
+
+  if (level.isExternal()) {
+
+    URI uri=level.getExternalURI();
+
+    if (uri == null) {
+
+      LOG.warn("No file path provided for external resource, using default.");
+
+      uri=defaultResourceGroupUri;
+
+    }
+
+    resourceGroup=pathResourceGroupMap.get(uri);
+
+    if (resourceGroup == null) {
+
+      OutputStream os=null;
+
+      try {
+
+        os=new BufferedOutputStream(resourceResolver.getOutputStream(uri));
+
+      }
+
+ catch (      IOException ioe) {
+
+        LOG.error("Failed to create/open external resource group for uri '" + uri + "'");
+
+      }
+
+ finally {
+
+        if (os != null) {
+
+          resourceGroup=factory.createStreamedResourceGroup(os);
+
+          pathResourceGroupMap.put(uri,resourceGroup);
+
+        }
+
+      }
+
+    }
+
+  }
+
+ else   if (level.isPrintFile()) {
+
+    if (printFileResourceGroup == null) {
+
+      printFileResourceGroup=factory.createStreamedResourceGroup(outputStream);
+
+    }
+
+    resourceGroup=printFileResourceGroup;
+
+  }
+
+ else {
+
+    resourceGroup=dataStream.getResourceGroup(level);
+
+  }
+
+  return resourceGroup;
+
+}
+

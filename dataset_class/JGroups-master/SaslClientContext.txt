@@ -1,0 +1,200 @@
+Location: SaslClientContext.java
+
+Content: 
+
+public Message addHeader(Message msg,byte[] payload) throws SaslException {
+
+  byte[] response;
+
+  if (payload == null) {
+
+    if (client.hasInitialResponse()) {
+
+      response=evaluateChallenge(EMPTY_CHALLENGE);
+
+    }
+
+ else {
+
+      response=EMPTY_CHALLENGE;
+
+    }
+
+  }
+
+ else {
+
+    response=evaluateChallenge(payload);
+
+  }
+
+  if (response != null) {
+
+    return msg.putHeader(SASL.SASL_ID,new SaslHeader(Type.RESPONSE,response));
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+@Override public void dispose(){
+
+  try {
+
+    client.dispose();
+
+  }
+
+ catch (  SaslException e) {
+
+  }
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+private byte[] evaluateChallenge(final byte[] challenge) throws SaslException {
+
+  if (subject != null) {
+
+    try {
+
+      return Subject.doAs(subject,(PrivilegedExceptionAction<byte[]>)() -> client.evaluateChallenge(challenge));
+
+    }
+
+ catch (    PrivilegedActionException e) {
+
+      Throwable cause=e.getCause();
+
+      if (cause instanceof SaslException) {
+
+        throw (SaslException)cause;
+
+      }
+
+ else {
+
+        throw new RuntimeException(cause);
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    return client.evaluateChallenge(challenge);
+
+  }
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+@Override public boolean isSuccessful(){
+
+  return client.isComplete();
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+@Override public boolean needsWrapping(){
+
+  if (client.isComplete()) {
+
+    String qop=(String)client.getNegotiatedProperty(Sasl.QOP);
+
+    return (qop != null && (qop.equalsIgnoreCase("auth-int") || qop.equalsIgnoreCase("auth-conf")));
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+@Override public Message nextMessage(Address address,SaslHeader header) throws SaslException {
+
+  Message message=new Message(address).setFlag(Message.Flag.OOB);
+
+  return addHeader(message,header.getPayload());
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+public SaslClientContext(final SaslClientFactory saslClientFactory,final String mech,final String server_name,final CallbackHandler callback_handler,final Map<String,String> props,final Subject subject) throws SaslException {
+
+  this.subject=subject;
+
+  if (this.subject != null) {
+
+    try {
+
+      client=Subject.doAs(this.subject,(PrivilegedExceptionAction<SaslClient>)() -> saslClientFactory.createSaslClient(new String[]{mech},null,SASL.SASL_PROTOCOL_NAME,server_name,props,callback_handler));
+
+    }
+
+ catch (    PrivilegedActionException e) {
+
+      throw (SaslException)e.getCause();
+
+    }
+
+  }
+
+ else {
+
+    client=saslClientFactory.createSaslClient(new String[]{mech},null,SASL.SASL_PROTOCOL_NAME,server_name,props,callback_handler);
+
+  }
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+@Override public byte[] unwrap(byte[] incoming,int offset,int len) throws SaslException {
+
+  return client.unwrap(incoming,offset,len);
+
+}
+
+Location: SaslClientContext.java
+
+Content: 
+
+@Override public byte[] wrap(byte[] outgoing,int offset,int len) throws SaslException {
+
+  return client.wrap(outgoing,offset,len);
+
+}
+

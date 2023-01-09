@@ -1,0 +1,412 @@
+Location: CLI.java
+
+Content: 
+
+public CLI(){
+
+}
+
+Location: CLI.java
+
+Content: 
+
+public CLI(Configuration conf){
+
+  setConf(conf);
+
+}
+
+Location: CLI.java
+
+Content: 
+
+protected void displayJobList(Job[] jobs) throws IOException, InterruptedException {
+
+  System.out.println("Total jobs:" + jobs.length);
+
+  System.out.println("JobId\tState\tStartTime\t" + "UserName\tPriority\tSchedulingInfo");
+
+  for (  Job job : jobs) {
+
+    System.out.printf("%s\t%s\t%d\t%s\t%s\t%s\n",job.getJobID().toString(),job.getJobState(),job.getStartTime(),job.getUser(),job.getPriority().name(),job.getSchedulingInfo());
+
+  }
+
+}
+
+Location: CLI.java
+
+Content: 
+
+/** 
+
+ * Display the information about a job's tasks, of a particular type and in a particular state
+
+ * @param job the job
+
+ * @param type the type of the task (map/reduce/setup/cleanup)
+
+ * @param state the state of the task (pending/running/completed/failed/killed)
+
+ */
+
+protected void displayTasks(Job job,String type,String state) throws IOException, InterruptedException {
+
+  TaskReport[] reports=job.getTaskReports(TaskType.valueOf(type));
+
+  for (  TaskReport report : reports) {
+
+    TIPStatus status=report.getCurrentStatus();
+
+    if ((state.equals("pending") && status == TIPStatus.PENDING) || (state.equals("running") && status == TIPStatus.RUNNING) || (state.equals("completed") && status == TIPStatus.COMPLETE)|| (state.equals("failed") && status == TIPStatus.FAILED)|| (state.equals("killed") && status == TIPStatus.KILLED)) {
+
+      printTaskAttempts(report);
+
+    }
+
+  }
+
+}
+
+Location: CLI.java
+
+Content: 
+
+/** 
+
+ * Display usage of the command-line tool and terminate execution.
+
+ */
+
+private void displayUsage(String cmd){
+
+  String prefix="Usage: CLI ";
+
+  String jobPriorityValues=getJobPriorityNames();
+
+  String taskTypes=getTaskTypess();
+
+  String taskStates="running, completed";
+
+  if ("-submit".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <job-file>]");
+
+  }
+
+ else   if ("-status".equals(cmd) || "-kill".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <job-id>]");
+
+  }
+
+ else   if ("-counter".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <job-id> <group-name> <counter-name>]");
+
+  }
+
+ else   if ("-events".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <job-id> <from-event-#> <#-of-events>]. Event #s start from 1.");
+
+  }
+
+ else   if ("-history".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <jobHistoryFile>]");
+
+  }
+
+ else   if ("-list".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " [all]]");
+
+  }
+
+ else   if ("-kill-task".equals(cmd) || "-fail-task".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <task-attempt-id>]");
+
+  }
+
+ else   if ("-set-priority".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <job-id> <priority>]. "+ "Valid values for priorities are: "+ jobPriorityValues);
+
+  }
+
+ else   if ("-list-active-trackers".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ "]");
+
+  }
+
+ else   if ("-list-blacklisted-trackers".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ "]");
+
+  }
+
+ else   if ("-list-attempt-ids".equals(cmd)) {
+
+    System.err.println(prefix + "[" + cmd+ " <job-id> <task-type> <task-state>]. "+ "Valid values for <task-type> are "+ taskTypes+ ". "+ "Valid values for <task-state> are "+ taskStates);
+
+  }
+
+ else {
+
+    System.err.printf(prefix + "<command> <args>\n");
+
+    System.err.printf("\t[-submit <job-file>]\n");
+
+    System.err.printf("\t[-status <job-id>]\n");
+
+    System.err.printf("\t[-counter <job-id> <group-name> <counter-name>]\n");
+
+    System.err.printf("\t[-kill <job-id>]\n");
+
+    System.err.printf("\t[-set-priority <job-id> <priority>]. " + "Valid values for priorities are: " + jobPriorityValues + "\n");
+
+    System.err.printf("\t[-events <job-id> <from-event-#> <#-of-events>]\n");
+
+    System.err.printf("\t[-history <jobHistoryFile>]\n");
+
+    System.err.printf("\t[-list [all]]\n");
+
+    System.err.printf("\t[-list-active-trackers]\n");
+
+    System.err.printf("\t[-list-blacklisted-trackers]\n");
+
+    System.err.println("\t[-list-attempt-ids <job-id> <task-type> " + "<task-state>]. " + "Valid values for <task-type> are " + taskTypes + ". "+ "Valid values for <task-state> are "+ taskStates);
+
+    System.err.printf("\t[-kill-task <task-attempt-id>]\n");
+
+    System.err.printf("\t[-fail-task <task-attempt-id>]\n\n");
+
+    ToolRunner.printGenericCommandUsage(System.out);
+
+  }
+
+}
+
+Location: CLI.java
+
+Content: 
+
+protected long getCounter(Counters counters,String counterGroupName,String counterName) throws IOException {
+
+  return counters.findCounter(counterGroupName,counterName).getValue();
+
+}
+
+Location: CLI.java
+
+Content: 
+
+private String getJobPriorityNames(){
+
+  StringBuffer sb=new StringBuffer();
+
+  for (  JobPriority p : JobPriority.values()) {
+
+    sb.append(p.name()).append(" ");
+
+  }
+
+  return sb.substring(0,sb.length() - 1);
+
+}
+
+Location: CLI.java
+
+Content: 
+
+protected static String getTaskLogURL(TaskAttemptID taskId,String baseUrl){
+
+  return (baseUrl + "/tasklog?plaintext=true&attemptid=" + taskId);
+
+}
+
+Location: CLI.java
+
+Content: 
+
+private String getTaskTypess(){
+
+  StringBuffer sb=new StringBuffer();
+
+  for (  TaskType t : TaskType.values()) {
+
+    sb.append(t.name()).append(" ");
+
+  }
+
+  return sb.substring(0,sb.length() - 1);
+
+}
+
+Location: CLI.java
+
+Content: 
+
+/** 
+
+ * Display the list of active trackers
+
+ */
+
+private void listActiveTrackers(Cluster cluster) throws IOException, InterruptedException {
+
+  TaskTrackerInfo[] trackers=cluster.getActiveTaskTrackers();
+
+  for (  TaskTrackerInfo tracker : trackers) {
+
+    System.out.println(tracker.getTaskTrackerName());
+
+  }
+
+}
+
+Location: CLI.java
+
+Content: 
+
+/** 
+
+ * Dump a list of all jobs submitted.
+
+ * @throws IOException
+
+ */
+
+private void listAllJobs(Cluster cluster) throws IOException, InterruptedException {
+
+  displayJobList(cluster.getAllJobs());
+
+}
+
+Location: CLI.java
+
+Content: 
+
+/** 
+
+ * Display the list of blacklisted trackers
+
+ */
+
+private void listBlacklistedTrackers(Cluster cluster) throws IOException, InterruptedException {
+
+  TaskTrackerInfo[] trackers=cluster.getBlackListedTaskTrackers();
+
+  if (trackers.length > 0) {
+
+    System.out.println("BlackListedNode \t Reason");
+
+  }
+
+  for (  TaskTrackerInfo tracker : trackers) {
+
+    System.out.println(tracker.getTaskTrackerName() + "\t" + tracker.getReasonForBlacklist());
+
+  }
+
+}
+
+Location: CLI.java
+
+Content: 
+
+/** 
+
+ * List the events for the given job
+
+ * @param jobId the job id for the job's events to list
+
+ * @throws IOException
+
+ */
+
+private void listEvents(Job job,int fromEventId,int numEvents) throws IOException, InterruptedException {
+
+  TaskCompletionEvent[] events=job.getTaskCompletionEvents(fromEventId,numEvents);
+
+  System.out.println("Task completion events for " + job.getJobID());
+
+  System.out.println("Number of events (from " + fromEventId + ") are: "+ events.length);
+
+  for (  TaskCompletionEvent event : events) {
+
+    System.out.println(event.getStatus() + " " + event.getTaskAttemptId()+ " "+ getTaskLogURL(event.getTaskAttemptId(),event.getTaskTrackerHttp()));
+
+  }
+
+}
+
+Location: CLI.java
+
+Content: 
+
+/** 
+
+ * Dump a list of currently running jobs
+
+ * @throws IOException
+
+ */
+
+private void listJobs(Cluster cluster) throws IOException, InterruptedException {
+
+  List<Job> runningJobs=new ArrayList<Job>();
+
+  for (  Job job : cluster.getAllJobs()) {
+
+    if (!job.isComplete()) {
+
+      runningJobs.add(job);
+
+    }
+
+  }
+
+  displayJobList(runningJobs.toArray(new Job[0]));
+
+}
+
+Location: CLI.java
+
+Content: 
+
+private void printTaskAttempts(TaskReport report){
+
+  if (report.getCurrentStatus() == TIPStatus.COMPLETE) {
+
+    System.out.println(report.getSuccessfulTaskAttemptId());
+
+  }
+
+ else   if (report.getCurrentStatus() == TIPStatus.RUNNING) {
+
+    for (    TaskAttemptID t : report.getRunningTaskAttemptIds()) {
+
+      System.out.println(t);
+
+    }
+
+  }
+
+}
+
+Location: CLI.java
+
+Content: 
+
+private void viewHistory(String historyFile,boolean all) throws IOException {
+
+  HistoryViewer historyViewer=new HistoryViewer(historyFile,getConf(),all);
+
+  historyViewer.print();
+
+}
+

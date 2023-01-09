@@ -1,0 +1,320 @@
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Return a list of URL's with the specified URL first and followed by all the jar files from lib/.
+
+ * @return a list of urls to the runtime jar files.
+
+ */
+
+private URL[] createUrls(String mainJar) throws MalformedURLException {
+
+  List<URL> urls=new ArrayList<URL>();
+
+  urls.add(new File(mainJar).toURI().toURL());
+
+  File[] libFiles=new File("lib").listFiles();
+
+  if (libFiles != null) {
+
+    for (    File libFile : libFiles) {
+
+      if (libFile.getPath().endsWith(".jar")) {
+
+        urls.add(libFile.toURI().toURL());
+
+      }
+
+    }
+
+  }
+
+  return urls.toArray(new URL[urls.size()]);
+
+}
+
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Run the Converter. Runs the test converter using the specified class loader. This loads the TestConverter using the class loader and then runs the test suite for the current test suite file in the base directory. (Note class loader option provided to allow for different fop.jar and other libraries to be activated.)
+
+ * @param loader the class loader to use to run the tests with
+
+ * @param dest destination directory
+
+ * @param compDir comparison directory
+
+ * @return A Map with differences
+
+ */
+
+protected Map runConverter(ClassLoader loader,String dest,String compDir){
+
+  String converter="org.apache.fop.tools.TestConverter";
+
+  Map diff=null;
+
+  try {
+
+    Class cla=Class.forName(converter,true,loader);
+
+    Object tc=cla.getDeclaredConstructor().newInstance();
+
+    Method meth;
+
+    meth=cla.getMethod("setBaseDir",new Class[]{String.class});
+
+    meth.invoke(tc,new Object[]{basedir});
+
+    meth=cla.getMethod("runTests",new Class[]{String.class,String.class,String.class});
+
+    diff=(Map)meth.invoke(tc,new Object[]{testsuite,dest,compDir});
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+  }
+
+  return diff;
+
+}
+
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Run the tests for the reference jar file. This checks that the reference output has not already been run and then checks the version of the reference jar against the version required. The reference output is then created.
+
+ * @throws BuildException if an error occurs
+
+ */
+
+protected void runReference() throws BuildException {
+
+  File f=new File(basedir + "/reference/output/");
+
+  try {
+
+    final URL[] urls=createUrls(referenceJar);
+
+    ClassLoader loader=(ClassLoader)AccessController.doPrivileged(new PrivilegedAction(){
+
+      public Object run(){
+
+        return new URLClassLoader(urls);
+
+      }
+
+    }
+
+);
+
+    boolean failed=false;
+
+    try {
+
+      Class cla=Class.forName("org.apache.fop.apps.Fop",true,loader);
+
+      Method get=cla.getMethod("getVersion",new Class[]{});
+
+      if (!get.invoke(null,new Object[]{}).equals(refVersion)) {
+
+        throw new BuildException("Reference jar is not correct version it must be: " + refVersion);
+
+      }
+
+    }
+
+ catch (    IllegalAccessException iae) {
+
+      failed=true;
+
+    }
+
+catch (    IllegalArgumentException are) {
+
+      failed=true;
+
+    }
+
+catch (    InvocationTargetException are) {
+
+      failed=true;
+
+    }
+
+catch (    ClassNotFoundException are) {
+
+      failed=true;
+
+    }
+
+catch (    NoSuchMethodException are) {
+
+      failed=true;
+
+    }
+
+    if (failed) {
+
+      throw new BuildException("Reference jar could not be found in: " + basedir + "/reference/");
+
+    }
+
+    f.mkdirs();
+
+    runConverter(loader,"reference/output/",null);
+
+  }
+
+ catch (  MalformedURLException mue) {
+
+    mue.printStackTrace();
+
+  }
+
+}
+
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Sets the base directory.
+
+ * @param str base directory
+
+ */
+
+public void setBasedir(String str){
+
+  basedir=str;
+
+}
+
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Sets the reference directory.
+
+ * @param str reference directory
+
+ */
+
+public void setReference(String str){
+
+  referenceJar=str;
+
+}
+
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Sets the reference version.
+
+ * @param str reference version
+
+ */
+
+public void setRefVersion(String str){
+
+  refVersion=str;
+
+}
+
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Sets the test suite name.
+
+ * @param str name of the test suite
+
+ */
+
+public void setTestSuite(String str){
+
+  testsuite=str;
+
+}
+
+Location: RunTest.java
+
+Content: 
+
+/** 
+
+ * Test the current build. This uses the current jar file (in build/fop.jar) to run the tests with. The output is then compared with the reference output.
+
+ */
+
+protected void testNewBuild(){
+
+  try {
+
+    ClassLoader loader=new URLClassLoader(createUrls("build/fop.jar"));
+
+    Map diff=runConverter(loader,"areatree","reference/output/");
+
+    if (diff != null && !diff.isEmpty()) {
+
+      System.out.println("====================================");
+
+      System.out.println("The following files differ:");
+
+      boolean broke=false;
+
+      for (      Map.Entry<Object,Object> e : (Set<Map.Entry<Object,Object>>)diff.entrySet()) {
+
+        Object fname=e.getKey();
+
+        Boolean pass=(Boolean)e.getValue();
+
+        System.out.println("file: " + fname + " - reference success: "+ pass);
+
+        if (pass) {
+
+          broke=true;
+
+        }
+
+      }
+
+      if (broke) {
+
+        throw new BuildException("Working tests have been changed.");
+
+      }
+
+    }
+
+  }
+
+ catch (  MalformedURLException mue) {
+
+    mue.printStackTrace();
+
+  }
+
+}
+

@@ -1,0 +1,346 @@
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+public void addFileBlock(long blockFreePos,long blockLimit){
+
+  int released=(int)(freshBlockLimit - freshBlockFreePos);
+
+  if (released > 0) {
+
+    release(freshBlockFreePos / scale,released);
+
+  }
+
+  initialiseFileBlock(null,blockFreePos,blockLimit);
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+public int getFileBlockIndex(){
+
+  return fileBlockIndex;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+/** 
+
+ * Returns the position of a free block or 0.
+
+ */
+
+synchronized public long getFilePosition(int rowSize,boolean asBlocks){
+
+  requestGetCount++;
+
+  if (capacity == 0) {
+
+    return getNewBlock(rowSize,asBlocks);
+
+  }
+
+  if (asBlocks) {
+
+    rowSize=(int)ArrayUtil.getBinaryMultipleCeiling(rowSize,DataSpaceManager.fixedBlockSizeUnit);
+
+  }
+
+  int index=-1;
+
+  int rowUnits=rowSize / scale;
+
+  if (rowSize >= minReuse && lookup.size() > 0) {
+
+    if (lookup.getValue(0) >= rowUnits) {
+
+      index=0;
+
+    }
+
+ else     if (rowSize > Integer.MAX_VALUE) {
+
+      index=-1;
+
+    }
+
+ else {
+
+      index=lookup.findFirstGreaterEqualKeyIndex(rowUnits);
+
+    }
+
+  }
+
+  if (index == -1) {
+
+    return getNewBlock(rowSize,asBlocks);
+
+  }
+
+  if (asBlocks) {
+
+    for (; index < lookup.size(); index++) {
+
+      long pos=lookup.getKey(index);
+
+      if (pos % (DataSpaceManager.fixedBlockSizeUnit / scale) == 0) {
+
+        break;
+
+      }
+
+    }
+
+    if (index == lookup.size()) {
+
+      return getNewBlock(rowSize,asBlocks);
+
+    }
+
+  }
+
+  requestCount++;
+
+  requestSize+=rowSize;
+
+  int key=lookup.getKey(index);
+
+  int units=lookup.getValue(index);
+
+  int difference=units - rowUnits;
+
+  lookup.remove(index);
+
+  if (difference > 0) {
+
+    int pos=key + rowUnits;
+
+    lookup.add(pos,difference);
+
+  }
+
+  return key;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+public long getLostBlocksSize(){
+
+  long total=freshBlockLimit - freshBlockFreePos + lookup.getTotalValues() * scale;
+
+  return total;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+long getNewBlock(long rowSize,boolean asBlocks){
+
+  if (asBlocks) {
+
+    rowSize=(int)ArrayUtil.getBinaryMultipleCeiling(rowSize,DataSpaceManager.fixedBlockSizeUnit);
+
+  }
+
+  if (freshBlockFreePos + rowSize > freshBlockLimit) {
+
+    boolean result=getNewMainBlock(rowSize);
+
+    if (!result) {
+
+      throw Error.error(ErrorCode.DATA_FILE_IS_FULL);
+
+    }
+
+  }
+
+  long position=freshBlockFreePos;
+
+  if (asBlocks) {
+
+    position=ArrayUtil.getBinaryMultipleCeiling(position,DataSpaceManager.fixedBlockSizeUnit);
+
+    long released=position - freshBlockFreePos;
+
+    if (released > 0) {
+
+      release(freshBlockFreePos / scale,(int)released);
+
+      freshBlockFreePos=position;
+
+    }
+
+  }
+
+  freshBlockFreePos+=rowSize;
+
+  return position / scale;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+boolean getNewMainBlock(long rowSize){
+
+  long blockCount=(mainBlockSize + rowSize) / mainBlockSize;
+
+  long blockSize=blockCount * mainBlockSize;
+
+  long position=spaceManager.getFileBlocks(spaceID,(int)blockCount);
+
+  if (position < 0) {
+
+    return false;
+
+  }
+
+  if (position != freshBlockLimit) {
+
+    long released=freshBlockLimit - freshBlockFreePos;
+
+    if (released > 0) {
+
+      release(freshBlockFreePos / scale,(int)released);
+
+    }
+
+    freshBlockFreePos=position;
+
+    freshBlockLimit=position;
+
+  }
+
+  freshBlockLimit+=blockSize;
+
+  return true;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+public int getSpaceID(){
+
+  return spaceID;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+public boolean hasFileRoom(long blockSize){
+
+  return freshBlockLimit - freshBlockFreePos > blockSize;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+public void initialiseFileBlock(DoubleIntIndex spaceList,long blockFreePos,long blockLimit){
+
+  freshBlockFreePos=blockFreePos;
+
+  freshBlockLimit=blockLimit;
+
+  if (spaceList != null) {
+
+    spaceList.copyTo(lookup);
+
+  }
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+public boolean isDefaultSpace(){
+
+  return spaceID == DataSpaceManager.tableIdDefault;
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+synchronized public void release(long pos,int rowSize){
+
+  int rowUnits=rowSize / scale;
+
+  isModified=true;
+
+  releaseCount++;
+
+  if (lookup.size() == capacity) {
+
+    resetList();
+
+  }
+
+  if (pos + rowUnits >= Integer.MAX_VALUE) {
+
+    return;
+
+  }
+
+  lookup.add(pos,rowUnits);
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+private void resetList(){
+
+  spaceManager.freeTableSpace(spaceID,lookup,0,0,false);
+
+}
+
+Location: TableSpaceManagerBlocks.java
+
+Content: 
+
+/** 
+
+ */
+
+public TableSpaceManagerBlocks(DataSpaceManager spaceManager,int tableId,int fileBlockSize,int capacity,int fileScale,int minReuse){
+
+  this.spaceManager=spaceManager;
+
+  this.scale=fileScale;
+
+  this.spaceID=tableId;
+
+  this.mainBlockSize=fileBlockSize;
+
+  this.minReuse=minReuse;
+
+  lookup=new DoubleIntIndex(capacity,true);
+
+  lookup.setValuesSearchTarget();
+
+  this.capacity=capacity;
+
+}
+

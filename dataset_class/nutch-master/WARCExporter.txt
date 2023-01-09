@@ -1,0 +1,100 @@
+Location: WARCExporter.java
+
+Content: 
+
+public int generateWARC(String output,List<Path> segments) throws IOException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("WARCExporter: starting at {}",sdf.format(start));
+
+  final Job job=NutchJob.getInstance(getConf());
+
+  job.setJobName("warc-exporter " + output);
+
+  for (  final Path segment : segments) {
+
+    LOG.info("warc-exporter: adding segment: {}",segment);
+
+    FileInputFormat.addInputPath(job,new Path(segment,Content.DIR_NAME));
+
+    FileInputFormat.addInputPath(job,new Path(segment,CrawlDatum.FETCH_DIR_NAME));
+
+  }
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setJarByClass(WARCMapReduce.class);
+
+  job.setMapperClass(WARCMapReduce.WARCMapper.class);
+
+  job.setReducerClass(WARCMapReduce.WARCReducer.class);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(NutchWritable.class);
+
+  FileOutputFormat.setOutputPath(job,new Path(output));
+
+  job.setOutputFormatClass(WARCOutputFormat.class);
+
+  job.setOutputKeyClass(NullWritable.class);
+
+  job.setOutputValueClass(WARCWritable.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="WARCExporter job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+    LOG.info(job.getCounters().toString());
+
+    long end=System.currentTimeMillis();
+
+    LOG.info("WARCExporter: finished at {}, elapsed: {}",sdf.format(end),TimingUtil.elapsedTime(start,end));
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("WARCExporter job failed: {}",e.getMessage());
+
+    return -1;
+
+  }
+
+  return 0;
+
+}
+
+Location: WARCExporter.java
+
+Content: 
+
+public WARCExporter(){
+
+  super(null);
+
+}
+
+Location: WARCExporter.java
+
+Content: 
+
+public WARCExporter(Configuration conf){
+
+  super(conf);
+
+}
+

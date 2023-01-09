@@ -1,0 +1,250 @@
+Location: ReduceTask.java
+
+Content: 
+
+@Override public TaskRunner createRunner(TaskTracker tracker,TaskInProgress tip) throws IOException {
+
+  return new ReduceTaskRunner(tip,tracker,this.conf);
+
+}
+
+Location: ReduceTask.java
+
+Content: 
+
+private Path[] getMapFiles(FileSystem fs,boolean isLocal) throws IOException {
+
+  List<Path> fileList=new ArrayList<Path>();
+
+  if (isLocal) {
+
+    for (int i=0; i < numMaps; ++i) {
+
+      fileList.add(mapOutputFile.getInputFile(i));
+
+    }
+
+  }
+
+ else {
+
+    for (    FileStatus filestatus : mapOutputFilesOnDisk) {
+
+      fileList.add(filestatus.getPath());
+
+    }
+
+  }
+
+  return fileList.toArray(new Path[0]);
+
+}
+
+Location: ReduceTask.java
+
+Content: 
+
+public int getNumMaps(){
+
+  return numMaps;
+
+}
+
+Location: ReduceTask.java
+
+Content: 
+
+private CompressionCodec initCodec(){
+
+  if (conf.getCompressMapOutput()) {
+
+    Class<? extends CompressionCodec> codecClass=conf.getMapOutputCompressorClass(DefaultCodec.class);
+
+    return ReflectionUtils.newInstance(codecClass,conf);
+
+  }
+
+  return null;
+
+}
+
+Location: ReduceTask.java
+
+Content: 
+
+public ReduceTask(){
+
+  super();
+
+}
+
+Location: ReduceTask.java
+
+Content: 
+
+public ReduceTask(String jobFile,TaskAttemptID taskId,int partition,int numMaps,int numSlotsRequired){
+
+  super(jobFile,taskId,partition,numSlotsRequired);
+
+  this.numMaps=numMaps;
+
+}
+
+Location: ReduceTask.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <INKEY,INVALUE,OUTKEY,OUTVALUE>void runNewReducer(JobConf job,final TaskUmbilicalProtocol umbilical,final TaskReporter reporter,RawKeyValueIterator rIter,RawComparator<INKEY> comparator,Class<INKEY> keyClass,Class<INVALUE> valueClass) throws IOException, InterruptedException, ClassNotFoundException {
+
+  final RawKeyValueIterator rawIter=rIter;
+
+  rIter=new RawKeyValueIterator(){
+
+    public void close() throws IOException {
+
+      rawIter.close();
+
+    }
+
+    public DataInputBuffer getKey() throws IOException {
+
+      return rawIter.getKey();
+
+    }
+
+    public Progress getProgress(){
+
+      return rawIter.getProgress();
+
+    }
+
+    public DataInputBuffer getValue() throws IOException {
+
+      return rawIter.getValue();
+
+    }
+
+    public boolean next() throws IOException {
+
+      boolean ret=rawIter.next();
+
+      reporter.setProgress(rawIter.getProgress().getProgress());
+
+      return ret;
+
+    }
+
+  }
+
+;
+
+  org.apache.hadoop.mapreduce.TaskAttemptContext taskContext=new org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl(job,getTaskID(),reporter);
+
+  org.apache.hadoop.mapreduce.Reducer<INKEY,INVALUE,OUTKEY,OUTVALUE> reducer=(org.apache.hadoop.mapreduce.Reducer<INKEY,INVALUE,OUTKEY,OUTVALUE>)ReflectionUtils.newInstance(taskContext.getReducerClass(),job);
+
+  org.apache.hadoop.mapreduce.RecordWriter<OUTKEY,OUTVALUE> output=(org.apache.hadoop.mapreduce.RecordWriter<OUTKEY,OUTVALUE>)outputFormat.getRecordWriter(taskContext);
+
+  org.apache.hadoop.mapreduce.RecordWriter<OUTKEY,OUTVALUE> trackedRW=new NewTrackingRecordWriter<OUTKEY,OUTVALUE>(output,reduceOutputCounter);
+
+  job.setBoolean("mapred.skip.on",isSkipping());
+
+  job.setBoolean(JobContext.SKIP_RECORDS,isSkipping());
+
+  org.apache.hadoop.mapreduce.Reducer.Context reducerContext=createReduceContext(reducer,job,getTaskID(),rIter,reduceInputKeyCounter,reduceInputValueCounter,trackedRW,committer,reporter,comparator,keyClass,valueClass);
+
+  reducer.run(reducerContext);
+
+  output.close(reducerContext);
+
+}
+
+Location: ReduceTask.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private <INKEY,INVALUE,OUTKEY,OUTVALUE>void runOldReducer(JobConf job,TaskUmbilicalProtocol umbilical,final TaskReporter reporter,RawKeyValueIterator rIter,RawComparator<INKEY> comparator,Class<INKEY> keyClass,Class<INVALUE> valueClass) throws IOException {
+
+  Reducer<INKEY,INVALUE,OUTKEY,OUTVALUE> reducer=ReflectionUtils.newInstance(job.getReducerClass(),job);
+
+  String finalName=getOutputName(getPartition());
+
+  FileSystem fs=FileSystem.get(job);
+
+  final RecordWriter<OUTKEY,OUTVALUE> out=job.getOutputFormat().getRecordWriter(fs,job,finalName,reporter);
+
+  OutputCollector<OUTKEY,OUTVALUE> collector=new OutputCollector<OUTKEY,OUTVALUE>(){
+
+    public void collect(    OUTKEY key,    OUTVALUE value) throws IOException {
+
+      out.write(key,value);
+
+      reduceOutputCounter.increment(1);
+
+      reporter.progress();
+
+    }
+
+  }
+
+;
+
+  try {
+
+    boolean incrProcCount=SkipBadRecords.getReducerMaxSkipGroups(job) > 0 && SkipBadRecords.getAutoIncrReducerProcCount(job);
+
+    ReduceValuesIterator<INKEY,INVALUE> values=isSkipping() ? new SkippingReduceValuesIterator<INKEY,INVALUE>(rIter,comparator,keyClass,valueClass,job,reporter,umbilical) : new ReduceValuesIterator<INKEY,INVALUE>(rIter,job.getOutputValueGroupingComparator(),keyClass,valueClass,job,reporter);
+
+    values.informReduceProgress();
+
+    while (values.more()) {
+
+      reduceInputKeyCounter.increment(1);
+
+      reducer.reduce(values.getKey(),values,collector,reporter);
+
+      if (incrProcCount) {
+
+        reporter.incrCounter(SkipBadRecords.COUNTER_GROUP,SkipBadRecords.COUNTER_REDUCE_PROCESSED_GROUPS,1);
+
+      }
+
+      values.nextKey();
+
+      values.informReduceProgress();
+
+    }
+
+    reducer.close();
+
+    out.close(reporter);
+
+  }
+
+ catch (  IOException ioe) {
+
+    try {
+
+      reducer.close();
+
+    }
+
+ catch (    IOException ignored) {
+
+    }
+
+    try {
+
+      out.close(reporter);
+
+    }
+
+ catch (    IOException ignored) {
+
+    }
+
+    throw ioe;
+
+  }
+
+}
+

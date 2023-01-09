@@ -1,0 +1,1514 @@
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Adds to given Set this.sName plus all roles and nested roles.
+
+ * @return Given role with new elements added.
+
+ */
+
+private OrderedHashSet addGranteeAndRoles(OrderedHashSet set){
+
+  Grantee candidateRole;
+
+  set.add(this);
+
+  for (int i=0; i < roles.size(); i++) {
+
+    candidateRole=(Grantee)roles.get(i);
+
+    if (!set.contains(candidateRole)) {
+
+      candidateRole.addGranteeAndRoles(set);
+
+    }
+
+  }
+
+  return set;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Full or partial rights are added to existing
+
+ */
+
+void addToFullRights(HashMap map){
+
+  Iterator it=map.keySet().iterator();
+
+  while (it.hasNext()) {
+
+    Object key=it.next();
+
+    Right add=(Right)map.get(key);
+
+    Right existing=(Right)fullRightsMap.get(key);
+
+    if (existing == null) {
+
+      existing=add.duplicate();
+
+      fullRightsMap.put(key,existing);
+
+    }
+
+ else {
+
+      existing.add(add);
+
+    }
+
+    if (add.grantableRights == null) {
+
+      continue;
+
+    }
+
+    if (existing.grantableRights == null) {
+
+      existing.grantableRights=add.grantableRights.duplicate();
+
+    }
+
+ else {
+
+      existing.grantableRights.add(add.grantableRights);
+
+    }
+
+  }
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Full or partial rights are added to existing
+
+ */
+
+private void addToFullRights(MultiValueHashMap map){
+
+  Iterator it=map.keySet().iterator();
+
+  while (it.hasNext()) {
+
+    Object key=it.next();
+
+    Iterator values=map.get(key);
+
+    Right existing=(Right)fullRightsMap.get(key);
+
+    while (values.hasNext()) {
+
+      Right add=(Right)values.next();
+
+      if (existing == null) {
+
+        existing=add.duplicate();
+
+        fullRightsMap.put(key,existing);
+
+      }
+
+ else {
+
+        existing.add(add);
+
+      }
+
+      if (add.grantableRights == null) {
+
+        continue;
+
+      }
+
+      if (existing.grantableRights == null) {
+
+        existing.grantableRights=add.grantableRights.duplicate();
+
+      }
+
+ else {
+
+        existing.grantableRights.add(add.grantableRights);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Returns true if this Grantee can change to a different user.
+
+ */
+
+public boolean canChangeAuthorisation(){
+
+  return isAdmin || hasRole(granteeManager.changeAuthRole);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public void checkAccess(SchemaObject object){
+
+  if (isFullyAccessibleByRole(object.getName())) {
+
+    return;
+
+  }
+
+  HsqlName name=object.getName();
+
+  if (object instanceof Routine) {
+
+    name=((Routine)object).getSpecificName();
+
+  }
+
+  Right right=(Right)fullRightsMap.get(name);
+
+  if (right != null && !right.isEmpty()) {
+
+    return;
+
+  }
+
+  throw Error.error(ErrorCode.X_42501,object.getName().name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Checks whether this Grantee has administrative privs either directly or indirectly. Otherwise it throws.
+
+ */
+
+public void checkAdmin(){
+
+  if (!isAdmin()) {
+
+    throw Error.error(ErrorCode.X_42507);
+
+  }
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public void checkDelete(SchemaObject object){
+
+  if (object instanceof Table) {
+
+    Table table=(Table)object;
+
+    if (isFullyAccessibleByRole(table.getName())) {
+
+      return;
+
+    }
+
+    Right right=(Right)fullRightsMap.get(table.getName());
+
+    if (right != null && right.canDelete()) {
+
+      return;
+
+    }
+
+  }
+
+  throw Error.error(ErrorCode.X_42501,object.getName().name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public void checkInsert(SchemaObject object,boolean[] checkList){
+
+  if (object instanceof Table) {
+
+    Table table=(Table)object;
+
+    if (isFullyAccessibleByRole(table.getName())) {
+
+      return;
+
+    }
+
+    Right right=(Right)fullRightsMap.get(table.getName());
+
+    if (right != null && right.canInsert(table,checkList)) {
+
+      return;
+
+    }
+
+  }
+
+  throw Error.error(ErrorCode.X_42501,object.getName().name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public void checkReferences(SchemaObject object,boolean[] checkList){
+
+  if (object instanceof Table) {
+
+    Table table=(Table)object;
+
+    if (isFullyAccessibleByRole(table.getName())) {
+
+      return;
+
+    }
+
+    Right right=(Right)fullRightsMap.get(table.getName());
+
+    if (right != null && right.canReference(table,checkList)) {
+
+      return;
+
+    }
+
+  }
+
+  throw Error.error(ErrorCode.X_42501,object.getName().name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Checks if this object can modify schema objects or grant access rights to them.
+
+ */
+
+public void checkSchemaUpdateOrGrantRights(String schemaName){
+
+  if (!hasSchemaUpdateOrGrantRights(schemaName)) {
+
+    throw Error.error(ErrorCode.X_42501,schemaName);
+
+  }
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Checks if a right represented by the methods have been granted on the specified database object. <p> This is done by checking that a mapping exists in the rights map from the dbobject argument. Otherwise, it throws.
+
+ */
+
+public void checkSelect(SchemaObject object,boolean[] checkList){
+
+  if (object instanceof Table) {
+
+    Table table=(Table)object;
+
+    if (isFullyAccessibleByRole(table.getName())) {
+
+      return;
+
+    }
+
+    Right right=(Right)fullRightsMap.get(table.getName());
+
+    if (right != null && right.canSelect(table,checkList)) {
+
+      return;
+
+    }
+
+  }
+
+  throw Error.error(ErrorCode.X_42501,object.getName().name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public void checkTrigger(SchemaObject object,boolean[] checkList){
+
+  if (object instanceof Table) {
+
+    Table table=(Table)object;
+
+    if (isFullyAccessibleByRole(table.getName())) {
+
+      return;
+
+    }
+
+    Right right=(Right)fullRightsMap.get(table.getName());
+
+    if (right != null && right.canReference(table,checkList)) {
+
+      return;
+
+    }
+
+  }
+
+  throw Error.error(ErrorCode.X_42501,object.getName().name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public void checkUpdate(SchemaObject object,boolean[] checkList){
+
+  if (object instanceof Table) {
+
+    Table table=(Table)object;
+
+    if (isFullyAccessibleByRole(table.getName())) {
+
+      return;
+
+    }
+
+    Right right=(Right)fullRightsMap.get(table.getName());
+
+    if (right != null && right.canUpdate(table,checkList)) {
+
+      return;
+
+    }
+
+  }
+
+  throw Error.error(ErrorCode.X_42501,object.getName().name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Revokes all rights from this Grantee object.  The map is cleared and the database administrator role attribute is set false.
+
+ */
+
+void clearPrivileges(){
+
+  roles.clear();
+
+  directRightsMap.clear();
+
+  grantedRightsMap.clear();
+
+  fullRightsMap.clear();
+
+  isAdmin=false;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public OrderedHashSet getAllDirectPrivileges(SchemaObject object){
+
+  if (object.getOwner() == this) {
+
+    OrderedHashSet set=new OrderedHashSet();
+
+    set.add(ownerRights);
+
+    return set;
+
+  }
+
+  HsqlName name=object.getName();
+
+  if (object instanceof Routine) {
+
+    name=((Routine)object).getSpecificName();
+
+  }
+
+  Iterator rights=directRightsMap.get(name);
+
+  if (rights.hasNext()) {
+
+    OrderedHashSet set=new OrderedHashSet();
+
+    while (rights.hasNext()) {
+
+      set.add(rights.next());
+
+    }
+
+    return set;
+
+  }
+
+  return Right.emptySet;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+Right getAllGrantableRights(HsqlName name){
+
+  if (isAdmin) {
+
+    return name.schema.owner.ownerRights;
+
+  }
+
+  if (name.schema.owner == this) {
+
+    return ownerRights;
+
+  }
+
+  if (roles.contains(name.schema.owner)) {
+
+    return name.schema.owner.ownerRights;
+
+  }
+
+  OrderedHashSet set=getAllRoles();
+
+  for (int i=0; i < set.size(); i++) {
+
+    Grantee role=(Grantee)set.get(i);
+
+    if (name.schema.owner == role) {
+
+      return role.ownerRights;
+
+    }
+
+  }
+
+  Right right=(Right)fullRightsMap.get(name);
+
+  return right == null || right.grantableRights == null ? Right.noRights : right.grantableRights;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public OrderedHashSet getAllGrantedPrivileges(SchemaObject object){
+
+  HsqlName name=object.getName();
+
+  if (object instanceof Routine) {
+
+    name=((Routine)object).getSpecificName();
+
+  }
+
+  Iterator rights=grantedRightsMap.get(name);
+
+  if (rights.hasNext()) {
+
+    OrderedHashSet set=new OrderedHashSet();
+
+    while (rights.hasNext()) {
+
+      set.add(rights.next());
+
+    }
+
+    return set;
+
+  }
+
+  return Right.emptySet;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Gets direct and indirect roles.
+
+ */
+
+public OrderedHashSet getAllRoles(){
+
+  OrderedHashSet set=getGranteeAndAllRoles();
+
+  set.remove(this);
+
+  return set;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public OrderedHashSet getColumnsForAllPrivileges(SchemaObject object){
+
+  if (object instanceof Table) {
+
+    Table table=(Table)object;
+
+    if (isFullyAccessibleByRole(table.getName())) {
+
+      return table.getColumnNameSet();
+
+    }
+
+    Right right=(Right)fullRightsMap.get(table.getName());
+
+    return right == null ? Right.emptySet : right.getColumnsForAllRights(table);
+
+  }
+
+  return Right.emptySet;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Gets direct roles, not roles nested within them.
+
+ */
+
+public OrderedHashSet getDirectRoles(){
+
+  return roles;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public OrderedHashSet getGranteeAndAllRoles(){
+
+  OrderedHashSet set=new OrderedHashSet();
+
+  addGranteeAndRoles(set);
+
+  return set;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public OrderedHashSet getGranteeAndAllRolesWithPublic(){
+
+  OrderedHashSet set=new OrderedHashSet();
+
+  addGranteeAndRoles(set);
+
+  set.add(granteeManager.publicRole);
+
+  return set;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Retrieves the map object that represents the rights that have been granted on database objects.  <p> The map has keys and values with the following interpretation: <P> <UL> <LI> The keys are generally (but not limited to) objects having an attribute or value equal to the name of an actual database object. <LI> Specifically, the keys act as database object identifiers. <LI> The values are Right objects. </UL>
+
+ */
+
+private MultiValueHashMap getRights(){
+
+  return directRightsMap;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ */
+
+Grantee(HsqlName name,GranteeManager man){
+
+  fullRightsMap=new HashMap();
+
+  directRightsMap=new MultiValueHashMap();
+
+  grantedRightsMap=new MultiValueHashMap();
+
+  granteeName=name;
+
+  granteeManager=man;
+
+  roles=new OrderedHashSet();
+
+  ownerRights=new Right();
+
+  ownerRights.isFull=true;
+
+  ownerRights.grantor=GranteeManager.systemAuthorisation;
+
+  ownerRights.grantee=this;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Grant a role
+
+ */
+
+void grant(Grantee role){
+
+  roles.add(role);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Grants the specified rights on the specified database object. <p> Keys stored in rightsMap for database tables are their HsqlName attribute. This allows rights to persist when a table is renamed. <p>
+
+ */
+
+void grant(HsqlName name,Right right,Grantee grantor,boolean withGrant){
+
+  final Right grantableRights=grantor.getAllGrantableRights(name);
+
+  Right existingRight=null;
+
+  if (right == Right.fullRights) {
+
+    if (grantableRights.isEmpty()) {
+
+      return;
+
+    }
+
+    right=grantableRights;
+
+  }
+
+ else {
+
+    if (!grantableRights.contains(right)) {
+
+      throw Error.error(ErrorCode.X_0L000);
+
+    }
+
+  }
+
+  Iterator it=directRightsMap.get(name);
+
+  while (it.hasNext()) {
+
+    Right existing=(Right)it.next();
+
+    if (existing.grantor == grantor) {
+
+      existingRight=existing;
+
+      existingRight.add(right);
+
+      break;
+
+    }
+
+  }
+
+  if (existingRight == null) {
+
+    existingRight=right.duplicate();
+
+    existingRight.grantor=grantor;
+
+    existingRight.grantee=this;
+
+    directRightsMap.put(name,existingRight);
+
+  }
+
+  if (withGrant) {
+
+    if (existingRight.grantableRights == null) {
+
+      existingRight.grantableRights=right.duplicate();
+
+    }
+
+ else {
+
+      existingRight.grantableRights.add(right);
+
+    }
+
+  }
+
+  if (!grantor.isSystem()) {
+
+    grantor.grantedRightsMap.put(name,existingRight);
+
+  }
+
+  updateAllRights();
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean hasColumnRights(SchemaObject table,int[] columnMap){
+
+  if (isFullyAccessibleByRole(table.getName())) {
+
+    return true;
+
+  }
+
+  Right right=(Right)fullRightsMap.get(table.getName());
+
+  if (right == null) {
+
+    return false;
+
+  }
+
+  return right.canAccess((Table)table,columnMap);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean hasNonSelectTableRight(SchemaObject table){
+
+  if (isFullyAccessibleByRole(table.getName())) {
+
+    return true;
+
+  }
+
+  Right right=(Right)fullRightsMap.get(table.getName());
+
+  if (right == null) {
+
+    return false;
+
+  }
+
+  return right.canAccesssNonSelect();
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+private boolean hasRoleDirect(Grantee role){
+
+  return roles.contains(role);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean hasRole(Grantee role){
+
+  return getAllRoles().contains(role);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Checks if this object can modify schema objects or grant access rights to them.
+
+ */
+
+public boolean hasSchemaUpdateOrGrantRights(String schemaName){
+
+  if (isAdmin()) {
+
+    return true;
+
+  }
+
+  Grantee schemaOwner=granteeManager.database.schemaManager.toSchemaOwner(schemaName);
+
+  if (schemaOwner == this) {
+
+    return true;
+
+  }
+
+  if (hasRole(schemaOwner)) {
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean isAccessible(HsqlName name){
+
+  if (isFullyAccessibleByRole(name)) {
+
+    return true;
+
+  }
+
+  Right right=(Right)fullRightsMap.get(name);
+
+  if (right != null && !right.isEmpty()) {
+
+    return true;
+
+  }
+
+  if (!isPublic) {
+
+    return granteeManager.publicRole.isAccessible(name);
+
+  }
+
+  return false;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean isAccessible(HsqlName name,int privilegeType){
+
+  if (isFullyAccessibleByRole(name)) {
+
+    return true;
+
+  }
+
+  Right right=(Right)fullRightsMap.get(name);
+
+  if (right == null) {
+
+    return false;
+
+  }
+
+  return right.canAccess(privilegeType);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * returns true if grantee has any privilege (to any column) of the object
+
+ */
+
+public boolean isAccessible(SchemaObject object){
+
+  return isAccessible(object.getName());
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Returns true if this Grantee has administrative privs either directly or indirectly.
+
+ */
+
+public boolean isAdmin(){
+
+  return isAdmin;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean isFullyAccessibleByRole(HsqlName name){
+
+  Grantee owner;
+
+  if (isAdmin) {
+
+    return true;
+
+  }
+
+  if (name.type == SchemaObject.SCHEMA) {
+
+    owner=name.owner;
+
+  }
+
+ else   if (name.schema == null) {
+
+    return false;
+
+  }
+
+ else {
+
+    owner=name.schema.owner;
+
+  }
+
+  if (owner == this) {
+
+    return true;
+
+  }
+
+  if (hasRole(owner)) {
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean isGrantable(Grantee role){
+
+  return isAdmin;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean isGrantable(SchemaObject object,Right right){
+
+  if (isFullyAccessibleByRole(object.getName())) {
+
+    return true;
+
+  }
+
+  Right grantableRights=getAllGrantableRights(object.getName());
+
+  return grantableRights.contains(right);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Returns true if this grantee object is for the PUBLIC role.
+
+ */
+
+public boolean isPublic(){
+
+  return isPublic;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean isRole(){
+
+  return isRole;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Returns true if this Grantee can create schemas with own authorization.
+
+ */
+
+public boolean isSchemaCreator(){
+
+  return isAdmin || hasRole(granteeManager.schemaRole);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+public boolean isSystem(){
+
+  return isSystem;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Revokes all rights on the specified database object.<p> This method removes any existing mapping from the rights map
+
+ */
+
+void revokeDbObject(HsqlName name){
+
+  directRightsMap.remove(name);
+
+  grantedRightsMap.remove(name);
+
+  fullRightsMap.remove(name);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Revoke a direct role only
+
+ */
+
+void revoke(Grantee role){
+
+  if (!hasRoleDirect(role)) {
+
+    throw Error.error(ErrorCode.X_0P503,role.getName().getNameString());
+
+  }
+
+  roles.remove(role);
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Revokes the specified rights on the specified database object. <p> If, after removing the specified rights, no rights remain on the database object, then the key/value pair for that object is removed from the rights map
+
+ */
+
+void revoke(SchemaObject object,Right right,Grantee grantor,boolean grantOption){
+
+  HsqlName name=object.getName();
+
+  if (object instanceof Routine) {
+
+    name=((Routine)object).getSpecificName();
+
+  }
+
+  Iterator it=directRightsMap.get(name);
+
+  Right existing=null;
+
+  while (it.hasNext()) {
+
+    existing=(Right)it.next();
+
+    if (existing.grantor == grantor) {
+
+      break;
+
+    }
+
+  }
+
+  if (existing == null) {
+
+    return;
+
+  }
+
+  if (existing.grantableRights != null) {
+
+    existing.grantableRights.remove(object,right);
+
+  }
+
+  if (grantOption) {
+
+    return;
+
+  }
+
+  if (right.isFull) {
+
+    directRightsMap.remove(name,existing);
+
+    grantor.grantedRightsMap.remove(name,existing);
+
+    updateAllRights();
+
+    return;
+
+  }
+
+  existing.remove(object,right);
+
+  if (existing.isEmpty()) {
+
+    directRightsMap.remove(name,existing);
+
+    grantor.grantedRightsMap.remove(name,existing);
+
+  }
+
+  updateAllRights();
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+private String roleMapToString(OrderedHashSet roles){
+
+  StringBuffer sb=new StringBuffer();
+
+  for (int i=0; i < roles.size(); i++) {
+
+    if (sb.length() > 0) {
+
+      sb.append(',');
+
+    }
+
+    Grantee role=(Grantee)roles.get(i);
+
+    sb.append(role.getName().getStatementName());
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Violates naming convention (for backward compatibility). Should be "setAdminDirect(boolean").
+
+ */
+
+void setAdminDirect(){
+
+  isAdmin=isAdminDirect=true;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * @todo -- see if this is correct and the currentRole.fullRightsMapis always updated prior to being added to this.fullRightsMap
+
+ */
+
+void updateAllRights(){
+
+  fullRightsMap.clear();
+
+  isAdmin=isAdminDirect;
+
+  for (int i=0; i < roles.size(); i++) {
+
+    Grantee currentRole=(Grantee)roles.get(i);
+
+    addToFullRights(currentRole.fullRightsMap);
+
+    isAdmin|=currentRole.isAdmin();
+
+  }
+
+  addToFullRights(directRightsMap);
+
+  if (!isRole && !isPublic && !isSystem) {
+
+    addToFullRights(granteeManager.publicRole.fullRightsMap);
+
+  }
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Recursive method used with ROLE Grantee objects to set the fullRightsMap and admin flag for all the roles. If a new ROLE is granted to a ROLE Grantee object, the ROLE should first be added to the Set of ROLE Grantee objects (roles) for the grantee. The grantee will be the parameter. If the direct permissions granted to an existing ROLE Grantee is modified no extra initial action is necessary. The existing Grantee will be the parameter. If an existing ROLE is REVOKEed from a ROLE, it should first be removed from the set of ROLE Grantee objects in the containing ROLE. The containing ROLE will be the parameter. If an existing ROLE is DROPped, all its privileges should be cleared first. The ROLE will be the parameter. After calling this method on all other roles, the DROPped role should be removed from all grantees. After the initial modification, this method should be called iteratively on all the ROLE Grantee objects contained in RoleManager. The updateAllRights() method is then called iteratively on all the USER Grantee objects contained in UserManager.
+
+ * @param role a modified, revoked or dropped role.
+
+ * @return true if this Grantee has possibly changed as a result
+
+ */
+
+boolean updateNestedRoles(Grantee role){
+
+  boolean hasNested=false;
+
+  if (role != this) {
+
+    for (int i=0; i < roles.size(); i++) {
+
+      Grantee currentRole=(Grantee)roles.get(i);
+
+      hasNested|=currentRole.updateNestedRoles(role);
+
+    }
+
+  }
+
+  if (hasNested) {
+
+    hongshuai();
+
+    fullRightsMap.clear();
+
+    isAdmin=isAdminDirect;
+
+    for (int i=0; i < roles.size(); i++) {
+
+      Grantee currentRole=(Grantee)roles.get(i);
+
+      addToFullRights(currentRole.fullRightsMap);
+
+      isAdmin|=currentRole.isAdmin();
+
+    }
+
+    addToFullRights(directRightsMap);
+
+    if (!isRole && !isPublic && !isSystem) {
+
+      addToFullRights(granteeManager.publicRole.fullRightsMap);
+
+    }
+
+  }
+
+  return hasNested || role == this;
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Update granted rights to include a newly created column.<p?
+
+ */
+
+void updateRightsForNewColumn(HsqlName tableName){
+
+  Iterator it=grantedRightsMap.get(tableName);
+
+  Right existing=null;
+
+  while (it.hasNext()) {
+
+    existing=(Right)it.next();
+
+  }
+
+  if (existing == null) {
+
+    return;
+
+  }
+
+  updateAllRights();
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Update own table column set rights to include a newly created column.<p?
+
+ */
+
+void updateRightsForNewColumn(HsqlName tableName,HsqlName columnName){
+
+  Iterator it=directRightsMap.get(tableName);
+
+  Right existing=null;
+
+  while (it.hasNext()) {
+
+    existing=(Right)it.next();
+
+  }
+
+  if (existing == null) {
+
+    return;
+
+  }
+
+  existing.addNewColumn(columnName);
+
+  updateAllRights();
+
+}
+
+Location: Grantee.java
+
+Content: 
+
+/** 
+
+ * Iteration of all visible grantees, including self. <p> For grantees with admin, this is all grantees. For regular grantees, this is self plus all roles granted directly or indirectly
+
+ */
+
+public OrderedHashSet visibleGrantees(){
+
+  OrderedHashSet grantees=new OrderedHashSet();
+
+  GranteeManager gm=granteeManager;
+
+  if (isAdmin()) {
+
+    grantees.addAll(gm.getGrantees());
+
+  }
+
+ else {
+
+    grantees.add(this);
+
+    Iterator it=getAllRoles().iterator();
+
+    while (it.hasNext()) {
+
+      grantees.add(it.next());
+
+    }
+
+  }
+
+  return grantees;
+
+}
+

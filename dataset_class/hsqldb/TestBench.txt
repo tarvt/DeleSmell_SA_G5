@@ -1,0 +1,968 @@
+Location: TestBench.java
+
+Content: 
+
+/** 
+
+ * this is used for testing RowSet where sums are different. this catches the transaction entries that are not correctly stored
+
+ */
+
+boolean checkSumsDetails(Connection conn) throws SQLException {
+
+  Statement st1=null;
+
+  ResultSet rs=null;
+
+  int bbalancesum;
+
+  int bbalancecount;
+
+  int tbalancesum;
+
+  int abalancesum;
+
+  int abalancecount;
+
+  long deltasum;
+
+  long deltacount;
+
+  boolean result;
+
+  try {
+
+    st1=conn.createStatement();
+
+    rs=st1.executeQuery("select sum(bbalance), count(bbalance) from branches");
+
+    rs.next();
+
+    bbalancesum=rs.getInt(1);
+
+    bbalancecount=rs.getInt(2);
+
+    rs.close();
+
+    rs=st1.executeQuery("select sum(tbalance) from tellers");
+
+    rs.next();
+
+    tbalancesum=rs.getInt(1);
+
+    rs.close();
+
+    rs=st1.executeQuery("select sum(abalance), count(abalance) from accounts");
+
+    rs.next();
+
+    abalancesum=rs.getInt(1);
+
+    abalancecount=rs.getInt(2);
+
+    rs.close();
+
+    rs=st1.executeQuery("select sum(delta), count(delta) from history");
+
+    rs.next();
+
+    deltasum=rs.getLong(1);
+
+    deltacount=rs.getLong(2);
+
+    rs.close();
+
+    rs=null;
+
+    st1.close();
+
+    st1=null;
+
+    conn.commit();
+
+    if (abalancesum != bbalancesum || bbalancesum != tbalancesum || tbalancesum != deltasum) {
+
+      result=false;
+
+      System.out.println("sums don't match!");
+
+    }
+
+ else {
+
+      result=true;
+
+      System.out.println("sums match!");
+
+    }
+
+    System.out.println("AC " + abalancecount + " A "+ abalancesum+ " BC "+ bbalancecount+ " B "+ bbalancesum+ " T "+ tbalancesum+ " HC "+ deltacount+ " H "+ deltasum);
+
+    return result;
+
+  }
+
+  finally {
+
+    if (st1 != null) {
+
+      st1.close();
+
+    }
+
+  }
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+boolean checkSums(Connection conn) throws SQLException {
+
+  Statement st1=null;
+
+  ResultSet rs=null;
+
+  int bbalancesum;
+
+  int bbalancecount;
+
+  int tbalancesum;
+
+  int abalancesum;
+
+  int abalancecount;
+
+  long deltasum;
+
+  long deltacount;
+
+  boolean result=false;
+
+  try {
+
+    st1=conn.createStatement();
+
+    rs=st1.executeQuery("select sum(bbalance) from branches");
+
+    rs.next();
+
+    bbalancesum=rs.getInt(1);
+
+    rs.close();
+
+    rs=st1.executeQuery("select sum(tbalance) from tellers");
+
+    rs.next();
+
+    tbalancesum=rs.getInt(1);
+
+    rs.close();
+
+    rs=st1.executeQuery("select sum(abalance), count(abalance) from accounts");
+
+    rs.next();
+
+    abalancesum=rs.getInt(1);
+
+    abalancecount=rs.getInt(2);
+
+    rs.close();
+
+    rs=st1.executeQuery("select sum(delta) from history");
+
+    rs.next();
+
+    deltasum=rs.getInt(1);
+
+    rs.close();
+
+    rs=null;
+
+    st1.close();
+
+    st1=null;
+
+    conn.commit();
+
+    if (abalancesum != bbalancesum || bbalancesum != tbalancesum || tbalancesum != deltasum) {
+
+      System.out.println("sums don't match!");
+
+    }
+
+ else {
+
+      System.out.println("sums match!");
+
+      result=true;
+
+    }
+
+    System.out.println("AC " + abalancecount + " A "+ abalancesum+ " B "+ bbalancesum+ " T "+ tbalancesum+ " H "+ deltasum);
+
+  }
+
+  finally {
+
+    if (st1 != null) {
+
+      st1.close();
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+public static void connectClose(Connection c){
+
+  if (c == null) {
+
+    return;
+
+  }
+
+  try {
+
+    c.close();
+
+  }
+
+ catch (  Exception E) {
+
+    System.out.println(E.getMessage());
+
+    E.printStackTrace();
+
+  }
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+public static Connection connect(String DBUrl,String DBUser,String DBPassword){
+
+  try {
+
+    Connection conn=DriverManager.getConnection(DBUrl,DBUser,DBPassword);
+
+    return conn;
+
+  }
+
+ catch (  Exception E) {
+
+    System.out.println(E.getMessage());
+
+    E.printStackTrace();
+
+  }
+
+  return null;
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+void createDatabase(String url,String user,String password) throws Exception {
+
+  Connection Conn=connect(url,user,password);
+
+  String s=Conn.getMetaData().getDatabaseProductName();
+
+  System.out.println("DBMS: " + s);
+
+  try {
+
+    Conn.setAutoCommit(false);
+
+    System.out.println("In transaction mode");
+
+  }
+
+ catch (  SQLException Etrxn) {
+
+  }
+
+  try {
+
+    int accountsnb=0;
+
+    Statement Stmt=Conn.createStatement();
+
+    String Query;
+
+    Query="SELECT count(*) ";
+
+    Query+="FROM   accounts";
+
+    ResultSet RS=Stmt.executeQuery(Query);
+
+    Stmt.clearWarnings();
+
+    while (RS.next()) {
+
+      accountsnb=RS.getInt(1);
+
+    }
+
+    Conn.commit();
+
+    Stmt.close();
+
+    if (accountsnb == (naccounts * tps)) {
+
+      System.out.println("Already initialized");
+
+      connectClose(Conn);
+
+      return;
+
+    }
+
+  }
+
+ catch (  Exception E) {
+
+  }
+
+  System.out.println("Drop old tables if they exist");
+
+  try {
+
+    Statement Stmt=Conn.createStatement();
+
+    String Query;
+
+    if (url.contains("hsqldb")) {
+
+      try {
+
+        Query="DROP PROCEDURE UPDATE_PROC";
+
+        Stmt.execute(Query);
+
+      }
+
+ catch (      Exception e) {
+
+      }
+
+    }
+
+    Query="DROP TABLE history";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="DROP TABLE accounts";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="DROP TABLE tellers";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="DROP TABLE branches";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Conn.commit();
+
+    Stmt.close();
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  System.out.println("Creates tables");
+
+  try {
+
+    Statement Stmt=Conn.createStatement();
+
+    String Query;
+
+    Query="SET FILES SPACE 1";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="CREATE TABLE branches ( " + "Bid         INTEGER NOT NULL PRIMARY KEY, " + "Bbalance    BIGINT,"+ "filler      VARCHAR(88))";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="CREATE TABLE tellers (" + "Tid         INTEGER NOT NULL PRIMARY KEY," + "Bid         INTEGER,"+ "Tbalance    INTEGER,"+ "filler      VARCHAR(84))";
+
+    if (createExtension.length() > 0) {
+
+      Query+=createExtension;
+
+    }
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="CREATE TABLE accounts (" + "Aid         INTEGER NOT NULL PRIMARY KEY, " + "Bid         INTEGER, "+ "Abalance    INTEGER, "+ "filler      VARCHAR(84))";
+
+    if (createExtension.length() > 0) {
+
+      Query+=createExtension;
+
+    }
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="SET TABLE accounts NEW SPACE";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="CREATE TABLE history (" + "Tid         INTEGER, " + "Bid         INTEGER, "+ "Aid         INTEGER, "+ "delta       INTEGER, "+ "tstime        TIMESTAMP, "+ "filler      VARCHAR(22))";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="SET TABLE history NEW SPACE";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="CREATE PROCEDURE UPDATE_PROC(IN paid INT, IN ptid INT, IN pbid INT, IN pdelta INT, OUT pbalance INT) " + "MODIFIES SQL DATA DYNAMIC RESULT SETS 1 BEGIN ATOMIC " + "DECLARE account CURSOR WITH RETURN FOR SELECT Abalance FROM accounts WHERE  Aid = paid;"+ "UPDATE accounts SET Abalance = abalance + pdelta WHERE  aid = paid;"+ "OPEN account;"+ "SELECT Abalance INTO pbalance FROM  accounts WHERE  Aid = paid;"+ "UPDATE tellers SET Tbalance = Tbalance + pdelta WHERE  Tid = ptid;"+ "UPDATE branches SET Bbalance = Bbalance + pdelta WHERE  Bid = pbid;"+ "INSERT INTO history(Tid, Bid, Aid, delta) VALUES (ptid,pbid,paid,pdelta);"+ "END";
+
+    try {
+
+      if (url.contains("hsqldb")) {
+
+        Stmt.execute(Query);
+
+      }
+
+    }
+
+ catch (    SQLException e) {
+
+      e.printStackTrace();
+
+    }
+
+    Conn.commit();
+
+    Stmt.close();
+
+  }
+
+ catch (  Exception E) {
+
+    System.out.println("Delete elements in table in case Drop didn't work");
+
+  }
+
+  try {
+
+    Statement Stmt=Conn.createStatement();
+
+    String Query;
+
+    Query="DELETE FROM history";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="DELETE FROM accounts";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="DELETE FROM tellers";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Query="DELETE FROM branches";
+
+    Stmt.execute(Query);
+
+    Stmt.clearWarnings();
+
+    Conn.commit();
+
+    PreparedStatement pstmt=null;
+
+    Query="INSERT INTO branches(Bid,Bbalance) VALUES (?,0)";
+
+    pstmt=Conn.prepareStatement(Query);
+
+    System.out.println("Insert data in branches table");
+
+    for (int i=0; i < nbranches * tps; i++) {
+
+      pstmt.setInt(1,i);
+
+      pstmt.executeUpdate();
+
+      pstmt.clearWarnings();
+
+      if (i % 100 == 0) {
+
+        Conn.commit();
+
+      }
+
+    }
+
+    pstmt.close();
+
+    Conn.commit();
+
+    Query="INSERT INTO tellers(Tid,Bid,Tbalance) VALUES (?,?,0)";
+
+    pstmt=Conn.prepareStatement(Query);
+
+    System.out.println("Insert data in tellers table");
+
+    for (int i=0; i < ntellers * tps; i++) {
+
+      pstmt.setInt(1,i);
+
+      pstmt.setInt(2,i / ntellers);
+
+      pstmt.executeUpdate();
+
+      pstmt.clearWarnings();
+
+      if (i % 100 == 0) {
+
+        Conn.commit();
+
+      }
+
+    }
+
+    pstmt.close();
+
+    Conn.commit();
+
+    Query="INSERT INTO accounts(Aid,Bid,Abalance) VALUES (?,?,0)";
+
+    pstmt=Conn.prepareStatement(Query);
+
+    System.out.println("Insert data in accounts table");
+
+    for (int i=0; i < naccounts * tps; i++) {
+
+      pstmt.setInt(1,i);
+
+      pstmt.setInt(2,i / naccounts);
+
+      pstmt.executeUpdate();
+
+      pstmt.clearWarnings();
+
+      if (i % 10000 == 0) {
+
+        Conn.commit();
+
+      }
+
+      if ((i > 0) && ((i % 100000) == 0)) {
+
+        System.out.println("\t" + i + "\t records inserted");
+
+      }
+
+    }
+
+    pstmt.close();
+
+    Conn.commit();
+
+    System.out.println("\t" + (naccounts * tps) + "\t records inserted");
+
+    if (shutdownCommand.length() > 0) {
+
+      Stmt.execute(shutdownCommand);
+
+      System.out.println("database shutdown");
+
+    }
+
+    Stmt.close();
+
+  }
+
+ catch (  Exception E) {
+
+    System.out.println(E.getMessage());
+
+    E.printStackTrace();
+
+  }
+
+  connectClose(Conn);
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+public void doBench(String url,String user,String password,boolean init){
+
+  Connection guardian=null;
+
+  try {
+
+    java.util.Date start=new java.util.Date();
+
+    if (init) {
+
+      System.out.println("Start: " + start.toString());
+
+      System.out.print("Initializing dataset...");
+
+      createDatabase(url,user,password);
+
+      double seconds=(System.currentTimeMillis() - start.getTime()) / 1000D;
+
+      System.out.println("done. in " + seconds + " seconds\n");
+
+      System.out.println("Complete: " + (new java.util.Date()).toString());
+
+    }
+
+    System.out.println("* Starting Benchmark Run *");
+
+    MemoryWatcher=new MemoryWatcherThread();
+
+    MemoryWatcher.start();
+
+    guardian=connect(url,user,password);
+
+    boolean checkResult=checkSumsDetails(guardian);
+
+    if (!checkResult) {
+
+      System.exit(0);
+
+    }
+
+    long startTime=System.currentTimeMillis();
+
+    for (int i=0; i < rounds; i++) {
+
+      oneRound(url,user,password);
+
+    }
+
+    long tempTime=System.currentTimeMillis() - startTime;
+
+    startTime=System.currentTimeMillis();
+
+    guardian=connect(url,user,password);
+
+    checkSumsDetails(guardian);
+
+    connectClose(guardian);
+
+    System.out.println("Total time: " + tempTime / 1000D + " seconds");
+
+    System.out.println("sum check time: " + (System.currentTimeMillis() - startTime) + " milliseconds");
+
+  }
+
+ catch (  Exception E) {
+
+    System.out.println(E.getMessage());
+
+    E.printStackTrace();
+
+  }
+
+ finally {
+
+    MemoryWatcher.end();
+
+    try {
+
+      MemoryWatcher.join();
+
+      if (shutdownCommand.length() > 0) {
+
+        guardian=connect(url,user,password);
+
+        Statement Stmt=guardian.createStatement();
+
+        Stmt.execute(shutdownCommand);
+
+        Stmt.close();
+
+        connectClose(guardian);
+
+      }
+
+    }
+
+ catch (    Exception E1) {
+
+    }
+
+  }
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+/** 
+
+ * changed to generate correct own branch for each account id
+
+ */
+
+public int getRandomID(int type){
+
+  int min=0, max=naccounts * tps - 1;
+
+  int account=getRandomInt(min,max);
+
+switch (type) {
+
+case TELLER:
+
+    max=ntellers * tps - 1;
+
+  return getRandomInt(min,max);
+
+}
+
+return account;
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+public static int getRandomInt(int lo,int hi){
+
+  int ret=0;
+
+  ret=(int)(Math.random() * (hi - lo + 1));
+
+  ret+=lo;
+
+  return ret;
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+public synchronized void incrementFailedTransactionCount(){
+
+  failed_transactions++;
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+public synchronized void incrementTransactionCount(){
+
+  transaction_count++;
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+void oneRound(String url,String user,String password) throws InterruptedException, SQLException {
+
+  Vector vClient=new Vector();
+
+  Thread Client=null;
+
+  Enumeration e=null;
+
+  Connection guardian=null;
+
+  start_time=System.currentTimeMillis();
+
+  for (int i=0; i < n_clients; i++) {
+
+    if (useStoredProcedure) {
+
+      Client=new ClientThreadProcedure(n_txn_per_client,url,user,password,Connection.TRANSACTION_READ_COMMITTED);
+
+    }
+
+ else {
+
+      Client=new ClientThread(n_txn_per_client,url,user,password,Connection.TRANSACTION_READ_COMMITTED);
+
+    }
+
+    Client.start();
+
+    vClient.addElement(Client);
+
+  }
+
+  e=vClient.elements();
+
+  while (e.hasMoreElements()) {
+
+    Client=(Thread)e.nextElement();
+
+    Client.join();
+
+  }
+
+  vClient.removeAllElements();
+
+  reportDone();
+
+  guardian=connect(url,user,password);
+
+  if (count_results) {
+
+    checkSumsDetails(guardian);
+
+  }
+
+  if (this.perform_special) {
+
+    performSpecial(guardian);
+
+  }
+
+  connectClose(guardian);
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+void performSpecial(Connection conn) throws SQLException {
+
+  Statement st1=null;
+
+  ResultSet rs=null;
+
+  int bbalancesum;
+
+  int tbalancesum;
+
+  int abalancesum;
+
+  int abalancecount;
+
+  int deltasum;
+
+  try {
+
+    st1=conn.createStatement();
+
+    st1.execute("set database transaction control " + txmode);
+
+    System.out.println("tx control " + txmode);
+
+    if (txmode.equals("mvcc")) {
+
+      txmode="locks";
+
+    }
+
+ else {
+
+      txmode="mvcc";
+
+    }
+
+  }
+
+  finally {
+
+    if (st1 != null) {
+
+      st1.close();
+
+    }
+
+  }
+
+}
+
+Location: TestBench.java
+
+Content: 
+
+public void reportDone(){
+
+  long end_time=System.currentTimeMillis();
+
+  double completion_time=((double)end_time - (double)start_time) / 1000;
+
+  System.out.println("\n* Benchmark Report *");
+
+  System.out.println("\n--------------------");
+
+  System.out.println("Time to execute " + transaction_count + " transactions: "+ completion_time+ " seconds.");
+
+  System.out.println("Max/Min memory usage: " + (MemoryWatcher.max / 1024) + " / "+ (MemoryWatcher.min / 1024)+ " kb");
+
+  System.out.println(failed_transactions + " / " + transaction_count+ " failed to complete.");
+
+  double rate=(transaction_count - failed_transactions) / completion_time;
+
+  System.out.println("Transaction rate: " + rate + " txn/sec.");
+
+  System.out.print((MemoryWatcher.max / 1024) + ";" + (MemoryWatcher.min / 1024)+ ";"+ failed_transactions+ ";"+ rate+ "\n");
+
+  transaction_count=0;
+
+  failed_transactions=0;
+
+  MemoryWatcher.reset();
+
+}
+

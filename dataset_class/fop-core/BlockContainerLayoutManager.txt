@@ -1,0 +1,532 @@
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Create a new block container layout manager.
+
+ * @param node block-container node to create the layout manager for.
+
+ */
+
+public BlockContainerLayoutManager(BlockContainer node){
+
+  super(node);
+
+  setGeneratesBlockArea(true);
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private boolean blockProgressionDirectionChanges(){
+
+  return getBlockContainerFO().getReferenceOrientation() % 180 != 0;
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private KnuthBox generateNonInlinedBox(){
+
+  MinOptMax range=MinOptMax.getInstance(relDims.ipd);
+
+  BlockContainerBreaker breaker=new BlockContainerBreaker(this,range);
+
+  breaker.doLayout(relDims.bpd,autoHeight);
+
+  boolean contentOverflows=breaker.isOverflow();
+
+  if (autoHeight) {
+
+    int newHeight=breaker.deferredAlg.totalWidth;
+
+    if (blockProgressionDirectionChanges()) {
+
+      setContentAreaIPD(newHeight);
+
+    }
+
+ else {
+
+      vpContentBPD=newHeight;
+
+    }
+
+    updateRelDims();
+
+  }
+
+  Position bcPosition=new BlockContainerPosition(this,breaker);
+
+  KnuthBox knuthBox=new KnuthBox(vpContentBPD,notifyPos(bcPosition),false);
+
+  if (contentOverflows) {
+
+    BlockLevelEventProducer eventProducer=BlockLevelEventProducer.Provider.get(getBlockContainerFO().getUserAgent().getEventBroadcaster());
+
+    boolean canRecover=(getBlockContainerFO().getOverflow() != EN_ERROR_IF_OVERFLOW);
+
+    eventProducer.viewportBPDOverflow(this,getBlockContainerFO().getName(),breaker.getOverflowAmount(),needClip(),canRecover,getBlockContainerFO().getLocator());
+
+  }
+
+  return knuthBox;
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private Point getAbsOffset(){
+
+  int x=0;
+
+  int y=0;
+
+  if (abProps.left.getEnum() != EN_AUTO) {
+
+    x=abProps.left.getValue(this);
+
+  }
+
+ else   if (abProps.right.getEnum() != EN_AUTO && width.getEnum() != EN_AUTO) {
+
+    x=getReferenceAreaIPD() - abProps.right.getValue(this) - width.getValue(this);
+
+  }
+
+  if (abProps.top.getEnum() != EN_AUTO) {
+
+    y=abProps.top.getValue(this);
+
+  }
+
+ else   if (abProps.bottom.getEnum() != EN_AUTO && height.getEnum() != EN_AUTO) {
+
+    y=getReferenceAreaBPD() - abProps.bottom.getValue(this) - height.getValue(this);
+
+  }
+
+  return new Point(x,y);
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+/** 
+
+ * @return the BlockContainer node
+
+ */
+
+protected BlockContainer getBlockContainerFO(){
+
+  return (BlockContainer)fobj;
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private int getBPIndents(){
+
+  int indents=0;
+
+  indents+=getBlockContainerFO().getCommonBorderPaddingBackground().getBPPaddingAndBorder(false,this);
+
+  return indents;
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private List<ListElement> getNextKnuthElementsAbsolute(LayoutContext context){
+
+  autoHeight=false;
+
+  boolean bpDirectionChanges=blockProgressionDirectionChanges();
+
+  Point offset=getAbsOffset();
+
+  int allocBPD;
+
+  int allocIPD;
+
+  if (height.getEnum() == EN_AUTO || (!height.isAbsolute() && getAncestorBlockAreaBPD() <= 0)) {
+
+    allocBPD=0;
+
+    if (abProps.bottom.getEnum() != EN_AUTO) {
+
+      int availHeight;
+
+      if (isFixed()) {
+
+        availHeight=(int)getCurrentPV().getViewArea().getHeight();
+
+      }
+
+ else {
+
+        availHeight=context.getStackLimitBP().getOpt();
+
+      }
+
+      allocBPD=availHeight;
+
+      allocBPD-=offset.y;
+
+      if (abProps.bottom.getEnum() != EN_AUTO) {
+
+        allocBPD-=abProps.bottom.getValue(this);
+
+        if (allocBPD < 0) {
+
+          allocBPD=0;
+
+        }
+
+      }
+
+ else {
+
+        if (allocBPD < 0) {
+
+          allocBPD=0;
+
+        }
+
+      }
+
+    }
+
+ else {
+
+      allocBPD=context.getStackLimitBP().getOpt();
+
+      if (!bpDirectionChanges) {
+
+        autoHeight=true;
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    allocBPD=height.getValue(this);
+
+    allocBPD+=getBPIndents();
+
+  }
+
+  if (width.getEnum() == EN_AUTO) {
+
+    int availWidth;
+
+    if (isFixed()) {
+
+      availWidth=(int)getCurrentPV().getViewArea().getWidth();
+
+    }
+
+ else {
+
+      availWidth=context.getRefIPD();
+
+    }
+
+    allocIPD=availWidth;
+
+    if (abProps.left.getEnum() != EN_AUTO) {
+
+      allocIPD-=abProps.left.getValue(this);
+
+    }
+
+    if (abProps.right.getEnum() != EN_AUTO) {
+
+      allocIPD-=abProps.right.getValue(this);
+
+      if (allocIPD < 0) {
+
+        allocIPD=0;
+
+      }
+
+    }
+
+ else {
+
+      if (allocIPD < 0) {
+
+        allocIPD=0;
+
+      }
+
+      if (bpDirectionChanges) {
+
+        autoHeight=true;
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    allocIPD=width.getValue(this);
+
+    allocIPD+=getIPIndents();
+
+  }
+
+  vpContentBPD=allocBPD - getBPIndents();
+
+  setContentAreaIPD(allocIPD - getIPIndents());
+
+  contentRectOffsetX=0;
+
+  contentRectOffsetY=0;
+
+  updateRelDims();
+
+  MinOptMax range=MinOptMax.getInstance(relDims.ipd);
+
+  BlockContainerBreaker breaker=new BlockContainerBreaker(this,range);
+
+  breaker.doLayout((autoHeight ? 0 : relDims.bpd),autoHeight);
+
+  boolean contentOverflows=breaker.isOverflow();
+
+  if (autoHeight) {
+
+    int newHeight=breaker.deferredAlg.totalWidth;
+
+    if (bpDirectionChanges) {
+
+      setContentAreaIPD(newHeight);
+
+    }
+
+ else {
+
+      vpContentBPD=newHeight;
+
+    }
+
+    updateRelDims();
+
+  }
+
+  List<ListElement> returnList=new LinkedList<ListElement>();
+
+  if (!breaker.isEmpty()) {
+
+    Position bcPosition=new BlockContainerPosition(this,breaker);
+
+    returnList.add(new KnuthBox(0,notifyPos(bcPosition),false));
+
+    if (!autoHeight & (contentOverflows)) {
+
+      BlockLevelEventProducer eventProducer=BlockLevelEventProducer.Provider.get(getBlockContainerFO().getUserAgent().getEventBroadcaster());
+
+      boolean canRecover=(getBlockContainerFO().getOverflow() != EN_ERROR_IF_OVERFLOW);
+
+      eventProducer.viewportBPDOverflow(this,getBlockContainerFO().getName(),breaker.getOverflowAmount(),needClip(),canRecover,getBlockContainerFO().getLocator());
+
+    }
+
+    if (this.horizontalOverflow > 0) {
+
+      BlockLevelEventProducer eventProducer=BlockLevelEventProducer.Provider.get(getBlockContainerFO().getUserAgent().getEventBroadcaster());
+
+      boolean canRecover=(getBlockContainerFO().getOverflow() != EN_ERROR_IF_OVERFLOW);
+
+      eventProducer.viewportIPDOverflow(this,getBlockContainerFO().getName(),this.horizontalOverflow,needClip(),canRecover,getBlockContainerFO().getLocator());
+
+    }
+
+  }
+
+  setFinished(true);
+
+  return returnList;
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+/** 
+
+ * @return the content IPD 
+
+ */
+
+protected int getRotatedIPD(){
+
+  return getBlockContainerFO().getInlineProgressionDimension().getOptimum(this).getLength().getValue(this);
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+protected boolean isAbsoluteOrFixed(){
+
+  return (abProps.absolutePosition == EN_ABSOLUTE || abProps.absolutePosition == EN_FIXED);
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private boolean isFixed(){
+
+  return (abProps.absolutePosition == EN_FIXED);
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Overridden to handle writing-mode, and different stack limit setup. {@inheritDoc}
+
+ */
+
+@Override protected LayoutContext makeChildLayoutContext(LayoutContext context){
+
+  LayoutContext childLC=LayoutContext.newInstance();
+
+  childLC.setStackLimitBP(context.getStackLimitBP().minus(MinOptMax.getInstance(relDims.bpd)));
+
+  childLC.setRefIPD(relDims.ipd);
+
+  childLC.setWritingMode(getBlockContainerFO().getWritingMode());
+
+  return childLC;
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private void setupAreaDimensions(LayoutContext context){
+
+  autoHeight=false;
+
+  int maxbpd=context.getStackLimitBP().getOpt();
+
+  int allocBPD;
+
+  BlockContainer fo=getBlockContainerFO();
+
+  if (height.getEnum() == EN_AUTO || (!height.isAbsolute() && getAncestorBlockAreaBPD() <= 0)) {
+
+    allocBPD=maxbpd;
+
+    autoHeight=true;
+
+    inlineElementList=(fo.getReferenceOrientation() == 0);
+
+  }
+
+ else {
+
+    allocBPD=height.getValue(this);
+
+    allocBPD+=getBPIndents();
+
+  }
+
+  vpContentBPD=allocBPD - getBPIndents();
+
+  referenceIPD=context.getRefIPD();
+
+  if (width.getEnum() == EN_AUTO) {
+
+    updateContentAreaIPDwithOverconstrainedAdjust();
+
+  }
+
+ else {
+
+    int contentWidth=width.getValue(this);
+
+    updateContentAreaIPDwithOverconstrainedAdjust(contentWidth);
+
+  }
+
+  contentRectOffsetX=0;
+
+  contentRectOffsetY=0;
+
+  int level=fo.getBidiLevel();
+
+  if ((level < 0) || ((level & 1) == 0)) {
+
+    contentRectOffsetX+=fo.getCommonMarginBlock().startIndent.getValue(this);
+
+  }
+
+ else {
+
+    contentRectOffsetX+=fo.getCommonMarginBlock().endIndent.getValue(this);
+
+  }
+
+  contentRectOffsetY+=fo.getCommonBorderPaddingBackground().getBorderBeforeWidth(false);
+
+  contentRectOffsetY+=fo.getCommonBorderPaddingBackground().getPaddingBefore(false,this);
+
+  updateRelDims();
+
+  int availableIPD=referenceIPD - getIPIndents();
+
+  if (getContentAreaIPD() > availableIPD) {
+
+    BlockLevelEventProducer eventProducer=BlockLevelEventProducer.Provider.get(fo.getUserAgent().getEventBroadcaster());
+
+    eventProducer.objectTooWide(this,fo.getName(),getContentAreaIPD(),context.getRefIPD(),fo.getLocator());
+
+  }
+
+}
+
+Location: BlockContainerLayoutManager.java
+
+Content: 
+
+private void updateRelDims(){
+
+  Rectangle2D rect=new Rectangle2D.Double(contentRectOffsetX,contentRectOffsetY,getContentAreaIPD(),this.vpContentBPD);
+
+  relDims=new FODimension(0,0);
+
+  absoluteCTM=CTM.getCTMandRelDims(getBlockContainerFO().getReferenceOrientation(),getBlockContainerFO().getWritingMode(),rect,relDims);
+
+}
+

@@ -1,0 +1,278 @@
+Location: Servlet.java
+
+Content: 
+
+public void doGet(HttpServletRequest request,HttpServletResponse response) throws IOException, ServletException {
+
+  String query=request.getQueryString();
+
+  if ((query == null) || (query.length() == 0)) {
+
+    response.setContentType("text/html");
+
+    response.setHeader("Pragma","no-cache");
+
+    PrintWriter out=response.getWriter();
+
+    out.println("<html><head><title>HSQL Database Engine Servlet</title>");
+
+    out.println("</head><body><h1>HSQL Database Engine Servlet</h1>");
+
+    out.println("The servlet is running.<p>");
+
+    if (initError == null) {
+
+      out.println("Connected to the database.<p>");
+
+      out.println("Database name: " + dbType + dbPath+ "<p>");
+
+    }
+
+ else {
+
+      out.println("<h2>The database is not available.</h2>");
+
+      out.println("The error message is:<p>");
+
+      out.println(initError);
+
+    }
+
+    out.println("</body></html>");
+
+  }
+
+}
+
+Location: Servlet.java
+
+Content: 
+
+public void doPost(HttpServletRequest request,HttpServletResponse response) throws IOException, ServletException {
+
+  DataInputStream inStream=null;
+
+  DataOutputStream dataOut=null;
+
+  try {
+
+    inStream=new DataInputStream(request.getInputStream());
+
+    int databaseID=inStream.readInt();
+
+    long sessionID=inStream.readLong();
+
+    int mode=inStream.readByte();
+
+    RowInputBinary rowIn=new RowInputBinary(BUFFER_SIZE);
+
+    Session session=DatabaseManager.getSession(databaseID,sessionID);
+
+    Result resultIn=Result.newResult(session,mode,inStream,rowIn);
+
+    resultIn.setDatabaseId(databaseID);
+
+    resultIn.setSessionId(sessionID);
+
+    Result resultOut;
+
+    int type=resultIn.getType();
+
+    if (type == ResultConstants.CONNECT) {
+
+      try {
+
+        session=DatabaseManager.newSession(dbType,dbPath,resultIn.getMainString(),resultIn.getSubString(),new HsqlProperties(),resultIn.getZoneString(),resultIn.getUpdateCount());
+
+        resultOut=Result.newConnectionAcknowledgeResponse(session);
+
+      }
+
+ catch (      HsqlException e) {
+
+        resultOut=Result.newErrorResult(e);
+
+      }
+
+    }
+
+ else     if (type == ResultConstants.DISCONNECT || type == ResultConstants.RESETSESSION) {
+
+      response.setHeader("Cache-Control","no-cache");
+
+      response.setContentType("application/octet-stream");
+
+      response.setContentLength(6);
+
+      dataOut=new DataOutputStream(response.getOutputStream());
+
+      dataOut.writeByte(ResultConstants.DISCONNECT);
+
+      dataOut.writeInt(4);
+
+      dataOut.writeByte(ResultConstants.NONE);
+
+      dataOut.close();
+
+      return;
+
+    }
+
+ else     if (type == ResultConstants.SQLCANCEL) {
+
+      int dbId=resultIn.getDatabaseId();
+
+      long sessionId=resultIn.getSessionId();
+
+      session=DatabaseManager.getSession(dbId,sessionId);
+
+      resultOut=session.cancel(resultIn);
+
+    }
+
+ else {
+
+      int dbId=resultIn.getDatabaseId();
+
+      long sessionId=resultIn.getSessionId();
+
+      session=DatabaseManager.getSession(dbId,sessionId);
+
+      resultIn.readLobResults(session,inStream,rowIn);
+
+      resultOut=session.execute(resultIn);
+
+    }
+
+    HsqlByteArrayOutputStream memStream=new HsqlByteArrayOutputStream();
+
+    DataOutputStream tempOutput=new DataOutputStream(memStream);
+
+    RowOutputBinary rowOut=new RowOutputBinary(BUFFER_SIZE,1);
+
+    resultOut.write(session,tempOutput,rowOut);
+
+    response.setHeader("Cache-Control","no-cache");
+
+    response.setContentType("application/octet-stream");
+
+    response.setContentLength(memStream.size());
+
+    dataOut=new DataOutputStream(response.getOutputStream());
+
+    memStream.writeTo(dataOut);
+
+  }
+
+ catch (  HsqlException e) {
+
+  }
+
+ finally {
+
+    if (dataOut != null) {
+
+      dataOut.close();
+
+    }
+
+    if (inStream != null) {
+
+      inStream.close();
+
+    }
+
+  }
+
+}
+
+Location: Servlet.java
+
+Content: 
+
+protected long getLastModified(HttpServletRequest req){
+
+  return lModified++;
+
+}
+
+Location: Servlet.java
+
+Content: 
+
+public void init(ServletConfig config){
+
+  try {
+
+    super.init(config);
+
+  }
+
+ catch (  ServletException e) {
+
+    log(e.toString());
+
+  }
+
+  String dbStr=getInitParameter("hsqldb.server.database");
+
+  if (dbStr == null) {
+
+    dbStr=".";
+
+  }
+
+  String useWebInfStr=getInitParameter("hsqldb.server.use_web-inf_path");
+
+  if (!dbStr.equals(".") && "true".equalsIgnoreCase(useWebInfStr)) {
+
+    dbStr=getServletContext().getRealPath("/") + "WEB-INF/" + dbStr;
+
+  }
+
+  HsqlProperties dbURL=DatabaseURL.parseURL(dbStr,false,false);
+
+  log("Database filename = " + dbStr);
+
+  if (dbURL == null) {
+
+    initError="Bad Database name";
+
+  }
+
+ else {
+
+    dbPath=dbURL.getProperty("database");
+
+    dbType=dbURL.getProperty("connection_type");
+
+    try {
+
+      DatabaseManager.getDatabase(dbType,dbPath,dbURL);
+
+    }
+
+ catch (    HsqlException e) {
+
+      initError=e.getMessage();
+
+    }
+
+  }
+
+  if (initError == null) {
+
+    log("Initialization completed.");
+
+  }
+
+ else {
+
+    log("Database could not be initialised.");
+
+    log(initError);
+
+  }
+
+}
+

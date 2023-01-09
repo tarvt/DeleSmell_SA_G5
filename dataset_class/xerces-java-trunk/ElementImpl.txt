@@ -1,0 +1,824 @@
+Location: ElementImpl.java
+
+Content: 
+
+static Iterator createImmutableIterator(Iterator iter){
+
+  return new NoRemoveIterator(iter);
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+protected ElementImpl(){
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * Factory constructor. 
+
+ */
+
+public ElementImpl(CoreDocumentImpl ownerDoc,String name){
+
+  super(ownerDoc);
+
+  this.name=name;
+
+  needsSyncData(true);
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public ElementImpl(int line,int column){
+
+  this(line,column,-1);
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public ElementImpl(int line,int column,int offset){
+
+  row=-1;
+
+  col=-1;
+
+  parentRow=-1;
+
+  nodeType=Node.ELEMENT_NODE;
+
+  this.line=line;
+
+  this.column=column;
+
+  charOffset=offset;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ */
+
+ElementImpl(final QName name,final boolean isStartElement,Iterator namespaces,final Location location){
+
+  super(isStartElement ? START_ELEMENT : END_ELEMENT,location);
+
+  fName=name;
+
+  if (namespaces != null && namespaces.hasNext()) {
+
+    fNamespaces=new ArrayList();
+
+    do {
+
+      Namespace ns=(Namespace)namespaces.next();
+
+      fNamespaces.add(ns);
+
+    }
+
+ while (namespaces.hasNext());
+
+  }
+
+ else {
+
+    fNamespaces=Collections.EMPTY_LIST;
+
+  }
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public ElementImpl(String prefix,String localpart,String rawname,String uri,int line,int column){
+
+  this(prefix,localpart,rawname,uri,line,column,-1);
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public ElementImpl(String prefix,String localpart,String rawname,String uri,int line,int column,int offset){
+
+  super(prefix,localpart,rawname,uri,Node.ELEMENT_NODE);
+
+  row=-1;
+
+  col=-1;
+
+  parentRow=-1;
+
+  this.line=line;
+
+  this.column=column;
+
+  charOffset=offset;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * @see <a href="http://www.w3.org/TR/2008/REC-ElementTraversal-20081222/#attribute-childElementCount">
+
+     * Element Traversal Specification</a>
+
+ */
+
+public final int getChildElementCount(){
+
+  int count=0;
+
+  Element child=getFirstElementChild();
+
+  while (child != null) {
+
+    ++count;
+
+    child=((ElementImpl)child).getNextElementSibling();
+
+  }
+
+  return count;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * Get the default attributes. 
+
+ */
+
+protected NamedNodeMapImpl getDefaultAttributes(){
+
+  DocumentTypeImpl doctype=(DocumentTypeImpl)ownerDocument.getDoctype();
+
+  if (doctype == null) {
+
+    return null;
+
+  }
+
+  ElementDefinitionImpl eldef=(ElementDefinitionImpl)doctype.getElements().getNamedItem(getNodeName());
+
+  if (eldef == null) {
+
+    return null;
+
+  }
+
+  return (NamedNodeMapImpl)eldef.getAttributes();
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public Node getFirstChild(){
+
+  if (parentRow == -1) {
+
+    return null;
+
+  }
+
+  return schemaDOM.relations[parentRow][1];
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * @see <a href="http://www.w3.org/TR/2008/REC-ElementTraversal-20081222/#attribute-firstElementChild">
+
+     * Element Traversal Specification</a>
+
+ */
+
+public final Element getFirstElementChild(){
+
+  Node n=getFirstChild();
+
+  while (n != null) {
+
+switch (n.getNodeType()) {
+
+case Node.ELEMENT_NODE:
+
+      return (Element)n;
+
+case Node.ENTITY_REFERENCE_NODE:
+
+    final Element e=getFirstElementChild(n);
+
+  if (e != null) {
+
+    return e;
+
+  }
+
+break;
+
+}
+
+n=n.getNextSibling();
+
+}
+
+return null;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+private Element getFirstElementChild(Node n){
+
+  final Node top=n;
+
+  while (n != null) {
+
+    if (n.getNodeType() == Node.ELEMENT_NODE) {
+
+      return (Element)n;
+
+    }
+
+    Node next=n.getFirstChild();
+
+    while (next == null) {
+
+      if (top == n) {
+
+        break;
+
+      }
+
+      next=n.getNextSibling();
+
+      if (next == null) {
+
+        n=n.getParentNode();
+
+        if (n == null || top == n) {
+
+          return null;
+
+        }
+
+      }
+
+    }
+
+    n=next;
+
+  }
+
+  return null;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public Node getLastChild(){
+
+  if (parentRow == -1) {
+
+    return null;
+
+  }
+
+  int i=1;
+
+  for (; i < schemaDOM.relations[parentRow].length; i++) {
+
+    if (schemaDOM.relations[parentRow][i] == null) {
+
+      return schemaDOM.relations[parentRow][i - 1];
+
+    }
+
+  }
+
+  if (i == 1) {
+
+    i++;
+
+  }
+
+  return schemaDOM.relations[parentRow][i - 1];
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * @see <a href="http://www.w3.org/TR/2008/REC-ElementTraversal-20081222/#attribute-lastElementChild">
+
+     * Element Traversal Specification</a>
+
+ */
+
+public final Element getLastElementChild(){
+
+  Node n=getLastChild();
+
+  while (n != null) {
+
+switch (n.getNodeType()) {
+
+case Node.ELEMENT_NODE:
+
+      return (Element)n;
+
+case Node.ENTITY_REFERENCE_NODE:
+
+    final Element e=getLastElementChild(n);
+
+  if (e != null) {
+
+    return e;
+
+  }
+
+break;
+
+}
+
+n=n.getPreviousSibling();
+
+}
+
+return null;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+private Element getLastElementChild(Node n){
+
+  final Node top=n;
+
+  while (n != null) {
+
+    if (n.getNodeType() == Node.ELEMENT_NODE) {
+
+      return (Element)n;
+
+    }
+
+    Node next=n.getLastChild();
+
+    while (next == null) {
+
+      if (top == n) {
+
+        break;
+
+      }
+
+      next=n.getPreviousSibling();
+
+      if (next == null) {
+
+        n=n.getParentNode();
+
+        if (n == null || top == n) {
+
+          return null;
+
+        }
+
+      }
+
+    }
+
+    n=next;
+
+  }
+
+  return null;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * @see <a href="http://www.w3.org/TR/2008/REC-ElementTraversal-20081222/#attribute-nextElementSibling">
+
+     * Element Traversal Specification</a>
+
+ */
+
+public final Element getNextElementSibling(){
+
+  Node n=getNextLogicalSibling(this);
+
+  while (n != null) {
+
+switch (n.getNodeType()) {
+
+case Node.ELEMENT_NODE:
+
+      return (Element)n;
+
+case Node.ENTITY_REFERENCE_NODE:
+
+    final Element e=getFirstElementChild(n);
+
+  if (e != null) {
+
+    return e;
+
+  }
+
+break;
+
+}
+
+n=getNextLogicalSibling(n);
+
+}
+
+return null;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+private Node getNextLogicalSibling(Node n){
+
+  Node next=n.getNextSibling();
+
+  if (next == null) {
+
+    Node parent=n.getParentNode();
+
+    while (parent != null && parent.getNodeType() == Node.ENTITY_REFERENCE_NODE) {
+
+      next=parent.getNextSibling();
+
+      if (next != null) {
+
+        break;
+
+      }
+
+      parent=parent.getParentNode();
+
+    }
+
+  }
+
+  return next;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * @see <a href="http://www.w3.org/TR/2008/REC-ElementTraversal-20081222/#attribute-previousElementSibling">
+
+     * Element Traversal Specification</a>
+
+ */
+
+public final Element getPreviousElementSibling(){
+
+  Node n=getPreviousLogicalSibling(this);
+
+  while (n != null) {
+
+switch (n.getNodeType()) {
+
+case Node.ELEMENT_NODE:
+
+      return (Element)n;
+
+case Node.ENTITY_REFERENCE_NODE:
+
+    final Element e=getLastElementChild(n);
+
+  if (e != null) {
+
+    return e;
+
+  }
+
+break;
+
+}
+
+n=getPreviousLogicalSibling(n);
+
+}
+
+return null;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+private Node getPreviousLogicalSibling(Node n){
+
+  Node prev=n.getPreviousSibling();
+
+  if (prev == null) {
+
+    Node parent=n.getParentNode();
+
+    while (parent != null && parent.getNodeType() == Node.ENTITY_REFERENCE_NODE) {
+
+      prev=parent.getPreviousSibling();
+
+      if (prev != null) {
+
+        break;
+
+      }
+
+      parent=parent.getParentNode();
+
+    }
+
+  }
+
+  return prev;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public String getSyntheticAnnotation(){
+
+  return fSyntheticAnnotation;
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * NON-DOM: get inded of an attribute
+
+ */
+
+protected int getXercesAttribute(String namespaceURI,String localName){
+
+  if (needsSyncData()) {
+
+    hongshuai();
+
+    needsSyncData(false);
+
+    boolean orig=ownerDocument.getMutationEvents();
+
+    ownerDocument.setMutationEvents(false);
+
+    setupDefaultAttributes();
+
+    ownerDocument.setMutationEvents(orig);
+
+  }
+
+  if (attributes == null) {
+
+    return -1;
+
+  }
+
+  return attributes.getNamedItemIndex(namespaceURI,localName);
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public boolean hasAttributes(){
+
+  return (attrs.length == 0 ? false : true);
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+public boolean hasChildNodes(){
+
+  if (parentRow == -1) {
+
+    return false;
+
+  }
+
+ else {
+
+    return true;
+
+  }
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+void moveSpecifiedAttributes(ElementImpl el){
+
+  if (needsSyncData()) {
+
+    hongshuai();
+
+    needsSyncData(false);
+
+    boolean orig=ownerDocument.getMutationEvents();
+
+    ownerDocument.setMutationEvents(false);
+
+    setupDefaultAttributes();
+
+    ownerDocument.setMutationEvents(orig);
+
+  }
+
+  if (el.hasAttributes()) {
+
+    if (attributes == null) {
+
+      attributes=new AttributeMap(this,null);
+
+    }
+
+    attributes.moveSpecifiedAttributes(el.attributes);
+
+  }
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * Compares two namespace URIs with an extra case for null entries
+
+ */
+
+private static boolean nsEquals(String nsURI_1,String nsURI_2){
+
+  if (nsURI_1 == null) {
+
+    return (nsURI_2 == null);
+
+  }
+
+ else {
+
+    return nsURI_1.equals(nsURI_2);
+
+  }
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * Reconcile default attributes. 
+
+ */
+
+protected void reconcileDefaultAttributes(){
+
+  if (attributes != null) {
+
+    NamedNodeMapImpl defaults=getDefaultAttributes();
+
+    attributes.reconcileDefaults(defaults);
+
+  }
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * Setup the default attributes. 
+
+ */
+
+protected void setupDefaultAttributes(){
+
+  NamedNodeMapImpl defaults=getDefaultAttributes();
+
+  if (defaults != null) {
+
+    attributes=new AttributeMap(this,defaults);
+
+  }
+
+}
+
+Location: ElementImpl.java
+
+Content: 
+
+/** 
+
+ * NON-DOM: sets attribute node for this element
+
+ */
+
+protected int setXercesAttributeNode(Attr attr){
+
+  if (needsSyncData()) {
+
+    hongshuai();
+
+    needsSyncData(false);
+
+    boolean orig=ownerDocument.getMutationEvents();
+
+    ownerDocument.setMutationEvents(false);
+
+    setupDefaultAttributes();
+
+    ownerDocument.setMutationEvents(orig);
+
+  }
+
+  if (attributes == null) {
+
+    attributes=new AttributeMap(this,null);
+
+  }
+
+  return attributes.addItem(attr);
+
+}
+

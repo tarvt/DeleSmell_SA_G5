@@ -1,0 +1,278 @@
+Location: SimulatorEngine.java
+
+Content: 
+
+/** 
+
+ * Creates the configuration for mumak simulation. This is kept modular mostly for  testing purposes. so that the standard configuration can be modified before passing it to the init() function.
+
+ * @return JobConf: the configuration for the SimulatorJobTracker 
+
+ */
+
+JobConf createMumakConf(){
+
+  JobConf jobConf=new JobConf(getConf());
+
+  jobConf.setClass("topology.node.switch.mapping.impl",StaticMapping.class,DNSToSwitchMapping.class);
+
+  jobConf.set("fs.default.name","file:///");
+
+  jobConf.set("mapred.job.tracker","localhost:8012");
+
+  jobConf.setInt("mapred.jobtracker.job.history.block.size",512);
+
+  jobConf.setInt("mapred.jobtracker.job.history.buffer.size",512);
+
+  jobConf.setLong("mapred.tasktracker.expiry.interval",5000);
+
+  jobConf.setInt("mapred.reduce.copy.backoff",4);
+
+  jobConf.setLong("mapred.job.reuse.jvm.num.tasks",-1);
+
+  jobConf.setUser("mumak");
+
+  jobConf.set("mapred.system.dir",jobConf.get("hadoop.log.dir","/tmp/hadoop-" + jobConf.getUser()) + "/mapred/system");
+
+  return jobConf;
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+/** 
+
+ * Reads a positive long integer from a configuration.
+
+ * @param Configuration conf configuration objects
+
+ * @param String propertyName name of the property
+
+ * @return time
+
+ */
+
+long getTimeProperty(Configuration conf,String propertyName,long defaultValue) throws IllegalArgumentException {
+
+  long time=conf.getLong(propertyName,defaultValue);
+
+  if (time <= 0) {
+
+    throw new IllegalArgumentException(propertyName + "time must be positive: " + time);
+
+  }
+
+  return time;
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+static boolean isIPAddress(String hostname){
+
+  return IP_PATTERN.matcher(hostname).matches();
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+/** 
+
+ * Called when a job is completed. Insert a  {@link JobCompleteEvent} into the{@link SimulatorEventQueue}. This event will be picked up by {@link SimulatorJobClient}, which will in turn decide whether the simulation is done.
+
+ * @param jobStatus final status of a job, SUCCEEDED or FAILED
+
+ * @param timestamp time stamp when the job is completed
+
+ */
+
+void markCompletedJob(JobStatus jobStatus,long timestamp){
+
+  queue.add(new JobCompleteEvent(jc,timestamp,jobStatus,this));
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+void parseParameters(String[] args){
+
+  if (args.length != 2) {
+
+    throw new IllegalArgumentException("Usage: java ... SimulatorEngine trace.json topology.json");
+
+  }
+
+  traceFile=args[0];
+
+  topologyFile=args[1];
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+static void removeIpHosts(LoggedNetworkTopology topology){
+
+  for (Iterator<LoggedNetworkTopology> rackIt=topology.getChildren().iterator(); rackIt.hasNext(); ) {
+
+    LoggedNetworkTopology rack=rackIt.next();
+
+    List<LoggedNetworkTopology> nodes=rack.getChildren();
+
+    for (Iterator<LoggedNetworkTopology> it=nodes.iterator(); it.hasNext(); ) {
+
+      LoggedNetworkTopology node=it.next();
+
+      if (isIPAddress(node.getName())) {
+
+        it.remove();
+
+      }
+
+    }
+
+    if (nodes.isEmpty()) {
+
+      rackIt.remove();
+
+    }
+
+  }
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+static void setStaticMapping(LoggedNetworkTopology topology){
+
+  for (  LoggedNetworkTopology rack : topology.getChildren()) {
+
+    for (    LoggedNetworkTopology node : rack.getChildren()) {
+
+      StaticMapping.addNodeToRack(node.getName(),new RackNode(rack.getName(),1).getName());
+
+    }
+
+  }
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+/** 
+
+ * In this function, we collect the set of leaf queues from JobTracker, and  for each of them creates a simulated thread that performs the same check as JobInitializationPoller.JobInitializationThread in Capacity Scheduler.  
+
+ * @param now
+
+ * @throws IOException
+
+ */
+
+private void startSimulatorThreadsCapSched(long now) throws IOException {
+
+  Set<String> queueNames=jt.getQueueManager().getLeafQueueNames();
+
+  TaskScheduler taskScheduler=jt.getTaskScheduler();
+
+  threadSet=new HashSet<SimulatorCSJobInitializationThread>();
+
+  for (  String jobQueue : queueNames) {
+
+    SimulatorCSJobInitializationThread capThread=new SimulatorCSJobInitializationThread(taskScheduler,jobQueue);
+
+    threadSet.add(capThread);
+
+    queue.addAll(capThread.init(now));
+
+  }
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+/** 
+
+ * Start simulated task trackers based on topology.
+
+ * @param clusterStory the cluster topology.
+
+ * @param jobConf configuration object.
+
+ * @param now time stamp when the simulator is started,  {@link SimulatorTaskTracker}s are started uniformly randomly spread in [now,now+startDuration).
+
+ * @return time stamp by which the entire cluster is booted up and all tasktrackers are sending hearbeats in their steady rate.
+
+ */
+
+long startTaskTrackers(ClusterStory cluster,JobConf jobConf,long now){
+
+  int port=10000;
+
+  int numTaskTrackers=0;
+
+  Random random=new Random(RandomSeedGenerator.getSeed("forStartTaskTrackers()",masterRandomSeed));
+
+  final int startDuration=jobConf.getInt("mumak.cluster.startup.duration",DEFAULT_CLUSTER_STARTUP_DURATION);
+
+  for (  MachineNode node : cluster.getMachines()) {
+
+    jobConf.set("mumak.tasktracker.host.name",node.getName());
+
+    jobConf.set("mumak.tasktracker.tracker.name","tracker_" + node.getName() + ":localhost/127.0.0.1:"+ port);
+
+    long subRandomSeed=RandomSeedGenerator.getSeed("forTaskTracker" + numTaskTrackers,masterRandomSeed);
+
+    jobConf.setLong("mumak.tasktracker.random.seed",subRandomSeed);
+
+    numTaskTrackers++;
+
+    port++;
+
+    SimulatorTaskTracker tt=new SimulatorTaskTracker(jt,jobConf);
+
+    long firstHeartbeat=now + random.nextInt(startDuration);
+
+    queue.addAll(tt.init(firstHeartbeat));
+
+  }
+
+  long clusterSteady=now + startDuration + jt.getNextHeartbeatInterval();
+
+  return clusterSteady;
+
+}
+
+Location: SimulatorEngine.java
+
+Content: 
+
+/** 
+
+ * Run after the main loop.
+
+ * @param out stream to output information about the simulation
+
+ */
+
+void summary(PrintStream out){
+
+  out.println("Done, total events processed: " + queue.getEventCount());
+
+}
+

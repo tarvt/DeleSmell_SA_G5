@@ -1,0 +1,1626 @@
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private void addMenuItems(JMenu f,Object[] m){
+
+  Dimension d=Toolkit.getDefaultToolkit().getScreenSize();
+
+  for (int i=0; i < m.length; i++) {
+
+    if (m[i].equals("--")) {
+
+      f.addSeparator();
+
+    }
+
+ else     if (m[i].equals("---")) {
+
+      if (d.width >= 640) {
+
+        f.addSeparator();
+
+      }
+
+ else {
+
+        return;
+
+      }
+
+    }
+
+ else {
+
+      JMenuItem item;
+
+      if (m[i] instanceof JMenuItem) {
+
+        item=(JMenuItem)m[i];
+
+      }
+
+ else       if (m[i] instanceof String) {
+
+        item=new JMenuItem(((String)m[i]).substring(1));
+
+        char c=((String)m[i]).charAt(0);
+
+        if (c != '-') {
+
+          KeyStroke key=KeyStroke.getKeyStroke(c,Event.CTRL_MASK);
+
+          item.setAccelerator(key);
+
+        }
+
+      }
+
+ else {
+
+        throw new RuntimeException("Unexpected element for menu item creation: " + m[i].getClass().getName());
+
+      }
+
+      item.addActionListener(this);
+
+      f.add(item);
+
+    }
+
+  }
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private JMenu addMenu(JMenuBar b,String name,Object[] items){
+
+  JMenu menu=new JMenu(name);
+
+  menu.setMnemonic(name.charAt(0));
+
+  addMenuItems(menu,items);
+
+  b.add(menu);
+
+  return menu;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private void backgroundIt(Runnable r,String description){
+
+  if (busyText != null) {
+
+    Toolkit.getDefaultToolkit().beep();
+
+    return;
+
+  }
+
+  setWaiting(description);
+
+  SwingUtilities.invokeLater(r);
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private void clearResultPanel(){
+
+  gResult.setHead(new Object[0]);
+
+  gResult.clear();
+
+  if (gridFormat) {
+
+    gResult.fireTableChanged(null);
+
+  }
+
+ else {
+
+    hongshuai();
+
+    Object[] col=gResult.getHead();
+
+    int width=col.length;
+
+    int[] size=new int[width];
+
+    Vector data=gResult.getData();
+
+    Object[] row;
+
+    int height=data.size();
+
+    for (int i=0; i < width; i++) {
+
+      size[i]=col[i].toString().length();
+
+    }
+
+    for (int i=0; i < height; i++) {
+
+      row=(Object[])data.elementAt(i);
+
+      for (int j=0; j < width; j++) {
+
+        String item=((row[j] == null) ? "" : row[j].toString());
+
+        int l=item.length();
+
+        if (l > size[j]) {
+
+          size[j]=l;
+
+        }
+
+      }
+
+    }
+
+    StringBuffer b=new StringBuffer();
+
+    for (int i=0; i < width; i++) {
+
+      b.append(col[i]);
+
+      for (int l=col[i].toString().length(); l <= size[i]; l++) {
+
+        b.append(' ');
+
+      }
+
+    }
+
+    b.append(NL);
+
+    for (int i=0; i < width; i++) {
+
+      for (int l=0; l < size[i]; l++) {
+
+        b.append('-');
+
+      }
+
+      b.append(' ');
+
+    }
+
+    b.append(NL);
+
+    for (int i=0; i < height; i++) {
+
+      row=(Object[])data.elementAt(i);
+
+      for (int j=0; j < width; j++) {
+
+        String item=((row[j] == null) ? "" : row[j].toString());
+
+        b.append(item);
+
+        for (int l=item.length(); l <= size[j]; l++) {
+
+          b.append(' ');
+
+        }
+
+      }
+
+      b.append(NL);
+
+    }
+
+    txtResult.setText(b.toString());
+
+  }
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+protected JToolBar createToolBar(){
+
+  JToolBar jtoolbar=new JToolBar();
+
+  jtoolbar.putClientProperty("JToolBar.isRollover",Boolean.TRUE);
+
+  jbuttonClear=new JButton("Clear SQL",new ImageIcon(CommonSwing.getIcon("Clear")));
+
+  jbuttonClear.putClientProperty("is3DEnabled",Boolean.TRUE);
+
+  tipMap.put(jbuttonClear,"Clear SQL");
+
+  jbuttonClear.addActionListener(new ActionListener(){
+
+    public void actionPerformed(    ActionEvent actionevent){
+
+      if (sqlScriptBuffer == null && txtCommand.getText().length() < 1) {
+
+        CommonSwing.errorMessage("No SQL to clear");
+
+        return;
+
+      }
+
+      clear();
+
+    }
+
+  }
+
+);
+
+  jbuttonExecute=new JButton("Execute SQL",new ImageIcon(CommonSwing.getIcon("Execute")));
+
+  tipMap.put(jbuttonExecute,"Execute SQL");
+
+  jbuttonExecute.putClientProperty("is3DEnabled",Boolean.TRUE);
+
+  jbuttonExecute.addActionListener(new ActionListener(){
+
+    public void actionPerformed(    ActionEvent actionevent){
+
+      executeCurrentSQL();
+
+    }
+
+  }
+
+);
+
+  jtoolbar.addSeparator();
+
+  jtoolbar.add(jbuttonClear);
+
+  jtoolbar.addSeparator();
+
+  jtoolbar.add(jbuttonExecute);
+
+  jtoolbar.addSeparator();
+
+  jbuttonClear.setAlignmentY(0.5F);
+
+  jbuttonClear.setAlignmentX(0.5F);
+
+  jbuttonExecute.setAlignmentY(0.5F);
+
+  jbuttonExecute.setAlignmentX(0.5F);
+
+  return jtoolbar;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public DatabaseManagerSwing(){
+
+  jframe=new JFrame("HSQLDB DatabaseManager");
+
+  fMain=jframe;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public DatabaseManagerSwing(JFrame frameIn){
+
+  jframe=frameIn;
+
+  fMain=jframe;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+/** 
+
+ * Clear all existing nodes from the tree model and rebuild from scratch. This method executes in current thread
+
+ */
+
+protected void directRefreshTree(){
+
+  int[] rowCounts;
+
+  DefaultMutableTreeNode propertiesNode;
+
+  DefaultMutableTreeNode tableNode;
+
+  DecimalFormat DECFMT=new DecimalFormat(" ( ####,###,####,##0 )");
+
+  while (treeModel.getChildCount(rootNode) > 0) {
+
+    DefaultMutableTreeNode child=(DefaultMutableTreeNode)treeModel.getChild(rootNode,0);
+
+    treeModel.removeNodeFromParent(child);
+
+    child.removeAllChildren();
+
+    child.removeFromParent();
+
+  }
+
+  treeModel.nodeStructureChanged(rootNode);
+
+  treeModel.reload();
+
+  tScrollPane.repaint();
+
+  ResultSet result=null;
+
+  try {
+
+    rootNode.setUserObject(dMeta.getURL());
+
+    result=dMeta.getTables(null,null,null,(showSys ? usertables : nonSystables));
+
+    Vector tables=new Vector();
+
+    Vector schemas=new Vector();
+
+    Vector remarks=new Vector();
+
+    String schema;
+
+    while (result.next()) {
+
+      schema=result.getString(2);
+
+      if ((!showSys) && isOracle && oracleSysUsers.contains(schema)) {
+
+        continue;
+
+      }
+
+      if (schemaFilter == null || schema.equals(schemaFilter)) {
+
+        schemas.addElement(schema);
+
+        tables.addElement(result.getString(3));
+
+        remarks.addElement(result.getString(5));
+
+        continue;
+
+      }
+
+    }
+
+    result.close();
+
+    result=null;
+
+    rowCounts=new int[tables.size()];
+
+    try {
+
+      rowCounts=getRowCounts(tables,schemas);
+
+    }
+
+ catch (    Exception e) {
+
+      CommonSwing.errorMessage(e);
+
+    }
+
+    ResultSet col;
+
+    for (int i=0; i < tables.size(); i++) {
+
+      col=null;
+
+      String name;
+
+      try {
+
+        name=(String)tables.elementAt(i);
+
+        if (isOracle && name.startsWith("BIN$")) {
+
+          continue;
+
+        }
+
+        schema=(String)schemas.elementAt(i);
+
+        String schemaname="";
+
+        if (schema != null && showSchemas) {
+
+          schemaname=schema + '.';
+
+        }
+
+        String rowcount=displayRowCounts ? (DECFMT.format(rowCounts[i])) : "";
+
+        String displayedName=schemaname + name + rowcount;
+
+        tableNode=makeNode(displayedName,rootNode);
+
+        col=dMeta.getColumns(null,schema,name,null);
+
+        if ((schema != null) && !schema.trim().equals("")) {
+
+          makeNode(schema,tableNode);
+
+        }
+
+        String remark=(String)remarks.elementAt(i);
+
+        if ((remark != null) && !remark.trim().equals("")) {
+
+          makeNode(remark,tableNode);
+
+        }
+
+        while (col.next()) {
+
+          String c=col.getString(4);
+
+          DefaultMutableTreeNode columnNode=makeNode(c,tableNode);
+
+          String type=col.getString(6);
+
+          makeNode("Type: " + type,columnNode);
+
+          boolean nullable=col.getInt(11) != DatabaseMetaData.columnNoNulls;
+
+          makeNode("Nullable: " + nullable,columnNode);
+
+        }
+
+      }
+
+  finally {
+
+        if (col != null) {
+
+          try {
+
+            col.close();
+
+          }
+
+ catch (          SQLException se) {
+
+          }
+
+        }
+
+      }
+
+      DefaultMutableTreeNode indexesNode=makeNode("Indices",tableNode);
+
+      if (showIndexDetails) {
+
+        ResultSet ind=null;
+
+        try {
+
+          ind=dMeta.getIndexInfo(null,schema,name,false,false);
+
+          String oldiname=null;
+
+          DefaultMutableTreeNode indexNode=null;
+
+          while (ind.next()) {
+
+            boolean nonunique=ind.getBoolean(4);
+
+            String iname=ind.getString(6);
+
+            if ((oldiname == null || !oldiname.equals(iname))) {
+
+              indexNode=makeNode(iname,indexesNode);
+
+              makeNode("Unique: " + !nonunique,indexNode);
+
+              oldiname=iname;
+
+            }
+
+            makeNode(ind.getString(9),indexNode);
+
+          }
+
+        }
+
+ catch (        SQLException se) {
+
+          if (se.getMessage() == null || ((!se.getMessage().startsWith("ORA-25191:")) && (!se.getMessage().startsWith("ORA-01702:")) && !se.getMessage().startsWith("ORA-01031:"))) {
+
+            throw se;
+
+          }
+
+        }
+
+ finally {
+
+          if (ind != null) {
+
+            ind.close();
+
+            ind=null;
+
+          }
+
+        }
+
+      }
+
+    }
+
+    propertiesNode=makeNode("Properties",rootNode);
+
+    makeNode("User: " + dMeta.getUserName(),propertiesNode);
+
+    makeNode("ReadOnly: " + cConn.isReadOnly(),propertiesNode);
+
+    makeNode("AutoCommit: " + cConn.getAutoCommit(),propertiesNode);
+
+    makeNode("Driver: " + dMeta.getDriverName(),propertiesNode);
+
+    makeNode("Product: " + dMeta.getDatabaseProductName(),propertiesNode);
+
+    makeNode("Version: " + dMeta.getDatabaseProductVersion(),propertiesNode);
+
+  }
+
+ catch (  SQLException se) {
+
+    propertiesNode=makeNode("Error getting metadata:",rootNode);
+
+    makeNode(se.getMessage(),propertiesNode);
+
+    makeNode(se.getSQLState(),propertiesNode);
+
+    CommonSwing.errorMessage(se);
+
+  }
+
+ finally {
+
+    if (result != null) {
+
+      try {
+
+        result.close();
+
+      }
+
+ catch (      SQLException se) {
+
+      }
+
+    }
+
+  }
+
+  treeModel.nodeStructureChanged(rootNode);
+
+  treeModel.reload();
+
+  tScrollPane.repaint();
+
+  updateSchemaList();
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private void displayResults(){
+
+  if (gridFormat) {
+
+    hongshuai();
+
+    pResult.removeAll();
+
+    pResult.add(gScrollPane,BorderLayout.CENTER);
+
+    pResult.doLayout();
+
+    gResult.fireTableChanged(null);
+
+    pResult.repaint();
+
+  }
+
+ else {
+
+    hongshuai();
+
+    pResult.removeAll();
+
+    pResult.add(txtResultScroll,BorderLayout.CENTER);
+
+    pResult.doLayout();
+
+    showResultInText();
+
+    pResult.repaint();
+
+  }
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+/** 
+
+ * Schedules to run in a Gui-safe thread
+
+ */
+
+protected void executeCurrentSQL(){
+
+  if (txtCommand.getText().length() < 1) {
+
+    CommonSwing.errorMessage("No SQL to execute");
+
+    return;
+
+  }
+
+  backgroundIt(new StatementExecRunnable(),"Executing SQL");
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private void executeSQL(){
+
+  String[] g=new String[1];
+
+  String sql=null;
+
+  try {
+
+    lTime=System.nanoTime();
+
+    sql=((sqlScriptBuffer == null ? txtCommand.getText() : sqlScriptBuffer));
+
+    if (sStatement == null) {
+
+      g[0]="no connection";
+
+      gResult.setHead(g);
+
+      return;
+
+    }
+
+    sStatement.execute(sql);
+
+    lTime=System.nanoTime() - lTime;
+
+    int r=sStatement.getUpdateCount();
+
+    if (r == -1) {
+
+      ResultSet rs=sStatement.getResultSet();
+
+      try {
+
+        formatResultSet(rs);
+
+      }
+
+ catch (      Throwable t) {
+
+        g[0]="Error displaying the ResultSet";
+
+        gResult.setHead(g);
+
+        String s=t.getMessage();
+
+        g[0]=s;
+
+        gResult.addRow(g);
+
+      }
+
+    }
+
+ else {
+
+      g[0]="update count";
+
+      gResult.setHead(g);
+
+      g[0]="" + r;
+
+      gResult.addRow(g);
+
+    }
+
+    if (sqlScriptBuffer == null) {
+
+      addToRecent(sql);
+
+      txtCommand.setEnabled(true);
+
+    }
+
+ else {
+
+      hongshuai();
+
+      sqlScriptBuffer=null;
+
+      txtCommand.setText("");
+
+      txtCommand.setEnabled(true);
+
+    }
+
+  }
+
+ catch (  SQLException e) {
+
+    lTime=System.nanoTime() - lTime;
+
+    g[0]="SQL Error";
+
+    gResult.setHead(g);
+
+    String s=e.getMessage();
+
+    s+=" / Error Code: " + e.getErrorCode();
+
+    s+=" / State: " + e.getSQLState();
+
+    g[0]=s;
+
+    gResult.addRow(g);
+
+    return;
+
+  }
+
+  if (autoRefresh) {
+
+    setStatusLine("Refreshing object tree",0);
+
+    String upper=sql.toUpperCase(Locale.ENGLISH);
+
+    if (upper.indexOf("ALTER") > -1 || upper.indexOf("DROP") > -1 || upper.indexOf("CREATE") > -1) {
+
+      hongshuai();
+
+      int[] rowCounts;
+
+      DefaultMutableTreeNode propertiesNode;
+
+      DefaultMutableTreeNode tableNode;
+
+      DecimalFormat DECFMT=new DecimalFormat(" ( ####,###,####,##0 )");
+
+      while (treeModel.getChildCount(rootNode) > 0) {
+
+        DefaultMutableTreeNode child=(DefaultMutableTreeNode)treeModel.getChild(rootNode,0);
+
+        treeModel.removeNodeFromParent(child);
+
+        child.removeAllChildren();
+
+        child.removeFromParent();
+
+      }
+
+      treeModel.nodeStructureChanged(rootNode);
+
+      treeModel.reload();
+
+      tScrollPane.repaint();
+
+      ResultSet result=null;
+
+      try {
+
+        rootNode.setUserObject(dMeta.getURL());
+
+        result=dMeta.getTables(null,null,null,(showSys ? usertables : nonSystables));
+
+        Vector tables=new Vector();
+
+        Vector schemas=new Vector();
+
+        Vector remarks=new Vector();
+
+        String schema;
+
+        while (result.next()) {
+
+          schema=result.getString(2);
+
+          if ((!showSys) && isOracle && oracleSysUsers.contains(schema)) {
+
+            continue;
+
+          }
+
+          if (schemaFilter == null || schema.equals(schemaFilter)) {
+
+            schemas.addElement(schema);
+
+            tables.addElement(result.getString(3));
+
+            remarks.addElement(result.getString(5));
+
+            continue;
+
+          }
+
+        }
+
+        result.close();
+
+        result=null;
+
+        rowCounts=new int[tables.size()];
+
+        try {
+
+          rowCounts=getRowCounts(tables,schemas);
+
+        }
+
+ catch (        Exception e) {
+
+          CommonSwing.errorMessage(e);
+
+        }
+
+        ResultSet col;
+
+        for (int i=0; i < tables.size(); i++) {
+
+          col=null;
+
+          String name;
+
+          try {
+
+            name=(String)tables.elementAt(i);
+
+            if (isOracle && name.startsWith("BIN$")) {
+
+              continue;
+
+            }
+
+            schema=(String)schemas.elementAt(i);
+
+            String schemaname="";
+
+            if (schema != null && showSchemas) {
+
+              schemaname=schema + '.';
+
+            }
+
+            String rowcount=displayRowCounts ? (DECFMT.format(rowCounts[i])) : "";
+
+            String displayedName=schemaname + name + rowcount;
+
+            tableNode=makeNode(displayedName,rootNode);
+
+            col=dMeta.getColumns(null,schema,name,null);
+
+            if ((schema != null) && !schema.trim().equals("")) {
+
+              makeNode(schema,tableNode);
+
+            }
+
+            String remark=(String)remarks.elementAt(i);
+
+            if ((remark != null) && !remark.trim().equals("")) {
+
+              makeNode(remark,tableNode);
+
+            }
+
+            while (col.next()) {
+
+              String c=col.getString(4);
+
+              DefaultMutableTreeNode columnNode=makeNode(c,tableNode);
+
+              String type=col.getString(6);
+
+              makeNode("Type: " + type,columnNode);
+
+              boolean nullable=col.getInt(11) != DatabaseMetaData.columnNoNulls;
+
+              makeNode("Nullable: " + nullable,columnNode);
+
+            }
+
+          }
+
+  finally {
+
+            if (col != null) {
+
+              try {
+
+                col.close();
+
+              }
+
+ catch (              SQLException se) {
+
+              }
+
+            }
+
+          }
+
+          DefaultMutableTreeNode indexesNode=makeNode("Indices",tableNode);
+
+          if (showIndexDetails) {
+
+            ResultSet ind=null;
+
+            try {
+
+              ind=dMeta.getIndexInfo(null,schema,name,false,false);
+
+              String oldiname=null;
+
+              DefaultMutableTreeNode indexNode=null;
+
+              while (ind.next()) {
+
+                boolean nonunique=ind.getBoolean(4);
+
+                String iname=ind.getString(6);
+
+                if ((oldiname == null || !oldiname.equals(iname))) {
+
+                  indexNode=makeNode(iname,indexesNode);
+
+                  makeNode("Unique: " + !nonunique,indexNode);
+
+                  oldiname=iname;
+
+                }
+
+                makeNode(ind.getString(9),indexNode);
+
+              }
+
+            }
+
+ catch (            SQLException se) {
+
+              if (se.getMessage() == null || ((!se.getMessage().startsWith("ORA-25191:")) && (!se.getMessage().startsWith("ORA-01702:")) && !se.getMessage().startsWith("ORA-01031:"))) {
+
+                throw se;
+
+              }
+
+            }
+
+ finally {
+
+              if (ind != null) {
+
+                ind.close();
+
+                ind=null;
+
+              }
+
+            }
+
+          }
+
+        }
+
+        propertiesNode=makeNode("Properties",rootNode);
+
+        makeNode("User: " + dMeta.getUserName(),propertiesNode);
+
+        makeNode("ReadOnly: " + cConn.isReadOnly(),propertiesNode);
+
+        makeNode("AutoCommit: " + cConn.getAutoCommit(),propertiesNode);
+
+        makeNode("Driver: " + dMeta.getDriverName(),propertiesNode);
+
+        makeNode("Product: " + dMeta.getDatabaseProductName(),propertiesNode);
+
+        makeNode("Version: " + dMeta.getDatabaseProductVersion(),propertiesNode);
+
+      }
+
+ catch (      SQLException se) {
+
+        propertiesNode=makeNode("Error getting metadata:",rootNode);
+
+        makeNode(se.getMessage(),propertiesNode);
+
+        makeNode(se.getSQLState(),propertiesNode);
+
+        CommonSwing.errorMessage(se);
+
+      }
+
+ finally {
+
+        if (result != null) {
+
+          try {
+
+            result.close();
+
+          }
+
+ catch (          SQLException se) {
+
+          }
+
+        }
+
+      }
+
+      treeModel.nodeStructureChanged(rootNode);
+
+      treeModel.reload();
+
+      tScrollPane.repaint();
+
+      updateSchemaList();
+
+    }
+
+  }
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+protected int[] getRowCounts(Vector inTable,Vector inSchema) throws Exception {
+
+  if (!displayRowCounts) {
+
+    return (null);
+
+  }
+
+  String rowCountSelect="SELECT COUNT(*) FROM ";
+
+  int[] counts;
+
+  String name;
+
+  counts=new int[inTable.size()];
+
+  try {
+
+    Statement select=rowConn.createStatement();
+
+    for (int i=0; i < inTable.size(); i++) {
+
+      try {
+
+        String schemaPart=(String)inSchema.elementAt(i);
+
+        schemaPart=schemaPart == null ? "" : ("\"" + schemaPart + "\".\"");
+
+        name=schemaPart + (String)inTable.elementAt(i) + "\"";
+
+        ResultSet resultSet=select.executeQuery(rowCountSelect + name);
+
+        while (resultSet.next()) {
+
+          counts[i]=resultSet.getInt(1);
+
+        }
+
+      }
+
+ catch (      Exception e) {
+
+        System.err.println("Unable to get row count for table " + inSchema.elementAt(i) + '.'+ inTable.elementAt(i)+ ".  Using value '0': "+ e);
+
+      }
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    CommonSwing.errorMessage(e);
+
+  }
+
+  return (counts);
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public final void handlePopup(MouseEvent e){
+
+  if (!e.isPopupTrigger()) {
+
+    return;
+
+  }
+
+  Object source=e.getSource();
+
+  if (!(source instanceof JTree)) {
+
+    return;
+
+  }
+
+  JTree tree=(JTree)source;
+
+  TreePath treePath=tree.getPathForLocation(e.getX(),e.getY());
+
+  if (treePath == null) {
+
+    return;
+
+  }
+
+  JPopupMenu popup=new JPopupMenu();
+
+  JMenuItem menuItem;
+
+  String menus[]=new String[]{"Select","Delete","Update","Insert"};
+
+  for (int i=0; i < menus.length; i++) {
+
+    PopupListener popupListener=new PopupListener(menus[i],treePath);
+
+    String title=popupListener.toString();
+
+    if (title == null) {
+
+      return;
+
+    }
+
+    if (title.length() > 40) {
+
+      title=title.substring(0,40) + "...";
+
+    }
+
+    menuItem=new JMenuItem(title);
+
+    menuItem.addActionListener(popupListener);
+
+    popup.add(menuItem);
+
+  }
+
+  popup.show(e.getComponent(),e.getX(),e.getY());
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private DefaultMutableTreeNode makeNode(Object userObject,MutableTreeNode parent){
+
+  DefaultMutableTreeNode node=new DefaultMutableTreeNode(userObject);
+
+  if (parent != null) {
+
+    treeModel.insertNodeInto(node,parent,parent.getChildCount());
+
+  }
+
+  return node;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public final void mouseClicked(final MouseEvent mouseEvent){
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public final void mouseEntered(final MouseEvent mouseEvent){
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public final void mouseExited(final MouseEvent mouseEvent){
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public final void mousePressed(final MouseEvent e){
+
+  if (alreadyHandled == e) {
+
+    return;
+
+  }
+
+  handlePopup(e);
+
+  alreadyHandled=e;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public final void mouseReleased(final MouseEvent e){
+
+  if (alreadyHandled == e) {
+
+    return;
+
+  }
+
+  handlePopup(e);
+
+  alreadyHandled=e;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+/** 
+
+ * perform a limited check (inconclusive) and quote object name if required
+
+ */
+
+private String quoteObjectName(String name){
+
+  return "\"" + name + "\"";
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+/** 
+
+ * Perform a limited check (inconclusive) and quote object name if required. Gives wrong result if a quoted name contains a dot.
+
+ */
+
+private String quoteTableName(String name){
+
+  int dot=name.indexOf(".");
+
+  if (dot < 0) {
+
+    int bracket=name.indexOf(" (");
+
+    if (bracket >= 0) {
+
+      name=name.substring(0,bracket);
+
+    }
+
+    return quoteObjectName(name);
+
+  }
+
+  String partOne=name.substring(0,dot);
+
+  String partTwo=name.substring(dot + 1);
+
+  int bracket=partTwo.indexOf(" (");
+
+  if (bracket >= 0) {
+
+    partTwo=partTwo.substring(0,bracket);
+
+  }
+
+  return quoteObjectName(partOne) + '.' + quoteObjectName(partTwo);
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+void resetTooltips(){
+
+  Iterator it=tipMap.keySet().iterator();
+
+  JComponent component;
+
+  while (it.hasNext()) {
+
+    component=(JComponent)it.next();
+
+    component.setToolTipText(showTooltips ? ((String)tipMap.get(component)) : (String)null);
+
+  }
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+private void setLF(String newLAF){
+
+  if (currentLAF != null && currentLAF == newLAF) {
+
+    return;
+
+  }
+
+  if (pResult != null && gridFormat) {
+
+    pResult.removeAll();
+
+  }
+
+  CommonSwing.setSwingLAF((Component)fMain,newLAF);
+
+  if (pResult != null && gridFormat) {
+
+    hongshuai();
+
+    pResult.removeAll();
+
+    pResult.add(gScrollPane,BorderLayout.CENTER);
+
+    pResult.doLayout();
+
+    gResult.fireTableChanged(null);
+
+    pResult.repaint();
+
+  }
+
+  currentLAF=newLAF;
+
+  if (currentLAF.equals(CommonSwing.Native)) {
+
+    rbNativeLF.setSelected(true);
+
+  }
+
+ else   if (currentLAF.equals(CommonSwing.Java)) {
+
+    rbJavaLF.setSelected(true);
+
+  }
+
+ else   if (currentLAF.equals(CommonSwing.Motif)) {
+
+    rbMotifLF.setSelected(true);
+
+  }
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public void setMustExit(boolean b){
+
+  this.bMustExit=b;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+void setStatusLine(String busyBaseString,int rowCount){
+
+  iReadyStatus.setSelected(busyBaseString != null);
+
+  if (busyBaseString == null) {
+
+    String additionalMsg="";
+
+    if (schemaFilter != null) {
+
+      additionalMsg=" /  Tree showing objects in schema '" + schemaFilter + "'";
+
+    }
+
+    if (rowCount >= 1) {
+
+      long millis=lTime / 1000000;
+
+      long fraction=(lTime % 1000000) / 100000;
+
+      additionalMsg+=" / " + rowCount + " rows retrieved in "+ millis+ '.'+ fraction+ " ms";
+
+    }
+
+    jStatusLine.setText("  " + READY_STATUS + additionalMsg);
+
+  }
+
+ else {
+
+    jStatusLine.setText("  " + busyBaseString + "...");
+
+  }
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public void setWaiting(String description){
+
+  busyText=description;
+
+  if (busyText == null) {
+
+    if (fMain instanceof java.awt.Frame) {
+
+      ((java.awt.Frame)fMain).setCursor(fMainCursor);
+
+    }
+
+ else {
+
+      ((Component)fMain).setCursor(fMainCursor);
+
+    }
+
+    txtCommand.setCursor(txtCommandCursor);
+
+    txtResult.setCursor(txtResultCursor);
+
+  }
+
+ else {
+
+    if (fMainCursor == null) {
+
+      fMainCursor=((fMain instanceof java.awt.Frame) ? (((java.awt.Frame)fMain).getCursor()) : (((Component)fMain).getCursor()));
+
+      txtCommandCursor=txtCommand.getCursor();
+
+      txtResultCursor=txtResult.getCursor();
+
+    }
+
+    if (fMain instanceof java.awt.Frame) {
+
+      ((java.awt.Frame)fMain).setCursor(waitCursor);
+
+    }
+
+ else {
+
+      ((Component)fMain).setCursor(waitCursor);
+
+    }
+
+    txtCommand.setCursor(waitCursor);
+
+    txtResult.setCursor(waitCursor);
+
+  }
+
+  setStatusLine(busyText,((busyText == null) ? gResult.getRowCount() : 0));
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public void start(){
+
+  if (buttonUpdaterThread == null) {
+
+    buttonUpdaterThread=new Thread(buttonUpdater);
+
+  }
+
+  buttonUpdaterThread.start();
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+public void stop(){
+
+  System.err.println("Stopping");
+
+  Thread t=buttonUpdaterThread;
+
+  if (t != null) {
+
+    t.setContextClassLoader(null);
+
+  }
+
+  buttonUpdaterThread=null;
+
+}
+
+Location: DatabaseManagerSwing.java
+
+Content: 
+
+void updateAutoCommitBox(){
+
+  try {
+
+    if (cConn != null) {
+
+      boxAutoCommit.setSelected(cConn.getAutoCommit());
+
+    }
+
+  }
+
+ catch (  SQLException se) {
+
+    CommonSwing.errorMessage(se);
+
+  }
+
+}
+

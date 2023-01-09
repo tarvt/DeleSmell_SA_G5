@@ -1,0 +1,114 @@
+Location: TestSimulatorDeterministicReplay.java
+
+Content: 
+
+void compareLogDirs(String dir1,String dir2){
+
+  try {
+
+    try {
+
+      ShellCommandExecutor executor=new ShellCommandExecutor(new String[]{"diff","-r","-q","/dev/null","/dev/null"});
+
+      executor.execute();
+
+      if (executor.getExitCode() != 0) {
+
+        LOG.warn("diff -r -q is not working, skipping the test");
+
+        return;
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.warn("diff -r -q is not working, skipping the test",e);
+
+      return;
+
+    }
+
+    ShellCommandExecutor executor=new ShellCommandExecutor(new String[]{"diff","-r","-q",dir1,dir2});
+
+    executor.execute();
+
+    Assert.assertEquals("Job history logs differ, diff returned",0,executor.getExitCode());
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.warn("Exception while diffing: " + e);
+
+    Assert.fail(String.format("Exception while diffing %s and %s. Exception - %s",dir1,dir2,e));
+
+  }
+
+}
+
+Location: TestSimulatorDeterministicReplay.java
+
+Content: 
+
+void runMumak(Path hadoopLogDir,int jobTrackerHttpPort) throws Exception {
+
+  final Configuration conf=new Configuration();
+
+  conf.set(SimulatorJobSubmissionPolicy.JOB_SUBMISSION_POLICY,policy.name());
+
+  final FileSystem lfs=FileSystem.getLocal(conf);
+
+  final Path rootInputDir=new Path(System.getProperty("src.test.data","data")).makeQualified(lfs);
+
+  final Path traceFile=new Path(rootInputDir,"19-jobs.trace.json.gz");
+
+  final Path topologyFile=new Path(rootInputDir,"19-jobs.topology.json.gz");
+
+  LOG.info("traceFile = " + traceFile + " topology = "+ topologyFile);
+
+  conf.setLong("mumak.start.time",10);
+
+  conf.setLong("mumak.terminate.time",10 + 20 * 60 * 1000);
+
+  conf.setLong("mumak.random.seed",42);
+
+  System.setProperty("hadoop.log.dir",hadoopLogDir.toString());
+
+  conf.set("hadoop.log.dir",hadoopLogDir.toString());
+
+  conf.set("mapred.job.tracker.http.address","0.0.0.0:" + jobTrackerHttpPort);
+
+  conf.setBoolean(JTConfig.JT_PERSIST_JOBSTATUS,false);
+
+  String[] args={traceFile.toString(),topologyFile.toString()};
+
+  int res=ToolRunner.run(conf,new SimulatorEngine(),args);
+
+  Assert.assertEquals(0,res);
+
+}
+
+Location: TestSimulatorDeterministicReplay.java
+
+Content: 
+
+@Test public void testMain() throws Exception {
+
+  Path hadoopLogDir=new Path(System.getProperty("test.build.data"),"mumak-replay");
+
+  Path hadoopLogDir1=new Path(hadoopLogDir,"run1");
+
+  Path hadoopLogDir2=new Path(hadoopLogDir,"run2");
+
+  runMumak(hadoopLogDir1,50031);
+
+  LOG.info("Run1 done");
+
+  runMumak(hadoopLogDir2,50032);
+
+  compareLogDirs(hadoopLogDir1.toString(),hadoopLogDir2.toString());
+
+}
+

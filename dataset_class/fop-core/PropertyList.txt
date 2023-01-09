@@ -1,0 +1,1042 @@
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * <p>Adds the attributes, passed in by the parser to the PropertyList.</p> <p>Note that certain attributes are given priority in terms of order of processing due to conversion dependencies, where the order is as follows:</p> <ol> <li>writing-mode</li> <li>column-number</li> <li>number-columns-spanned</li> <li>font</li> <li>font-size</li> <li>all others in order of appearance</li> </ol>
+
+ * @param attributes Collection of attributes passed to us from the parser.
+
+ * @throws ValidationException if there is an attribute that does notmap to a property id (strict validation only)
+
+ */
+
+public void addAttributesToList(Attributes attributes) throws ValidationException {
+
+  addAttributeToList(attributes,"writing-mode");
+
+  addAttributeToList(attributes,"column-number");
+
+  addAttributeToList(attributes,"number-columns-spanned");
+
+  String checkValue=addAttributeToList(attributes,"font");
+
+  if (checkValue == null || "".equals(checkValue)) {
+
+    addAttributeToList(attributes,"font-size");
+
+  }
+
+  String attributeNS;
+
+  String attributeName;
+
+  String attributeValue;
+
+  FOUserAgent userAgent=getFObj().getUserAgent();
+
+  for (int i=0; i < attributes.getLength(); i++) {
+
+    attributeNS=attributes.getURI(i);
+
+    attributeName=attributes.getQName(i);
+
+    attributeValue=attributes.getValue(i);
+
+    if (attributeNS == null || attributeNS.length() == 0 || "xml:lang".equals(attributeName) || "xml:base".equals(attributeName)) {
+
+      convertAttributeToProperty(attributes,attributeName,attributeValue);
+
+    }
+
+ else     if (!userAgent.isNamespaceIgnored(attributeNS)) {
+
+      ElementMapping mapping=userAgent.getElementMappingRegistry().getElementMapping(attributeNS);
+
+      QName attr=new QName(attributeNS,attributeName);
+
+      if (mapping != null) {
+
+        if (mapping.isAttributeProperty(attr) && mapping.getStandardPrefix() != null) {
+
+          convertAttributeToProperty(attributes,mapping.getStandardPrefix() + ":" + attr.getLocalName(),attributeValue);
+
+        }
+
+ else {
+
+          getFObj().addForeignAttribute(attr,attributeValue);
+
+        }
+
+      }
+
+ else {
+
+        handleInvalidProperty(attr);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+private String addAttributeToList(Attributes attributes,String attributeName) throws ValidationException {
+
+  String attributeValue=attributes.getValue(attributeName);
+
+  if (attributeValue != null) {
+
+    convertAttributeToProperty(attributes,attributeName,attributeValue);
+
+  }
+
+  return attributeValue;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * @param attributes Collection of attributes
+
+ * @param attributeName Attribute name to convert
+
+ * @param attributeValue Attribute value to assign to property
+
+ * @throws ValidationException in case the property name is invalidfor the FO namespace
+
+ */
+
+private void convertAttributeToProperty(Attributes attributes,String attributeName,String attributeValue) throws ValidationException {
+
+  if (attributeName.startsWith("xmlns:") || "xmlns".equals(attributeName)) {
+
+    return;
+
+  }
+
+  if (attributeValue != null) {
+
+    String basePropertyName=findBasePropertyName(attributeName);
+
+    String subPropertyName=findSubPropertyName(attributeName);
+
+    int propId=FOPropertyMapping.getPropertyId(basePropertyName);
+
+    int subpropId=FOPropertyMapping.getSubPropertyId(subPropertyName);
+
+    if (propId == -1 || (subpropId == -1 && subPropertyName != null)) {
+
+      handleInvalidProperty(new QName(null,attributeName));
+
+    }
+
+    FObj parentFO=fobj.findNearestAncestorFObj();
+
+    PropertyMaker propertyMaker=findMaker(propId);
+
+    if (propertyMaker == null) {
+
+      log.warn("No PropertyMaker registered for " + attributeName + ". Ignoring property.");
+
+      return;
+
+    }
+
+    try {
+
+      Property prop=null;
+
+      if (subPropertyName == null) {
+
+        if (getExplicit(propId) != null) {
+
+          return;
+
+        }
+
+        prop=propertyMaker.make(this,attributeValue,parentFO);
+
+      }
+
+ else {
+
+        Property baseProperty=findBaseProperty(attributes,parentFO,propId,basePropertyName,propertyMaker);
+
+        prop=propertyMaker.make(baseProperty,subpropId,this,attributeValue,parentFO);
+
+      }
+
+      if (prop != null) {
+
+        putExplicit(propId,prop);
+
+      }
+
+    }
+
+ catch (    PropertyException e) {
+
+      fobj.getFOValidationEventProducer().invalidPropertyValue(this,fobj.getName(),attributeName,attributeValue,e,fobj.locator);
+
+    }
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Finds the first or base part (up to any period) of an attribute name. For example, if input is "space-before.minimum", should return "space-before".
+
+ * @param attributeName String to be atomized
+
+ * @return the base portion of the attribute
+
+ */
+
+protected static String findBasePropertyName(String attributeName){
+
+  int separatorCharIndex=attributeName.indexOf('.');
+
+  String basePropertyName=attributeName;
+
+  if (separatorCharIndex > -1) {
+
+    basePropertyName=attributeName.substring(0,separatorCharIndex);
+
+  }
+
+  return basePropertyName;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+private Property findBaseProperty(Attributes attributes,FObj parentFO,int propId,String basePropertyName,PropertyMaker propertyMaker) throws PropertyException {
+
+  Property baseProperty=getExplicit(propId);
+
+  if (baseProperty != null) {
+
+    return baseProperty;
+
+  }
+
+  String basePropertyValue=attributes.getValue(basePropertyName);
+
+  if (basePropertyValue != null && propertyMaker != null) {
+
+    baseProperty=propertyMaker.make(this,basePropertyValue,parentFO);
+
+    return baseProperty;
+
+  }
+
+  return null;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * @param propId Id of property
+
+ * @return the Property.Maker for this property
+
+ */
+
+private static PropertyMaker findMaker(int propId){
+
+  if (propId < 1 || propId > Constants.PROPERTY_COUNT) {
+
+    return null;
+
+  }
+
+ else {
+
+    return FObj.getPropertyMakerFor(propId);
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Finds the second or sub part (portion past any period) of an attribute name. For example, if input is "space-before.minimum", should return "minimum".
+
+ * @param attributeName String to be atomized
+
+ * @return the sub portion of the attribute
+
+ */
+
+protected static String findSubPropertyName(String attributeName){
+
+  int separatorCharIndex=attributeName.indexOf('.');
+
+  String subpropertyName=null;
+
+  if (separatorCharIndex > -1) {
+
+    subpropertyName=attributeName.substring(separatorCharIndex + 1);
+
+  }
+
+  return subpropertyName;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a CommonAbsolutePosition object.
+
+ * @return the CommonAbsolutePosition object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonAbsolutePosition getAbsolutePositionProps() throws PropertyException {
+
+  return new CommonAbsolutePosition(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a CommonAural object.
+
+ * @return the CommonAural object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonAural getAuralProps() throws PropertyException {
+
+  CommonAural props=new CommonAural(this);
+
+  return props;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a BorderAndPadding object.
+
+ * @return a BorderAndPadding object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonBorderPaddingBackground getBorderPaddingBackgroundProps() throws PropertyException {
+
+  return CommonBorderPaddingBackground.getInstance(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Return the value explicitly specified on this FO.
+
+ * @param propId The id of the property whose value is desired.
+
+ * @return The value if the property is explicitly set or set bya shorthand property, otherwise null.
+
+ * @throws PropertyException ...
+
+ */
+
+public Property getExplicitOrShorthand(int propId) throws PropertyException {
+
+  Property p=getExplicit(propId);
+
+  if (p == null) {
+
+    p=getShorthand(propId);
+
+  }
+
+  return p;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Return the value explicitly specified on this FO.
+
+ * @param propId The ID of the property whose value is desired.
+
+ * @return The value if the property is explicitly set, otherwise null.
+
+ */
+
+public abstract Property getExplicit(int propId);
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a CommonFont object.
+
+ * @return A CommonFont object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonFont getFontProps() throws PropertyException {
+
+  return CommonFont.getInstance(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Return the value of this property on the parent of this FO. Implements the from-parent function.
+
+ * @param propId The Constants ID of the property whose value is desired.
+
+ * @return The computed value on the parent or the initial value if thisFO is the root or is in a different namespace from its parent.
+
+ * @throws PropertyException ...
+
+ */
+
+public Property getFromParent(int propId) throws PropertyException {
+
+  if (parentPropertyList != null) {
+
+    return parentPropertyList.get(propId);
+
+  }
+
+ else {
+
+    return makeProperty(propId);
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a CommonHyphenation object.
+
+ * @return the CommonHyphenation object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonHyphenation getHyphenationProps() throws PropertyException {
+
+  return CommonHyphenation.getInstance(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Return the value of this property inherited by this FO. Implements the inherited-property-value function. The property must be inheritable!
+
+ * @param propId The ID of the property whose value is desired.
+
+ * @return The inherited value, otherwise null.
+
+ * @throws PropertyException ...
+
+ */
+
+public Property getInherited(int propId) throws PropertyException {
+
+  if (isInherited(propId)) {
+
+    return getFromParent(propId);
+
+  }
+
+ else {
+
+    return makeProperty(propId);
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a CommonMarginBlock object.
+
+ * @return the CommonMarginBlock object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonMarginBlock getMarginBlockProps() throws PropertyException {
+
+  return new CommonMarginBlock(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a CommonMarginInline object.
+
+ * @return the CommonMarginInline object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonMarginInline getMarginInlineProps() throws PropertyException {
+
+  return new CommonMarginInline(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Return the "nearest" specified value for the given property. Implements the from-nearest-specified-value function.
+
+ * @param propId The ID of the property whose value is desired.
+
+ * @return The computed value if the property is explicitly set on someancestor of the current FO, else the initial value.
+
+ * @throws PropertyException if there an error occurred when getting the property
+
+ */
+
+public Property getNearestSpecified(int propId) throws PropertyException {
+
+  Property p=null;
+
+  PropertyList pList=parentPropertyList;
+
+  while (pList != null) {
+
+    p=pList.getExplicit(propId);
+
+    if (p != null) {
+
+      return p;
+
+    }
+
+ else {
+
+      pList=pList.parentPropertyList;
+
+    }
+
+  }
+
+  return makeProperty(propId);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * @return the FObj object attached to the parentPropertyList
+
+ */
+
+public FObj getParentFObj(){
+
+  if (parentPropertyList != null) {
+
+    return parentPropertyList.getFObj();
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * @return the FObj object attached to the parentPropetyList
+
+ */
+
+public PropertyList getParentPropertyList(){
+
+  return parentPropertyList;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+public Property getPropertyForAttribute(Attributes attributes,String attributeName,String attributeValue) throws FOPException {
+
+  if (attributeValue != null) {
+
+    if (attributeName.startsWith("xmlns:") || "xmlns".equals(attributeName)) {
+
+      return null;
+
+    }
+
+    String basePropertyName=findBasePropertyName(attributeName);
+
+    String subPropertyName=findSubPropertyName(attributeName);
+
+    int propId=FOPropertyMapping.getPropertyId(basePropertyName);
+
+    int subpropId=FOPropertyMapping.getSubPropertyId(subPropertyName);
+
+    if (propId == -1 || (subpropId == -1 && subPropertyName != null)) {
+
+      return null;
+
+    }
+
+    return getExplicit(propId);
+
+  }
+
+  return null;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a RelativePositionProps objects.
+
+ * @return a RelativePositionProps object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonRelativePosition getRelativePositionProps() throws PropertyException {
+
+  return new CommonRelativePosition(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * @param propId ID of property
+
+ * @return new Property object
+
+ * @throws PropertyException if there's a problem while processing the property
+
+ */
+
+private Property getShorthand(int propId) throws PropertyException {
+
+  PropertyMaker propertyMaker=findMaker(propId);
+
+  if (propertyMaker != null) {
+
+    return propertyMaker.getShorthand(this);
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Constructs a CommonTextDecoration object.
+
+ * @return a CommonTextDecoration object
+
+ * @throws PropertyException if there's a problem while processing the properties
+
+ */
+
+public CommonTextDecoration getTextDecorationProps() throws PropertyException {
+
+  return CommonTextDecoration.createFromPropertyList(this);
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Gets the current list of unknown property values
+
+ * @return The set containing the list of unknown property values
+
+ */
+
+public Map<String,Property> getUnknownPropertyValues(){
+
+  return unknownPropertyHandler.getUnknownPropertyValues();
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Return the property on the current FlowObject. Depending on the passed flags, this will try to compute it based on other properties, or if it is inheritable, to return the inherited value. If all else fails, it returns the default value.
+
+ * @param propId    the property's id
+
+ * @param bTryInherit   true for inherited properties, or when the inheritedvalue is needed
+
+ * @param bTryDefault   true when the default value may be used as a last resort
+
+ * @return the property
+
+ * @throws PropertyException if there is a problem evaluating the property
+
+ */
+
+public Property get(int propId,boolean bTryInherit,boolean bTryDefault) throws PropertyException {
+
+  PropertyMaker propertyMaker=findMaker(propId & Constants.PROPERTY_MASK);
+
+  if (propertyMaker != null) {
+
+    return propertyMaker.get(propId & Constants.COMPOUND_MASK,this,bTryInherit,bTryDefault);
+
+  }
+
+  return null;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Handles an invalid property.
+
+ * @param attr the invalid attribute
+
+ * @throws ValidationException if an exception needs to be thrown depending on thevalidation settings
+
+ */
+
+protected void handleInvalidProperty(QName attr) throws ValidationException {
+
+  if (!attr.getQName().startsWith("xmlns")) {
+
+    fobj.getFOValidationEventProducer().invalidProperty(this,fobj.getName(),attr,true,fobj.locator);
+
+  }
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * @param propId ID of property
+
+ * @return isInherited value from the requested Property.Maker
+
+ */
+
+private boolean isInherited(int propId){
+
+  return inheritableProperty[propId];
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Validates a property name.
+
+ * @param propertyName  the property name to check
+
+ * @return true if the base property name and the subproperty name (if any)can be correctly mapped to an id
+
+ */
+
+protected boolean isValidPropertyName(String propertyName){
+
+  int propId=FOPropertyMapping.getPropertyId(findBasePropertyName(propertyName));
+
+  int subpropId=FOPropertyMapping.getSubPropertyId(findSubPropertyName(propertyName));
+
+  return !(propId == -1 || (subpropId == -1 && findSubPropertyName(propertyName) != null));
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * @param propId ID of property
+
+ * @return new Property object
+
+ * @throws PropertyException if there's a problem while processing the property
+
+ */
+
+private Property makeProperty(int propId) throws PropertyException {
+
+  PropertyMaker propertyMaker=findMaker(propId);
+
+  if (propertyMaker != null) {
+
+    return propertyMaker.make(this);
+
+  }
+
+ else {
+
+  }
+
+  return null;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Basic constructor.
+
+ * @param fObjToAttach  the FO this PropertyList should be attached to
+
+ * @param parentPropertyList the PropertyList belonging to the new objectsparent
+
+ */
+
+public PropertyList(FObj fObjToAttach,PropertyList parentPropertyList){
+
+  this.fobj=fObjToAttach;
+
+  this.parentPropertyList=parentPropertyList;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Set an value defined explicitly on this FO.
+
+ * @param propId The ID of the property to set.
+
+ * @param value The value of the property.
+
+ */
+
+public abstract void putExplicit(int propId,Property value);
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Select a writing mode dependent property ID based on value of writing mode property.
+
+ * @param lrtb the property ID to return under lrtb writingmode.
+
+ * @param rltb the property ID to return under rltb writingmode.
+
+ * @param tbrl the property ID to return under tbrl writingmode.
+
+ * @param tblr the property ID to return under tblr writingmode.
+
+ * @return one of the property IDs, depending on the writing mode.
+
+ */
+
+public int selectFromWritingMode(int lrtb,int rltb,int tbrl,int tblr){
+
+  int propID;
+
+  try {
+
+switch (get(Constants.PR_WRITING_MODE).getEnum()) {
+
+case Constants.EN_LR_TB:
+
+      propID=lrtb;
+
+    break;
+
+case Constants.EN_RL_TB:
+
+  propID=rltb;
+
+break;
+
+case Constants.EN_TB_RL:
+
+propID=tbrl;
+
+break;
+
+case Constants.EN_TB_LR:
+
+propID=tblr;
+
+break;
+
+default :
+
+propID=-1;
+
+break;
+
+}
+
+}
+
+ catch (PropertyException e) {
+
+propID=-1;
+
+}
+
+return propID;
+
+}
+
+Location: PropertyList.java
+
+Content: 
+
+/** 
+
+ * Adds an unknown property value to the property list so that if necessary, a warning can be displayed.
+
+ * @param propertyValue The unknown property value
+
+ * @param output The output of the property to validate
+
+ * @param property The original property containing the full value
+
+ */
+
+public void validatePropertyValue(String propertyValue,Property output,Property property){
+
+  unknownPropertyHandler.validatePropertyValue(propertyValue,output,property);
+
+}
+

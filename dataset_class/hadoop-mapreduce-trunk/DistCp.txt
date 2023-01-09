@@ -1,0 +1,1244 @@
+Location: DistCp.java
+
+Content: 
+
+static boolean checkAndClose(java.io.Closeable io){
+
+  if (io != null) {
+
+    try {
+
+      io.close();
+
+    }
+
+ catch (    IOException ioe) {
+
+      LOG.warn(StringUtils.stringifyException(ioe));
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Sanity check for srcPath 
+
+ */
+
+private static void checkSrcPath(JobConf jobConf,List<Path> srcPaths) throws IOException {
+
+  List<IOException> rslt=new ArrayList<IOException>();
+
+  List<Path> unglobbed=new LinkedList<Path>();
+
+  Path[] ps=new Path[srcPaths.size()];
+
+  ps=srcPaths.toArray(ps);
+
+  TokenCache.obtainTokensForNamenodes(jobConf.getCredentials(),ps,jobConf);
+
+  for (  Path p : srcPaths) {
+
+    FileSystem fs=p.getFileSystem(jobConf);
+
+    FileStatus[] inputs=fs.globStatus(p);
+
+    if (inputs != null && inputs.length > 0) {
+
+      for (      FileStatus onePath : inputs) {
+
+        unglobbed.add(onePath.getPath());
+
+      }
+
+    }
+
+ else {
+
+      rslt.add(new IOException("Input source " + p + " does not exist."));
+
+    }
+
+  }
+
+  if (!rslt.isEmpty()) {
+
+    throw new InvalidInputException(rslt);
+
+  }
+
+  srcPaths.clear();
+
+  srcPaths.addAll(unglobbed);
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Driver to copy srcPath to destPath depending on required protocol.
+
+ * @param args arguments
+
+ */
+
+static void copy(final Configuration conf,final Arguments args) throws IOException {
+
+  LOG.info("srcPaths=" + args.srcs);
+
+  if (!args.dryrun || args.flags.contains(Options.UPDATE)) {
+
+    LOG.info("destPath=" + args.dst);
+
+  }
+
+  JobConf job=createJobConf(conf);
+
+  checkSrcPath(job,args.srcs);
+
+  if (args.preservedAttributes != null) {
+
+    job.set(PRESERVE_STATUS_LABEL,args.preservedAttributes);
+
+  }
+
+  if (args.mapredSslConf != null) {
+
+    job.set("dfs.https.client.keystore.resource",args.mapredSslConf);
+
+  }
+
+  try {
+
+    if (setup(conf,job,args)) {
+
+      JobClient.runJob(job);
+
+    }
+
+    if (!args.dryrun) {
+
+      finalize(conf,job,args.dst,args.preservedAttributes);
+
+    }
+
+  }
+
+  finally {
+
+    if (!args.dryrun) {
+
+      fullyDelete(job.get(TMP_DIR_LABEL),job);
+
+    }
+
+    fullyDelete(job.get(JOB_DIR_LABEL),job);
+
+  }
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+@Deprecated public static void copy(Configuration conf,String srcPath,String destPath,Path logPath,boolean srcAsList,boolean ignoreReadFailures) throws IOException {
+
+  final Path src=new Path(srcPath);
+
+  List<Path> tmp=new ArrayList<Path>();
+
+  if (srcAsList) {
+
+    tmp.addAll(fetchFileList(conf,src));
+
+  }
+
+ else {
+
+    tmp.add(src);
+
+  }
+
+  EnumSet<Options> flags=ignoreReadFailures ? EnumSet.of(Options.IGNORE_READ_FAILURES) : EnumSet.noneOf(Options.class);
+
+  final Path dst=new Path(destPath);
+
+  copy(conf,new Arguments(tmp,null,dst,logPath,flags,null,Long.MAX_VALUE,Long.MAX_VALUE,null,false));
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Delete the dst files/dirs which do not exist in src
+
+ * @return total count of files and directories deleted from destination
+
+ * @throws IOException
+
+ */
+
+static private long deleteNonexisting(FileSystem dstfs,FileStatus dstroot,Path dstsorted,FileSystem jobfs,Path jobdir,JobConf jobconf,Configuration conf) throws IOException {
+
+  if (dstroot.isFile()) {
+
+    throw new IOException("dst must be a directory when option " + Options.DELETE.cmd + " is set, but dst (= "+ dstroot.getPath()+ ") is not a directory.");
+
+  }
+
+  final Path dstlsr=new Path(jobdir,"_distcp_dst_lsr");
+
+  final SequenceFile.Writer writer=SequenceFile.createWriter(jobfs,jobconf,dstlsr,Text.class,NullWritable.class,SequenceFile.CompressionType.NONE);
+
+  try {
+
+    final Stack<FileStatus> lsrstack=new Stack<FileStatus>();
+
+    for (lsrstack.push(dstroot); !lsrstack.isEmpty(); ) {
+
+      final FileStatus status=lsrstack.pop();
+
+      if (status.isDirectory()) {
+
+        for (        FileStatus child : dstfs.listStatus(status.getPath())) {
+
+          String relative=makeRelative(dstroot.getPath(),child.getPath());
+
+          writer.append(new Text(relative),NullWritable.get());
+
+          lsrstack.push(child);
+
+        }
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    checkAndClose(writer);
+
+  }
+
+  final Path sortedlsr=new Path(jobdir,"_distcp_dst_lsr_sorted");
+
+  SequenceFile.Sorter sorter=new SequenceFile.Sorter(jobfs,new Text.Comparator(),Text.class,NullWritable.class,jobconf);
+
+  sorter.sort(dstlsr,sortedlsr);
+
+  SequenceFile.Reader lsrin=null;
+
+  SequenceFile.Reader dstin=null;
+
+  long deletedPathsCount=0;
+
+  try {
+
+    lsrin=new SequenceFile.Reader(jobfs,sortedlsr,jobconf);
+
+    dstin=new SequenceFile.Reader(jobfs,dstsorted,jobconf);
+
+    final Text lsrpath=new Text();
+
+    final Text dstpath=new Text();
+
+    final Text dstfrom=new Text();
+
+    final Trash trash=new Trash(dstfs,conf);
+
+    Path lastpath=null;
+
+    boolean hasnext=dstin.next(dstpath,dstfrom);
+
+    while (lsrin.next(lsrpath,NullWritable.get())) {
+
+      int dst_cmp_lsr=dstpath.compareTo(lsrpath);
+
+      while (hasnext && dst_cmp_lsr < 0) {
+
+        hasnext=dstin.next(dstpath,dstfrom);
+
+        dst_cmp_lsr=dstpath.compareTo(lsrpath);
+
+      }
+
+      if (dst_cmp_lsr == 0) {
+
+        hasnext=dstin.next(dstpath,dstfrom);
+
+      }
+
+ else {
+
+        final Path rmpath=new Path(dstroot.getPath(),lsrpath.toString());
+
+        ++deletedPathsCount;
+
+        if ((lastpath == null || !isAncestorPath(lastpath,rmpath))) {
+
+          if (!(trash.moveToTrash(rmpath) || dstfs.delete(rmpath,true))) {
+
+            throw new IOException("Failed to delete " + rmpath);
+
+          }
+
+          lastpath=rmpath;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    checkAndClose(lsrin);
+
+    checkAndClose(dstin);
+
+  }
+
+  return deletedPathsCount;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Does the dir already exist at destination ?
+
+ * @return true   if the dir already exists at destination
+
+ */
+
+private static boolean dirExists(Configuration conf,Path dst) throws IOException {
+
+  FileSystem destFileSys=dst.getFileSystem(conf);
+
+  FileStatus status=null;
+
+  try {
+
+    status=destFileSys.getFileStatus(dst);
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+    return false;
+
+  }
+
+  if (status.isFile()) {
+
+    throw new FileAlreadyExistsException("Not a dir: " + dst + " is a file.");
+
+  }
+
+  return true;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+public DistCp(Configuration conf){
+
+  setConf(conf);
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+private static List<Path> fetchFileList(Configuration conf,Path srcList) throws IOException {
+
+  List<Path> result=new ArrayList<Path>();
+
+  FileSystem fs=srcList.getFileSystem(conf);
+
+  BufferedReader input=null;
+
+  try {
+
+    input=new BufferedReader(new InputStreamReader(fs.open(srcList)));
+
+    String line=input.readLine();
+
+    while (line != null) {
+
+      result.add(new Path(line));
+
+      line=input.readLine();
+
+    }
+
+  }
+
+  finally {
+
+    checkAndClose(input);
+
+  }
+
+  return result;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+static private void finalize(Configuration conf,JobConf jobconf,final Path destPath,String presevedAttributes) throws IOException {
+
+  if (presevedAttributes == null) {
+
+    return;
+
+  }
+
+  EnumSet<FileAttribute> preseved=FileAttribute.parse(presevedAttributes);
+
+  if (!preseved.contains(FileAttribute.USER) && !preseved.contains(FileAttribute.GROUP) && !preseved.contains(FileAttribute.PERMISSION)) {
+
+    return;
+
+  }
+
+  FileSystem dstfs=destPath.getFileSystem(conf);
+
+  Path dstdirlist=new Path(jobconf.get(DST_DIR_LIST_LABEL));
+
+  SequenceFile.Reader in=null;
+
+  try {
+
+    in=new SequenceFile.Reader(dstdirlist.getFileSystem(jobconf),dstdirlist,jobconf);
+
+    Text dsttext=new Text();
+
+    FilePair pair=new FilePair();
+
+    for (; in.next(dsttext,pair); ) {
+
+      Path absdst=new Path(destPath,pair.output);
+
+      updateDestStatus(pair.input,dstfs.getFileStatus(absdst),preseved,dstfs);
+
+    }
+
+  }
+
+  finally {
+
+    checkAndClose(in);
+
+  }
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Fully delete dir 
+
+ */
+
+static void fullyDelete(String dir,Configuration conf) throws IOException {
+
+  if (dir != null) {
+
+    Path tmp=new Path(dir);
+
+    boolean success=tmp.getFileSystem(conf).delete(tmp,true);
+
+    if (!success) {
+
+      LOG.warn("Could not fully delete " + tmp);
+
+    }
+
+  }
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+public Configuration getConf(){
+
+  return conf;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+public static String getRandomId(){
+
+  return Integer.toString(RANDOM.nextInt(Integer.MAX_VALUE),36);
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+static private boolean isAncestorPath(Path xp,Path yp){
+
+  final String x=xp.toString();
+
+  final String y=yp.toString();
+
+  if (!y.startsWith(x)) {
+
+    return false;
+
+  }
+
+  final int len=x.length();
+
+  return y.length() == len || y.charAt(len) == Path.SEPARATOR_CHAR;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Make a path relative with respect to a root path. absPath is always assumed to descend from root. Otherwise returned path is null.
+
+ */
+
+static String makeRelative(Path root,Path absPath){
+
+  if (!absPath.isAbsolute()) {
+
+    throw new IllegalArgumentException("!absPath.isAbsolute(), absPath=" + absPath);
+
+  }
+
+  String p=absPath.toUri().getPath();
+
+  StringTokenizer pathTokens=new StringTokenizer(p,"/");
+
+  for (StringTokenizer rootTokens=new StringTokenizer(root.toUri().getPath(),"/"); rootTokens.hasMoreTokens(); ) {
+
+    if (!rootTokens.nextToken().equals(pathTokens.nextToken())) {
+
+      return null;
+
+    }
+
+  }
+
+  StringBuilder sb=new StringBuilder();
+
+  for (; pathTokens.hasMoreTokens(); ) {
+
+    sb.append(pathTokens.nextToken());
+
+    if (pathTokens.hasMoreTokens()) {
+
+      sb.append(Path.SEPARATOR);
+
+    }
+
+  }
+
+  return sb.length() == 0 ? "." : sb.toString();
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Check whether the contents of src and dst are the same. Return false if dstpath does not exist If the files have different sizes, return false. If the files have the same sizes, the file checksums will be compared. When file checksum is not supported in any of file systems, two files are considered as the same if they have the same size.
+
+ */
+
+static private boolean sameFile(FileSystem srcfs,FileStatus srcstatus,FileSystem dstfs,Path dstpath,boolean skipCRCCheck) throws IOException {
+
+  FileStatus dststatus;
+
+  try {
+
+    dststatus=dstfs.getFileStatus(dstpath);
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    return false;
+
+  }
+
+  if (srcstatus.getLen() != dststatus.getLen()) {
+
+    return false;
+
+  }
+
+  if (skipCRCCheck) {
+
+    LOG.debug("Skipping the CRC check");
+
+    return true;
+
+  }
+
+  final FileChecksum srccs;
+
+  try {
+
+    srccs=srcfs.getFileChecksum(srcstatus.getPath());
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    return true;
+
+  }
+
+  try {
+
+    final FileChecksum dstcs=dstfs.getFileChecksum(dststatus.getPath());
+
+    return srccs == null || dstcs == null || srccs.equals(dstcs);
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    return false;
+
+  }
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+public void setConf(Configuration conf){
+
+  if (conf instanceof JobConf) {
+
+    this.conf=(JobConf)conf;
+
+  }
+
+ else {
+
+    this.conf=new JobConf(conf);
+
+  }
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Calculate how many maps to run. Number of maps is bounded by a minimum of the cumulative size of the copy / (distcp.bytes.per.map, default BYTES_PER_MAP or -m on the command line) and at most (distcp.max.map.tasks, default MAX_MAPS_PER_NODE * nodes in the cluster).
+
+ * @param totalBytes Count of total bytes for job
+
+ * @param job The job to configure
+
+ * @return Count of maps to run.
+
+ */
+
+private static int setMapCount(long totalBytes,JobConf job) throws IOException {
+
+  int numMaps=(int)(totalBytes / job.getLong(BYTES_PER_MAP_LABEL,BYTES_PER_MAP));
+
+  numMaps=Math.min(numMaps,job.getInt(MAX_MAPS_LABEL,MAX_MAPS_PER_NODE * new JobClient(job).getClusterStatus().getTaskTrackers()));
+
+  numMaps=Math.max(numMaps,1);
+
+  job.setNumMapTasks(numMaps);
+
+  return numMaps;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Increase the replication factor of _distcp_src_files to sqrt(min(maxMapsOnCluster, numMaps)). This is to reduce the chance of failing of distcp because of "not having a replication of _distcp_src_files available for reading for some maps".
+
+ */
+
+private static void setReplication(Configuration conf,JobConf jobConf,Path srcfilelist,int numMaps) throws IOException {
+
+  int numMaxMaps=new JobClient(jobConf).getClusterStatus().getMaxMapTasks();
+
+  short replication=(short)Math.ceil(Math.sqrt(Math.min(numMaxMaps,numMaps)));
+
+  FileSystem fs=srcfilelist.getFileSystem(conf);
+
+  FileStatus srcStatus=fs.getFileStatus(srcfilelist);
+
+  if (srcStatus.getReplication() < replication) {
+
+    if (!fs.setReplication(srcfilelist,replication)) {
+
+      throw new IOException("Unable to increase the replication of file " + srcfilelist);
+
+    }
+
+  }
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+/** 
+
+ * Initialize DFSCopyFileMapper specific job-configuration.
+
+ * @param conf : The dfs/mapred configuration.
+
+ * @param jobConf : The handle to the jobConf object to be initialized.
+
+ * @param args Arguments
+
+ * @return true if it is necessary to launch a job.
+
+ */
+
+static boolean setup(Configuration conf,JobConf jobConf,final Arguments args) throws IOException {
+
+  jobConf.set(DST_DIR_LABEL,args.dst.toUri().toString());
+
+  final boolean update=args.flags.contains(Options.UPDATE);
+
+  final boolean skipCRCCheck=args.flags.contains(Options.SKIPCRC);
+
+  final boolean overwrite=!update && args.flags.contains(Options.OVERWRITE) && !args.dryrun;
+
+  jobConf.setBoolean(Options.UPDATE.propertyname,update);
+
+  jobConf.setBoolean(Options.SKIPCRC.propertyname,skipCRCCheck);
+
+  jobConf.setBoolean(Options.OVERWRITE.propertyname,overwrite);
+
+  jobConf.setBoolean(Options.IGNORE_READ_FAILURES.propertyname,args.flags.contains(Options.IGNORE_READ_FAILURES));
+
+  jobConf.setBoolean(Options.PRESERVE_STATUS.propertyname,args.flags.contains(Options.PRESERVE_STATUS));
+
+  final String randomId=getRandomId();
+
+  JobClient jClient=new JobClient(jobConf);
+
+  Path stagingArea;
+
+  try {
+
+    stagingArea=JobSubmissionFiles.getStagingDir(jClient.getClusterHandle(),conf);
+
+  }
+
+ catch (  InterruptedException ie) {
+
+    throw new IOException(ie);
+
+  }
+
+  Path jobDirectory=new Path(stagingArea + NAME + "_"+ randomId);
+
+  FsPermission mapredSysPerms=new FsPermission(JobSubmissionFiles.JOB_DIR_PERMISSION);
+
+  FileSystem.mkdirs(jClient.getFs(),jobDirectory,mapredSysPerms);
+
+  jobConf.set(JOB_DIR_LABEL,jobDirectory.toString());
+
+  long maxBytesPerMap=conf.getLong(BYTES_PER_MAP_LABEL,BYTES_PER_MAP);
+
+  FileSystem dstfs=args.dst.getFileSystem(conf);
+
+  TokenCache.obtainTokensForNamenodes(jobConf.getCredentials(),new Path[]{args.dst},conf);
+
+  boolean dstExists=dstfs.exists(args.dst);
+
+  boolean dstIsDir=false;
+
+  if (dstExists) {
+
+    dstIsDir=dstfs.getFileStatus(args.dst).isDirectory();
+
+  }
+
+  Path logPath=args.log;
+
+  if (logPath == null) {
+
+    String filename="_distcp_logs_" + randomId;
+
+    if (!dstExists || !dstIsDir) {
+
+      Path parent=args.dst.getParent();
+
+      if (null == parent) {
+
+        parent=args.dst;
+
+      }
+
+      if (!dstfs.exists(parent)) {
+
+        dstfs.mkdirs(parent);
+
+      }
+
+      logPath=new Path(parent,filename);
+
+    }
+
+ else {
+
+      logPath=new Path(args.dst,filename);
+
+    }
+
+  }
+
+  FileOutputFormat.setOutputPath(jobConf,logPath);
+
+  FileSystem jobfs=jobDirectory.getFileSystem(jobConf);
+
+  Path srcfilelist=new Path(jobDirectory,"_distcp_src_files");
+
+  jobConf.set(SRC_LIST_LABEL,srcfilelist.toString());
+
+  SequenceFile.Writer src_writer=SequenceFile.createWriter(jobfs,jobConf,srcfilelist,LongWritable.class,FilePair.class,SequenceFile.CompressionType.NONE);
+
+  Path dstfilelist=new Path(jobDirectory,"_distcp_dst_files");
+
+  SequenceFile.Writer dst_writer=SequenceFile.createWriter(jobfs,jobConf,dstfilelist,Text.class,Text.class,SequenceFile.CompressionType.NONE);
+
+  Path dstdirlist=new Path(jobDirectory,"_distcp_dst_dirs");
+
+  jobConf.set(DST_DIR_LIST_LABEL,dstdirlist.toString());
+
+  SequenceFile.Writer dir_writer=SequenceFile.createWriter(jobfs,jobConf,dstdirlist,Text.class,FilePair.class,SequenceFile.CompressionType.NONE);
+
+  final boolean special=(args.srcs.size() == 1 && !dstExists) || update || overwrite;
+
+  int srcCount=0, cnsyncf=0, dirsyn=0;
+
+  long fileCount=0L, dirCount=0L, byteCount=0L, cbsyncs=0L, skipFileCount=0L, skipByteCount=0L;
+
+  Path basedir=null;
+
+  HashSet<Path> parentDirsToCopy=new HashSet<Path>();
+
+  if (args.basedir != null) {
+
+    FileSystem basefs=args.basedir.getFileSystem(conf);
+
+    basedir=args.basedir.makeQualified(basefs);
+
+    if (!basefs.isDirectory(basedir)) {
+
+      throw new IOException("Basedir " + basedir + " is not a directory.");
+
+    }
+
+  }
+
+  try {
+
+    for (Iterator<Path> srcItr=args.srcs.iterator(); srcItr.hasNext(); ) {
+
+      final Path src=srcItr.next();
+
+      FileSystem srcfs=src.getFileSystem(conf);
+
+      FileStatus srcfilestat=srcfs.getFileStatus(src);
+
+      Path root=special && srcfilestat.isDirectory() ? src : src.getParent();
+
+      if (dstExists && !dstIsDir && (args.srcs.size() > 1 || srcfilestat.isDirectory())) {
+
+        throw new IOException("Destination " + args.dst + " should be a dir"+ " if multiple source paths are there OR if"+ " the source path is a dir");
+
+      }
+
+      if (basedir != null) {
+
+        root=basedir;
+
+        Path parent=src.getParent().makeQualified(srcfs);
+
+        while (parent != null && !parent.equals(basedir)) {
+
+          if (!parentDirsToCopy.contains(parent)) {
+
+            parentDirsToCopy.add(parent);
+
+            String dst=makeRelative(root,parent);
+
+            FileStatus pst=srcfs.getFileStatus(parent);
+
+            src_writer.append(new LongWritable(0),new FilePair(pst,dst));
+
+            dst_writer.append(new Text(dst),new Text(parent.toString()));
+
+            dir_writer.append(new Text(dst),new FilePair(pst,dst));
+
+            if (++dirsyn > SYNC_FILE_MAX) {
+
+              dirsyn=0;
+
+              dir_writer.sync();
+
+            }
+
+          }
+
+          parent=parent.getParent();
+
+        }
+
+        if (parent == null) {
+
+          throw new IOException("Basedir " + basedir + " is not a prefix of source path "+ src);
+
+        }
+
+      }
+
+      if (srcfilestat.isDirectory()) {
+
+        ++srcCount;
+
+        final String dst=makeRelative(root,src);
+
+        if (!update || !dirExists(conf,new Path(args.dst,dst))) {
+
+          ++dirCount;
+
+          src_writer.append(new LongWritable(0),new FilePair(srcfilestat,dst));
+
+        }
+
+        dst_writer.append(new Text(dst),new Text(src.toString()));
+
+      }
+
+      Stack<FileStatus> pathstack=new Stack<FileStatus>();
+
+      for (pathstack.push(srcfilestat); !pathstack.empty(); ) {
+
+        FileStatus cur=pathstack.pop();
+
+        FileStatus[] children=srcfs.listStatus(cur.getPath());
+
+        for (int i=0; i < children.length; i++) {
+
+          boolean skipPath=false;
+
+          final FileStatus child=children[i];
+
+          final String dst=makeRelative(root,child.getPath());
+
+          ++srcCount;
+
+          if (child.isDirectory()) {
+
+            pathstack.push(child);
+
+            if (!update || !dirExists(conf,new Path(args.dst,dst))) {
+
+              ++dirCount;
+
+            }
+
+ else {
+
+              skipPath=true;
+
+            }
+
+          }
+
+ else {
+
+            Path destPath=new Path(args.dst,dst);
+
+            if (cur.isFile() && (args.srcs.size() == 1)) {
+
+              Path dstparent=destPath.getParent();
+
+              FileSystem destFileSys=destPath.getFileSystem(jobConf);
+
+              if (!(destFileSys.exists(dstparent) && destFileSys.getFileStatus(dstparent).isDirectory())) {
+
+                destPath=dstparent;
+
+              }
+
+            }
+
+            skipPath=update && sameFile(srcfs,child,dstfs,destPath,skipCRCCheck);
+
+            skipPath|=fileCount == args.filelimit || byteCount + child.getLen() > args.sizelimit;
+
+            if (!skipPath) {
+
+              ++fileCount;
+
+              byteCount+=child.getLen();
+
+              if (LOG.isTraceEnabled()) {
+
+                LOG.trace("adding file " + child.getPath());
+
+              }
+
+              ++cnsyncf;
+
+              cbsyncs+=child.getLen();
+
+              if (cnsyncf > SYNC_FILE_MAX || cbsyncs > maxBytesPerMap) {
+
+                src_writer.sync();
+
+                dst_writer.sync();
+
+                cnsyncf=0;
+
+                cbsyncs=0L;
+
+              }
+
+            }
+
+ else {
+
+              ++skipFileCount;
+
+              skipByteCount+=child.getLen();
+
+              if (LOG.isTraceEnabled()) {
+
+                LOG.trace("skipping file " + child.getPath());
+
+              }
+
+            }
+
+          }
+
+          if (!skipPath) {
+
+            src_writer.append(new LongWritable(child.isDirectory() ? 0 : child.getLen()),new FilePair(child,dst));
+
+          }
+
+          dst_writer.append(new Text(dst),new Text(child.getPath().toString()));
+
+        }
+
+        if (cur.isDirectory()) {
+
+          String dst=makeRelative(root,cur.getPath());
+
+          dir_writer.append(new Text(dst),new FilePair(cur,dst));
+
+          if (++dirsyn > SYNC_FILE_MAX) {
+
+            dirsyn=0;
+
+            dir_writer.sync();
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    checkAndClose(src_writer);
+
+    checkAndClose(dst_writer);
+
+    checkAndClose(dir_writer);
+
+  }
+
+  LOG.info("sourcePathsCount(files+directories)=" + srcCount);
+
+  LOG.info("filesToCopyCount=" + fileCount);
+
+  LOG.info("bytesToCopyCount=" + StringUtils.humanReadableInt(byteCount));
+
+  if (update) {
+
+    LOG.info("filesToSkipCopyCount=" + skipFileCount);
+
+    LOG.info("bytesToSkipCopyCount=" + StringUtils.humanReadableInt(skipByteCount));
+
+  }
+
+  if (args.dryrun) {
+
+    return false;
+
+  }
+
+  int mapCount=setMapCount(byteCount,jobConf);
+
+  setReplication(conf,jobConf,srcfilelist,mapCount);
+
+  FileStatus dststatus=null;
+
+  try {
+
+    dststatus=dstfs.getFileStatus(args.dst);
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    LOG.info(args.dst + " does not exist.");
+
+  }
+
+  if (dststatus == null) {
+
+    if (srcCount > 1 && !dstfs.mkdirs(args.dst)) {
+
+      throw new IOException("Failed to create" + args.dst);
+
+    }
+
+  }
+
+  final Path sorted=new Path(jobDirectory,"_distcp_sorted");
+
+  checkDuplication(jobfs,dstfilelist,sorted,conf);
+
+  if (dststatus != null && args.flags.contains(Options.DELETE)) {
+
+    long deletedPathsCount=deleteNonexisting(dstfs,dststatus,sorted,jobfs,jobDirectory,jobConf,conf);
+
+    LOG.info("deletedPathsFromDestCount(files+directories)=" + deletedPathsCount);
+
+  }
+
+  Path tmpDir=new Path((dstExists && !dstIsDir) || (!dstExists && srcCount == 1) ? args.dst.getParent() : args.dst,"_distcp_tmp_" + randomId);
+
+  jobConf.set(TMP_DIR_LABEL,tmpDir.toUri().toString());
+
+  tmpDir.getFileSystem(conf).mkdirs(tmpDir);
+
+  LOG.info("sourcePathsCount=" + srcCount);
+
+  LOG.info("filesToCopyCount=" + fileCount);
+
+  LOG.info("bytesToCopyCount=" + StringUtils.humanReadableInt(byteCount));
+
+  jobConf.setInt(SRC_COUNT_LABEL,srcCount);
+
+  jobConf.setLong(TOTAL_SIZE_LABEL,byteCount);
+
+  return (fileCount + dirCount) > 0;
+
+}
+
+Location: DistCp.java
+
+Content: 
+
+private static void updateDestStatus(FileStatus src,FileStatus dst,EnumSet<FileAttribute> preseved,FileSystem destFileSys) throws IOException {
+
+  String owner=null;
+
+  String group=null;
+
+  if (preseved.contains(FileAttribute.USER) && !src.getOwner().equals(dst.getOwner())) {
+
+    owner=src.getOwner();
+
+  }
+
+  if (preseved.contains(FileAttribute.GROUP) && !src.getGroup().equals(dst.getGroup())) {
+
+    group=src.getGroup();
+
+  }
+
+  if (owner != null || group != null) {
+
+    destFileSys.setOwner(dst.getPath(),owner,group);
+
+  }
+
+  if (preseved.contains(FileAttribute.PERMISSION) && !src.getPermission().equals(dst.getPermission())) {
+
+    destFileSys.setPermission(dst.getPath(),src.getPermission());
+
+  }
+
+  if (preseved.contains(FileAttribute.TIMES)) {
+
+    destFileSys.setTimes(dst.getPath(),src.getModificationTime(),src.getAccessTime());
+
+  }
+
+}
+

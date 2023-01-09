@@ -1,0 +1,722 @@
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * DOM Level 3: Check a node to determine if it contains unbound namespace prefixes.
+
+ * @param node The node to check for unbound namespace prefices
+
+ */
+
+protected void checkUnboundNamespacePrefixedNode(Node node) throws IOException {
+
+  if (fNamespaces) {
+
+    if (DEBUG) {
+
+      System.out.println("==>serializeNode(" + node.getNodeName() + ") [Entity Reference - Namespaces on]");
+
+      System.out.println("==>Declared Prefix Count: " + fNSBinder.getDeclaredPrefixCount());
+
+      System.out.println("==>Node Name: " + node.getNodeName());
+
+      System.out.println("==>First Child Node Name: " + node.getFirstChild().getNodeName());
+
+      System.out.println("==>First Child Node Prefix: " + node.getFirstChild().getPrefix());
+
+      System.out.println("==>First Child Node NamespaceURI: " + node.getFirstChild().getNamespaceURI());
+
+    }
+
+    Node child, next;
+
+    for (child=node.getFirstChild(); child != null; child=next) {
+
+      next=child.getNextSibling();
+
+      if (DEBUG) {
+
+        System.out.println("==>serializeNode(" + child.getNodeName() + ") [Child Node]");
+
+        System.out.println("==>serializeNode(" + child.getPrefix() + ") [Child Node Prefix]");
+
+      }
+
+      String prefix=child.getPrefix();
+
+      prefix=(prefix == null || prefix.length() == 0) ? XMLSymbols.EMPTY_STRING : fSymbolTable.addSymbol(prefix);
+
+      if (fNSBinder.getURI(prefix) == null && prefix != null) {
+
+        fatalError("The replacement text of the entity node '" + node.getNodeName() + "' contains an element node '"+ child.getNodeName()+ "' with an undeclared prefix '"+ prefix+ "'.");
+
+      }
+
+      if (child.getNodeType() == Node.ELEMENT_NODE) {
+
+        NamedNodeMap attrs=child.getAttributes();
+
+        for (int i=0; i < attrs.getLength(); i++) {
+
+          String attrPrefix=attrs.item(i).getPrefix();
+
+          attrPrefix=(attrPrefix == null || attrPrefix.length() == 0) ? XMLSymbols.EMPTY_STRING : fSymbolTable.addSymbol(attrPrefix);
+
+          if (fNSBinder.getURI(attrPrefix) == null && attrPrefix != null) {
+
+            fatalError("The replacement text of the entity node '" + node.getNodeName() + "' contains an element node '"+ child.getNodeName()+ "' with an attribute '"+ attrs.item(i).getNodeName()+ "' an undeclared prefix '"+ attrPrefix+ "'.");
+
+          }
+
+        }
+
+      }
+
+      if (child.hasChildNodes()) {
+
+        checkUnboundNamespacePrefixedNode(child);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+public void endElementIO(String namespaceURI,String localName,String rawName) throws IOException {
+
+  ElementState state;
+
+  if (DEBUG) {
+
+    System.out.println("==>endElement: " + rawName);
+
+  }
+
+  _printer.unindent();
+
+  state=getElementState();
+
+  if (state.empty) {
+
+    _printer.printText("/>");
+
+  }
+
+ else {
+
+    if (state.inCData)     _printer.printText("]]>");
+
+    if (_indenting && !state.preserveSpace && (state.afterElement || state.afterComment))     _printer.breakLine();
+
+    _printer.printText("</");
+
+    _printer.printText(state.rawName);
+
+    _printer.printText('>');
+
+  }
+
+  state=leaveElementState();
+
+  state.afterElement=true;
+
+  state.afterComment=false;
+
+  state.empty=false;
+
+  if (isDocumentState())   _printer.flush();
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * Retrieve and remove the namespaces declarations from the list of attributes.
+
+ */
+
+private Attributes extractNamespaces(Attributes attrs) throws SAXException {
+
+  AttributesImpl attrsOnly;
+
+  String rawName;
+
+  int i;
+
+  int length;
+
+  if (attrs == null) {
+
+    return null;
+
+  }
+
+  length=attrs.getLength();
+
+  attrsOnly=new AttributesImpl(attrs);
+
+  for (i=length - 1; i >= 0; --i) {
+
+    rawName=attrsOnly.getQName(i);
+
+    if (rawName.startsWith("xmlns")) {
+
+      if (rawName.length() == 5) {
+
+        startPrefixMapping("",attrs.getValue(i));
+
+        attrsOnly.removeAttribute(i);
+
+      }
+
+ else       if (rawName.charAt(5) == ':') {
+
+        startPrefixMapping(rawName.substring(6),attrs.getValue(i));
+
+        attrsOnly.removeAttribute(i);
+
+      }
+
+    }
+
+  }
+
+  return attrsOnly;
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * Prints attribute.  NOTE: xml:space attribute modifies output format
+
+ * @param name
+
+ * @param value
+
+ * @param isSpecified
+
+ * @exception IOException
+
+ */
+
+private void printAttribute(String name,String value,boolean isSpecified,Attr attr) throws IOException {
+
+  if (isSpecified || (features & DOMSerializerImpl.DISCARDDEFAULT) == 0) {
+
+    if (fDOMFilter != null && (fDOMFilter.getWhatToShow() & NodeFilter.SHOW_ATTRIBUTE) != 0) {
+
+      short code=fDOMFilter.acceptNode(attr);
+
+switch (code) {
+
+case NodeFilter.FILTER_REJECT:
+
+case NodeFilter.FILTER_SKIP:
+
+{
+
+          return;
+
+        }
+
+default :
+
+{
+
+      }
+
+  }
+
+}
+
+_printer.printSpace();
+
+_printer.printText(name);
+
+_printer.printText("=\"");
+
+printEscaped(value);
+
+_printer.printText('"');
+
+}
+
+if (name.equals("xml:space")) {
+
+if (value.equals("preserve")) fPreserveSpace=true;
+
+ else fPreserveSpace=_format.getPreserveSpace();
+
+}
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+protected void printEscaped(String source) throws IOException {
+
+  int length=source.length();
+
+  for (int i=0; i < length; ++i) {
+
+    int ch=source.charAt(i);
+
+    if (!XMLChar.isValid(ch)) {
+
+      if (++i < length) {
+
+        surrogates(ch,source.charAt(i),false);
+
+      }
+
+ else {
+
+        fatalError("The character '" + (char)ch + "' is an invalid XML character");
+
+      }
+
+      continue;
+
+    }
+
+    if (ch == '\n' || ch == '\r' || ch == '\t') {
+
+      printHex(ch);
+
+    }
+
+ else     if (ch == '<') {
+
+      _printer.printText("&lt;");
+
+    }
+
+ else     if (ch == '&') {
+
+      _printer.printText("&amp;");
+
+    }
+
+ else     if (ch == '"') {
+
+      _printer.printText("&quot;");
+
+    }
+
+ else     if ((ch >= ' ' && _encodingInfo.isPrintable((char)ch))) {
+
+      _printer.printText((char)ch);
+
+    }
+
+ else {
+
+      printHex(ch);
+
+    }
+
+  }
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * Serializes a namespace attribute with the given prefix and value for URI. In case prefix is empty will serialize default namespace declaration.
+
+ * @param prefix
+
+ * @param uri
+
+ * @exception IOException
+
+ */
+
+private void printNamespaceAttr(String prefix,String uri) throws IOException {
+
+  _printer.printSpace();
+
+  if (prefix == XMLSymbols.EMPTY_STRING) {
+
+    if (DEBUG) {
+
+      System.out.println("=>add xmlns=\"" + uri + "\" declaration");
+
+    }
+
+    _printer.printText(XMLSymbols.PREFIX_XMLNS);
+
+  }
+
+ else {
+
+    if (DEBUG) {
+
+      System.out.println("=>add xmlns:" + prefix + "=\""+ uri+ "\" declaration");
+
+    }
+
+    _printer.printText("xmlns:" + prefix);
+
+  }
+
+  _printer.printText("=\"");
+
+  printEscaped(uri);
+
+  _printer.printText('"');
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+protected void printText(char[] chars,int start,int length,boolean preserveSpace,boolean unescaped) throws IOException {
+
+  if (preserveSpace) {
+
+    while (length-- > 0) {
+
+      char ch=chars[start++];
+
+      if (!XMLChar.isValid(ch)) {
+
+        if (length-- > 0) {
+
+          surrogates(ch,chars[start++],true);
+
+        }
+
+ else {
+
+          fatalError("The character '" + ch + "' is an invalid XML character");
+
+        }
+
+        continue;
+
+      }
+
+      if (unescaped) {
+
+        _printer.printText(ch);
+
+      }
+
+ else {
+
+        printXMLChar(ch);
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    while (length-- > 0) {
+
+      char ch=chars[start++];
+
+      if (!XMLChar.isValid(ch)) {
+
+        if (length-- > 0) {
+
+          surrogates(ch,chars[start++],true);
+
+        }
+
+ else {
+
+          fatalError("The character '" + ch + "' is an invalid XML character");
+
+        }
+
+        continue;
+
+      }
+
+      if (unescaped) {
+
+        _printer.printText(ch);
+
+      }
+
+ else {
+
+        printXMLChar(ch);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+protected void printText(String text,boolean preserveSpace,boolean unescaped) throws IOException {
+
+  int index;
+
+  char ch;
+
+  int length=text.length();
+
+  if (preserveSpace) {
+
+    for (index=0; index < length; ++index) {
+
+      ch=text.charAt(index);
+
+      if (!XMLChar.isValid(ch)) {
+
+        if (++index < length) {
+
+          surrogates(ch,text.charAt(index),true);
+
+        }
+
+ else {
+
+          fatalError("The character '" + ch + "' is an invalid XML character");
+
+        }
+
+        continue;
+
+      }
+
+      if (unescaped) {
+
+        _printer.printText(ch);
+
+      }
+
+ else       printXMLChar(ch);
+
+    }
+
+  }
+
+ else {
+
+    for (index=0; index < length; ++index) {
+
+      ch=text.charAt(index);
+
+      if (!XMLChar.isValid(ch)) {
+
+        if (++index < length) {
+
+          surrogates(ch,text.charAt(index),true);
+
+        }
+
+ else {
+
+          fatalError("The character '" + ch + "' is an invalid XML character");
+
+        }
+
+        continue;
+
+      }
+
+      if (unescaped)       _printer.printText(ch);
+
+ else       printXMLChar(ch);
+
+    }
+
+  }
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * print text data 
+
+ */
+
+protected void printXMLChar(int ch) throws IOException {
+
+  if (ch == '\r') {
+
+    printHex(ch);
+
+  }
+
+ else   if (ch == '<') {
+
+    _printer.printText("&lt;");
+
+  }
+
+ else   if (ch == '&') {
+
+    _printer.printText("&amp;");
+
+  }
+
+ else   if (ch == '>') {
+
+    _printer.printText("&gt;");
+
+  }
+
+ else   if (ch == '\n' || ch == '\t' || (ch >= ' ' && _encodingInfo.isPrintable((char)ch))) {
+
+    _printer.printText((char)ch);
+
+  }
+
+ else {
+
+    printHex(ch);
+
+  }
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * This methods turns on namespace fixup algorithm during DOM serialization.
+
+ * @see org.w3c.dom.ls.LSSerializer
+
+ * @param namespaces
+
+ */
+
+public void setNamespaces(boolean namespaces){
+
+  fNamespaces=namespaces;
+
+  if (fNSBinder == null) {
+
+    fNSBinder=new NamespaceSupport();
+
+    fLocalNSBinder=new NamespaceSupport();
+
+    fSymbolTable=new SymbolTable();
+
+  }
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * Constructs a new serializer. The serializer cannot be used without calling  {@link #setOutputCharStream} or {@link #setOutputByteStream}first.
+
+ */
+
+public XMLSerializer(){
+
+  super(new OutputFormat(Method.XML,null,false));
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * Constructs a new serializer. The serializer cannot be used without calling  {@link #setOutputCharStream} or {@link #setOutputByteStream}first.
+
+ */
+
+public XMLSerializer(OutputFormat format){
+
+  super(format != null ? format : new OutputFormat(Method.XML,null,false));
+
+  _format.setMethod(Method.XML);
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * Constructs a new serializer that writes to the specified output stream using the specified output format. If <tt>format</tt> is null, will use a default output format.
+
+ * @param output The output stream to use
+
+ * @param format The output format to use, null for the default
+
+ */
+
+public XMLSerializer(OutputStream output,OutputFormat format){
+
+  super(format != null ? format : new OutputFormat(Method.XML,null,false));
+
+  _format.setMethod(Method.XML);
+
+  setOutputByteStream(output);
+
+}
+
+Location: XMLSerializer.java
+
+Content: 
+
+/** 
+
+ * Constructs a new serializer that writes to the specified writer using the specified output format. If <tt>format</tt> is null, will use a default output format.
+
+ * @param writer The writer to use
+
+ * @param format The output format to use, null for the default
+
+ */
+
+public XMLSerializer(Writer writer,OutputFormat format){
+
+  super(format != null ? format : new OutputFormat(Method.XML,null,false));
+
+  _format.setMethod(Method.XML);
+
+  setOutputCharStream(writer);
+
+}
+

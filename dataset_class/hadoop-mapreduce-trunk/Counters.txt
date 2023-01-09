@@ -1,0 +1,532 @@
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Add a group. 
+
+ */
+
+public void addGroup(CounterGroup group){
+
+  groups.put(group.getName(),group);
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Returns the total number of counters, by summing the number of counters in each group.
+
+ */
+
+public synchronized int countCounters(){
+
+  int result=0;
+
+  for (  CounterGroup group : this) {
+
+    result+=group.size();
+
+  }
+
+  return result;
+
+}
+
+Location: Counters.java
+
+Content: 
+
+public Counters(){
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Utility method to  create a Counters object from the  org.apache.hadoop.mapred counters
+
+ * @param counters
+
+ */
+
+public Counters(org.apache.hadoop.mapred.Counters counters){
+
+  for (  org.apache.hadoop.mapred.Counters.Group group : counters) {
+
+    String name=group.getName();
+
+    CounterGroup newGroup=new CounterGroup(name,group.getDisplayName());
+
+    groups.put(name,newGroup);
+
+    for (    Counter counter : group) {
+
+      newGroup.addCounter(counter);
+
+    }
+
+  }
+
+}
+
+Location: Counters.java
+
+Content: 
+
+private static String escape(String string){
+
+  return StringUtils.escapeString(string,StringUtils.ESCAPE_CHAR,charsToEscape);
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Find the counter for the given enum. The same enum will always return the same counter.
+
+ * @param key the counter key
+
+ * @return the matching counter object
+
+ */
+
+public synchronized Counter findCounter(Enum<?> key){
+
+  Counter counter=cache.get(key);
+
+  if (counter == null) {
+
+    counter=findCounter(key.getDeclaringClass().getName(),key.toString());
+
+    cache.put(key,counter);
+
+  }
+
+  return counter;
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Find a counter by using strings
+
+ * @param group the name of the group
+
+ * @param id the id of the counter within the group (0 to N-1)
+
+ * @param name the internal name of the counter
+
+ * @return the counter for that name
+
+ * @deprecated
+
+ */
+
+@Deprecated public synchronized Counter findCounter(String group,int id,String name){
+
+  return findCounter(group,name);
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Convert a stringified counter representation into a counter object. Note  that the counter can be recovered if its stringified using  {@link #makeEscapedCompactString()}. 
+
+ * @return a Counter
+
+ */
+
+public static Counters fromEscapedCompactString(String compactString) throws ParseException {
+
+  Counters counters=new Counters();
+
+  IntWritable index=new IntWritable(0);
+
+  String groupString=getBlock(compactString,GROUP_OPEN,GROUP_CLOSE,index);
+
+  while (groupString != null) {
+
+    IntWritable groupIndex=new IntWritable(0);
+
+    String groupName=getBlock(groupString,UNIT_OPEN,UNIT_CLOSE,groupIndex);
+
+    groupName=unescape(groupName);
+
+    String groupDisplayName=getBlock(groupString,UNIT_OPEN,UNIT_CLOSE,groupIndex);
+
+    groupDisplayName=unescape(groupDisplayName);
+
+    Group group=counters.getGroup(groupName);
+
+    group.setDisplayName(groupDisplayName);
+
+    String counterString=getBlock(groupString,COUNTER_OPEN,COUNTER_CLOSE,groupIndex);
+
+    while (counterString != null) {
+
+      IntWritable counterIndex=new IntWritable(0);
+
+      String counterName=getBlock(counterString,UNIT_OPEN,UNIT_CLOSE,counterIndex);
+
+      counterName=unescape(counterName);
+
+      String counterDisplayName=getBlock(counterString,UNIT_OPEN,UNIT_CLOSE,counterIndex);
+
+      counterDisplayName=unescape(counterDisplayName);
+
+      long value=Long.parseLong(getBlock(counterString,UNIT_OPEN,UNIT_CLOSE,counterIndex));
+
+      Counter counter=group.getCounterForName(counterName);
+
+      counter.setDisplayName(counterDisplayName);
+
+      counter.increment(value);
+
+      counterString=getBlock(groupString,COUNTER_OPEN,COUNTER_CLOSE,groupIndex);
+
+    }
+
+    groupString=getBlock(compactString,GROUP_OPEN,GROUP_CLOSE,index);
+
+  }
+
+  return counters;
+
+}
+
+Location: Counters.java
+
+Content: 
+
+private static String getBlock(String str,char open,char close,IntWritable index) throws ParseException {
+
+  StringBuilder split=new StringBuilder();
+
+  int next=StringUtils.findNext(str,open,StringUtils.ESCAPE_CHAR,index.get(),split);
+
+  split.setLength(0);
+
+  if (next >= 0) {
+
+    ++next;
+
+    next=StringUtils.findNext(str,close,StringUtils.ESCAPE_CHAR,next,split);
+
+    if (next >= 0) {
+
+      ++next;
+
+      index.set(next);
+
+      return split.toString();
+
+    }
+
+ else {
+
+      throw new ParseException("Unexpected end of block",next);
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Returns the names of all counter classes.
+
+ * @return Set of counter names.
+
+ */
+
+public synchronized Collection<String> getGroupNames(){
+
+  return groups.keySet();
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Returns the named counter group, or an empty group if there is none with the specified name.
+
+ */
+
+public synchronized CounterGroup getGroup(String groupName){
+
+  CounterGroup grp=groups.get(groupName);
+
+  if (grp == null) {
+
+    grp=new CounterGroup(groupName);
+
+    groups.put(groupName,grp);
+
+  }
+
+  return grp;
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Increments multiple counters by their amounts in another Counters  instance.
+
+ * @param other the other Counters instance
+
+ */
+
+public synchronized void incrAllCounters(Counters other){
+
+  for (  Map.Entry<String,CounterGroup> rightEntry : other.groups.entrySet()) {
+
+    CounterGroup left=groups.get(rightEntry.getKey());
+
+    CounterGroup right=rightEntry.getValue();
+
+    if (left == null) {
+
+      left=new CounterGroup(right.getName(),right.getDisplayName());
+
+      groups.put(rightEntry.getKey(),left);
+
+    }
+
+    left.incrAllCounters(right);
+
+  }
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Increments the specified counter by the specified amount, creating it if it didn't already exist.
+
+ * @param key identifies a counter
+
+ * @param amount amount by which counter is to be incremented
+
+ */
+
+public synchronized void incrCounter(Enum key,long amount){
+
+  findCounter(key).increment(amount);
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Increments the specified counter by the specified amount, creating it if it didn't already exist.
+
+ * @param group the name of the group
+
+ * @param counter the internal name of the counter
+
+ * @param amount amount by which counter is to be incremented
+
+ */
+
+public synchronized void incrCounter(String group,String counter,long amount){
+
+  findCounter(group,counter).increment(amount);
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Logs the current counter values.
+
+ * @param log The log to use.
+
+ */
+
+public void log(Log log){
+
+  log.info("Counters: " + size());
+
+  for (  Group group : this) {
+
+    log.info("  " + group.getDisplayName());
+
+    for (    Counter counter : group) {
+
+      log.info("    " + counter.getDisplayName() + "="+ counter.getCounter());
+
+    }
+
+  }
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Convert a counters object into a single line that is easy to parse.
+
+ * @return the string with "name=value" for each counter and separated by ","
+
+ */
+
+public synchronized String makeCompactString(){
+
+  StringBuffer buffer=new StringBuffer();
+
+  boolean first=true;
+
+  for (  Group group : this) {
+
+    for (    Counter counter : group) {
+
+      if (first) {
+
+        first=false;
+
+      }
+
+ else {
+
+        buffer.append(',');
+
+      }
+
+      buffer.append(group.getDisplayName());
+
+      buffer.append('.');
+
+      buffer.append(counter.getDisplayName());
+
+      buffer.append(':');
+
+      buffer.append(counter.getCounter());
+
+    }
+
+  }
+
+  return buffer.toString();
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Represent the counter in a textual format that can be converted back to  its object form
+
+ * @return the string in the following format{(groupname)(group-displayname)[(countername)(displayname)(value)][][]}{}{}
+
+ */
+
+public synchronized String makeEscapedCompactString(){
+
+  String[] groupsArray=new String[counters.size()];
+
+  int i=0;
+
+  int length=0;
+
+  for (  Group group : this) {
+
+    String escapedString=group.makeEscapedCompactString();
+
+    groupsArray[i++]=escapedString;
+
+    length+=escapedString.length();
+
+  }
+
+  StringBuilder builder=new StringBuilder(length);
+
+  for (  String group : groupsArray) {
+
+    builder.append(group);
+
+  }
+
+  return builder.toString();
+
+}
+
+Location: Counters.java
+
+Content: 
+
+/** 
+
+ * Convenience method for computing the sum of two sets of counters.
+
+ */
+
+public static Counters sum(Counters a,Counters b){
+
+  Counters counters=new Counters();
+
+  counters.incrAllCounters(a);
+
+  counters.incrAllCounters(b);
+
+  return counters;
+
+}
+
+Location: Counters.java
+
+Content: 
+
+private static String unescape(String string){
+
+  return StringUtils.unEscapeString(string,StringUtils.ESCAPE_CHAR,charsToEscape);
+
+}
+

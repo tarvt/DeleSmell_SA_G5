@@ -1,0 +1,80 @@
+Location: TestLostTaskTracker.java
+
+Content: 
+
+private void establishFirstContact(String tracker) throws IOException {
+
+  TaskTrackerStatus status=new TaskTrackerStatus(tracker,JobInProgress.convertTrackerNameToHostName(tracker));
+
+  jobTracker.heartbeat(status,false,true,false,(short)0);
+
+}
+
+Location: TestLostTaskTracker.java
+
+Content: 
+
+@Override protected void setUp() throws Exception {
+
+  JobConf conf=new JobConf();
+
+  conf.set(JTConfig.JT_IPC_ADDRESS,"localhost:0");
+
+  conf.set(JTConfig.JT_HTTP_ADDRESS,"0.0.0.0:0");
+
+  conf.setLong(JTConfig.JT_TRACKER_EXPIRY_INTERVAL,1000);
+
+  clock=new FakeClock();
+
+  jobTracker=spy(new JobTracker(conf,clock));
+
+}
+
+Location: TestLostTaskTracker.java
+
+Content: 
+
+private Matcher<TaskTracker> taskTrackerWithName(final String name){
+
+  return new ArgumentMatcher<TaskTracker>(){
+
+    public boolean matches(    Object taskTracker){
+
+      return name.equals(((TaskTracker)taskTracker).getTrackerName());
+
+    }
+
+  }
+
+;
+
+}
+
+Location: TestLostTaskTracker.java
+
+Content: 
+
+public void testLostTaskTrackerCalledAfterExpiryTime() throws IOException {
+
+  String tracker1="tracker_tracker1:1000";
+
+  String tracker2="tracker_tracker2:1000";
+
+  establishFirstContact(tracker1);
+
+  clock.advance(8 * 1000);
+
+  establishFirstContact(tracker2);
+
+  jobTracker.checkExpiredTrackers();
+
+  ArgumentCaptor<TaskTracker> argument=ArgumentCaptor.forClass(TaskTracker.class);
+
+  verify(jobTracker).lostTaskTracker(argument.capture());
+
+  assertEquals(tracker1,argument.getValue().getTrackerName());
+
+  verify(jobTracker,never()).lostTaskTracker(argThat(taskTrackerWithName(tracker2)));
+
+}
+

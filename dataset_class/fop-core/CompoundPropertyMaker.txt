@@ -1,0 +1,250 @@
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * Add a subproperty to this maker.
+
+ * @param subproperty the sub property
+
+ */
+
+public void addSubpropMaker(PropertyMaker subproperty){
+
+  subproperty.propId&=Constants.COMPOUND_MASK;
+
+  subproperty.propId|=propId;
+
+  subproperties[getSubpropIndex(subproperty.getPropId())]=subproperty;
+
+  if (shorthandMaker == null && subproperty.setByShorthand) {
+
+    shorthandMaker=subproperty;
+
+  }
+
+}
+
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * For compound properties which can take enumerate values. Delegate the enumeration check to one of the subpropeties.
+
+ * @param value the string containing the property value
+
+ * @return the Property encapsulating the enumerated equivalent of theinput value
+
+ */
+
+protected Property checkEnumValues(String value){
+
+  Property result=null;
+
+  if (shorthandMaker != null) {
+
+    result=shorthandMaker.checkEnumValues(value);
+
+  }
+
+  if (result == null) {
+
+    result=super.checkEnumValues(value);
+
+  }
+
+  return result;
+
+}
+
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * Construct an instance of a CompoundPropertyMaker for the given property.
+
+ * @param propId The Constant ID of the property to be made.
+
+ */
+
+public CompoundPropertyMaker(int propId){
+
+  super(propId);
+
+}
+
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * Calculate the real value of a subproperty by unmasking and shifting the value into the range [0 - (COMPOUND_COUNT-1)]. The value is used as index into the subproperties array.
+
+ * @param subpropertyId the property id of the sub property.
+
+ * @return the array index.
+
+ */
+
+private int getSubpropIndex(int subpropertyId){
+
+  return ((subpropertyId & Constants.COMPOUND_MASK) >> Constants.COMPOUND_SHIFT) - 1;
+
+}
+
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * Return a Maker object which is used to set the values on components of compound property types, such as "space". Overridden by property maker subclasses which handle compound properties.
+
+ * @param subpropertyId the id of the component for which a Maker is toreturned, for example CP_OPTIMUM, if the FO attribute is space.optimum='10pt'.
+
+ * @return the Maker object specified
+
+ */
+
+public PropertyMaker getSubpropMaker(int subpropertyId){
+
+  return subproperties[getSubpropIndex(subpropertyId)];
+
+}
+
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * Create a empty compound property and fill it with default values for the subproperties.
+
+ * @param propertyList The propertyList being built.
+
+ * @param parentFO The parent FO for the FO whose property is being made.
+
+ * @return a Property subclass object holding a "compound" property objectinitialized to the default values for each component.
+
+ * @throws PropertyException ...
+
+ */
+
+protected Property makeCompound(PropertyList propertyList,FObj parentFO) throws PropertyException {
+
+  Property p=makeNewProperty();
+
+  CompoundDatatype data=(CompoundDatatype)p.getObject();
+
+  for (int i=0; i < Constants.COMPOUND_COUNT; i++) {
+
+    PropertyMaker subpropertyMaker=subproperties[i];
+
+    if (subpropertyMaker != null) {
+
+      Property subproperty=subpropertyMaker.make(propertyList);
+
+      data.setComponent(subpropertyMaker.getPropId() & Constants.COMPOUND_MASK,subproperty,true);
+
+    }
+
+  }
+
+  return p;
+
+}
+
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * Return a property value for a compound property. If the property value is already partially initialized, this method will modify it.
+
+ * @param baseProperty The Property object representing the compound property,for example: SpaceProperty.
+
+ * @param subpropertyId The Constants ID of the subproperty (component)whose value is specified.
+
+ * @param propertyList The propertyList being built.
+
+ * @param fo The parent FO for the FO whose property is being made.
+
+ * @param value the value of the
+
+ * @return baseProperty (or if null, a new compound property object) withthe new subproperty added
+
+ * @throws PropertyException for invalid or inconsistent FO input
+
+ */
+
+public Property make(Property baseProperty,int subpropertyId,PropertyList propertyList,String value,FObj fo) throws PropertyException {
+
+  if (baseProperty == null) {
+
+    baseProperty=makeCompound(propertyList,fo);
+
+  }
+
+  PropertyMaker spMaker=getSubpropMaker(subpropertyId);
+
+  if (spMaker != null) {
+
+    Property p=spMaker.make(propertyList,value,fo);
+
+    if (p != null) {
+
+      return setSubprop(baseProperty,subpropertyId & Constants.COMPOUND_MASK,p);
+
+    }
+
+  }
+
+ else {
+
+  }
+
+  return baseProperty;
+
+}
+
+Location: CompoundPropertyMaker.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ */
+
+public void useGeneric(PropertyMaker generic){
+
+  super.useGeneric(generic);
+
+  if (generic instanceof CompoundPropertyMaker) {
+
+    CompoundPropertyMaker compoundGeneric=(CompoundPropertyMaker)generic;
+
+    for (int i=0; i < Constants.COMPOUND_COUNT; i++) {
+
+      PropertyMaker submaker=compoundGeneric.subproperties[i];
+
+      if (submaker != null) {
+
+        addSubpropMaker((PropertyMaker)submaker.clone());
+
+      }
+
+    }
+
+  }
+
+}
+

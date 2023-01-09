@@ -1,0 +1,444 @@
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Defines the translet class and auxiliary classes. Returns a reference to the Class object that defines the main class
+
+ */
+
+private void defineTransletClasses() throws TransformerConfigurationException {
+
+  if (_bytecodes == null) {
+
+    ErrorMsg err=new ErrorMsg(ErrorMsg.NO_TRANSLET_CLASS_ERR);
+
+    throw new TransformerConfigurationException(err.toString());
+
+  }
+
+  TransletClassLoader loader=(TransletClassLoader)AccessController.doPrivileged(new PrivilegedAction(){
+
+    public Object run(){
+
+      return new TransletClassLoader(ObjectFactory.findClassLoader());
+
+    }
+
+  }
+
+);
+
+  try {
+
+    final int classCount=_bytecodes.length;
+
+    _class=new Class[classCount];
+
+    if (classCount > 1) {
+
+      _auxClasses=new Hashtable();
+
+    }
+
+    for (int i=0; i < classCount; i++) {
+
+      _class[i]=loader.defineClass(_bytecodes[i]);
+
+      final Class superClass=_class[i].getSuperclass();
+
+      if (superClass.getName().equals(ABSTRACT_TRANSLET)) {
+
+        _transletIndex=i;
+
+      }
+
+ else {
+
+        _auxClasses.put(_class[i].getName(),_class[i]);
+
+      }
+
+    }
+
+    if (_transletIndex < 0) {
+
+      ErrorMsg err=new ErrorMsg(ErrorMsg.NO_MAIN_TRANSLET_ERR,_name);
+
+      throw new TransformerConfigurationException(err.toString());
+
+    }
+
+  }
+
+ catch (  ClassFormatError e) {
+
+    ErrorMsg err=new ErrorMsg(ErrorMsg.TRANSLET_CLASS_ERR,_name);
+
+    throw new TransformerConfigurationException(err.toString());
+
+  }
+
+catch (  LinkageError e) {
+
+    ErrorMsg err=new ErrorMsg(ErrorMsg.TRANSLET_OBJECT_ERR,_name);
+
+    throw new TransformerConfigurationException(err.toString());
+
+  }
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Return the thread local copy of the stylesheet DOM.
+
+ */
+
+public DOM getStylesheetDOM(){
+
+  return (DOM)_sdom.get();
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the translet bytecodes stored in this template
+
+ */
+
+public synchronized byte[][] getTransletBytecodes(){
+
+  return _bytecodes;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the translet bytecodes stored in this template
+
+ */
+
+public synchronized Class[] getTransletClasses(){
+
+  try {
+
+    if (_class == null)     defineTransletClasses();
+
+  }
+
+ catch (  TransformerConfigurationException e) {
+
+  }
+
+  return _class;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the index of the main class in array of bytecodes
+
+ */
+
+public synchronized int getTransletIndex(){
+
+  try {
+
+    if (_class == null)     defineTransletClasses();
+
+  }
+
+ catch (  TransformerConfigurationException e) {
+
+  }
+
+  return _transletIndex;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * This method generates an instance of the translet class that is wrapped inside this Template. The translet instance will later be wrapped inside a Transformer object.
+
+ */
+
+private Translet getTransletInstance() throws TransformerConfigurationException {
+
+  try {
+
+    if (_name == null)     return null;
+
+    if (_class == null)     defineTransletClasses();
+
+    AbstractTranslet translet=(AbstractTranslet)_class[_transletIndex].newInstance();
+
+    translet.postInitialization();
+
+    translet.setTemplates(this);
+
+    if (_auxClasses != null) {
+
+      translet.setAuxiliaryClasses(_auxClasses);
+
+    }
+
+    return translet;
+
+  }
+
+ catch (  InstantiationException e) {
+
+    ErrorMsg err=new ErrorMsg(ErrorMsg.TRANSLET_OBJECT_ERR,_name);
+
+    throw new TransformerConfigurationException(err.toString());
+
+  }
+
+catch (  IllegalAccessException e) {
+
+    ErrorMsg err=new ErrorMsg(ErrorMsg.TRANSLET_OBJECT_ERR,_name);
+
+    throw new TransformerConfigurationException(err.toString());
+
+  }
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the name of the main translet class stored in this template
+
+ */
+
+protected synchronized String getTransletName(){
+
+  return _name;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Implements JAXP's Templates.newTransformer()
+
+ * @throws TransformerConfigurationException
+
+ */
+
+public synchronized Transformer newTransformer() throws TransformerConfigurationException {
+
+  TransformerImpl transformer;
+
+  transformer=new TransformerImpl(getTransletInstance(),_outputProperties,_indentNumber,_tfactory);
+
+  if (_uriResolver != null) {
+
+    transformer.setURIResolver(_uriResolver);
+
+  }
+
+  if (_tfactory.getFeature(XMLConstants.FEATURE_SECURE_PROCESSING)) {
+
+    transformer.setSecureProcessing(true);
+
+  }
+
+  return transformer;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Overrides the default readObject implementation since we decided it would be cleaner not to serialize the entire tranformer factory. [ ref bugzilla 12317 ] We need to check if the user defined class for URIResolver also implemented Serializable if yes then we need to deserialize the URIResolver Fix for bugzilla bug 22438
+
+ */
+
+private void readObject(ObjectInputStream is) throws IOException, ClassNotFoundException {
+
+  is.defaultReadObject();
+
+  if (is.readBoolean()) {
+
+    _uriResolver=(URIResolver)is.readObject();
+
+  }
+
+  _tfactory=new TransformerFactoryImpl();
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Set the thread local copy of the stylesheet DOM.
+
+ */
+
+public void setStylesheetDOM(DOM sdom){
+
+  _sdom.set(sdom);
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * The TransformerFactory must pass us the translet bytecodes using this method before we can create any translet instances
+
+ */
+
+protected synchronized void setTransletBytecodes(byte[][] bytecodes){
+
+  _bytecodes=bytecodes;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * The TransformerFactory should call this method to set the translet name
+
+ */
+
+protected synchronized void setTransletName(String name){
+
+  _name=name;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Need for de-serialization, see readObject().
+
+ */
+
+public TemplatesImpl(){
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Create an XSLTC template object from the bytecodes. The bytecodes for the translet and auxiliary classes, plus the name of the main translet class, must be supplied.
+
+ */
+
+protected TemplatesImpl(byte[][] bytecodes,String transletName,Properties outputProperties,int indentNumber,TransformerFactoryImpl tfactory){
+
+  _bytecodes=bytecodes;
+
+  _name=transletName;
+
+  _outputProperties=outputProperties;
+
+  _indentNumber=indentNumber;
+
+  _tfactory=tfactory;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * Create an XSLTC template object from the translet class definition(s).
+
+ */
+
+protected TemplatesImpl(Class[] transletClasses,String transletName,Properties outputProperties,int indentNumber,TransformerFactoryImpl tfactory){
+
+  _class=transletClasses;
+
+  _name=transletName;
+
+  _transletIndex=0;
+
+  _outputProperties=outputProperties;
+
+  _indentNumber=indentNumber;
+
+  _tfactory=tfactory;
+
+}
+
+Location: TemplatesImpl.java
+
+Content: 
+
+/** 
+
+ * This is to fix bugzilla bug 22438 If the user defined class implements URIResolver and Serializable then we want it to get serialized
+
+ */
+
+private void writeObject(ObjectOutputStream os) throws IOException, ClassNotFoundException {
+
+  os.defaultWriteObject();
+
+  if (_uriResolver instanceof Serializable) {
+
+    os.writeBoolean(true);
+
+    os.writeObject((Serializable)_uriResolver);
+
+  }
+
+ else {
+
+    os.writeBoolean(false);
+
+  }
+
+}
+

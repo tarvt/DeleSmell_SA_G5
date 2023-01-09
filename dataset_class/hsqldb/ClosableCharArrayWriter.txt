@@ -1,0 +1,252 @@
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * @throws java.io.IOException if this writer is freed.
+
+ */
+
+protected synchronized void checkFreed() throws IOException {
+
+  if (freed) {
+
+    throw new IOException("write buffer is freed.");
+
+  }
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Creates a new writer. <p> The buffer capacity is initially 32 characters, although its size automatically increases when necessary.
+
+ */
+
+public ClosableCharArrayWriter(){
+
+  this(32);
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Creates a new writer with a buffer capacity of the specified <tt>size</tt>, in characters.
+
+ * @param size the initial size.
+
+ * @exception IllegalArgumentException if <tt>size</tt> is negative.
+
+ */
+
+public ClosableCharArrayWriter(int size) throws IllegalArgumentException {
+
+  if (size < 0) {
+
+    throw new IllegalArgumentException("Negative initial size: " + size);
+
+  }
+
+  buf=new char[size];
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Retrieves a copy of <tt>original</tt> with the given <tt>newLength</tt>. <p>
+
+ * @param original the object to copy
+
+ * @param newLength the length of the copy
+
+ * @return copy of <tt>original</tt> with the given <tt>newLength</tt>
+
+ */
+
+protected char[] copyOf(char[] original,int newLength){
+
+  char[] copy=new char[newLength];
+
+  System.arraycopy(original,0,copy,0,Math.min(original.length,newLength));
+
+  return copy;
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * @return <tt>true</tt> if this writer is freed; else <tt>false</tt>.
+
+ */
+
+public synchronized boolean isFreed(){
+
+  return freed;
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Creates a newly allocated character array. Its size is the current size of this writer and the valid contents of the buffer have been copied into it.
+
+ * @return the current contents of this writer, as a character array.
+
+ * @see #size()
+
+ * @throws java.io.IOException if an I/O error occurs.In particular, an <tt>IOException</tt> may be thrown if this writer has been  {@link #free() freed}.
+
+ */
+
+public synchronized char[] toCharArray() throws IOException {
+
+  checkFreed();
+
+  return copyOf(buf,count);
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Performs an efficient (zero-copy) conversion of the character data accumulated in this writer to a reader. <p> To ensure the integrity of the resulting reader,  {@link #free() free} is invoked upon this writer as a side-effect.
+
+ * @return a reader representing this writer's accumulatedcharacter data
+
+ * @throws java.io.IOException if an I/O error occurs.In particular, an <tt>IOException</tt> may be thrown if this writer has been  {@link #free() freed}.
+
+ */
+
+public synchronized CharArrayReader toCharArrayReader() throws IOException {
+
+  checkFreed();
+
+  CharArrayReader reader=new CharArrayReader(buf,0,count);
+
+  free();
+
+  return reader;
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Attempts to reduce this writer's buffer capacity to its current size. <p> If the buffer is larger than necessary to hold its current sequence of characters, then it may be resized to become more space efficient. Calling this method may, but is not required to, affect the value returned by a subsequent call to the  {@link #capacity()} method.
+
+ */
+
+public synchronized void trimToSize() throws IOException {
+
+  checkFreed();
+
+  if (buf.length > count) {
+
+    buf=copyOf(buf,count);
+
+  }
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Writes the complete contents of this writer's buffered data to the specified writer. <p> The operation occurs as if by calling <tt>out.write(buf, 0, count)</tt>.
+
+ * @param out the writer to which to write the data.
+
+ * @throws java.io.IOException if an I/O error occurs.In particular, an <tt>IOException</tt> may be thrown if this writer has been  {@link #free() freed}.
+
+ */
+
+public synchronized void writeTo(Writer out) throws IOException {
+
+  checkFreed();
+
+  if (count > 0) {
+
+    out.write(buf,0,count);
+
+  }
+
+}
+
+Location: ClosableCharArrayWriter.java
+
+Content: 
+
+/** 
+
+ * Efficiently writes the designated portion of the designated string. <p> The operation occurs as if by calling <tt>str.getChars(off, off + len, buf, count)</tt>. <p>
+
+ * @param str the string from which to write
+
+ * @param off the start offset in the string.
+
+ * @param len the number of characters to write.
+
+ * @throws java.io.IOException if an I/O error occurs.In particular, an <tt>IOException</tt> may be thrown if this writer has been  {@link #close() closed}.
+
+ */
+
+public synchronized void write(String str,int off,int len) throws IOException {
+
+  checkClosed();
+
+  int strlen=str.length();
+
+  if ((off < 0) || (off > strlen) || (len < 0)|| ((off + len) > strlen)|| ((off + len) < 0)) {
+
+    throw new IndexOutOfBoundsException();
+
+  }
+
+ else   if (len == 0) {
+
+    return;
+
+  }
+
+  int newcount=count + len;
+
+  if (newcount > buf.length) {
+
+    buf=copyOf(buf,Math.max(buf.length << 1,newcount));
+
+  }
+
+  str.getChars(off,off + len,buf,count);
+
+  count=newcount;
+
+}
+

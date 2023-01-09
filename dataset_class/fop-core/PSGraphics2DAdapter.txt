@@ -1,0 +1,126 @@
+Location: PSGraphics2DAdapter.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void paintImage(Graphics2DImagePainter painter,RendererContext context,int x,int y,int width,int height) throws IOException {
+
+  float fwidth=width / 1000f;
+
+  float fheight=height / 1000f;
+
+  float fx=x / 1000f;
+
+  float fy=y / 1000f;
+
+  Dimension dim=painter.getImageSize();
+
+  float imw=(float)dim.getWidth() / 1000f;
+
+  float imh=(float)dim.getHeight() / 1000f;
+
+  boolean paintAsBitmap=false;
+
+  if (context != null) {
+
+    Map foreign=(Map)context.getProperty(RendererContextConstants.FOREIGN_ATTRIBUTES);
+
+    paintAsBitmap=(foreign != null && ImageHandlerUtil.isConversionModeBitmap(foreign));
+
+  }
+
+  float sx=paintAsBitmap ? 1.0f : (fwidth / imw);
+
+  float sy=paintAsBitmap ? 1.0f : (fheight / imh);
+
+  gen.commentln("%FOPBeginGraphics2D");
+
+  gen.saveGraphicsState();
+
+  if (clip) {
+
+    gen.writeln("newpath");
+
+    gen.defineRect(fx,fy,fwidth,fheight);
+
+    gen.writeln("clip");
+
+  }
+
+  gen.concatMatrix(sx,0,0,sy,fx,fy);
+
+  final boolean textAsShapes=false;
+
+  PSGraphics2D graphics=(painter instanceof GeneralGraphics2DImagePainter) ? (PSGraphics2D)((GeneralGraphics2DImagePainter)painter).getGraphics(textAsShapes,gen) : new PSGraphics2D(textAsShapes,gen);
+
+  graphics.setGraphicContext(new org.apache.xmlgraphics.java2d.GraphicContext());
+
+  AffineTransform transform=new AffineTransform();
+
+  transform.translate(fx,fy);
+
+  gen.getCurrentState().concatMatrix(transform);
+
+  if (paintAsBitmap) {
+
+    int resolution=Math.round(context.getUserAgent().getTargetResolution());
+
+    RendererContextWrapper ctx=RendererContext.wrapRendererContext(context);
+
+    BufferedImage bi=paintToBufferedImage(painter,ctx,resolution,false,false);
+
+    float scale=PDFFactory.DEFAULT_PDF_RESOLUTION / context.getUserAgent().getTargetResolution();
+
+    graphics.drawImage(bi,new AffineTransform(scale,0,0,scale,0,0),null);
+
+  }
+
+ else {
+
+    if (painter instanceof GeneralGraphics2DImagePainter) {
+
+      PSFontUtils.addFallbackFonts(fontInfo,(GeneralGraphics2DImagePainter)painter);
+
+    }
+
+    Rectangle2D area=new Rectangle2D.Double(0.0,0.0,imw,imh);
+
+    painter.paint(graphics,area);
+
+  }
+
+  gen.restoreGraphicsState();
+
+  gen.commentln("%FOPEndGraphics2D");
+
+}
+
+Location: PSGraphics2DAdapter.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance.
+
+ * @param gen the PostScript generator
+
+ * @param clip true if the image should be clipped
+
+ */
+
+public PSGraphics2DAdapter(PSGenerator gen,boolean clip,FontInfo fontInfo){
+
+  this.gen=gen;
+
+  this.clip=clip;
+
+  this.fontInfo=fontInfo;
+
+}
+

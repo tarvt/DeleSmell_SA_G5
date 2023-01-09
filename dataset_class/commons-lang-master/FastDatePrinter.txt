@@ -1,0 +1,826 @@
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * Appends two digits to the given buffer.
+
+ * @param buffer the buffer to append to.
+
+ * @param value the value to append digits from.
+
+ */
+
+private static void appendDigits(final Appendable buffer,final int value) throws IOException {
+
+  buffer.append((char)(value / 10 + '0'));
+
+  buffer.append((char)(value % 10 + '0'));
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * Appends all digits to the given buffer.
+
+ * @param buffer the buffer to append to.
+
+ * @param value the value to append digits from.
+
+ */
+
+private static void appendFullDigits(final Appendable buffer,int value,int minFieldWidth) throws IOException {
+
+  if (value < 10000) {
+
+    int nDigits=4;
+
+    if (value < 1000) {
+
+      --nDigits;
+
+      if (value < 100) {
+
+        --nDigits;
+
+        if (value < 10) {
+
+          --nDigits;
+
+        }
+
+      }
+
+    }
+
+    for (int i=minFieldWidth - nDigits; i > 0; --i) {
+
+      buffer.append('0');
+
+    }
+
+switch (nDigits) {
+
+case 4:
+
+      buffer.append((char)(value / 1000 + '0'));
+
+    value%=1000;
+
+case 3:
+
+  if (value >= 100) {
+
+    buffer.append((char)(value / 100 + '0'));
+
+    value%=100;
+
+  }
+
+ else {
+
+    buffer.append('0');
+
+  }
+
+case 2:
+
+if (value >= 10) {
+
+  buffer.append((char)(value / 10 + '0'));
+
+  value%=10;
+
+}
+
+ else {
+
+  buffer.append('0');
+
+}
+
+case 1:
+
+buffer.append((char)(value + '0'));
+
+}
+
+}
+
+ else {
+
+final char[] work=new char[MAX_DIGITS];
+
+int digit=0;
+
+while (value != 0) {
+
+work[digit++]=(char)(value % 10 + '0');
+
+value=value / 10;
+
+}
+
+while (digit < minFieldWidth) {
+
+buffer.append('0');
+
+--minFieldWidth;
+
+}
+
+while (--digit >= 0) {
+
+buffer.append(work[digit]);
+
+}
+
+}
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * Creates a String representation of the given Calendar by applying the rules of this printer to it.
+
+ * @param c the Calender to apply the rules to.
+
+ * @return a String representation of the given Calendar.
+
+ */
+
+private String applyRulesToString(final Calendar c){
+
+  return applyRules(c,new StringBuilder(mMaxLengthEstimate)).toString();
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Performs the formatting by applying the rules to the specified calendar.</p>
+
+ * @param calendar  the calendar to format
+
+ * @param buf  the buffer to format into
+
+ * @param < B > the Appendable class type, usually StringBuilder or StringBuffer.
+
+ * @return the specified string buffer
+
+ */
+
+private <B extends Appendable>B applyRules(final Calendar calendar,final B buf){
+
+  try {
+
+    for (    final Rule rule : mRules) {
+
+      rule.appendTo(buf,calendar);
+
+    }
+
+  }
+
+ catch (  final IOException ioe) {
+
+    ExceptionUtils.rethrow(ioe);
+
+  }
+
+  return buf;
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * Performs the formatting by applying the rules to the specified calendar.
+
+ * @param calendar the calendar to format
+
+ * @param buf the buffer to format into
+
+ * @return the specified string buffer
+
+ * @deprecated use {@link #format(Calendar)} or {@link #format(Calendar,Appendable)}
+
+ */
+
+@Deprecated protected StringBuffer applyRules(final Calendar calendar,final StringBuffer buf){
+
+  return (StringBuffer)applyRules(calendar,(Appendable)buf);
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Constructs a new FastDatePrinter.</p> Use  {@link FastDateFormat#getInstance(String,TimeZone,Locale)}  or another variation of thefactory methods of  {@link FastDateFormat} to get a cached FastDatePrinter instance.
+
+ * @param pattern  {@link java.text.SimpleDateFormat} compatible pattern
+
+ * @param timeZone  non-null time zone to use
+
+ * @param locale  non-null locale to use
+
+ * @throws NullPointerException if pattern, timeZone, or locale is null.
+
+ */
+
+protected FastDatePrinter(final String pattern,final TimeZone timeZone,final Locale locale){
+
+  mPattern=pattern;
+
+  mTimeZone=timeZone;
+
+  mLocale=LocaleUtils.toLocale(locale);
+
+  init();
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Formats a  {@code Date},  {@code Calendar} or{@code Long} (milliseconds) object.</p>
+
+ * @since 3.5
+
+ * @param obj  the object to format
+
+ * @return The formatted value.
+
+ */
+
+String format(final Object obj){
+
+  if (obj instanceof Date) {
+
+    return format((Date)obj);
+
+  }
+
+  if (obj instanceof Calendar) {
+
+    return format((Calendar)obj);
+
+  }
+
+  if (obj instanceof Long) {
+
+    return format(((Long)obj).longValue());
+
+  }
+
+  throw new IllegalArgumentException("Unknown class: " + (obj == null ? "<null>" : obj.getClass().getName()));
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Gets an estimate for the maximum string length that the formatter will produce.</p> <p>The actual formatted length will almost always be less than or equal to this amount.</p>
+
+ * @return the maximum formatted length
+
+ */
+
+public int getMaxLengthEstimate(){
+
+  return mMaxLengthEstimate;
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Gets the time zone display name, using a cache for performance.</p>
+
+ * @param tz  the zone to query
+
+ * @param daylight  true if daylight savings
+
+ * @param style  the style to use {@code TimeZone.LONG} or {@code TimeZone.SHORT}
+
+ * @param locale  the locale to use
+
+ * @return the textual name of the time zone
+
+ */
+
+static String getTimeZoneDisplay(final TimeZone tz,final boolean daylight,final int style,final Locale locale){
+
+  final TimeZoneDisplayKey key=new TimeZoneDisplayKey(tz,daylight,style,locale);
+
+  String value=cTimeZoneDisplayCache.get(key);
+
+  if (value == null) {
+
+    value=tz.getDisplayName(daylight,style,locale);
+
+    final String prior=cTimeZoneDisplayCache.putIfAbsent(key,value);
+
+    if (prior != null) {
+
+      value=prior;
+
+    }
+
+  }
+
+  return value;
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Initializes the instance for first use.</p>
+
+ */
+
+private void init(){
+
+  final List<Rule> rulesList=parsePattern();
+
+  mRules=rulesList.toArray(EMPTY_RULE_ARRAY);
+
+  int len=0;
+
+  for (int i=mRules.length; --i >= 0; ) {
+
+    len+=mRules[i].estimateLength();
+
+  }
+
+  mMaxLengthEstimate=len;
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * Creation method for new calender instances.
+
+ * @return a new Calendar instance.
+
+ */
+
+private Calendar newCalendar(){
+
+  return Calendar.getInstance(mTimeZone,mLocale);
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Returns a list of Rules given a pattern.</p>
+
+ * @return a {@code List} of Rule objects
+
+ * @throws IllegalArgumentException if pattern is invalid
+
+ */
+
+protected List<Rule> parsePattern(){
+
+  final DateFormatSymbols symbols=new DateFormatSymbols(mLocale);
+
+  final List<Rule> rules=new ArrayList<>();
+
+  final String[] ERAs=symbols.getEras();
+
+  final String[] months=symbols.getMonths();
+
+  final String[] shortMonths=symbols.getShortMonths();
+
+  final String[] weekdays=symbols.getWeekdays();
+
+  final String[] shortWeekdays=symbols.getShortWeekdays();
+
+  final String[] AmPmStrings=symbols.getAmPmStrings();
+
+  final int length=mPattern.length();
+
+  final int[] indexRef=new int[1];
+
+  for (int i=0; i < length; i++) {
+
+    indexRef[0]=i;
+
+    final String token=parseToken(mPattern,indexRef);
+
+    i=indexRef[0];
+
+    final int tokenLen=token.length();
+
+    if (tokenLen == 0) {
+
+      break;
+
+    }
+
+    Rule rule;
+
+    final char c=token.charAt(0);
+
+switch (c) {
+
+case 'G':
+
+      rule=new TextField(Calendar.ERA,ERAs);
+
+    break;
+
+case 'y':
+
+case 'Y':
+
+  if (tokenLen == 2) {
+
+    rule=TwoDigitYearField.INSTANCE;
+
+  }
+
+ else {
+
+    rule=selectNumberRule(Calendar.YEAR,Math.max(tokenLen,4));
+
+  }
+
+if (c == 'Y') {
+
+  rule=new WeekYear((NumberRule)rule);
+
+}
+
+break;
+
+case 'M':
+
+if (tokenLen >= 4) {
+
+rule=new TextField(Calendar.MONTH,months);
+
+}
+
+ else if (tokenLen == 3) {
+
+rule=new TextField(Calendar.MONTH,shortMonths);
+
+}
+
+ else if (tokenLen == 2) {
+
+rule=TwoDigitMonthField.INSTANCE;
+
+}
+
+ else {
+
+rule=UnpaddedMonthField.INSTANCE;
+
+}
+
+break;
+
+case 'd':
+
+rule=selectNumberRule(Calendar.DAY_OF_MONTH,tokenLen);
+
+break;
+
+case 'h':
+
+rule=new TwelveHourField(selectNumberRule(Calendar.HOUR,tokenLen));
+
+break;
+
+case 'H':
+
+rule=selectNumberRule(Calendar.HOUR_OF_DAY,tokenLen);
+
+break;
+
+case 'm':
+
+rule=selectNumberRule(Calendar.MINUTE,tokenLen);
+
+break;
+
+case 's':
+
+rule=selectNumberRule(Calendar.SECOND,tokenLen);
+
+break;
+
+case 'S':
+
+rule=selectNumberRule(Calendar.MILLISECOND,tokenLen);
+
+break;
+
+case 'E':
+
+rule=new TextField(Calendar.DAY_OF_WEEK,tokenLen < 4 ? shortWeekdays : weekdays);
+
+break;
+
+case 'u':
+
+rule=new DayInWeekField(selectNumberRule(Calendar.DAY_OF_WEEK,tokenLen));
+
+break;
+
+case 'D':
+
+rule=selectNumberRule(Calendar.DAY_OF_YEAR,tokenLen);
+
+break;
+
+case 'F':
+
+rule=selectNumberRule(Calendar.DAY_OF_WEEK_IN_MONTH,tokenLen);
+
+break;
+
+case 'w':
+
+rule=selectNumberRule(Calendar.WEEK_OF_YEAR,tokenLen);
+
+break;
+
+case 'W':
+
+rule=selectNumberRule(Calendar.WEEK_OF_MONTH,tokenLen);
+
+break;
+
+case 'a':
+
+rule=new TextField(Calendar.AM_PM,AmPmStrings);
+
+break;
+
+case 'k':
+
+rule=new TwentyFourHourField(selectNumberRule(Calendar.HOUR_OF_DAY,tokenLen));
+
+break;
+
+case 'K':
+
+rule=selectNumberRule(Calendar.HOUR,tokenLen);
+
+break;
+
+case 'X':
+
+rule=Iso8601_Rule.getRule(tokenLen);
+
+break;
+
+case 'z':
+
+if (tokenLen >= 4) {
+
+rule=new TimeZoneNameRule(mTimeZone,mLocale,TimeZone.LONG);
+
+}
+
+ else {
+
+rule=new TimeZoneNameRule(mTimeZone,mLocale,TimeZone.SHORT);
+
+}
+
+break;
+
+case 'Z':
+
+if (tokenLen == 1) {
+
+rule=TimeZoneNumberRule.INSTANCE_NO_COLON;
+
+}
+
+ else if (tokenLen == 2) {
+
+rule=Iso8601_Rule.ISO8601_HOURS_COLON_MINUTES;
+
+}
+
+ else {
+
+rule=TimeZoneNumberRule.INSTANCE_COLON;
+
+}
+
+break;
+
+case '\'':
+
+final String sub=token.substring(1);
+
+if (sub.length() == 1) {
+
+rule=new CharacterLiteral(sub.charAt(0));
+
+}
+
+ else {
+
+rule=new StringLiteral(sub);
+
+}
+
+break;
+
+default :
+
+throw new IllegalArgumentException("Illegal pattern component: " + token);
+
+}
+
+rules.add(rule);
+
+}
+
+return rules;
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Performs the parsing of tokens.</p>
+
+ * @param pattern  the pattern
+
+ * @param indexRef  index references
+
+ * @return parsed token
+
+ */
+
+protected String parseToken(final String pattern,final int[] indexRef){
+
+  final StringBuilder buf=new StringBuilder();
+
+  int i=indexRef[0];
+
+  final int length=pattern.length();
+
+  char c=pattern.charAt(i);
+
+  if (c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z') {
+
+    buf.append(c);
+
+    while (i + 1 < length) {
+
+      final char peek=pattern.charAt(i + 1);
+
+      if (peek != c) {
+
+        break;
+
+      }
+
+      buf.append(c);
+
+      i++;
+
+    }
+
+  }
+
+ else {
+
+    buf.append('\'');
+
+    boolean inLiteral=false;
+
+    for (; i < length; i++) {
+
+      c=pattern.charAt(i);
+
+      if (c == '\'') {
+
+        if (i + 1 < length && pattern.charAt(i + 1) == '\'') {
+
+          i++;
+
+          buf.append(c);
+
+        }
+
+ else {
+
+          inLiteral=!inLiteral;
+
+        }
+
+      }
+
+ else       if (!inLiteral && (c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z')) {
+
+        i--;
+
+        break;
+
+      }
+
+ else {
+
+        buf.append(c);
+
+      }
+
+    }
+
+  }
+
+  indexRef[0]=i;
+
+  return buf.toString();
+
+}
+
+Location: FastDatePrinter.java
+
+Content: 
+
+/** 
+
+ * <p>Gets an appropriate rule for the padding required.</p>
+
+ * @param field  the field to get a rule for
+
+ * @param padding  the padding required
+
+ * @return a new rule with the correct padding
+
+ */
+
+protected NumberRule selectNumberRule(final int field,final int padding){
+
+switch (padding) {
+
+case 1:
+
+    return new UnpaddedNumberField(field);
+
+case 2:
+
+  return new TwoDigitNumberField(field);
+
+default :
+
+return new PaddedNumberField(field,padding);
+
+}
+
+}
+

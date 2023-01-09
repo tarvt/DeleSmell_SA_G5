@@ -1,0 +1,74 @@
+Location: TestUmbilicalProtocolWithJobToken.java
+
+Content: 
+
+@Test public void testJobTokenRpc() throws Exception {
+
+  TaskUmbilicalProtocol mockTT=mock(TaskUmbilicalProtocol.class);
+
+  doReturn(TaskUmbilicalProtocol.versionID).when(mockTT).getProtocolVersion(anyString(),anyLong());
+
+  doReturn(ProtocolSignature.getProtocolSignature(mockTT,TaskUmbilicalProtocol.class.getName(),TaskUmbilicalProtocol.versionID,0)).when(mockTT).getProtocolSignature(anyString(),anyLong(),anyInt());
+
+  JobTokenSecretManager sm=new JobTokenSecretManager();
+
+  final Server server=RPC.getServer(TaskUmbilicalProtocol.class,mockTT,ADDRESS,0,5,true,conf,sm);
+
+  server.start();
+
+  final UserGroupInformation current=UserGroupInformation.getCurrentUser();
+
+  final InetSocketAddress addr=NetUtils.getConnectAddress(server);
+
+  String jobId=current.getUserName();
+
+  JobTokenIdentifier tokenId=new JobTokenIdentifier(new Text(jobId));
+
+  Token<JobTokenIdentifier> token=new Token<JobTokenIdentifier>(tokenId,sm);
+
+  sm.addTokenForJob(jobId,token);
+
+  Text host=new Text(addr.getAddress().getHostAddress() + ":" + addr.getPort());
+
+  token.setService(host);
+
+  LOG.info("Service IP address for token is " + host);
+
+  current.addToken(token);
+
+  current.doAs(new PrivilegedExceptionAction<Object>(){
+
+    @Override public Object run() throws Exception {
+
+      TaskUmbilicalProtocol proxy=null;
+
+      try {
+
+        proxy=(TaskUmbilicalProtocol)RPC.getProxy(TaskUmbilicalProtocol.class,TaskUmbilicalProtocol.versionID,addr,conf);
+
+        proxy.ping(null);
+
+      }
+
+  finally {
+
+        server.stop();
+
+        if (proxy != null) {
+
+          RPC.stopProxy(proxy);
+
+        }
+
+      }
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+

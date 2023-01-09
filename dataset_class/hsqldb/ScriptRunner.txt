@@ -1,0 +1,318 @@
+Location: ScriptRunner.java
+
+Content: 
+
+private static void runScript(Database database,ScriptReaderBase scr,boolean fullReplay){
+
+  IntKeyHashMap sessionMap=new IntKeyHashMap();
+
+  Session current=null;
+
+  int currentId=0;
+
+  String statement;
+
+  int statementType;
+
+  Statement dummy=new StatementDML(StatementTypes.UPDATE_CURSOR,StatementTypes.X_SQL_DATA_CHANGE,null);
+
+  String databaseFile=database.getCanonicalPath();
+
+  String action=fullReplay ? "open aborted" : "open continued";
+
+  dummy.setCompileTimestamp(Long.MAX_VALUE);
+
+  database.setReferentialIntegrity(false);
+
+  try {
+
+    while (scr.readLoggedStatement(current)) {
+
+      int sessionId=scr.getSessionNumber();
+
+      if (current == null || currentId != sessionId) {
+
+        currentId=sessionId;
+
+        current=(Session)sessionMap.get(currentId);
+
+        if (current == null) {
+
+          current=database.getSessionManager().newSessionForLog(database);
+
+          sessionMap.put(currentId,current);
+
+        }
+
+      }
+
+      Result result=null;
+
+      statementType=scr.getStatementType();
+
+switch (statementType) {
+
+case ScriptReaderBase.SET_FILES_CHECK_STATEMENT:
+
+        result=null;
+
+case ScriptReaderBase.ANY_STATEMENT:
+
+      statement=scr.getLoggedStatement();
+
+    Statement cs;
+
+  try {
+
+    cs=current.compileStatement(statement);
+
+    if (database.getProperties().isVersion18()) {
+
+      if (cs.getType() == StatementTypes.CREATE_TABLE) {
+
+        Table table=(Table)((StatementSchema)cs).getArguments()[0];
+
+        for (int i=0; i < table.getColumnCount(); i++) {
+
+          ColumnSchema column=table.getColumn(i);
+
+          if (column.getDataType().isBitType()) {
+
+            column.setType(Type.SQL_BOOLEAN);
+
+          }
+
+        }
+
+      }
+
+    }
+
+    result=current.executeCompiledStatement(cs,ValuePool.emptyObjectArray,0);
+
+  }
+
+ catch (  Throwable e) {
+
+    result=Result.newErrorResult(e);
+
+  }
+
+if (result != null && result.isError()) {
+
+  if (result.getException() != null) {
+
+    throw result.getException();
+
+  }
+
+  throw Error.error(result);
+
+}
+
+break;
+
+case ScriptReaderBase.COMMIT_STATEMENT:
+
+current.commit(false);
+
+break;
+
+case ScriptReaderBase.INSERT_STATEMENT:
+
+{
+
+current.sessionContext.currentStatement=dummy;
+
+current.beginAction(dummy);
+
+Object[] data=scr.getData();
+
+scr.getCurrentTable().insertNoCheckFromLog(current,data);
+
+current.endAction(Result.updateOneResult);
+
+break;
+
+}
+
+case ScriptReaderBase.DELETE_STATEMENT:
+
+{
+
+current.sessionContext.currentStatement=dummy;
+
+current.beginAction(dummy);
+
+Table table=scr.getCurrentTable();
+
+PersistentStore store=table.getRowStore(current);
+
+Object[] data=scr.getData();
+
+Row row=table.getDeleteRowFromLog(current,data);
+
+if (row != null) {
+
+current.addDeleteAction(table,store,row,null);
+
+}
+
+current.endAction(Result.updateOneResult);
+
+break;
+
+}
+
+case ScriptReaderBase.SET_SCHEMA_STATEMENT:
+
+{
+
+HsqlName name=database.schemaManager.findSchemaHsqlName(scr.getCurrentSchema());
+
+current.setCurrentSchemaHsqlName(name);
+
+break;
+
+}
+
+case ScriptReaderBase.SESSION_ID:
+
+{
+
+break;
+
+}
+
+default :
+
+throw Error.error(ErrorCode.ERROR_IN_LOG_FILE);
+
+}
+
+if (current.isClosed()) {
+
+current=null;
+
+sessionMap.remove(currentId);
+
+}
+
+}
+
+}
+
+ catch (HsqlException e) {
+
+if (e.getErrorCode() == -ErrorCode.ERROR_IN_LOG_FILE) {
+
+throw e;
+
+}
+
+String error="statement error processing log - " + action + " "+ scr.getFileNamePath()+ " line: "+ scr.getLineNumber();
+
+database.logger.logSevereEvent(error,e);
+
+if (fullReplay) {
+
+throw Error.error(e,ErrorCode.ERROR_IN_LOG_FILE,error);
+
+}
+
+}
+
+catch (OutOfMemoryError e) {
+
+String error="out of memory processing log - " + databaseFile + " line: "+ scr.getLineNumber();
+
+database.logger.logSevereEvent(error,e);
+
+throw Error.error(ErrorCode.OUT_OF_MEMORY);
+
+}
+
+catch (Throwable t) {
+
+HsqlException e=Error.error(t,ErrorCode.ERROR_IN_LOG_FILE,ErrorCode.M_DatabaseScriptReader_read,new String[]{scr.getLineNumber() + " " + databaseFile,t.getMessage()});
+
+String error="statement error processing log - " + action + scr.getFileNamePath()+ " line: "+ scr.getLineNumber();
+
+database.logger.logSevereEvent(error,e);
+
+if (fullReplay) {
+
+throw e;
+
+}
+
+}
+
+ finally {
+
+if (scr != null) {
+
+scr.close();
+
+}
+
+database.getSessionManager().closeAllSessions();
+
+database.setReferentialIntegrity(true);
+
+}
+
+}
+
+Location: ScriptRunner.java
+
+Content: 
+
+/** 
+
+ * This is used to read the *.log file and manage any necessary transaction rollback.
+
+ */
+
+public static void runScript(Database database,String logFilename,boolean fullReplay){
+
+  Crypto crypto=database.logger.getCrypto();
+
+  ScriptReaderBase scr;
+
+  try {
+
+    if (crypto == null) {
+
+      scr=new ScriptReaderText(database,logFilename,false);
+
+    }
+
+ else {
+
+      scr=new ScriptReaderDecode(database,logFilename,crypto,true);
+
+    }
+
+  }
+
+ catch (  Throwable e) {
+
+    if (e instanceof EOFException) {
+
+    }
+
+ else {
+
+      database.logger.logSevereEvent("opening log file",e);
+
+    }
+
+    return;
+
+  }
+
+  runScript(database,scr,fullReplay);
+
+}
+

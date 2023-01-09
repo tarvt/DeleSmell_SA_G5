@@ -1,0 +1,244 @@
+Location: DFAContentModel.java
+
+Content: 
+
+/** 
+
+ * Constructs a DFA content model.
+
+ * @param syntaxTree    The syntax tree of the content model.
+
+ * @param leafCount     The number of leaves.
+
+ * @param mixed
+
+ */
+
+public DFAContentModel(CMNode syntaxTree,int leafCount,boolean mixed){
+
+  fLeafCount=leafCount;
+
+  fMixed=mixed;
+
+  buildDFA(syntaxTree);
+
+}
+
+Location: DFAContentModel.java
+
+Content: 
+
+/** 
+
+ * Post tree build initialization. 
+
+ */
+
+private int postTreeBuildInit(CMNode nodeCur,int curIndex){
+
+  nodeCur.setMaxStates(fLeafCount);
+
+  if ((nodeCur.type() & 0x0f) == XMLContentSpec.CONTENTSPECNODE_ANY || (nodeCur.type() & 0x0f) == XMLContentSpec.CONTENTSPECNODE_ANY_LOCAL || (nodeCur.type() & 0x0f) == XMLContentSpec.CONTENTSPECNODE_ANY_OTHER) {
+
+    QName qname=new QName(null,null,null,((CMAny)nodeCur).getURI());
+
+    fLeafList[curIndex]=new CMLeaf(qname,((CMAny)nodeCur).getPosition());
+
+    fLeafListType[curIndex]=nodeCur.type();
+
+    curIndex++;
+
+  }
+
+ else   if ((nodeCur.type() == XMLContentSpec.CONTENTSPECNODE_CHOICE) || (nodeCur.type() == XMLContentSpec.CONTENTSPECNODE_SEQ)) {
+
+    curIndex=postTreeBuildInit(((CMBinOp)nodeCur).getLeft(),curIndex);
+
+    curIndex=postTreeBuildInit(((CMBinOp)nodeCur).getRight(),curIndex);
+
+  }
+
+ else   if (nodeCur.type() == XMLContentSpec.CONTENTSPECNODE_ZERO_OR_MORE || nodeCur.type() == XMLContentSpec.CONTENTSPECNODE_ONE_OR_MORE || nodeCur.type() == XMLContentSpec.CONTENTSPECNODE_ZERO_OR_ONE) {
+
+    curIndex=postTreeBuildInit(((CMUniOp)nodeCur).getChild(),curIndex);
+
+  }
+
+ else   if (nodeCur.type() == XMLContentSpec.CONTENTSPECNODE_LEAF) {
+
+    final QName node=((CMLeaf)nodeCur).getElement();
+
+    if (node.localpart != fEpsilonString) {
+
+      fLeafList[curIndex]=(CMLeaf)nodeCur;
+
+      fLeafListType[curIndex]=XMLContentSpec.CONTENTSPECNODE_LEAF;
+
+      curIndex++;
+
+    }
+
+  }
+
+ else {
+
+    throw new RuntimeException("ImplementationMessages.VAL_NIICM: type=" + nodeCur.type());
+
+  }
+
+  return curIndex;
+
+}
+
+Location: DFAContentModel.java
+
+Content: 
+
+/** 
+
+ * Check that the specified content is valid according to this content model. This method can also be called to do 'what if'  testing of content models just to see if they would be valid. <p> A value of -1 in the children array indicates a PCDATA node. All other  indexes will be positive and represent child elements. The count can be zero, since some elements have the EMPTY content model and that must be  confirmed.
+
+ * @param children The children of this element.  Each integer is an index withinthe <code>StringPool</code> of the child element name.  An index of -1 is used to indicate an occurrence of non-whitespace character data.
+
+ * @param offset Offset into the array where the children starts.
+
+ * @param length The number of entries in the <code>children</code> array.
+
+ * @return The value -1 if fully valid, else the 0 based index of the childthat first failed. If the value returned is equal to the number of children, then the specified children are valid but additional content is required to reach a valid ending state.
+
+ */
+
+public int validate(QName[] children,int offset,int length){
+
+  if (DEBUG_VALIDATE_CONTENT)   System.out.println("DFAContentModel#validateContent");
+
+  if (length == 0) {
+
+    if (DEBUG_VALIDATE_CONTENT) {
+
+      System.out.println("!!! no children");
+
+      System.out.println("elemMap=" + fElemMap);
+
+      for (int i=0; i < fElemMap.length; i++) {
+
+        String uri=fElemMap[i].uri;
+
+        String localpart=fElemMap[i].localpart;
+
+        System.out.println("fElemMap[" + i + "]="+ uri+ ","+ localpart+ " ("+ uri+ ", "+ localpart+ ')');
+
+      }
+
+      System.out.println("EOCIndex=" + fEOCString);
+
+    }
+
+    return fEmptyContentIsValid ? -1 : 0;
+
+  }
+
+  int curState=0;
+
+  for (int childIndex=0; childIndex < length; childIndex++) {
+
+    final QName curElem=children[offset + childIndex];
+
+    if (fMixed && curElem.localpart == null) {
+
+      continue;
+
+    }
+
+    int elemIndex=0;
+
+    for (; elemIndex < fElemMapSize; elemIndex++) {
+
+      int type=fElemMapType[elemIndex] & 0x0f;
+
+      if (type == XMLContentSpec.CONTENTSPECNODE_LEAF) {
+
+        if (fElemMap[elemIndex].rawname == curElem.rawname) {
+
+          break;
+
+        }
+
+      }
+
+ else       if (type == XMLContentSpec.CONTENTSPECNODE_ANY) {
+
+        String uri=fElemMap[elemIndex].uri;
+
+        if (uri == null || uri == curElem.uri) {
+
+          break;
+
+        }
+
+      }
+
+ else       if (type == XMLContentSpec.CONTENTSPECNODE_ANY_LOCAL) {
+
+        if (curElem.uri == null) {
+
+          break;
+
+        }
+
+      }
+
+ else       if (type == XMLContentSpec.CONTENTSPECNODE_ANY_OTHER) {
+
+        if (fElemMap[elemIndex].uri != curElem.uri) {
+
+          break;
+
+        }
+
+      }
+
+    }
+
+    if (elemIndex == fElemMapSize) {
+
+      if (DEBUG_VALIDATE_CONTENT) {
+
+        System.out.println("!!! didn't find it");
+
+        System.out.println("curElem : " + curElem);
+
+        for (int i=0; i < fElemMapSize; i++) {
+
+          System.out.println("fElemMap[" + i + "] = "+ fElemMap[i]);
+
+          System.out.println("fElemMapType[" + i + "] = "+ fElemMapType[i]);
+
+        }
+
+      }
+
+      return childIndex;
+
+    }
+
+    curState=fTransTable[curState][elemIndex];
+
+    if (curState == -1) {
+
+      if (DEBUG_VALIDATE_CONTENT)       System.out.println("!!! not a legal transition");
+
+      return childIndex;
+
+    }
+
+  }
+
+  if (DEBUG_VALIDATE_CONTENT)   System.out.println("curState=" + curState + ", childCount="+ length);
+
+  if (!fFinalStateFlags[curState])   return length;
+
+  return -1;
+
+}
+

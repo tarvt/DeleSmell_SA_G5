@@ -1,0 +1,96 @@
+Location: ConvertUtils.java
+
+Content: 
+
+private ConvertUtils(){
+
+}
+
+Location: ConvertUtils.java
+
+Content: 
+
+/** 
+
+ * Calls an external converter application (GhostScript, for example).
+
+ * @param cmd the full command
+
+ * @param envp array of strings, each element of which has environment variable settingsin format name=value.
+
+ * @param workDir the working directory of the subprocess, or null if the subprocess shouldinherit the working directory of the current process.
+
+ * @param log the logger to log output by the external application to
+
+ * @throws IOException in case the external call fails
+
+ */
+
+public static void convert(String cmd,String[] envp,File workDir,final Log log) throws IOException {
+
+  log.debug(cmd);
+
+  Process process=null;
+
+  try {
+
+    process=Runtime.getRuntime().exec(cmd,envp,null);
+
+    RedirectorLineHandler errorHandler=new AbstractRedirectorLineHandler(){
+
+      public void handleLine(      String line){
+
+        log.error("ERR> " + line);
+
+      }
+
+    }
+
+;
+
+    StreamRedirector errorRedirector=new StreamRedirector(process.getErrorStream(),errorHandler);
+
+    RedirectorLineHandler outputHandler=new AbstractRedirectorLineHandler(){
+
+      public void handleLine(      String line){
+
+        log.debug("OUT> " + line);
+
+      }
+
+    }
+
+;
+
+    StreamRedirector outputRedirector=new StreamRedirector(process.getInputStream(),outputHandler);
+
+    new Thread(errorRedirector).start();
+
+    new Thread(outputRedirector).start();
+
+    process.waitFor();
+
+  }
+
+ catch (  InterruptedException ie) {
+
+    throw new IOException("The call to the external converter failed: " + ie.getMessage());
+
+  }
+
+catch (  java.io.IOException ioe) {
+
+    throw new IOException("The call to the external converter failed: " + ioe.getMessage());
+
+  }
+
+  int exitValue=process.exitValue();
+
+  if (exitValue != 0) {
+
+    throw new IOException("The call to the external converter failed. Result: " + exitValue);
+
+  }
+
+}
+

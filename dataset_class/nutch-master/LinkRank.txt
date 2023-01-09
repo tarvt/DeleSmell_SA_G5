@@ -1,0 +1,534 @@
+Location: LinkRank.java
+
+Content: 
+
+/** 
+
+ * Runs the complete link analysis job. The complete job determins rank one score. Then runs through a given number of invert and analyze iterations, by default 10. And finally replaces the NodeDb in the WebGraph with the link rank output.
+
+ * @param webGraphDb The WebGraph to run link analysis on.
+
+ * @throws IOException If a fatal I/O runtime error occurs during link analysis.
+
+ * @throws InterruptedException if the Job is interrupted during execution
+
+ * @throws ClassNotFoundException if classes required to run the Job cannot be located
+
+ */
+
+public void analyze(Path webGraphDb) throws IOException, ClassNotFoundException, InterruptedException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("Analysis: starting at " + sdf.format(start));
+
+  Path linkRank=new Path(webGraphDb,"linkrank");
+
+  Configuration conf=getConf();
+
+  FileSystem fs=linkRank.getFileSystem(conf);
+
+  if (!fs.exists(linkRank)) {
+
+    fs.mkdirs(linkRank);
+
+  }
+
+  Path wgOutlinkDb=new Path(webGraphDb,WebGraph.OUTLINK_DIR);
+
+  Path wgNodeDb=new Path(webGraphDb,WebGraph.NODE_DIR);
+
+  Path nodeDb=new Path(linkRank,WebGraph.NODE_DIR);
+
+  int numLinks=runCounter(fs,webGraphDb);
+
+  runInitializer(wgNodeDb,nodeDb);
+
+  float rankOneScore=(1f / (float)numLinks);
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("Analysis: Number of links: " + numLinks);
+
+    LOG.info("Analysis: Rank One: " + rankOneScore);
+
+  }
+
+  int numIterations=conf.getInt("link.analyze.num.iterations",10);
+
+  for (int i=0; i < numIterations; i++) {
+
+    LOG.info("Analysis: Starting iteration " + (i + 1) + " of "+ numIterations);
+
+    Path tempRank=new Path(linkRank + "-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+    fs.mkdirs(tempRank);
+
+    Path tempInverted=new Path(tempRank,"inverted");
+
+    Path tempNodeDb=new Path(tempRank,WebGraph.NODE_DIR);
+
+    runInverter(nodeDb,wgOutlinkDb,tempInverted);
+
+    runAnalysis(nodeDb,tempInverted,tempNodeDb,i,numIterations,rankOneScore);
+
+    LOG.info("Analysis: Installing new link scores");
+
+    FSUtils.replace(fs,linkRank,tempRank,true);
+
+    LOG.info("Analysis: finished iteration " + (i + 1) + " of "+ numIterations);
+
+  }
+
+  LOG.info("Analysis: Installing web graph nodes");
+
+  FSUtils.replace(fs,wgNodeDb,nodeDb,true);
+
+  fs.delete(linkRank,true);
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("Analysis: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+
+Location: LinkRank.java
+
+Content: 
+
+/** 
+
+ * Default constructor.
+
+ */
+
+public LinkRank(){
+
+  super();
+
+}
+
+Location: LinkRank.java
+
+Content: 
+
+/** 
+
+ * Configurable constructor.
+
+ * @param conf a populated {@link org.apache.hadoop.conf.Configuration}
+
+ */
+
+public LinkRank(Configuration conf){
+
+  super(conf);
+
+}
+
+Location: LinkRank.java
+
+Content: 
+
+/** 
+
+ * Runs the link analysis job. The link analysis job applies the link rank formula to create a score per url and stores that score in the NodeDb. Typically the link analysis job is run a number of times to allow the link rank scores to converge.
+
+ * @param nodeDb The node database from which we are getting previous link rank scores.
+
+ * @param inverted The inverted inlinks
+
+ * @param output The link analysis output.
+
+ * @param iteration The current iteration number.
+
+ * @param numIterations The total number of link analysis iterations
+
+ * @throws IOException If an error occurs during link analysis.
+
+ */
+
+private void runAnalysis(Path nodeDb,Path inverted,Path output,int iteration,int numIterations,float rankOne) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Job analyzer=NutchJob.getInstance(getConf());
+
+  Configuration conf=analyzer.getConfiguration();
+
+  conf.set("link.analyze.iteration",String.valueOf(iteration + 1));
+
+  analyzer.setJobName("LinkAnalysis Analyzer, iteration " + (iteration + 1) + " of "+ numIterations);
+
+  FileInputFormat.addInputPath(analyzer,nodeDb);
+
+  FileInputFormat.addInputPath(analyzer,inverted);
+
+  FileOutputFormat.setOutputPath(analyzer,output);
+
+  conf.set("link.analyze.rank.one",String.valueOf(rankOne));
+
+  analyzer.setMapOutputKeyClass(Text.class);
+
+  analyzer.setMapOutputValueClass(ObjectWritable.class);
+
+  analyzer.setInputFormatClass(SequenceFileInputFormat.class);
+
+  analyzer.setJarByClass(Analyzer.class);
+
+  analyzer.setMapperClass(Analyzer.AnalyzerMapper.class);
+
+  analyzer.setReducerClass(Analyzer.AnalyzerReducer.class);
+
+  analyzer.setOutputKeyClass(Text.class);
+
+  analyzer.setOutputValueClass(Node.class);
+
+  analyzer.setOutputFormatClass(MapFileOutputFormat.class);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  LOG.info("Starting analysis job");
+
+  try {
+
+    boolean success=analyzer.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Analysis job did not succeed, job status:" + analyzer.getStatus().getState() + ", reason: "+ analyzer.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("Analysis job failed:",e);
+
+    throw e;
+
+  }
+
+  LOG.info("Finished analysis job.");
+
+}
+
+Location: LinkRank.java
+
+Content: 
+
+/** 
+
+ * Runs the counter job. The counter job determines the number of links in the webgraph. This is used during analysis.
+
+ * @param fs The job file system.
+
+ * @param webGraphDb The web graph database to use.
+
+ * @return The number of nodes in the web graph.
+
+ * @throws IOException If an error occurs while running the counter job.
+
+ */
+
+private int runCounter(FileSystem fs,Path webGraphDb) throws IOException, ClassNotFoundException, InterruptedException {
+
+  Path numLinksPath=new Path(webGraphDb,NUM_NODES);
+
+  Path nodeDb=new Path(webGraphDb,WebGraph.NODE_DIR);
+
+  Job counter=NutchJob.getInstance(getConf());
+
+  Configuration conf=counter.getConfiguration();
+
+  counter.setJobName("LinkRank Counter");
+
+  FileInputFormat.addInputPath(counter,nodeDb);
+
+  FileOutputFormat.setOutputPath(counter,numLinksPath);
+
+  counter.setInputFormatClass(SequenceFileInputFormat.class);
+
+  counter.setJarByClass(Counter.class);
+
+  counter.setMapperClass(Counter.CountMapper.class);
+
+  counter.setCombinerClass(Counter.CountReducer.class);
+
+  counter.setReducerClass(Counter.CountReducer.class);
+
+  counter.setMapOutputKeyClass(Text.class);
+
+  counter.setMapOutputValueClass(LongWritable.class);
+
+  counter.setOutputKeyClass(Text.class);
+
+  counter.setOutputValueClass(LongWritable.class);
+
+  counter.setNumReduceTasks(1);
+
+  counter.setOutputFormatClass(TextOutputFormat.class);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  LOG.info("Starting link counter job");
+
+  try {
+
+    boolean success=counter.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Link counter job did not succeed, job status:" + counter.getStatus().getState() + ", reason: "+ counter.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("Link counter job failed:",e);
+
+    throw e;
+
+  }
+
+  LOG.info("Finished link counter job");
+
+  FileStatus[] numLinksFiles=fs.listStatus(numLinksPath);
+
+  if (numLinksFiles.length == 0) {
+
+    throw new IOException("Failed to read numlinks temp file: " + " no file found in " + numLinksPath);
+
+  }
+
+ else   if (numLinksFiles.length > 1) {
+
+    throw new IOException("Failed to read numlinks temp file: " + " expected only one file but found " + numLinksFiles.length + " files in folder "+ numLinksPath);
+
+  }
+
+  Path numLinksFile=numLinksFiles[0].getPath();
+
+  LOG.info("Reading numlinks temp file {}",numLinksFile);
+
+  FSDataInputStream readLinks=fs.open(numLinksFile);
+
+  CompressionCodecFactory cf=new CompressionCodecFactory(conf);
+
+  CompressionCodec codec=cf.getCodec(numLinksFiles[0].getPath());
+
+  InputStream streamLinks;
+
+  if (codec == null) {
+
+    LOG.debug("No compression codec found for {}, trying uncompressed",numLinksFile);
+
+    streamLinks=readLinks;
+
+  }
+
+ else {
+
+    LOG.info("Compression codec of numlinks temp file: {}",codec.getDefaultExtension());
+
+    readLinks.seek(0);
+
+    streamLinks=codec.createInputStream(readLinks);
+
+  }
+
+  BufferedReader buffer=new BufferedReader(new InputStreamReader(streamLinks));
+
+  String numLinksLine=buffer.readLine();
+
+  readLinks.close();
+
+  if (numLinksLine == null || numLinksLine.length() == 0) {
+
+    LOG.error("Failed to determine number of links because of empty line in input {}",numLinksFile);
+
+    fs.delete(numLinksPath,true);
+
+    throw new IOException("No links to process, is the webgraph empty?");
+
+  }
+
+  LOG.info("Deleting numlinks temp file");
+
+  fs.delete(numLinksPath,true);
+
+  String numLinks=numLinksLine.split("\\s+")[1];
+
+  return Integer.parseInt(numLinks);
+
+}
+
+Location: LinkRank.java
+
+Content: 
+
+/** 
+
+ * Runs the initializer job. The initializer job sets up the nodes with a default starting score for link analysis.
+
+ * @param nodeDb The node database to use.
+
+ * @param output The job output directory.
+
+ * @throws IOException If an error occurs while running the initializer job.
+
+ */
+
+private void runInitializer(Path nodeDb,Path output) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Job initializer=NutchJob.getInstance(getConf());
+
+  Configuration conf=initializer.getConfiguration();
+
+  initializer.setJobName("LinkAnalysis Initializer");
+
+  FileInputFormat.addInputPath(initializer,nodeDb);
+
+  FileOutputFormat.setOutputPath(initializer,output);
+
+  initializer.setJarByClass(Initializer.class);
+
+  initializer.setInputFormatClass(SequenceFileInputFormat.class);
+
+  initializer.setMapperClass(Initializer.class);
+
+  initializer.setMapOutputKeyClass(Text.class);
+
+  initializer.setMapOutputValueClass(Node.class);
+
+  initializer.setOutputKeyClass(Text.class);
+
+  initializer.setOutputValueClass(Node.class);
+
+  initializer.setOutputFormatClass(MapFileOutputFormat.class);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  LOG.info("Starting initialization job");
+
+  try {
+
+    boolean success=initializer.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Initialization job did not succeed, job status:" + initializer.getStatus().getState() + ", reason: "+ initializer.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("Initialization job failed:",e);
+
+    throw e;
+
+  }
+
+  LOG.info("Finished initialization job.");
+
+}
+
+Location: LinkRank.java
+
+Content: 
+
+/** 
+
+ * Runs the inverter job. The inverter job flips outlinks to inlinks to be passed into the analysis job.
+
+ * @param nodeDb The node database to use.
+
+ * @param outlinkDb The outlink database to use.
+
+ * @param output The output directory.
+
+ * @throws IOException If an error occurs while running the inverter job.
+
+ */
+
+private void runInverter(Path nodeDb,Path outlinkDb,Path output) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Job inverter=NutchJob.getInstance(getConf());
+
+  Configuration conf=inverter.getConfiguration();
+
+  inverter.setJobName("LinkAnalysis Inverter");
+
+  FileInputFormat.addInputPath(inverter,nodeDb);
+
+  FileInputFormat.addInputPath(inverter,outlinkDb);
+
+  FileOutputFormat.setOutputPath(inverter,output);
+
+  inverter.setInputFormatClass(SequenceFileInputFormat.class);
+
+  inverter.setJarByClass(Inverter.class);
+
+  inverter.setMapperClass(Inverter.InvertMapper.class);
+
+  inverter.setReducerClass(Inverter.InvertReducer.class);
+
+  inverter.setMapOutputKeyClass(Text.class);
+
+  inverter.setMapOutputValueClass(ObjectWritable.class);
+
+  inverter.setOutputKeyClass(Text.class);
+
+  inverter.setOutputValueClass(LinkDatum.class);
+
+  inverter.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  LOG.info("Starting inverter job");
+
+  try {
+
+    boolean success=inverter.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Inverter job did not succeed, job status:" + inverter.getStatus().getState() + ", reason: "+ inverter.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("Inverter job failed:",e);
+
+    throw e;
+
+  }
+
+  LOG.info("Finished inverter job.");
+
+}
+

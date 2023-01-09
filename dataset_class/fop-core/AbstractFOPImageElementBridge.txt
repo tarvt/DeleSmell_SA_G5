@@ -1,0 +1,182 @@
+Location: AbstractFOPImageElementBridge.java
+
+Content: 
+
+/** 
+
+ * Constructs a new bridge for the &lt;image&gt; element.
+
+ */
+
+public AbstractFOPImageElementBridge(){
+
+}
+
+Location: AbstractFOPImageElementBridge.java
+
+Content: 
+
+/** 
+
+ * Create the raster image node. THis checks if it is a jpeg file and creates a jpeg node so the jpeg can be inserted directly into the pdf document.
+
+ * @param ctx the bridge context
+
+ * @param imageElement the svg element for the image
+
+ * @param purl the parsed url for the image resource
+
+ * @return a new graphics node
+
+ */
+
+@Override protected GraphicsNode createImageGraphicsNode(BridgeContext ctx,Element imageElement,ParsedURL purl){
+
+  AbstractFOPBridgeContext bridgeCtx=(AbstractFOPBridgeContext)ctx;
+
+  ImageManager manager=bridgeCtx.getImageManager();
+
+  ImageSessionContext sessionContext=bridgeCtx.getImageSessionContext();
+
+  try {
+
+    ImageInfo info=manager.getImageInfo(purl.toString(),sessionContext);
+
+    ImageFlavor[] supportedFlavors=getSupportedFlavours();
+
+    Image image=manager.getImage(info,supportedFlavors,sessionContext);
+
+    AbstractGraphicsNode specializedNode=null;
+
+    if (image instanceof ImageXMLDOM) {
+
+      ImageXMLDOM xmlImage=(ImageXMLDOM)image;
+
+      if (xmlImage.getDocument() instanceof SVGDocument) {
+
+        SVGDocument clonedDoc=(SVGDocument)BatikUtil.cloneSVGDocument(xmlImage.getDocument());
+
+        return createSVGImageNode(ctx,imageElement,clonedDoc);
+
+      }
+
+ else {
+
+        image=manager.convertImage(xmlImage,new ImageFlavor[]{ImageFlavor.GRAPHICS2D});
+
+      }
+
+    }
+
+    if (image instanceof ImageRawJPEG) {
+
+      specializedNode=createLoaderImageNode(image,ctx,imageElement,purl);
+
+    }
+
+ else     if (image instanceof ImageRawCCITTFax) {
+
+      specializedNode=createLoaderImageNode(image,ctx,imageElement,purl);
+
+    }
+
+ else     if (image instanceof ImageGraphics2D) {
+
+      ImageGraphics2D g2dImage=(ImageGraphics2D)image;
+
+      specializedNode=new Graphics2DNode(g2dImage);
+
+    }
+
+ else {
+
+      ctx.getUserAgent().displayError(new ImageException("Cannot convert an image to a usable format: " + purl));
+
+    }
+
+    if (specializedNode != null) {
+
+      Rectangle2D imgBounds=getImageBounds(ctx,imageElement);
+
+      Rectangle2D bounds=specializedNode.getPrimitiveBounds();
+
+      float[] vb=new float[4];
+
+      vb[0]=0;
+
+      vb[1]=0;
+
+      vb[2]=(float)bounds.getWidth();
+
+      vb[3]=(float)bounds.getHeight();
+
+      initializeViewport(ctx,imageElement,specializedNode,vb,imgBounds);
+
+      return specializedNode;
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    ctx.getUserAgent().displayError(e);
+
+  }
+
+  return superCreateGraphicsNode(ctx,imageElement,purl);
+
+}
+
+Location: AbstractFOPImageElementBridge.java
+
+Content: 
+
+/** 
+
+ * Creates a loader image node implementation
+
+ * @param purl the parsed url
+
+ * @param imageElement the image element
+
+ * @param ctx the batik bridge context
+
+ * @param image the image
+
+ * @return a loader image node implementation
+
+ */
+
+protected LoaderImageNode createLoaderImageNode(Image image,BridgeContext ctx,Element imageElement,ParsedURL purl){
+
+  return new LoaderImageNode(image,ctx,imageElement,purl);
+
+}
+
+Location: AbstractFOPImageElementBridge.java
+
+Content: 
+
+/** 
+
+ * Calls the superclass' createImageGraphicNode() method to create the normal GraphicsNode.
+
+ * @param ctx the bridge context
+
+ * @param imageElement the image element
+
+ * @param purl the parsed URL
+
+ * @return the newly created graphics node
+
+ * @see org.apache.batik.bridge.SVGImageElementBridge#createGraphicsNode(BridgeContext,Element)
+
+ */
+
+protected GraphicsNode superCreateGraphicsNode(BridgeContext ctx,Element imageElement,ParsedURL purl){
+
+  return super.createImageGraphicsNode(ctx,imageElement,purl);
+
+}
+

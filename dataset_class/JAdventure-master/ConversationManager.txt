@@ -1,0 +1,260 @@
+Location: ConversationManager.java
+
+Content: 
+
+private void addConversation(NPC npc,JsonArray conversation){
+
+  List<Line> start=new ArrayList<>();
+
+  int i=0;
+
+  for (  JsonElement entry : conversation) {
+
+    JsonObject details=entry.getAsJsonObject();
+
+    start.add(getLine(i++,conversation));
+
+  }
+
+  lines.put(npc,start);
+
+}
+
+Location: ConversationManager.java
+
+Content: 
+
+public ConversationManager(){
+
+  hongshuai();
+
+  String fileName="json/original_data/npcs.json";
+
+  JsonParser parser=new JsonParser();
+
+  try {
+
+    Reader reader=new FileReader(fileName);
+
+    JsonObject json=parser.parse(reader).getAsJsonObject();
+
+    json=json.get("npcs").getAsJsonObject();
+
+    Set<Map.Entry<String,JsonElement>> entries=json.entrySet();
+
+    for (    Map.Entry<String,JsonElement> entry : entries) {
+
+      NPC npc=npcRepository.getNpc(entry.getKey());
+
+      JsonObject details=entry.getValue().getAsJsonObject();
+
+      if (details.get("conversations") != null) {
+
+        JsonArray conversation=details.get("conversations").getAsJsonArray();
+
+        addConversation(npc,conversation);
+
+      }
+
+    }
+
+  }
+
+ catch (  IOException ex) {
+
+    ex.printStackTrace();
+
+  }
+
+}
+
+Location: ConversationManager.java
+
+Content: 
+
+public static ConversationManager getInstance(){
+
+  if (instance == null) {
+
+    instance=new ConversationManager();
+
+  }
+
+  return instance;
+
+}
+
+Location: ConversationManager.java
+
+Content: 
+
+private Line getLine(int index,JsonArray conversation){
+
+  JsonObject line=conversation.get(index).getAsJsonObject();
+
+  List<Integer> responses=new ArrayList<>();
+
+  if (line.get("response") != null) {
+
+    for (    JsonElement i : line.get("response").getAsJsonArray()) {
+
+      responses.add(i.getAsInt());
+
+    }
+
+  }
+
+  String playerPrompt=line.get("player").getAsString();
+
+  String text=line.get("text").getAsString();
+
+  String[] con=line.get("condition").getAsString().split("=");
+
+  ConditionType condition=CONDITION_TYPE_MAP.get(con[0]);
+
+  String conditionParameter=(con.length == 1) ? "" : con[1];
+
+  ActionType action=ACTION_TYPE_MAP.get(line.get("action").getAsString());
+
+  return new Line(index,playerPrompt,text,condition,conditionParameter,responses,action);
+
+}
+
+Location: ConversationManager.java
+
+Content: 
+
+public static boolean matchesConditions(NPC npc,Player player,Line line){
+
+switch (line.getCondition()) {
+
+case ALLY:
+
+    return npc.getAllies().contains(player.getCurrentCharacterType());
+
+case ENEMY:
+
+  return npc.getEnemies().contains(player.getCurrentCharacterType());
+
+case LEVEL:
+
+int requiredLevel=Integer.parseInt(line.getConditionParameter());
+
+return player.getLevel() >= requiredLevel;
+
+case ITEM:
+
+ItemRepository itemRepo=GameBeans.getItemRepository();
+
+Item requiredItem=itemRepo.getItem(line.getConditionParameter());
+
+return player.hasItem(requiredItem);
+
+case CHAR_TYPE:
+
+String charType=line.getConditionParameter();
+
+return charType.equals(player.getCurrentCharacterType());
+
+default :
+
+return true;
+
+}
+
+}
+
+Location: ConversationManager.java
+
+Content: 
+
+public void startConversation(NPC npc,Player player) throws DeathException {
+
+  List<Line> conversation=null;
+
+  Iterator it=lines.entrySet().iterator();
+
+  while (it.hasNext()) {
+
+    @SuppressWarnings("unchecked") Map.Entry<NPC,List<Line>> entry=(Map.Entry<NPC,List<Line>>)it.next();
+
+    if (entry.getKey().equals(npc)) {
+
+      conversation=entry.getValue();
+
+    }
+
+    it.remove();
+
+  }
+
+  if (conversation != null) {
+
+    Line start=null;
+
+    for (    Line l : conversation) {
+
+      if ("".equals(l.getPlayerPrompt()) && ConversationManager.matchesConditions(npc,player,l)) {
+
+        start=l;
+
+        break;
+
+      }
+
+    }
+
+    if (start != null) {
+
+      QueueProvider.offer(start.getText());
+
+      Line response=start.display(npc,player,conversation);
+
+      triggerAction(start,npc,player);
+
+      while (response != null) {
+
+        QueueProvider.offer(response.getText());
+
+        triggerAction(response,npc,player);
+
+        Line temp_response=response.display(npc,player,conversation);
+
+        response=temp_response;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: ConversationManager.java
+
+Content: 
+
+private void triggerAction(Line line,NPC npc,Player player) throws DeathException {
+
+switch (line.getAction()) {
+
+case ATTACK:
+
+    QueueProvider.offer("\n" + npc.getName() + " is now attacking you!\n");
+
+  player.attack(npc.getName());
+
+break;
+
+case TRADE:
+
+Trading t=new Trading(npc,player);
+
+t.trade(true,true);
+
+break;
+
+}
+
+}
+

@@ -1,0 +1,338 @@
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void addResolvedAction(AbstractAction action) throws IFException {
+
+  assert action.isComplete();
+
+  PDFAction pdfAction=(PDFAction)this.incompleteActions.remove(action.getID());
+
+  if (pdfAction == null) {
+
+    getAction(action);
+
+  }
+
+ else   if (pdfAction instanceof PDFGoTo) {
+
+    PDFGoTo pdfGoTo=(PDFGoTo)pdfAction;
+
+    updateTargetLocation(pdfGoTo,(GoToXYAction)action);
+
+  }
+
+ else {
+
+    throw new UnsupportedOperationException("Action type not supported: " + pdfAction.getClass().getName());
+
+  }
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+/** 
+
+ * Commits all pending elements to the PDF document.
+
+ */
+
+public void commit(){
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+private PDFAction getAction(AbstractAction action) throws IFException {
+
+  if (action == null) {
+
+    return null;
+
+  }
+
+  PDFAction pdfAction=(PDFAction)this.completeActions.get(getCompleteID(action));
+
+  if (pdfAction != null) {
+
+    return pdfAction;
+
+  }
+
+ else   if (action instanceof GoToXYAction) {
+
+    pdfAction=(PDFAction)incompleteActions.get(action.getID());
+
+    if (pdfAction != null) {
+
+      return pdfAction;
+
+    }
+
+ else {
+
+      GoToXYAction a=(GoToXYAction)action;
+
+      PDFGoTo pdfGoTo=new PDFGoTo(null);
+
+      getPDFDoc().assignObjectNumber(pdfGoTo);
+
+      if (action.isComplete()) {
+
+        updateTargetLocation(pdfGoTo,a);
+
+      }
+
+ else {
+
+        this.incompleteActions.put(action.getID(),pdfGoTo);
+
+      }
+
+      return pdfGoTo;
+
+    }
+
+  }
+
+ else   if (action instanceof URIAction) {
+
+    URIAction u=(URIAction)action;
+
+    assert u.isComplete();
+
+    String uri=u.getURI();
+
+    PDFFactory factory=getPDFDoc().getFactory();
+
+    pdfAction=factory.getExternalAction(uri,u.isNewWindow());
+
+    if (!pdfAction.hasObjectNumber()) {
+
+      getPDFDoc().registerObject(pdfAction);
+
+    }
+
+    this.completeActions.put(getCompleteID(action),pdfAction);
+
+    return pdfAction;
+
+  }
+
+ else {
+
+    throw new UnsupportedOperationException("Unsupported action type: " + action + " ("+ action.getClass().getName()+ ")");
+
+  }
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+private String getCompleteID(AbstractAction action){
+
+  if (action instanceof GoToXYAction && action.isComplete()) {
+
+    int extra=((GoToXYAction)action).getPageIndex();
+
+    return action.getID() + "_" + extra;
+
+  }
+
+  return action.getID();
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+public int getPageIndex(){
+
+  return documentHandler.getCurrentPage().getPageIndex();
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+PDFDocument getPDFDoc(){
+
+  return this.documentHandler.getPDFDocument();
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+/** 
+
+ * Default constructor.
+
+ * @param documentHandler the parent document handler
+
+ */
+
+public PDFDocumentNavigationHandler(PDFDocumentHandler documentHandler){
+
+  super();
+
+  this.documentHandler=documentHandler;
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void renderBookmarkTree(BookmarkTree tree) throws IFException {
+
+  for (  Object o : tree.getBookmarks()) {
+
+    Bookmark b=(Bookmark)o;
+
+    renderBookmark(b,null);
+
+  }
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+private void renderBookmark(Bookmark bookmark,PDFOutline parent) throws IFException {
+
+  if (parent == null) {
+
+    parent=getPDFDoc().getOutlineRoot();
+
+  }
+
+  PDFAction action=getAction(bookmark.getAction());
+
+  PDFReference actionRef=(action != null ? action.makeReference() : null);
+
+  PDFOutline pdfOutline=getPDFDoc().getFactory().makeOutline(parent,bookmark.getTitle(),actionRef,bookmark.isShown());
+
+  for (  Object o : bookmark.getChildBookmarks()) {
+
+    Bookmark b=(Bookmark)o;
+
+    renderBookmark(b,pdfOutline);
+
+  }
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void renderLink(Link link) throws IFException {
+
+  Rectangle targetRect=link.getTargetRect();
+
+  int pageHeight=documentHandler.getCurrentPageRef().getPageDimension().height;
+
+  Rectangle2D targetRect2D=new Rectangle2D.Double(targetRect.getMinX() / 1000.0,(pageHeight - targetRect.getMinY() - targetRect.getHeight()) / 1000.0,targetRect.getWidth() / 1000.0,targetRect.getHeight() / 1000.0);
+
+  PDFAction pdfAction=getAction(link.getAction());
+
+  PDFLink pdfLink=getPDFDoc().getFactory().makeLink(targetRect2D,pdfAction);
+
+  if (pdfLink != null) {
+
+    PDFStructElem structure=(PDFStructElem)link.getAction().getStructureTreeElement();
+
+    if (documentHandler.getUserAgent().isAccessibilityEnabled() && structure != null) {
+
+      documentHandler.getLogicalStructureHandler().addLinkContentItem(pdfLink,structure);
+
+    }
+
+    documentHandler.getCurrentPage().addAnnotation(pdfLink);
+
+  }
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void renderNamedDestination(NamedDestination destination) throws IFException {
+
+  PDFAction action=getAction(destination.getAction());
+
+  getPDFDoc().getFactory().makeDestination(destination.getName(),action.makeReference());
+
+}
+
+Location: PDFDocumentNavigationHandler.java
+
+Content: 
+
+private void updateTargetLocation(PDFGoTo pdfGoTo,GoToXYAction action) throws IFException {
+
+  PageReference pageRef=this.documentHandler.getPageReference(action.getPageIndex());
+
+  if (pageRef == null) {
+
+    throw new IFException("Can't resolve page reference @ index: " + action.getPageIndex(),null);
+
+  }
+
+ else {
+
+    Point2D p2d=null;
+
+    p2d=new Point2D.Double(action.getTargetLocation().x / 1000.0,(pageRef.getPageDimension().height - action.getTargetLocation().y) / 1000.0);
+
+    PDFReference pdfPageRef=pageRef.getPageRef();
+
+    pdfGoTo.setPageReference(pdfPageRef);
+
+    pdfGoTo.setPosition(p2d);
+
+    getPDFDoc().addObject(pdfGoTo);
+
+    this.completeActions.put(getCompleteID(action),pdfGoTo);
+
+  }
+
+}
+

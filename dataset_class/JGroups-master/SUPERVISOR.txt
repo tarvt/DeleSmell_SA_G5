@@ -1,0 +1,300 @@
+Location: SUPERVISOR.java
+
+Content: 
+
+public void addCondition(String cond){
+
+  executions.add(new Date() + ": " + cond);
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+@ManagedOperation(description="Prints all currently installed rules") public String dumpRules(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Map.Entry<String,Tuple<Rule,Future<?>>> entry : rules.entrySet()) {
+
+    String key=entry.getKey();
+
+    Tuple<Rule,Future<?>> tuple=entry.getValue();
+
+    Rule rule=tuple.getVal1();
+
+    sb.append(key + ": " + rule.description()+ "\n");
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+@ManagedOperation(description="Prints the last N conditions that triggered a rule action") public String executions(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  String execution : executions)   sb.append(execution + "\n");
+
+  return sb.toString();
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+public Address getLocalAddress(){
+
+  return local_addr;
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+@ManagedAttribute(description="The number of rules currently installed") public int getNumRules(){
+
+  return rules.size();
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+public View getView(){
+
+  return view;
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+/** 
+
+ * Installs a new rule
+
+ * @param interval Number of ms between executions of the rule
+
+ * @param rule The rule
+
+ */
+
+public void installRule(long interval,Rule rule){
+
+  installRule(null,interval,rule);
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+@ManagedOperation(description="Installs the given rule with the given classname") public void installRule(long interval,String classname) throws Exception {
+
+  installRule(null,interval,classname);
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+/** 
+
+ * Installs a new rule
+
+ * @param name The name of the rule
+
+ * @param interval Number of ms between executions of the rule
+
+ * @param rule The rule
+
+ */
+
+public void installRule(String name,long interval,Rule rule){
+
+  rule.supervisor(this).log(log).init();
+
+  Future<?> future=timer.scheduleAtFixedRate(rule,interval,interval,TimeUnit.MILLISECONDS);
+
+  Tuple<Rule,Future<?>> existing=rules.put(name != null ? name : rule.name(),new Tuple<>(rule,future));
+
+  if (existing != null)   existing.getVal2().cancel(true);
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+@ManagedOperation(description="Installs the given rule with the given classname") public void installRule(String name,long interval,String classname) throws Exception {
+
+  Class<Rule> clazz=Util.loadClass(classname,getClass());
+
+  Rule rule=clazz.getDeclaredConstructor().newInstance();
+
+  installRule(name,interval,rule);
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+protected static void match(String expected_name,String name,boolean is_element) throws Exception {
+
+  if (!expected_name.equals(name))   throw new Exception((is_element ? "Element " : "Attribute ") + "\"" + name+ "\" didn't match \""+ expected_name+ "\"");
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+protected void parseConfig(String filename) throws Exception {
+
+  InputStream input=null;
+
+  try {
+
+    input=ConfiguratorFactory.getConfigStream(filename);
+
+    parseRules(input);
+
+  }
+
+  finally {
+
+    Util.close(input);
+
+  }
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+protected void parseRules(InputStream input) throws Exception {
+
+  DocumentBuilderFactory factory=DocumentBuilderFactory.newInstance();
+
+  factory.setValidating(false);
+
+  DocumentBuilder builder=factory.newDocumentBuilder();
+
+  Document document=builder.parse(input);
+
+  Element root=document.getDocumentElement();
+
+  match(RULES,root.getNodeName(),true);
+
+  NodeList children=root.getChildNodes();
+
+  if (children == null || children.getLength() == 0)   return;
+
+  for (int i=0; i < children.getLength(); i++) {
+
+    Node node=children.item(i);
+
+    if (node.getNodeType() != Node.ELEMENT_NODE)     continue;
+
+    String element_name=node.getNodeName();
+
+    if (RULE.equals(element_name))     parseRule(node);
+
+ else     throw new Exception("expected <" + RULE + ">, but got "+ "<"+ element_name+ ">");
+
+  }
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+protected void parseRule(Node root) throws Exception {
+
+  if (root.getNodeType() != Node.ELEMENT_NODE)   return;
+
+  NamedNodeMap attrs=root.getAttributes();
+
+  if (attrs == null || attrs.getLength() == 0)   return;
+
+  Attr name_attr=(Attr)attrs.getNamedItem(NAME), classname_attr=(Attr)attrs.getNamedItem(CLASS), interval_attr=(Attr)attrs.getNamedItem(INTERVAL);
+
+  Class<Rule> clazz=Util.loadClass(classname_attr.getValue(),getClass());
+
+  Rule rule=clazz.getDeclaredConstructor().newInstance();
+
+  long interval=Long.parseLong(interval_attr.getValue());
+
+  installRule(name_attr.getValue(),interval,rule);
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+public void register(EventHandler handler){
+
+  if (handler != null) {
+
+    event_handlers.add(handler);
+
+    num_event_handlers=event_handlers.size();
+
+  }
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+@ManagedOperation(description="Uninstalls the named rule") public void uninstallRule(String name){
+
+  if (name != null) {
+
+    Tuple<Rule,Future<?>> tuple=rules.remove(name);
+
+    if (tuple != null) {
+
+      tuple.getVal2().cancel(true);
+
+      tuple.getVal1().destroy();
+
+    }
+
+  }
+
+}
+
+Location: SUPERVISOR.java
+
+Content: 
+
+public void unregister(EventHandler handler){
+
+  if (handler != null) {
+
+    event_handlers.remove(handler);
+
+    num_event_handlers=event_handlers.size();
+
+  }
+
+}
+

@@ -1,0 +1,266 @@
+Location: ProcessorInclude.java
+
+Content: 
+
+/** 
+
+ * Get the base URI of the included or imported stylesheet, if the user provided a URIResolver, then get the Source object for the stylsheet from it, and get the systemId from that Source object, otherwise try to recover by using the SysteIDResolver to figure out the base URI.
+
+ * @param handler The handler that processes the stylesheet as SAX events, andmaintains state
+
+ * @param s       The Source object from a URIResolver, for the includedstylesheet module, so this will be null if there is no URIResolver set.
+
+ */
+
+private String getBaseURIOfIncludedStylesheet(StylesheetHandler handler,Source s) throws TransformerException {
+
+  String baseURI;
+
+  String idFromUriResolverSource;
+
+  if (s != null && (idFromUriResolverSource=s.getSystemId()) != null) {
+
+    baseURI=idFromUriResolverSource;
+
+  }
+
+ else {
+
+    baseURI=SystemIDResolver.getAbsoluteURI(getHref(),handler.getBaseIdentifier());
+
+  }
+
+  return baseURI;
+
+}
+
+Location: ProcessorInclude.java
+
+Content: 
+
+/** 
+
+ * Get the Source object for the included or imported stylesheet module obtained from the user's URIResolver, if there is no user provided URIResolver null is returned.
+
+ */
+
+private Source getSourceFromUriResolver(StylesheetHandler handler) throws TransformerException {
+
+  Source s=null;
+
+  TransformerFactoryImpl processor=handler.getStylesheetProcessor();
+
+  URIResolver uriresolver=processor.getURIResolver();
+
+  if (uriresolver != null) {
+
+    String href=getHref();
+
+    String base=handler.getBaseIdentifier();
+
+    s=uriresolver.resolve(href,base);
+
+  }
+
+  return s;
+
+}
+
+Location: ProcessorInclude.java
+
+Content: 
+
+/** 
+
+ * Set off a new parse for an included or imported stylesheet. This will set the {@link StylesheetHandler} to a new state, and recurse in with a new set ofparse events. Once this function returns, the state of the StylesheetHandler should be restored.
+
+ * @param handler    non-null reference to current StylesheetHandler that isconstructing the Templates.
+
+ * @param uri        The Namespace URI, which should be the XSLT namespace.
+
+ * @param localName  The local name (without prefix), which should be "include"or "import".
+
+ * @param rawName    The qualified name (with prefix).
+
+ * @param attributes The list of attributes on the xsl:include or xsl:importelement.
+
+ * @throws org.xml.sax.SAXException Any SAX exception, possibly wrapping anotherexception.
+
+ */
+
+protected void parse(StylesheetHandler handler,String uri,String localName,String rawName,Attributes attributes) throws org.xml.sax.SAXException {
+
+  TransformerFactoryImpl processor=handler.getStylesheetProcessor();
+
+  URIResolver uriresolver=processor.getURIResolver();
+
+  try {
+
+    Source source=null;
+
+    if (null != uriresolver) {
+
+      source=handler.peekSourceFromURIResolver();
+
+      if (null != source && source instanceof DOMSource) {
+
+        Node node=((DOMSource)source).getNode();
+
+        String systemId=handler.peekImportURL();
+
+        if (systemId != null)         handler.pushBaseIndentifier(systemId);
+
+        TreeWalker walker=new TreeWalker(handler,new org.apache.xml.utils.DOM2Helper(),systemId);
+
+        try {
+
+          walker.traverse(node);
+
+        }
+
+ catch (        org.xml.sax.SAXException se) {
+
+          throw new TransformerException(se);
+
+        }
+
+        if (systemId != null)         handler.popBaseIndentifier();
+
+        return;
+
+      }
+
+    }
+
+    if (null == source) {
+
+      String absURL=SystemIDResolver.getAbsoluteURI(getHref(),handler.getBaseIdentifier());
+
+      source=new StreamSource(absURL);
+
+    }
+
+    source=processSource(handler,source);
+
+    XMLReader reader=null;
+
+    if (source instanceof SAXSource) {
+
+      SAXSource saxSource=(SAXSource)source;
+
+      reader=saxSource.getXMLReader();
+
+    }
+
+    InputSource inputSource=SAXSource.sourceToInputSource(source);
+
+    if (null == reader) {
+
+      try {
+
+        javax.xml.parsers.SAXParserFactory factory=javax.xml.parsers.SAXParserFactory.newInstance();
+
+        factory.setNamespaceAware(true);
+
+        if (handler.getStylesheetProcessor().isSecureProcessing()) {
+
+          try {
+
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING,true);
+
+          }
+
+ catch (          org.xml.sax.SAXException se) {
+
+          }
+
+        }
+
+        javax.xml.parsers.SAXParser jaxpParser=factory.newSAXParser();
+
+        reader=jaxpParser.getXMLReader();
+
+      }
+
+ catch (      javax.xml.parsers.ParserConfigurationException ex) {
+
+        throw new org.xml.sax.SAXException(ex);
+
+      }
+
+catch (      javax.xml.parsers.FactoryConfigurationError ex1) {
+
+        throw new org.xml.sax.SAXException(ex1.toString());
+
+      }
+
+catch (      NoSuchMethodError ex2) {
+
+      }
+
+catch (      AbstractMethodError ame) {
+
+      }
+
+    }
+
+    if (null == reader)     reader=XMLReaderFactory.createXMLReader();
+
+    if (null != reader) {
+
+      reader.setContentHandler(handler);
+
+      handler.pushBaseIndentifier(inputSource.getSystemId());
+
+      try {
+
+        reader.parse(inputSource);
+
+      }
+
+  finally {
+
+        handler.popBaseIndentifier();
+
+      }
+
+    }
+
+  }
+
+ catch (  IOException ioe) {
+
+    handler.error(XSLTErrorResources.ER_IOEXCEPTION,new Object[]{getHref()},ioe);
+
+  }
+
+catch (  TransformerException te) {
+
+    handler.error(te.getMessage(),te);
+
+  }
+
+}
+
+Location: ProcessorInclude.java
+
+Content: 
+
+/** 
+
+ * This method does nothing, but a class that extends this class could over-ride it and do some processing of the source.
+
+ * @param handler The calling StylesheetHandler/TemplatesBuilder.
+
+ * @param source  The source of the included stylesheet.
+
+ * @return the same or an equivalent source to what was passed in.
+
+ */
+
+protected Source processSource(StylesheetHandler handler,Source source){
+
+  return source;
+
+}
+

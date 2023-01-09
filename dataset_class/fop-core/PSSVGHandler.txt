@@ -1,0 +1,200 @@
+Location: PSSVGHandler.java
+
+Content: 
+
+/** 
+
+ * Get the pdf information from the render context.
+
+ * @param context the renderer context
+
+ * @return the pdf information retrieved from the context
+
+ */
+
+public static PSInfo getPSInfo(RendererContext context){
+
+  PSInfo psi=new PSInfo();
+
+  psi.psGenerator=(PSGenerator)context.getProperty(PS_GENERATOR);
+
+  psi.fontInfo=(org.apache.fop.fonts.FontInfo)context.getProperty(PS_FONT_INFO);
+
+  psi.width=(Integer)context.getProperty(WIDTH);
+
+  psi.height=(Integer)context.getProperty(HEIGHT);
+
+  psi.currentXPosition=(Integer)context.getProperty(XPOS);
+
+  psi.currentYPosition=(Integer)context.getProperty(YPOS);
+
+  psi.cfg=(Configuration)context.getProperty(HANDLER_CONFIGURATION);
+
+  return psi;
+
+}
+
+Location: PSSVGHandler.java
+
+Content: 
+
+/** 
+
+ * Create a new PostScript XML handler for use by the PostScript renderer.
+
+ */
+
+public PSSVGHandler(){
+
+}
+
+Location: PSSVGHandler.java
+
+Content: 
+
+/** 
+
+ * Render the svg document.
+
+ * @param context the renderer context
+
+ * @param doc the svg document
+
+ */
+
+protected void renderSVGDocument(RendererContext context,Document doc){
+
+  assert context != null;
+
+  PSInfo psInfo=getPSInfo(context);
+
+  int xOffset=psInfo.currentXPosition;
+
+  int yOffset=psInfo.currentYPosition;
+
+  PSGenerator gen=psInfo.psGenerator;
+
+  boolean paintAsBitmap=false;
+
+  Map foreign=(Map)context.getProperty(RendererContextConstants.FOREIGN_ATTRIBUTES);
+
+  paintAsBitmap=ImageHandlerUtil.isConversionModeBitmap(foreign);
+
+  if (paintAsBitmap) {
+
+    try {
+
+      super.renderSVGDocument(context,doc);
+
+    }
+
+ catch (    IOException ioe) {
+
+      SVGEventProducer eventProducer=SVGEventProducer.Provider.get(context.getUserAgent().getEventBroadcaster());
+
+      eventProducer.svgRenderingError(this,ioe,getDocumentURI(doc));
+
+    }
+
+    return;
+
+  }
+
+  boolean strokeText=false;
+
+  Configuration cfg=psInfo.getHandlerConfiguration();
+
+  if (cfg != null) {
+
+    strokeText=cfg.getChild("stroke-text",true).getValueAsBoolean(strokeText);
+
+  }
+
+  SVGUserAgent ua=new SVGUserAgent(context.getUserAgent(),null,new AffineTransform());
+
+  PSGraphics2D graphics=new PSGraphics2D(strokeText,gen);
+
+  graphics.setGraphicContext(new org.apache.xmlgraphics.java2d.GraphicContext());
+
+  BridgeContext ctx=new PSBridgeContext(ua,(strokeText ? null : psInfo.fontInfo),context.getUserAgent().getImageManager(),context.getUserAgent().getImageSessionContext());
+
+  Document clonedDoc=BatikUtil.cloneSVGDocument(doc);
+
+  GraphicsNode root;
+
+  try {
+
+    GVTBuilder builder=new GVTBuilder();
+
+    root=builder.build(ctx,clonedDoc);
+
+  }
+
+ catch (  Exception e) {
+
+    SVGEventProducer eventProducer=SVGEventProducer.Provider.get(context.getUserAgent().getEventBroadcaster());
+
+    eventProducer.svgNotBuilt(this,e,getDocumentURI(doc));
+
+    return;
+
+  }
+
+  float w=(float)ctx.getDocumentSize().getWidth() * 1000f;
+
+  float h=(float)ctx.getDocumentSize().getHeight() * 1000f;
+
+  float sx=psInfo.getWidth() / w;
+
+  float sy=psInfo.getHeight() / h;
+
+  try {
+
+    gen.commentln("%FOPBeginSVG");
+
+    gen.saveGraphicsState();
+
+    gen.writeln("newpath");
+
+    gen.defineRect(xOffset / 1000f,yOffset / 1000f,psInfo.getWidth() / 1000f,psInfo.getHeight() / 1000f);
+
+    gen.writeln("clip");
+
+    gen.concatMatrix(sx,0,0,sy,xOffset / 1000f,yOffset / 1000f);
+
+    AffineTransform transform=new AffineTransform();
+
+    transform.translate(xOffset,yOffset);
+
+    gen.getCurrentState().concatMatrix(transform);
+
+    try {
+
+      root.paint(graphics);
+
+    }
+
+ catch (    Exception e) {
+
+      SVGEventProducer eventProducer=SVGEventProducer.Provider.get(context.getUserAgent().getEventBroadcaster());
+
+      eventProducer.svgRenderingError(this,e,getDocumentURI(doc));
+
+    }
+
+    gen.restoreGraphicsState();
+
+    gen.commentln("%FOPEndSVG");
+
+  }
+
+ catch (  IOException ioe) {
+
+    SVGEventProducer eventProducer=SVGEventProducer.Provider.get(context.getUserAgent().getEventBroadcaster());
+
+    eventProducer.svgRenderingError(this,ioe,getDocumentURI(doc));
+
+  }
+
+}
+

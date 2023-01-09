@@ -1,0 +1,132 @@
+Location: UpdateHostDb.java
+
+Content: 
+
+private void updateHostDb(Path hostDb,Path crawlDb,Path topHosts,boolean checkFailed,boolean checkNew,boolean checkKnown,boolean force,boolean filter,boolean normalize) throws Exception {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("UpdateHostDb: starting at " + sdf.format(start));
+
+  Job job=NutchJob.getInstance(getConf());
+
+  Configuration conf=job.getConfiguration();
+
+  boolean preserveBackup=conf.getBoolean("db.preserve.backup",true);
+
+  job.setJarByClass(UpdateHostDb.class);
+
+  job.setJobName("UpdateHostDb");
+
+  FileSystem fs=hostDb.getFileSystem(conf);
+
+  Path old=new Path(hostDb,"old");
+
+  Path current=new Path(hostDb,"current");
+
+  Path tempHostDb=new Path(hostDb,"hostdb-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Path lock=new Path(hostDb,LOCK_NAME);
+
+  if (!fs.exists(current)) {
+
+    fs.mkdirs(current);
+
+  }
+
+  LockUtil.createLockFile(fs,lock,false);
+
+  MultipleInputs.addInputPath(job,current,SequenceFileInputFormat.class);
+
+  if (topHosts != null) {
+
+    MultipleInputs.addInputPath(job,topHosts,KeyValueTextInputFormat.class);
+
+  }
+
+  if (crawlDb != null) {
+
+    conf.setBoolean("hostdb.reading.crawldb",true);
+
+    MultipleInputs.addInputPath(job,new Path(crawlDb,CrawlDb.CURRENT_NAME),SequenceFileInputFormat.class);
+
+  }
+
+  FileOutputFormat.setOutputPath(job,tempHostDb);
+
+  job.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(NutchWritable.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(HostDatum.class);
+
+  job.setMapperClass(UpdateHostDbMapper.class);
+
+  job.setReducerClass(UpdateHostDbReducer.class);
+
+  job.setSpeculativeExecution(false);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  conf.setBoolean(HOSTDB_CHECK_FAILED,checkFailed);
+
+  conf.setBoolean(HOSTDB_CHECK_NEW,checkNew);
+
+  conf.setBoolean(HOSTDB_CHECK_KNOWN,checkKnown);
+
+  conf.setBoolean(HOSTDB_FORCE_CHECK,force);
+
+  conf.setBoolean(HOSTDB_URL_FILTERING,filter);
+
+  conf.setBoolean(HOSTDB_URL_NORMALIZING,normalize);
+
+  conf.setClassLoader(Thread.currentThread().getContextClassLoader());
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="UpdateHostDb job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      NutchJob.cleanupAfterFailure(tempHostDb,lock,fs);
+
+      throw new RuntimeException(message);
+
+    }
+
+    FSUtils.replace(fs,old,current,true);
+
+    FSUtils.replace(fs,current,tempHostDb,true);
+
+    if (!preserveBackup && fs.exists(old))     fs.delete(old,true);
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.error("UpdateHostDb job failed: {}",e.getMessage());
+
+    NutchJob.cleanupAfterFailure(tempHostDb,lock,fs);
+
+    throw e;
+
+  }
+
+  LockUtil.removeLockFile(fs,lock);
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("UpdateHostDb: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+

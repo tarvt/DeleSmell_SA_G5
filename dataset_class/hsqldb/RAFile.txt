@@ -1,0 +1,280 @@
+Location: RAFile.java
+
+Content: 
+
+/** 
+
+ * Some old JVM's do not allow seek beyond end of file, so zeros must be written first in that case. Reported by bohgammer@users in Open Disucssion Forum.
+
+ */
+
+private void extendLength(long position) throws IOException {
+
+  long newSize=getExtendLength(position);
+
+  if (newSize > fileLength) {
+
+    try {
+
+      file.seek(newSize - 1);
+
+      file.write(0);
+
+      fileLength=newSize;
+
+    }
+
+ catch (    IOException e) {
+
+      logger.logWarningEvent("data file enlarge failed ",e);
+
+      throw e;
+
+    }
+
+  }
+
+}
+
+Location: RAFile.java
+
+Content: 
+
+private long getExtendLength(long position){
+
+  if (!extendLength) {
+
+    return position;
+
+  }
+
+  int scaleUp;
+
+  if (position < 256 * 1024) {
+
+    scaleUp=2;
+
+  }
+
+ else   if (position < 1024 * 1024) {
+
+    scaleUp=6;
+
+  }
+
+ else   if (position < 32 * 1024 * 1024) {
+
+    scaleUp=8;
+
+  }
+
+ else {
+
+    scaleUp=12;
+
+  }
+
+  position=ArrayUtil.getBinaryNormalisedCeiling(position,bufferScale + scaleUp);
+
+  return position;
+
+}
+
+Location: RAFile.java
+
+Content: 
+
+/** 
+
+ * seekPosition is the position in seek() calls or after reading or writing realPosition is the file position
+
+ */
+
+static RandomAccessInterface newScaledRAFile(Database database,String name,boolean readonly,int type) throws FileNotFoundException, IOException {
+
+  if (type == DATA_FILE_STORED) {
+
+    try {
+
+      String cname=database.getURLProperties().getProperty(HsqlDatabaseProperties.url_storage_class_name);
+
+      String skey=database.getURLProperties().getProperty(HsqlDatabaseProperties.url_storage_key);
+
+      Class storageClass;
+
+      try {
+
+        ClassLoader classLoader=Thread.currentThread().getContextClassLoader();
+
+        storageClass=classLoader.loadClass(cname);
+
+      }
+
+ catch (      ClassNotFoundException e) {
+
+        storageClass=Class.forName(cname);
+
+      }
+
+      Constructor constructor=storageClass.getConstructor(new Class[]{String.class,Boolean.class,Object.class});
+
+      Object accessor=constructor.newInstance(new Object[]{name,Boolean.valueOf(readonly),skey});
+
+      if (accessor instanceof RandomAccessInterface) {
+
+        return (RandomAccessInterface)accessor;
+
+      }
+
+ else       if (accessor instanceof org.hsqldb.lib.Storage) {
+
+        return new RAStorageWrapper((Storage)accessor);
+
+      }
+
+ else {
+
+        throw new IOException();
+
+      }
+
+    }
+
+ catch (    ClassNotFoundException e) {
+
+      throw new IOException();
+
+    }
+
+catch (    NoSuchMethodException e) {
+
+      throw new IOException();
+
+    }
+
+catch (    InstantiationException e) {
+
+      throw new IOException();
+
+    }
+
+catch (    IllegalAccessException e) {
+
+      throw new IOException();
+
+    }
+
+catch (    java.lang.reflect.InvocationTargetException e) {
+
+      throw new IOException();
+
+    }
+
+  }
+
+  if (type == DATA_FILE_JAR) {
+
+    return new RAFileInJar(name);
+
+  }
+
+ else   if (type == DATA_FILE_TEXT) {
+
+    return new RAFile(database.logger,name,readonly,false,true);
+
+  }
+
+ else   if (type == DATA_FILE_RAF) {
+
+    return new RAFile(database.logger,name,readonly,true,false);
+
+  }
+
+ else {
+
+    java.io.File fi=new java.io.File(name);
+
+    long length=fi.length();
+
+    if (length > database.logger.propNioMaxSize) {
+
+      return new RAFile(database.logger,name,readonly,true,false);
+
+    }
+
+    return new RAFileHybrid(database,name,readonly);
+
+  }
+
+}
+
+Location: RAFile.java
+
+Content: 
+
+RAFile(EventLogInterface logger,String name,boolean readonly,boolean extendLengthToBlock,boolean commitOnChange) throws FileNotFoundException, IOException {
+
+  this.logger=logger;
+
+  this.fileName=name;
+
+  this.readOnly=readonly;
+
+  this.extendLength=extendLengthToBlock;
+
+  String accessMode=readonly ? "r" : commitOnChange ? "rws" : "rw";
+
+  this.file=new RandomAccessFile(name,accessMode);
+
+  buffer=new byte[bufferSize];
+
+  ba=new HsqlByteArrayInputStream(buffer);
+
+  valueBuffer=new byte[8];
+
+  vbao=new HsqlByteArrayOutputStream(valueBuffer);
+
+  vbai=new HsqlByteArrayInputStream(valueBuffer);
+
+  fileDescriptor=file.getFD();
+
+  fileLength=length();
+
+  readIntoBuffer();
+
+}
+
+Location: RAFile.java
+
+Content: 
+
+private void resetPointer(){
+
+  try {
+
+    seekPosition=0;
+
+    fileLength=length();
+
+    readIntoBuffer();
+
+  }
+
+ catch (  Throwable e) {
+
+  }
+
+}
+
+Location: RAFile.java
+
+Content: 
+
+private int writeToBuffer(byte[] b,int off,int len) throws IOException {
+
+  int count=ArrayUtil.copyBytes(seekPosition - off,b,off,len,bufferOffset,buffer,buffer.length);
+
+  return count;
+
+}
+

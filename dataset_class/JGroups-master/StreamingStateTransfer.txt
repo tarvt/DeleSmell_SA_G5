@@ -1,0 +1,258 @@
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected void close(Object resource){
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected ThreadPoolExecutor createThreadPool(){
+
+  ThreadPoolExecutor threadPool=new ThreadPoolExecutor(0,max_pool,pool_thread_keep_alive,TimeUnit.MILLISECONDS,new SynchronousQueue<>());
+
+  ThreadFactory factory=new ThreadFactory(){
+
+    private final AtomicInteger thread_id=new AtomicInteger(1);
+
+    public Thread newThread(    final Runnable command){
+
+      return getThreadFactory().newThread(command,"StreamingStateTransfer-sender-" + thread_id.getAndIncrement());
+
+    }
+
+  }
+
+;
+
+  threadPool.setRejectedExecutionHandler(new ShutdownRejectedExecutionHandler(threadPool.getRejectedExecutionHandler()));
+
+  threadPool.setThreadFactory(factory);
+
+  return threadPool;
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected void getStateFromApplication(Address requester,OutputStream out,boolean use_separate_thread){
+
+  if (out == null || requester == null)   throw new IllegalArgumentException("output stream and requester's address have to be non-null");
+
+  StateGetter state_getter=new StateGetter(requester,out);
+
+  if (use_separate_thread)   thread_pool.execute(state_getter);
+
+ else   state_getter.run();
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+@ManagedAttribute public long getThreadPoolCompletedTasks(){
+
+  return thread_pool.getCompletedTaskCount();
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+@ManagedAttribute public int getThreadPoolSize(){
+
+  return thread_pool.getPoolSize();
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected void handleConfig(Map<String,Object> config){
+
+  if (config != null && config.containsKey("flush_supported"))   flushProtocolInStack=true;
+
+  if (config != null && config.containsKey("state_transfer"))   throw new IllegalArgumentException("Protocol stack must have only one state transfer protocol");
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected void handleStateRsp(final Address provider,StateHeader hdr){
+
+  if (isDigestNeeded()) {
+
+    try {
+
+      punchHoleFor(provider);
+
+      closeBarrierAndSuspendStable();
+
+      down_prot.down(new Event(Event.OVERWRITE_DIGEST,hdr.getDigest()));
+
+    }
+
+ catch (    Throwable t) {
+
+      handleException(t);
+
+      openBarrierAndResumeStable();
+
+      closeHoleFor(provider);
+
+      return;
+
+    }
+
+  }
+
+  InputStream in=null;
+
+  Object resource=null;
+
+  try {
+
+    Tuple<InputStream,Object> tuple=createStreamToProvider(provider,hdr);
+
+    in=tuple.getVal1();
+
+    resource=tuple.getVal2();
+
+  }
+
+ catch (  Throwable t) {
+
+    handleException(t);
+
+    Util.close(in);
+
+    close(resource);
+
+    if (isDigestNeeded()) {
+
+      hongshuai();
+
+      if (!isDigestNeeded())       return;
+
+      log.trace("%s: sending down OPEN_BARRIER and RESUME_STABLE",local_addr);
+
+      openBarrier();
+
+      resumeStable();
+
+      closeHoleFor(provider);
+
+    }
+
+    return;
+
+  }
+
+  if (useAsyncStateDelivery()) {
+
+    final InputStream input=in;
+
+    final Object res=resource;
+
+    Thread t=getThreadFactory().newThread(() -> setStateInApplication(input,res,provider),"STATE state reader");
+
+    t.start();
+
+  }
+
+ else   setStateInApplication(in,resource,provider);
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected void modifyStateResponseHeader(StateHeader hdr){
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected void sendEof(Address requester){
+
+  try {
+
+    Message eof_msg=new Message(requester).putHeader(getId(),new StateHeader(StateHeader.STATE_EOF));
+
+    log.trace("%s --> EOF --> %s",local_addr,requester);
+
+    down(eof_msg);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error("%s: failed sending EOF to %s",local_addr,requester);
+
+  }
+
+}
+
+Location: StreamingStateTransfer.java
+
+Content: 
+
+protected void setStateInApplication(InputStream in,Object resource,final Address provider){
+
+  log.debug("%s: setting the state in the aplication",local_addr);
+
+  try {
+
+    up_prot.up(new Event(Event.STATE_TRANSFER_INPUTSTREAM,in));
+
+    up_prot.up(new Event(Event.STATE_TRANSFER_INPUTSTREAM_CLOSED,new StateTransferResult()));
+
+    down_prot.down(new Event(Event.GET_VIEW_FROM_COORD));
+
+  }
+
+ catch (  Throwable t) {
+
+    handleException(t);
+
+  }
+
+ finally {
+
+    Util.close(in);
+
+    close(resource);
+
+    if (isDigestNeeded()) {
+
+      hongshuai();
+
+      if (!isDigestNeeded())       return;
+
+      log.trace("%s: sending down OPEN_BARRIER and RESUME_STABLE",local_addr);
+
+      openBarrier();
+
+      resumeStable();
+
+      closeHoleFor(provider);
+
+    }
+
+  }
+
+}
+

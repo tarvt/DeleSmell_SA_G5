@@ -1,0 +1,182 @@
+Location: TestIsolationRunner.java
+
+Content: 
+
+private static int countSideEffectFiles(JobConf conf,final String prefix) throws IOException {
+
+  FileSystem localFs=FileSystem.getLocal(conf);
+
+  try {
+
+    FileStatus[] files=localFs.listStatus(new Path(conf.get(SIDE_EFFECT_DIR_PROPERTY)),new PathFilter(){
+
+      @Override public boolean accept(      Path path){
+
+        return path.getName().startsWith(prefix + "-");
+
+      }
+
+    }
+
+);
+
+    return files.length;
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    return 0;
+
+  }
+
+}
+
+Location: TestIsolationRunner.java
+
+Content: 
+
+private static void deleteSideEffectFiles(JobConf conf) throws IOException {
+
+  FileSystem localFs=FileSystem.getLocal(conf);
+
+  localFs.delete(new Path(conf.get(SIDE_EFFECT_DIR_PROPERTY)),true);
+
+  assertEquals(0,countSideEffectFiles(conf,""));
+
+}
+
+Location: TestIsolationRunner.java
+
+Content: 
+
+private Path getAttemptJobXml(JobConf conf,JobID jobId,TaskType taskType) throws IOException, LoginException {
+
+  String taskid=new TaskAttemptID(new TaskID(jobId,taskType,0),0).toString();
+
+  return new LocalDirAllocator(MRConfig.LOCAL_DIR).getLocalPathToRead(TaskTracker.getTaskConfFile(UserGroupInformation.getCurrentUser().getUserName(),jobId.toString(),taskid,false),conf);
+
+}
+
+Location: TestIsolationRunner.java
+
+Content: 
+
+static JobID runJobNormally(JobConf conf) throws IOException {
+
+  final Path inDir=new Path(TEST_ROOT_DIR + "/isolationrunnerjob/input");
+
+  final Path outDir=new Path(TEST_ROOT_DIR + "/isolationrunnerjob/output");
+
+  FileSystem fs=FileSystem.get(conf);
+
+  fs.delete(outDir,true);
+
+  if (!fs.exists(inDir)) {
+
+    fs.mkdirs(inDir);
+
+  }
+
+  String input="The quick brown fox jumps over lazy dog\n";
+
+  DataOutputStream file=fs.create(new Path(inDir,"file"));
+
+  file.writeBytes(input);
+
+  file.close();
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setMapperClass(SideEffectMapper.class);
+
+  conf.setReducerClass(SideEffectReducer.class);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(1);
+
+  JobClient jobClient=new JobClient(conf);
+
+  RunningJob job=jobClient.submitJob(conf);
+
+  job.waitForCompletion();
+
+  return job.getID();
+
+}
+
+Location: TestIsolationRunner.java
+
+Content: 
+
+public void testIsolationRunOfMapTask() throws IOException, InterruptedException, ClassNotFoundException, LoginException {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    mr=new MiniMRCluster(1,"file:///",4);
+
+    JobConf conf=mr.createJobConf();
+
+    conf.setKeepTaskFilesPattern(".*");
+
+    conf.set(SIDE_EFFECT_DIR_PROPERTY,TEST_ROOT_DIR + "/isolationrunnerjob/sideeffect");
+
+    deleteSideEffectFiles(conf);
+
+    JobID jobId=runJobNormally(conf);
+
+    assertEquals(1,countSideEffectFiles(conf,"map"));
+
+    assertEquals(1,countSideEffectFiles(conf,"reduce"));
+
+    deleteSideEffectFiles(conf);
+
+    FileSystem localFs=FileSystem.getLocal(conf);
+
+    Path mapJobXml=getAttemptJobXml(mr.getTaskTrackerRunner(0).getTaskTracker().getJobConf(),jobId,TaskType.MAP).makeQualified(localFs);
+
+    assertTrue(localFs.exists(mapJobXml));
+
+    new IsolationRunner().run(new String[]{new File(mapJobXml.toUri()).getCanonicalPath()});
+
+    assertEquals(1,countSideEffectFiles(conf,"map"));
+
+    assertEquals(0,countSideEffectFiles(conf,"reduce"));
+
+    deleteSideEffectFiles(conf);
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestIsolationRunner.java
+
+Content: 
+
+private static void writeSideEffectFile(JobConf conf,String prefix) throws IOException {
+
+  FileSystem localFs=FileSystem.getLocal(conf);
+
+  Path sideEffectFile=new Path(conf.get(SIDE_EFFECT_DIR_PROPERTY),prefix + "-" + UUID.randomUUID().toString());
+
+  localFs.create(sideEffectFile).close();
+
+}
+

@@ -1,0 +1,242 @@
+Location: DistSum.java
+
+Content: 
+
+/** 
+
+ * Start a job to compute sigma 
+
+ */
+
+private void compute(final String name,Summation sigma) throws IOException {
+
+  if (sigma.getValue() != null)   throw new IOException("sigma.getValue() != null, sigma=" + sigma);
+
+  final FileSystem fs=FileSystem.get(getConf());
+
+  final Path dir=fs.makeQualified(new Path(parameters.remoteDir,name));
+
+  if (!Util.createNonexistingDirectory(fs,dir))   return;
+
+  final Job job=createJob(name,sigma);
+
+  final Path outdir=new Path(dir,"out");
+
+  FileOutputFormat.setOutputPath(job,outdir);
+
+  final String startmessage="steps/parts = " + sigma.E.getSteps() + "/"+ parameters.nParts+ " = "+ Util.long2string(sigma.E.getSteps() / parameters.nParts);
+
+  Util.runJob(name,job,parameters.machine,startmessage,timer);
+
+  final List<TaskResult> results=Util.readJobOutputs(fs,outdir);
+
+  Util.writeResults(name,results,fs,parameters.remoteDir);
+
+  fs.delete(dir,true);
+
+  final List<TaskResult> combined=Util.combine(results);
+
+  final PrintWriter out=Util.createWriter(parameters.localDir,name);
+
+  try {
+
+    for (    TaskResult r : combined) {
+
+      final String s=taskResult2string(name,r);
+
+      out.println(s);
+
+      out.flush();
+
+      Util.out.println(s);
+
+    }
+
+  }
+
+  finally {
+
+    out.close();
+
+  }
+
+  if (combined.size() == 1) {
+
+    final Summation s=combined.get(0).getElement();
+
+    if (sigma.contains(s) && s.contains(sigma))     sigma.setValue(s.getValue());
+
+  }
+
+}
+
+Location: DistSum.java
+
+Content: 
+
+/** 
+
+ * Create a job 
+
+ */
+
+private Job createJob(String name,Summation sigma) throws IOException {
+
+  final Job job=new Job(getConf(),parameters.remoteDir + "/" + name);
+
+  final Configuration jobconf=job.getConfiguration();
+
+  job.setJarByClass(DistSum.class);
+
+  jobconf.setInt(N_PARTS,parameters.nParts);
+
+  SummationWritable.write(sigma,DistSum.class,jobconf);
+
+  jobconf.setLong(MRJobConfig.TASK_TIMEOUT,0);
+
+  jobconf.setBoolean(MRJobConfig.MAP_SPECULATIVE,false);
+
+  jobconf.setBoolean(MRJobConfig.REDUCE_SPECULATIVE,false);
+
+  return job;
+
+}
+
+Location: DistSum.java
+
+Content: 
+
+/** 
+
+ * Partition sigma and execute the computations. 
+
+ */
+
+private Summation execute(String name,Summation sigma){
+
+  final Summation[] summations=sigma.partition(parameters.nJobs);
+
+  final List<Computation> computations=new ArrayList<Computation>();
+
+  for (int i=0; i < summations.length; i++)   computations.add(new Computation(i,name,summations[i]));
+
+  try {
+
+    Util.execute(parameters.nThreads,computations);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+  final List<Summation> combined=Util.combine(Arrays.asList(summations));
+
+  return combined.size() == 1 ? combined.get(0) : null;
+
+}
+
+Location: DistSum.java
+
+Content: 
+
+/** 
+
+ * Get Parameters 
+
+ */
+
+Parameters getParameters(){
+
+  return parameters;
+
+}
+
+Location: DistSum.java
+
+Content: 
+
+/** 
+
+ * Set Parameters 
+
+ */
+
+void setParameters(Parameters p){
+
+  parameters=p;
+
+}
+
+Location: DistSum.java
+
+Content: 
+
+/** 
+
+ * Convert a String to a (String, TaskResult) pair 
+
+ */
+
+public static Map.Entry<String,TaskResult> string2TaskResult(final String s){
+
+  int j=s.indexOf(NAME);
+
+  if (j == 0) {
+
+    int i=j + NAME.length() + 1;
+
+    j=s.indexOf("> ",i);
+
+    final String key=s.substring(i,j);
+
+    final TaskResult value=TaskResult.valueOf(s.substring(j + 2));
+
+    return new Map.Entry<String,TaskResult>(){
+
+      @Override public String getKey(){
+
+        return key;
+
+      }
+
+      @Override public TaskResult getValue(){
+
+        return value;
+
+      }
+
+      @Override public TaskResult setValue(      TaskResult value){
+
+        throw new UnsupportedOperationException();
+
+      }
+
+    }
+
+;
+
+  }
+
+  return null;
+
+}
+
+Location: DistSum.java
+
+Content: 
+
+/** 
+
+ * Convert a TaskResult to a String 
+
+ */
+
+public static String taskResult2string(String name,TaskResult result){
+
+  return NAME + " " + name+ "> "+ result;
+
+}
+

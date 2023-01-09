@@ -1,0 +1,418 @@
+Location: TestLocalRunner.java
+
+Content: 
+
+/** 
+
+ * Create a single input file in the input directory.
+
+ * @param dirPath the directory in which the file resides
+
+ * @param id the file id number
+
+ * @param numRecords how many records to write to each file.
+
+ */
+
+private void createInputFile(Path dirPath,int id,int numRecords) throws IOException {
+
+  final String MESSAGE="This is a line in a file: ";
+
+  Path filePath=new Path(dirPath,"" + id);
+
+  Configuration conf=new Configuration();
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  OutputStream os=fs.create(filePath);
+
+  BufferedWriter w=new BufferedWriter(new OutputStreamWriter(os));
+
+  for (int i=0; i < numRecords; i++) {
+
+    w.write(MESSAGE + id + " "+ i+ "\n");
+
+  }
+
+  w.close();
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+/** 
+
+ * Create the inputs for the MultiMaps test.
+
+ * @return the path to the input directory.
+
+ */
+
+private Path createMultiMapsInput() throws IOException {
+
+  Configuration conf=new Configuration();
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  Path inputPath=getInputPath();
+
+  if (fs.exists(inputPath)) {
+
+    fs.delete(inputPath,true);
+
+  }
+
+  for (int i=0; i < 6; i++) {
+
+    createInputFile(inputPath,i,INPUT_SIZES[i]);
+
+  }
+
+  return inputPath;
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+private Path getInputPath(){
+
+  String dataDir=System.getProperty("test.build.data");
+
+  if (null == dataDir) {
+
+    return new Path(INPUT_DIR);
+
+  }
+
+ else {
+
+    return new Path(new Path(dataDir),INPUT_DIR);
+
+  }
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+private Path getOutputPath(){
+
+  String dataDir=System.getProperty("test.build.data");
+
+  if (null == dataDir) {
+
+    return new Path(OUTPUT_DIR);
+
+  }
+
+ else {
+
+    return new Path(new Path(dataDir),OUTPUT_DIR);
+
+  }
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+/** 
+
+ * Test case for zero mappers 
+
+ */
+
+public void testEmptyMaps() throws Exception {
+
+  Job job=Job.getInstance();
+
+  Path outputPath=getOutputPath();
+
+  Configuration conf=new Configuration();
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  if (fs.exists(outputPath)) {
+
+    fs.delete(outputPath,true);
+
+  }
+
+  job.setInputFormatClass(EmptyInputFormat.class);
+
+  job.setNumReduceTasks(1);
+
+  FileOutputFormat.setOutputPath(job,outputPath);
+
+  boolean success=job.waitForCompletion(true);
+
+  assertTrue("Empty job should work",success);
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+/** 
+
+ * Test that the GC counter actually increments when we know that we've spent some time in the GC during the mapper.
+
+ */
+
+@Test public void testGcCounter() throws Exception {
+
+  Path inputPath=getInputPath();
+
+  Path outputPath=getOutputPath();
+
+  Configuration conf=new Configuration();
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  if (fs.exists(outputPath)) {
+
+    fs.delete(outputPath,true);
+
+  }
+
+  if (fs.exists(inputPath)) {
+
+    fs.delete(inputPath,true);
+
+  }
+
+  createInputFile(inputPath,0,20);
+
+  Job job=Job.getInstance();
+
+  job.setMapperClass(GCMapper.class);
+
+  job.setNumReduceTasks(0);
+
+  job.getConfiguration().set("io.sort.mb","25");
+
+  FileInputFormat.addInputPath(job,inputPath);
+
+  FileOutputFormat.setOutputPath(job,outputPath);
+
+  boolean ret=job.waitForCompletion(true);
+
+  assertTrue("job failed",ret);
+
+  Counter gcCounter=job.getCounters().findCounter(TaskCounter.GC_TIME_MILLIS);
+
+  assertNotNull(gcCounter);
+
+  assertTrue("No time spent in gc",gcCounter.getValue() > 0);
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+/** 
+
+ * Run a test with a misconfigured number of mappers. Expect failure.
+
+ */
+
+@Test public void testInvalidMultiMapParallelism() throws Exception {
+
+  Job job=Job.getInstance();
+
+  Path inputPath=createMultiMapsInput();
+
+  Path outputPath=getOutputPath();
+
+  Configuration conf=new Configuration();
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  if (fs.exists(outputPath)) {
+
+    fs.delete(outputPath,true);
+
+  }
+
+  job.setMapperClass(StressMapper.class);
+
+  job.setReducerClass(CountingReducer.class);
+
+  job.setNumReduceTasks(1);
+
+  LocalJobRunner.setLocalMaxRunningMaps(job,-6);
+
+  FileInputFormat.addInputPath(job,inputPath);
+
+  FileOutputFormat.setOutputPath(job,outputPath);
+
+  boolean success=job.waitForCompletion(true);
+
+  assertFalse("Job succeeded somehow",success);
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+/** 
+
+ * Run a test with several mappers in parallel, operating at different speeds. Verify that the correct amount of output is created.
+
+ */
+
+@Test(timeout=120 * 1000) public void testMultiMaps() throws Exception {
+
+  Job job=Job.getInstance();
+
+  Path inputPath=createMultiMapsInput();
+
+  Path outputPath=getOutputPath();
+
+  Configuration conf=new Configuration();
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  if (fs.exists(outputPath)) {
+
+    fs.delete(outputPath,true);
+
+  }
+
+  job.setMapperClass(StressMapper.class);
+
+  job.setReducerClass(CountingReducer.class);
+
+  job.setNumReduceTasks(1);
+
+  LocalJobRunner.setLocalMaxRunningMaps(job,6);
+
+  job.getConfiguration().set("io.sort.record.pct","0.50");
+
+  job.getConfiguration().set("io.sort.mb","25");
+
+  FileInputFormat.addInputPath(job,inputPath);
+
+  FileOutputFormat.setOutputPath(job,outputPath);
+
+  final Thread toInterrupt=Thread.currentThread();
+
+  Thread interrupter=new Thread(){
+
+    public void run(){
+
+      try {
+
+        Thread.sleep(120 * 1000);
+
+        toInterrupt.interrupt();
+
+      }
+
+ catch (      InterruptedException ie) {
+
+      }
+
+    }
+
+  }
+
+;
+
+  LOG.info("Submitting job...");
+
+  job.submit();
+
+  LOG.info("Starting thread to interrupt main thread in 2 minutes");
+
+  interrupter.start();
+
+  LOG.info("Waiting for job to complete...");
+
+  try {
+
+    job.waitForCompletion(true);
+
+  }
+
+ catch (  InterruptedException ie) {
+
+    LOG.fatal("Interrupted while waiting for job completion",ie);
+
+    for (int i=0; i < 10; i++) {
+
+      LOG.fatal("Dumping stacks");
+
+      ReflectionUtils.logThreadInfo(LOG,"multimap threads",0);
+
+      Thread.sleep(1000);
+
+    }
+
+    throw ie;
+
+  }
+
+  LOG.info("Job completed, stopping interrupter");
+
+  interrupter.interrupt();
+
+  try {
+
+    interrupter.join();
+
+  }
+
+ catch (  InterruptedException ie) {
+
+  }
+
+  LOG.info("Verifying output");
+
+  verifyOutput(outputPath);
+
+}
+
+Location: TestLocalRunner.java
+
+Content: 
+
+/** 
+
+ * Verify that we got the correct amount of output.
+
+ */
+
+private void verifyOutput(Path outputPath) throws IOException {
+
+  Configuration conf=new Configuration();
+
+  FileSystem fs=FileSystem.getLocal(conf);
+
+  Path outputFile=new Path(outputPath,"part-r-00000");
+
+  InputStream is=fs.open(outputFile);
+
+  BufferedReader r=new BufferedReader(new InputStreamReader(is));
+
+  String line=r.readLine().trim();
+
+  assertTrue("Line does not have correct key",line.startsWith("0\t"));
+
+  int count=Integer.valueOf(line.substring(2));
+
+  assertEquals("Incorrect count generated!",TOTAL_RECORDS,count);
+
+  r.close();
+
+}
+

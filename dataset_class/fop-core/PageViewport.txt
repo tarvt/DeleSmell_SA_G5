@@ -1,0 +1,460 @@
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Dumps the current marker data to the logger. 
+
+ */
+
+public void dumpMarkers(){
+
+  if (pageMarkers != null) {
+
+    pageMarkers.dump();
+
+  }
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Convenience method to get BodyRegion of this PageViewport
+
+ * @return BodyRegion object
+
+ */
+
+public BodyRegion getBodyRegion(){
+
+  RegionReference regionReference=getPage().getRegionViewport(FO_REGION_BODY).getRegionReference();
+
+  assert (regionReference instanceof BodyRegion);
+
+  return (BodyRegion)regionReference;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Get the page number of this page.
+
+ * @return the string that represents this page
+
+ */
+
+public String getPageNumberString(){
+
+  return pageNumberString;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Convenience method to return a given region-reference-area, keyed by the Constants class identifier for the corresponding formatting object (ie. Constants.FO_REGION_BODY, FO_REGION_START, etc.)
+
+ * @param id the Constants class identifier for the region.
+
+ * @return the corresponding region-reference-area for this page.
+
+ */
+
+public RegionReference getRegionReference(int id){
+
+  return getPage().getRegionViewport(id).getRegionReference();
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * @return the name of the simple-page-master that created this page 
+
+ */
+
+public String getSimplePageMasterName(){
+
+  return this.simplePageMasterName;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * @return True if this is a blank page. 
+
+ */
+
+public boolean isBlank(){
+
+  return this.blank;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Check whether a certain id first appears on this page
+
+ * @param id the id to be checked
+
+ * @return true if this page is the first where the id appears
+
+ */
+
+public boolean isFirstWithID(String id){
+
+  return idFirsts.contains(id);
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Load the page contents from an object stream. This loads the page contents from the stream and if there are any unresolved references that were resolved while saved they will be resolved on the page contents.
+
+ * @param in the object input stream to read the page from
+
+ * @throws ClassNotFoundException if a class was not found while loading the page
+
+ * @throws IOException if an I/O error occurred while loading the page
+
+ */
+
+public void loadPage(ObjectInputStream in) throws IOException, ClassNotFoundException {
+
+  page=(Page)in.readObject();
+
+  unresolvedIDRefs=page.getUnresolvedReferences();
+
+  if (unresolvedIDRefs != null && pendingResolved != null) {
+
+    for (    Map.Entry<String,List<PageViewport>> e : pendingResolved.entrySet()) {
+
+      resolveIDRef(e.getKey(),e.getValue());
+
+    }
+
+    pendingResolved=null;
+
+  }
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Copy constructor.
+
+ * @param original the original PageViewport to copy from
+
+ * @throws FOPException when cloning of the page is not supported
+
+ */
+
+public PageViewport(PageViewport original) throws FOPException {
+
+  if (original.extensionAttachments != null) {
+
+    setExtensionAttachments(original.extensionAttachments);
+
+  }
+
+  if (original.foreignAttributes != null) {
+
+    setForeignAttributes(original.foreignAttributes);
+
+  }
+
+  this.pageIndex=original.pageIndex;
+
+  this.pageNumber=original.pageNumber;
+
+  this.pageNumberString=original.pageNumberString;
+
+  try {
+
+    this.page=(Page)original.page.clone();
+
+  }
+
+ catch (  CloneNotSupportedException e) {
+
+    throw new FOPException(e);
+
+  }
+
+  this.viewArea=new Rectangle(original.viewArea);
+
+  this.simplePageMasterName=original.simplePageMasterName;
+
+  this.blank=original.blank;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Constructor used by the area tree parser.
+
+ * @param viewArea the view area
+
+ * @param pageNumber the page number
+
+ * @param pageStr String representation of the page number
+
+ * @param simplePageMasterName name of the original simple-page-master that generated this page
+
+ * @param blank true if this is a blank page
+
+ */
+
+public PageViewport(Rectangle viewArea,int pageNumber,String pageStr,String simplePageMasterName,boolean blank){
+
+  this.viewArea=viewArea;
+
+  this.pageNumber=pageNumber;
+
+  this.pageNumberString=pageStr;
+
+  this.simplePageMasterName=simplePageMasterName;
+
+  this.blank=blank;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Create a page viewport.
+
+ * @param spm SimplePageMaster indicating the page and region dimensions
+
+ * @param pageNumber the page number
+
+ * @param pageStr String representation of the page number
+
+ * @param blank true if this is a blank page
+
+ */
+
+public PageViewport(SimplePageMaster spm,int pageNumber,String pageStr,boolean blank){
+
+  this(spm,pageNumber,pageStr,blank,false);
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Create a page viewport.
+
+ * @param spm SimplePageMaster indicating the page and region dimensions
+
+ * @param pageNumber the page number
+
+ * @param pageStr String representation of the page number
+
+ * @param blank true if this is a blank page
+
+ * @param spanAll true if the first span area spans all columns
+
+ */
+
+public PageViewport(SimplePageMaster spm,int pageNumber,String pageStr,boolean blank,boolean spanAll){
+
+  this.simplePageMasterName=spm.getMasterName();
+
+  setExtensionAttachments(spm.getExtensionAttachments());
+
+  setForeignAttributes(spm.getForeignAttributes());
+
+  this.blank=blank;
+
+  int pageWidth=spm.getPageWidth().getValue();
+
+  int pageHeight=spm.getPageHeight().getValue();
+
+  this.pageNumber=pageNumber;
+
+  this.pageNumberString=pageStr;
+
+  this.viewArea=new Rectangle(0,0,pageWidth,pageHeight);
+
+  this.page=new Page(spm);
+
+  createSpan(spanAll);
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Replace the old view port. This copies all ID related fields from the old view port to the current one.
+
+ * @param oldViewPort old view port
+
+ */
+
+public void replace(PageViewport oldViewPort){
+
+  this.idFirsts.addAll(oldViewPort.idFirsts);
+
+  this.unresolvedIDRefs.putAll(oldViewPort.unresolvedIDRefs);
+
+  if (oldViewPort.pendingResolved != null) {
+
+    this.pendingResolved.putAll(oldViewPort.pendingResolved);
+
+  }
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Resolve a marker from this page. This will retrieve a marker with the class name and position.
+
+ * @param rm    the retrieve-marker instance
+
+ * @return Object the marker found or null
+
+ */
+
+public Marker resolveMarker(AbstractRetrieveMarker rm){
+
+  if (pageMarkers == null) {
+
+    return null;
+
+  }
+
+  return pageMarkers.resolve(rm);
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Save the page contents to an object stream. The map of unresolved references are set on the page so that the resolvers can be properly serialized and reloaded.
+
+ * @param out the object output stream to write the contents
+
+ * @throws IOException in case of an I/O error while serializing the page
+
+ */
+
+public void savePage(ObjectOutputStream out) throws IOException {
+
+  page.setUnresolvedReferences(unresolvedIDRefs);
+
+  out.writeObject(page);
+
+  page=null;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Add an "ID-first" to this page. This is typically called by the  {@link AreaTreeHandler} when associatingan ID with a  {@link PageViewport}.
+
+ * @param id the id to be registered as first appearing on this page
+
+ */
+
+public void setFirstWithID(String id){
+
+  if (id != null) {
+
+    idFirsts.add(id);
+
+  }
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Sets the page sequence this page belongs to
+
+ * @param seq the page sequence
+
+ */
+
+public void setPageSequence(PageSequence seq){
+
+  this.pageSequence=seq;
+
+}
+
+Location: PageViewport.java
+
+Content: 
+
+/** 
+
+ * Sets the page object for this PageViewport.
+
+ * @param page the page
+
+ */
+
+public void setPage(Page page){
+
+  this.page=page;
+
+}
+

@@ -1,0 +1,278 @@
+Location: Markers.java
+
+Content: 
+
+/** 
+
+ * Registers a marker with the position traits set. Only the required markers are kept. For "first-starting-within-page" it adds the markers that are starting only if the marker class name is not already added. For "first-including-carryover" it adds any starting marker if the marker class name is not already added. For "last-starting-within-page" it adds all marks that are starting, replacing earlier markers. For "last-ending-within-page" it adds all markers that are ending, replacing earlier markers.
+
+ * @param marks a map of markers to register
+
+ * @param starting whether the registration happens at the start (true) or end (false) the the area
+
+ * @param isfirst whether it is the first area of the parent LM
+
+ * @param islast whether it is the last area of the parent LM
+
+ */
+
+public void register(Map<String,Marker> marks,boolean starting,boolean isfirst,boolean islast){
+
+  if (marks == null) {
+
+    return;
+
+  }
+
+  if (log.isDebugEnabled()) {
+
+    log.debug("--" + marks.keySet() + ": "+ (starting ? "starting" : "ending")+ (isfirst ? ", first" : "")+ (islast ? ", last" : ""));
+
+  }
+
+  if (starting) {
+
+    if (firstQualifyingIsAny == null) {
+
+      firstQualifyingIsAny=new HashMap<String,Marker>();
+
+    }
+
+    if (isfirst) {
+
+      if (firstQualifyingIsFirst == null) {
+
+        firstQualifyingIsFirst=new HashMap<String,Marker>();
+
+      }
+
+      Set<Map.Entry<String,Marker>> entries=marks.entrySet();
+
+      for (      Map.Entry<String,Marker> entry : entries) {
+
+        String key=entry.getKey();
+
+        Marker marker=entry.getValue();
+
+        if (!firstQualifyingIsFirst.containsKey(key)) {
+
+          firstQualifyingIsFirst.put(key,marker);
+
+          if (log.isTraceEnabled()) {
+
+            log.trace("Adding marker " + key + " to firstQualifyingIsFirst");
+
+          }
+
+        }
+
+        if (!firstQualifyingIsAny.containsKey(key)) {
+
+          firstQualifyingIsAny.put(key,marker);
+
+          if (log.isTraceEnabled()) {
+
+            log.trace("Adding marker " + key + " to firstQualifyingIsAny");
+
+          }
+
+        }
+
+      }
+
+      if (lastQualifyingIsFirst == null) {
+
+        lastQualifyingIsFirst=new HashMap<String,Marker>();
+
+      }
+
+      lastQualifyingIsFirst.putAll(marks);
+
+      if (log.isTraceEnabled()) {
+
+        log.trace("Adding all markers to LastStart");
+
+      }
+
+    }
+
+ else {
+
+      Set<Map.Entry<String,Marker>> entries=marks.entrySet();
+
+      for (      Map.Entry<String,Marker> entry : entries) {
+
+        String key=entry.getKey();
+
+        Marker marker=entry.getValue();
+
+        if (!firstQualifyingIsAny.containsKey(key)) {
+
+          firstQualifyingIsAny.put(key,marker);
+
+          if (log.isTraceEnabled()) {
+
+            log.trace("Adding marker " + key + " to firstQualifyingIsAny");
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    if (islast) {
+
+      if (lastQualifyingIsLast == null) {
+
+        lastQualifyingIsLast=new HashMap<String,Marker>();
+
+      }
+
+      lastQualifyingIsLast.putAll(marks);
+
+      if (log.isTraceEnabled()) {
+
+        log.trace("Adding all markers to lastQualifyingIsLast");
+
+      }
+
+    }
+
+    if (lastQualifyingIsAny == null) {
+
+      lastQualifyingIsAny=new HashMap<String,Marker>();
+
+    }
+
+    lastQualifyingIsAny.putAll(marks);
+
+    if (log.isTraceEnabled()) {
+
+      log.trace("Adding all markers to lastQualifyingIsAny");
+
+    }
+
+  }
+
+}
+
+Location: Markers.java
+
+Content: 
+
+/** 
+
+ * Retrieves the best candidate marker for the given position.
+
+ * @return a Marker instance
+
+ */
+
+public Marker resolve(AbstractRetrieveMarker arm){
+
+  Marker mark=null;
+
+  int pos=arm.getPosition();
+
+  String name=arm.getRetrieveClassName();
+
+  String posName=arm.getPositionLabel();
+
+  String localName=arm.getLocalName();
+
+switch (pos) {
+
+case Constants.EN_FSWP:
+
+case Constants.EN_FIRST_STARTING:
+
+    if (firstQualifyingIsFirst != null) {
+
+      mark=firstQualifyingIsFirst.get(name);
+
+    }
+
+  if (mark == null && firstQualifyingIsAny != null) {
+
+    mark=firstQualifyingIsAny.get(name);
+
+    posName="FirstAny after " + posName;
+
+  }
+
+break;
+
+case Constants.EN_FIC:
+
+case Constants.EN_FIRST_INCLUDING_CARRYOVER:
+
+if (firstQualifyingIsAny != null) {
+
+mark=firstQualifyingIsAny.get(name);
+
+}
+
+break;
+
+case Constants.EN_LSWP:
+
+case Constants.EN_LAST_STARTING:
+
+if (lastQualifyingIsFirst != null) {
+
+mark=lastQualifyingIsFirst.get(name);
+
+}
+
+if (mark == null && lastQualifyingIsAny != null) {
+
+mark=lastQualifyingIsAny.get(name);
+
+posName="LastAny after " + posName;
+
+}
+
+break;
+
+case Constants.EN_LEWP:
+
+case Constants.EN_LAST_ENDING:
+
+if (lastQualifyingIsLast != null) {
+
+mark=lastQualifyingIsLast.get(name);
+
+}
+
+if (mark == null && lastQualifyingIsAny != null) {
+
+mark=lastQualifyingIsAny.get(name);
+
+posName="LastAny after " + posName;
+
+}
+
+break;
+
+default :
+
+throw new RuntimeException("Invalid position attribute in " + localName + ".");
+
+}
+
+if (log.isTraceEnabled()) {
+
+log.trace(localName + ": name[" + name+ "]; position ["+ posName+ "]");
+
+}
+
+return mark;
+
+}
+

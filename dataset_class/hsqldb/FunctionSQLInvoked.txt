@@ -1,0 +1,124 @@
+Location: FunctionSQLInvoked.java
+
+Content: 
+
+FunctionSQLInvoked(RoutineSchema routineSchema){
+
+  super(routineSchema.isAggregate() ? OpTypes.USER_AGGREGATE : OpTypes.FUNCTION);
+
+  this.routineSchema=routineSchema;
+
+}
+
+Location: FunctionSQLInvoked.java
+
+Content: 
+
+private Object getValueInternal(Session session,Object[] aggregateData){
+
+  boolean isValue=false;
+
+  Result result;
+
+  int extraArg=routine.javaMethodWithConnection ? 1 : 0;
+
+  Object[] data=ValuePool.emptyObjectArray;
+
+  boolean push=true;
+
+  if (extraArg + nodes.length > 0) {
+
+    if (opType == OpTypes.USER_AGGREGATE) {
+
+      data=new Object[routine.getParameterCount()];
+
+      for (int i=0; i < aggregateData.length; i++) {
+
+        data[i + 1]=aggregateData[i];
+
+      }
+
+    }
+
+ else {
+
+      data=new Object[nodes.length + extraArg];
+
+    }
+
+    if (!routine.isPSM()) {
+
+      Object connection=session.getInternalConnection();
+
+      if (extraArg > 0) {
+
+        data[0]=connection;
+
+      }
+
+    }
+
+  }
+
+  Type[] dataTypes=routine.getParameterTypes();
+
+  for (int i=0; i < nodes.length; i++) {
+
+    Expression e=nodes[i];
+
+    Object value=e.getValue(session,dataTypes[i]);
+
+    if (value == null) {
+
+      if (routine.isNullInputOutput()) {
+
+        return null;
+
+      }
+
+      if (!routine.getParameter(i).isNullable()) {
+
+        return Result.newErrorResult(Error.error(ErrorCode.X_39004));
+
+      }
+
+    }
+
+    if (routine.isPSM()) {
+
+      data[i]=value;
+
+    }
+
+ else {
+
+      data[i + extraArg]=e.dataType.convertSQLToJava(session,value);
+
+    }
+
+  }
+
+  result=routine.invoke(session,data,aggregateData,push);
+
+  session.releaseInternalConnection();
+
+  if (result.isError()) {
+
+    throw result.getException();
+
+  }
+
+  if (isValue) {
+
+    return result.valueData;
+
+  }
+
+ else {
+
+    return result;
+
+  }
+
+}
+

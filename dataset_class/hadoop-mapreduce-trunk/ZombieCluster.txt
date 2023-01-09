@@ -1,0 +1,178 @@
+Location: ZombieCluster.java
+
+Content: 
+
+private final void buildCluster(LoggedNetworkTopology topology,MachineNode defaultNode){
+
+  Map<LoggedNetworkTopology,Integer> levelMapping=new IdentityHashMap<LoggedNetworkTopology,Integer>();
+
+  Deque<LoggedNetworkTopology> unvisited=new ArrayDeque<LoggedNetworkTopology>();
+
+  unvisited.add(topology);
+
+  levelMapping.put(topology,0);
+
+  int leafLevel=-1;
+
+  for (LoggedNetworkTopology n=unvisited.poll(); n != null; n=unvisited.poll()) {
+
+    int level=levelMapping.get(n);
+
+    List<LoggedNetworkTopology> children=n.getChildren();
+
+    if (children == null || children.isEmpty()) {
+
+      if (leafLevel == -1) {
+
+        leafLevel=level;
+
+      }
+
+ else       if (leafLevel != level) {
+
+        throw new IllegalArgumentException("Leaf nodes are not on the same level");
+
+      }
+
+    }
+
+ else {
+
+      for (      LoggedNetworkTopology child : children) {
+
+        levelMapping.put(child,level + 1);
+
+        unvisited.addFirst(child);
+
+      }
+
+    }
+
+  }
+
+  Node[] path=new Node[leafLevel];
+
+  unvisited.add(topology);
+
+  for (LoggedNetworkTopology n=unvisited.poll(); n != null; n=unvisited.poll()) {
+
+    int level=levelMapping.get(n);
+
+    Node current;
+
+    if (level == leafLevel) {
+
+      MachineNode.Builder builder=new MachineNode.Builder(n.getName(),level);
+
+      if (defaultNode != null) {
+
+        builder.cloneFrom(defaultNode);
+
+      }
+
+      current=builder.build();
+
+    }
+
+ else {
+
+      current=(level == leafLevel - 1) ? new RackNode(n.getName(),level) : new Node(n.getName(),level);
+
+      path[level]=current;
+
+      for (      LoggedNetworkTopology child : n.getChildren()) {
+
+        unvisited.addFirst(child);
+
+      }
+
+    }
+
+    if (level != 0) {
+
+      path[level - 1].addChild(current);
+
+    }
+
+  }
+
+  root=path[0];
+
+}
+
+Location: ZombieCluster.java
+
+Content: 
+
+@Override public Node getClusterTopology(){
+
+  return root;
+
+}
+
+Location: ZombieCluster.java
+
+Content: 
+
+/** 
+
+ * Construct a homogeneous cluster. We assume that the leaves on the topology are  {@link MachineNode}s, and the parents of  {@link MachineNode}s are {@link RackNode}s. We also expect all leaf nodes are on the same level.
+
+ * @param input The input stream for the JSON-encoded topology file.
+
+ * @param defaultNode The default node setting.
+
+ * @throws IOException 
+
+ */
+
+public ZombieCluster(InputStream input,MachineNode defaultNode) throws IOException {
+
+  this(new ClusterTopologyReader(input).get(),defaultNode);
+
+}
+
+Location: ZombieCluster.java
+
+Content: 
+
+/** 
+
+ * Construct a homogeneous cluster. We assume that the leaves on the topology are  {@link MachineNode}s, and the parents of  {@link MachineNode}s are {@link RackNode}s. We also expect all leaf nodes are on the same level.
+
+ * @param topology The network topology.
+
+ * @param defaultNode The default node setting.
+
+ */
+
+public ZombieCluster(LoggedNetworkTopology topology,MachineNode defaultNode){
+
+  buildCluster(topology,defaultNode);
+
+}
+
+Location: ZombieCluster.java
+
+Content: 
+
+/** 
+
+ * Construct a homogeneous cluster. We assume that the leaves on the topology are  {@link MachineNode}s, and the parents of  {@link MachineNode}s are {@link RackNode}s. We also expect all leaf nodes are on the same level.
+
+ * @param path Path to the JSON-encoded topology file.
+
+ * @param conf
+
+ * @param defaultNode The default node setting.
+
+ * @throws IOException 
+
+ */
+
+public ZombieCluster(Path path,MachineNode defaultNode,Configuration conf) throws IOException {
+
+  this(new ClusterTopologyReader(path,conf).get(),defaultNode);
+
+}
+

@@ -1,0 +1,286 @@
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * Creates a catalog resolver and uses it for XML parsing and XSLT URI resolution. Tries the Apache Commons Resolver, and if unsuccessful, tries the same built into Java 6.
+
+ * @param userAgent the user agent instance
+
+ */
+
+public void createCatalogResolver(FOUserAgent userAgent){
+
+  String[] classNames=new String[]{"org.apache.xml.resolver.tools.CatalogResolver","com.sun.org.apache.xml.internal.resolver.tools.CatalogResolver"};
+
+  ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(userAgent.getEventBroadcaster());
+
+  Class resolverClass=null;
+
+  for (int i=0; i < classNames.length && resolverClass == null; ++i) {
+
+    try {
+
+      resolverClass=Class.forName(classNames[i]);
+
+    }
+
+ catch (    ClassNotFoundException e) {
+
+    }
+
+  }
+
+  if (resolverClass == null) {
+
+    eventProducer.catalogResolverNotFound(this);
+
+    return;
+
+  }
+
+  try {
+
+    entityResolver=(EntityResolver)resolverClass.getDeclaredConstructor().newInstance();
+
+    uriResolver=(URIResolver)resolverClass.getDeclaredConstructor().newInstance();
+
+  }
+
+ catch (  InstantiationException e) {
+
+    log.error("Error creating the catalog resolver: " + e.getMessage());
+
+    eventProducer.catalogResolverNotCreated(this,e.getMessage());
+
+  }
+
+catch (  IllegalAccessException e) {
+
+    log.error("Error creating the catalog resolver: " + e.getMessage());
+
+    eventProducer.catalogResolverNotCreated(this,e.getMessage());
+
+  }
+
+catch (  NoSuchMethodException e) {
+
+    log.error("Error creating the catalog resolver: " + e.getMessage());
+
+    eventProducer.catalogResolverNotCreated(this,e.getMessage());
+
+  }
+
+catch (  InvocationTargetException e) {
+
+    log.error("Error creating the catalog resolver: " + e.getMessage());
+
+    eventProducer.catalogResolverNotCreated(this,e.getMessage());
+
+  }
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ */
+
+public void error(TransformerException exc){
+
+  log.error(exc.toString());
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ */
+
+public void fatalError(TransformerException exc) throws TransformerException {
+
+  throw exc;
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+private XMLReader getXMLReader() throws ParserConfigurationException, SAXException {
+
+  SAXParserFactory spf=SAXParserFactory.newInstance();
+
+  spf.setFeature("http://xml.org/sax/features/namespaces",true);
+
+  spf.setFeature("http://apache.org/xml/features/xinclude",true);
+
+  spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);
+
+  XMLReader xr=spf.newSAXParser().getXMLReader();
+
+  return xr;
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * Constructor for FO input
+
+ * @param fofile the file to read the FO document.
+
+ */
+
+public InputHandler(File fofile){
+
+  sourcefile=fofile;
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * Constructor for XML-&gt;XSLT-&gt;FO input
+
+ * @param xmlfile XML file
+
+ * @param xsltfile XSLT file
+
+ * @param params Vector of command-line parameters (name, value,name, value, ...) for XSL stylesheet, null if none
+
+ */
+
+public InputHandler(File xmlfile,File xsltfile,Vector params){
+
+  sourcefile=xmlfile;
+
+  stylesheet=xsltfile;
+
+  xsltParams=params;
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * In contrast to render(Fop) this method only performs the XSLT stage and saves the intermediate XSL-FO file to the output file.
+
+ * @param out OutputStream to write the transformation result to.
+
+ * @throws FOPException in case of an error during processing
+
+ */
+
+public void transformTo(OutputStream out) throws FOPException {
+
+  Result res=new StreamResult(out);
+
+  transformTo(res);
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * Transforms the input document to the input format expected by FOP using XSLT.
+
+ * @param result the Result object where the result of the XSL transformation is sent to
+
+ * @throws FOPException in case of an error during processing
+
+ */
+
+protected void transformTo(Result result) throws FOPException {
+
+  try {
+
+    TransformerFactory factory=TransformerFactory.newInstance();
+
+    Transformer transformer;
+
+    Source xsltSource=createXSLTSource();
+
+    if (xsltSource == null) {
+
+      transformer=factory.newTransformer();
+
+    }
+
+ else {
+
+      transformer=factory.newTransformer(xsltSource);
+
+      if (xsltParams != null) {
+
+        for (int i=0; i < xsltParams.size(); i+=2) {
+
+          transformer.setParameter((String)xsltParams.elementAt(i),(String)xsltParams.elementAt(i + 1));
+
+        }
+
+      }
+
+      if (uriResolver != null) {
+
+        transformer.setURIResolver(uriResolver);
+
+      }
+
+    }
+
+    transformer.setErrorListener(this);
+
+    Source src=createMainSource();
+
+    transformer.transform(src,result);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new FOPException(e);
+
+  }
+
+}
+
+Location: InputHandler.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ */
+
+public void warning(TransformerException exc){
+
+  log.warn(exc.getLocalizedMessage());
+
+}
+

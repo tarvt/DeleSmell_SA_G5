@@ -1,0 +1,122 @@
+Location: ResourceEstimator.java
+
+Content: 
+
+/** 
+
+ * @return estimated length of this job's average map output
+
+ */
+
+long getEstimatedMapOutputSize(){
+
+  long estimate=0L;
+
+  if (job.desiredMaps() > 0) {
+
+    estimate=getEstimatedTotalMapOutputSize() / job.desiredMaps();
+
+  }
+
+  return estimate;
+
+}
+
+Location: ResourceEstimator.java
+
+Content: 
+
+/** 
+
+ * @return estimated length of this job's average reduce input
+
+ */
+
+long getEstimatedReduceInputSize(){
+
+  if (job.desiredReduces() == 0) {
+
+    return 0;
+
+  }
+
+ else {
+
+    return getEstimatedTotalMapOutputSize() / job.desiredReduces();
+
+  }
+
+}
+
+Location: ResourceEstimator.java
+
+Content: 
+
+/** 
+
+ * @return estimated length of this job's total map output
+
+ */
+
+protected synchronized long getEstimatedTotalMapOutputSize(){
+
+  if (completedMapsUpdates < threshholdToUse) {
+
+    return 0;
+
+  }
+
+ else {
+
+    long inputSize=job.getInputLength() + job.desiredMaps();
+
+    long estimate=Math.round((inputSize * completedMapsOutputSize * 2.0) / completedMapsInputSize);
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug("estimate total map output will be " + estimate);
+
+    }
+
+    return estimate;
+
+  }
+
+}
+
+Location: ResourceEstimator.java
+
+Content: 
+
+public ResourceEstimator(JobInProgress job){
+
+  this.job=job;
+
+  threshholdToUse=job.desiredMaps() / 10;
+
+}
+
+Location: ResourceEstimator.java
+
+Content: 
+
+protected synchronized void updateWithCompletedTask(TaskStatus ts,TaskInProgress tip){
+
+  if (tip.isMapTask() && ts.getOutputSize() != -1) {
+
+    completedMapsUpdates++;
+
+    completedMapsInputSize+=(tip.getMapInputSize() + 1);
+
+    completedMapsOutputSize+=ts.getOutputSize();
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug("completedMapsUpdates:" + completedMapsUpdates + "  "+ "completedMapsInputSize:"+ completedMapsInputSize+ "  "+ "completedMapsOutputSize:"+ completedMapsOutputSize);
+
+    }
+
+  }
+
+}
+

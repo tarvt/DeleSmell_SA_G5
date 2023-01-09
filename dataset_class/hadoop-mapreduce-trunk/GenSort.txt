@@ -1,0 +1,216 @@
+Location: GenSort.java
+
+Content: 
+
+/** 
+
+ * Generate an ascii record suitable for all sort benchmarks including  PennySort.
+
+ */
+
+static void generateAsciiRecord(byte[] recBuf,Unsigned16 rand,Unsigned16 recordNumber){
+
+  long temp=rand.getHigh8();
+
+  if (temp < 0) {
+
+    BigInteger bigTemp=makeBigInteger(temp);
+
+    recBuf[0]=(byte)(' ' + (bigTemp.mod(NINETY_FIVE).longValue()));
+
+    temp=bigTemp.divide(NINETY_FIVE).longValue();
+
+  }
+
+ else {
+
+    recBuf[0]=(byte)(' ' + (temp % 95));
+
+    temp/=95;
+
+  }
+
+  for (int i=1; i < 8; ++i) {
+
+    recBuf[i]=(byte)(' ' + (temp % 95));
+
+    temp/=95;
+
+  }
+
+  temp=rand.getLow8();
+
+  if (temp < 0) {
+
+    BigInteger bigTemp=makeBigInteger(temp);
+
+    recBuf[8]=(byte)(' ' + (bigTemp.mod(NINETY_FIVE).longValue()));
+
+    temp=bigTemp.divide(NINETY_FIVE).longValue();
+
+  }
+
+ else {
+
+    recBuf[8]=(byte)(' ' + (temp % 95));
+
+    temp/=95;
+
+  }
+
+  recBuf[9]=(byte)(' ' + (temp % 95));
+
+  recBuf[10]=' ';
+
+  recBuf[11]=' ';
+
+  for (int i=0; i < 32; i++) {
+
+    recBuf[12 + i]=(byte)recordNumber.getHexDigit(i);
+
+  }
+
+  recBuf[44]=' ';
+
+  recBuf[45]=' ';
+
+  for (int i=0; i < 13; ++i) {
+
+    recBuf[46 + i * 4]=recBuf[47 + i * 4]=recBuf[48 + i * 4]=recBuf[49 + i * 4]=(byte)rand.getHexDigit(19 + i);
+
+  }
+
+  recBuf[98]='\r';
+
+  recBuf[99]='\n';
+
+}
+
+Location: GenSort.java
+
+Content: 
+
+/** 
+
+ * Generate a "binary" record suitable for all sort benchmarks *except*  PennySort.
+
+ */
+
+static void generateRecord(byte[] recBuf,Unsigned16 rand,Unsigned16 recordNumber){
+
+  for (int i=0; i < 10; ++i) {
+
+    recBuf[i]=rand.getByte(i);
+
+  }
+
+  recBuf[10]=0x00;
+
+  recBuf[11]=0x11;
+
+  for (int i=0; i < 32; i++) {
+
+    recBuf[12 + i]=(byte)recordNumber.getHexDigit(i);
+
+  }
+
+  recBuf[44]=(byte)0x88;
+
+  recBuf[45]=(byte)0x99;
+
+  recBuf[46]=(byte)0xAA;
+
+  recBuf[47]=(byte)0xBB;
+
+  for (int i=0; i < 12; ++i) {
+
+    recBuf[48 + i * 4]=recBuf[49 + i * 4]=recBuf[50 + i * 4]=recBuf[51 + i * 4]=(byte)rand.getHexDigit(20 + i);
+
+  }
+
+  recBuf[96]=(byte)0xCC;
+
+  recBuf[97]=(byte)0xDD;
+
+  recBuf[98]=(byte)0xEE;
+
+  recBuf[99]=(byte)0xFF;
+
+}
+
+Location: GenSort.java
+
+Content: 
+
+private static BigInteger makeBigInteger(long x){
+
+  byte[] data=new byte[8];
+
+  for (int i=0; i < 8; ++i) {
+
+    data[i]=(byte)(x >>> (56 - 8 * i));
+
+  }
+
+  return new BigInteger(1,data);
+
+}
+
+Location: GenSort.java
+
+Content: 
+
+public static void outputRecords(OutputStream out,boolean useAscii,Unsigned16 firstRecordNumber,Unsigned16 recordsToGenerate,Unsigned16 checksum) throws IOException {
+
+  byte[] row=new byte[100];
+
+  Unsigned16 recordNumber=new Unsigned16(firstRecordNumber);
+
+  Unsigned16 lastRecordNumber=new Unsigned16(firstRecordNumber);
+
+  Checksum crc=new PureJavaCrc32();
+
+  Unsigned16 tmp=new Unsigned16();
+
+  lastRecordNumber.add(recordsToGenerate);
+
+  Unsigned16 ONE=new Unsigned16(1);
+
+  Unsigned16 rand=Random16.skipAhead(firstRecordNumber);
+
+  while (!recordNumber.equals(lastRecordNumber)) {
+
+    Random16.nextRand(rand);
+
+    if (useAscii) {
+
+      generateAsciiRecord(row,rand,recordNumber);
+
+    }
+
+ else {
+
+      generateRecord(row,rand,recordNumber);
+
+    }
+
+    if (checksum != null) {
+
+      crc.reset();
+
+      crc.update(row,0,row.length);
+
+      tmp.set(crc.getValue());
+
+      checksum.add(tmp);
+
+    }
+
+    recordNumber.add(ONE);
+
+    out.write(row);
+
+  }
+
+}
+

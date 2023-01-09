@@ -1,0 +1,160 @@
+Location: SimplifiedTransferQueueBundler.java
+
+Content: 
+
+protected void addMessage(Message msg,long size){
+
+  try {
+
+    while (curr < MSG_BUF_SIZE && msg_queue[curr] != null)     ++curr;
+
+    if (curr < MSG_BUF_SIZE) {
+
+      msg_queue[curr]=msg;
+
+      ++curr;
+
+    }
+
+ else {
+
+      sendBundledMessages();
+
+      msg_queue[0]=msg;
+
+    }
+
+  }
+
+  finally {
+
+    count+=size;
+
+  }
+
+}
+
+Location: SimplifiedTransferQueueBundler.java
+
+Content: 
+
+protected void sendBundledMessages(){
+
+  try {
+
+    _sendBundledMessages();
+
+  }
+
+  finally {
+
+    curr=0;
+
+  }
+
+}
+
+Location: SimplifiedTransferQueueBundler.java
+
+Content: 
+
+public SimplifiedTransferQueueBundler(){
+
+}
+
+Location: SimplifiedTransferQueueBundler.java
+
+Content: 
+
+public SimplifiedTransferQueueBundler(int capacity){
+
+  super(new ArrayBlockingQueue<>(assertPositive(capacity,"bundler capacity cannot be " + capacity)));
+
+}
+
+Location: SimplifiedTransferQueueBundler.java
+
+Content: 
+
+protected void _sendBundledMessages(){
+
+  int start=0;
+
+  for (; ; ) {
+
+    for (; start < MSG_BUF_SIZE && msg_queue[start] == null; ++start)     ;
+
+    if (start >= MSG_BUF_SIZE) {
+
+      count=0;
+
+      return;
+
+    }
+
+    Address dest=msg_queue[start].getDest();
+
+    int numMsgs=1;
+
+    for (int i=start + 1; i < MSG_BUF_SIZE; ++i) {
+
+      Message msg=msg_queue[i];
+
+      if (msg != null && (dest == msg.getDest() || (Objects.equals(dest,msg.getDest())))) {
+
+        msg.setDest(dest);
+
+        numMsgs++;
+
+      }
+
+    }
+
+    try {
+
+      output.position(0);
+
+      if (numMsgs == 1) {
+
+        sendSingleMessage(msg_queue[start]);
+
+        msg_queue[start]=null;
+
+      }
+
+ else {
+
+        Util.writeMessageListHeader(dest,msg_queue[start].getSrc(),transport.cluster_name.chars(),numMsgs,output,dest == null);
+
+        for (int i=start; i < MSG_BUF_SIZE; ++i) {
+
+          Message msg=msg_queue[i];
+
+          if (msg != null && msg.getDest() == dest) {
+
+            msg.writeToNoAddrs(msg.getSrc(),output,transport.getId());
+
+            msg_queue[i]=null;
+
+          }
+
+        }
+
+        transport.doSend(output.buffer(),0,output.position(),dest);
+
+      }
+
+      start++;
+
+    }
+
+ catch (    Exception e) {
+
+      log.error("Failed to send message",e);
+
+    }
+
+  }
+
+}
+

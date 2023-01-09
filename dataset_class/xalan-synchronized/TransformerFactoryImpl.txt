@@ -1,0 +1,710 @@
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Load the translet classes from local .class files and return the bytecode array.
+
+ * @param source        The xsl source
+
+ * @param fullClassName The full name of the translet
+
+ * @return The bytecode array
+
+ */
+
+private byte[][] getBytecodesFromClasses(Source source,String fullClassName){
+
+  if (fullClassName == null)   return null;
+
+  String xslFileName=getStylesheetFileName(source);
+
+  File xslFile=null;
+
+  if (xslFileName != null)   xslFile=new File(xslFileName);
+
+  final String transletName;
+
+  int lastDotIndex=fullClassName.lastIndexOf('.');
+
+  if (lastDotIndex > 0)   transletName=fullClassName.substring(lastDotIndex + 1);
+
+ else   transletName=fullClassName;
+
+  String transletPath=fullClassName.replace('.','/');
+
+  if (_destinationDirectory != null) {
+
+    transletPath=_destinationDirectory + "/" + transletPath+ ".class";
+
+  }
+
+ else {
+
+    if (xslFile != null && xslFile.getParent() != null)     transletPath=xslFile.getParent() + "/" + transletPath+ ".class";
+
+ else     transletPath=transletPath + ".class";
+
+  }
+
+  File transletFile=new File(transletPath);
+
+  if (!transletFile.exists())   return null;
+
+  if (xslFile != null && xslFile.exists()) {
+
+    long xslTimestamp=xslFile.lastModified();
+
+    long transletTimestamp=transletFile.lastModified();
+
+    if (transletTimestamp < xslTimestamp)     return null;
+
+  }
+
+  List bytecodes=new ArrayList();
+
+  int fileLength=(int)transletFile.length();
+
+  if (fileLength > 0) {
+
+    FileInputStream input=null;
+
+    try {
+
+      input=new FileInputStream(transletFile);
+
+    }
+
+ catch (    FileNotFoundException e) {
+
+      return null;
+
+    }
+
+    byte[] bytes=new byte[fileLength];
+
+    try {
+
+      readFromInputStream(bytes,input,fileLength);
+
+      input.close();
+
+    }
+
+ catch (    IOException e) {
+
+      return null;
+
+    }
+
+    bytecodes.add(bytes);
+
+  }
+
+ else   return null;
+
+  String transletParentDir=transletFile.getParent();
+
+  if (transletParentDir == null)   transletParentDir=System.getProperty("user.dir");
+
+  File transletParentFile=new File(transletParentDir);
+
+  final String transletAuxPrefix=transletName + "$";
+
+  File[] auxfiles=transletParentFile.listFiles(new FilenameFilter(){
+
+    public boolean accept(    File dir,    String name){
+
+      return (name.endsWith(".class") && name.startsWith(transletAuxPrefix));
+
+    }
+
+  }
+
+);
+
+  for (int i=0; i < auxfiles.length; i++) {
+
+    File auxfile=auxfiles[i];
+
+    int auxlength=(int)auxfile.length();
+
+    if (auxlength > 0) {
+
+      FileInputStream auxinput=null;
+
+      try {
+
+        auxinput=new FileInputStream(auxfile);
+
+      }
+
+ catch (      FileNotFoundException e) {
+
+        continue;
+
+      }
+
+      byte[] bytes=new byte[auxlength];
+
+      try {
+
+        readFromInputStream(bytes,auxinput,auxlength);
+
+        auxinput.close();
+
+      }
+
+ catch (      IOException e) {
+
+        continue;
+
+      }
+
+      bytecodes.add(bytes);
+
+    }
+
+  }
+
+  final int count=bytecodes.size();
+
+  if (count > 0) {
+
+    final byte[][] result=new byte[count][1];
+
+    for (int i=0; i < count; i++) {
+
+      result[i]=(byte[])bytecodes.get(i);
+
+    }
+
+    return result;
+
+  }
+
+ else   return null;
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Load the translet classes from the jar file and return the bytecode.
+
+ * @param source        The xsl source
+
+ * @param fullClassName The full name of the translet
+
+ * @return The bytecode array
+
+ */
+
+private byte[][] getBytecodesFromJar(Source source,String fullClassName){
+
+  String xslFileName=getStylesheetFileName(source);
+
+  File xslFile=null;
+
+  if (xslFileName != null)   xslFile=new File(xslFileName);
+
+  String jarPath=null;
+
+  if (_destinationDirectory != null)   jarPath=_destinationDirectory + "/" + _jarFileName;
+
+ else {
+
+    if (xslFile != null && xslFile.getParent() != null)     jarPath=xslFile.getParent() + "/" + _jarFileName;
+
+ else     jarPath=_jarFileName;
+
+  }
+
+  File file=new File(jarPath);
+
+  if (!file.exists())   return null;
+
+  if (xslFile != null && xslFile.exists()) {
+
+    long xslTimestamp=xslFile.lastModified();
+
+    long transletTimestamp=file.lastModified();
+
+    if (transletTimestamp < xslTimestamp)     return null;
+
+  }
+
+  ZipFile jarFile=null;
+
+  try {
+
+    jarFile=new ZipFile(file);
+
+  }
+
+ catch (  IOException e) {
+
+    return null;
+
+  }
+
+  String transletPath=fullClassName.replace('.','/');
+
+  String transletAuxPrefix=transletPath + "$";
+
+  String transletFullName=transletPath + ".class";
+
+  List bytecodes=new ArrayList();
+
+  Enumeration entries=jarFile.entries();
+
+  while (entries.hasMoreElements()) {
+
+    ZipEntry entry=(ZipEntry)entries.nextElement();
+
+    String entryName=entry.getName();
+
+    if (entry.getSize() > 0 && (entryName.equals(transletFullName) || (entryName.endsWith(".class") && entryName.startsWith(transletAuxPrefix)))) {
+
+      try {
+
+        InputStream input=jarFile.getInputStream(entry);
+
+        int size=(int)entry.getSize();
+
+        byte[] bytes=new byte[size];
+
+        readFromInputStream(bytes,input,size);
+
+        input.close();
+
+        bytecodes.add(bytes);
+
+      }
+
+ catch (      IOException e) {
+
+        return null;
+
+      }
+
+    }
+
+  }
+
+  final int count=bytecodes.size();
+
+  if (count > 0) {
+
+    final byte[][] result=new byte[count][1];
+
+    for (int i=0; i < count; i++) {
+
+      result[i]=(byte[])bytecodes.get(i);
+
+    }
+
+    return result;
+
+  }
+
+ else   return null;
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * The systemID that was specified in processFromNode(Node node, String systemID).
+
+ * @return The systemID, or null.
+
+ */
+
+String getDOMsystemID(){
+
+  return m_DOMsystemID;
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the Class object the provides the XSLTC DTM Manager service.
+
+ */
+
+protected Class getDTMManagerClass(){
+
+  return m_DTMManagerClass;
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Return the local file name from the systemId of the Source object
+
+ * @param source The Source
+
+ * @return The file name in the local filesystem, or null if the systemId doesnot represent a local file.
+
+ */
+
+private String getStylesheetFileName(Source source){
+
+  String systemId=source.getSystemId();
+
+  if (systemId != null) {
+
+    File file=new File(systemId);
+
+    if (file.exists())     return systemId;
+
+ else {
+
+      URL url=null;
+
+      try {
+
+        url=new URL(systemId);
+
+      }
+
+ catch (      MalformedURLException e) {
+
+        return null;
+
+      }
+
+      if ("file".equals(url.getProtocol()))       return url.getFile();
+
+ else       return null;
+
+    }
+
+  }
+
+ else   return null;
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Return the base class name of the translet. The translet name is resolved using the following rules: 1. if the _transletName attribute is set and its value is not "GregorSamsa", then _transletName is returned. 2. otherwise get the translet name from the base name of the system ID 3. return "GregorSamsa" if the result from step 2 is null.
+
+ * @param source The input Source
+
+ * @return The name of the translet class
+
+ */
+
+private String getTransletBaseName(Source source){
+
+  String transletBaseName=null;
+
+  if (!_transletName.equals(DEFAULT_TRANSLET_NAME))   return _transletName;
+
+ else {
+
+    String systemId=source.getSystemId();
+
+    if (systemId != null) {
+
+      String baseName=Util.baseName(systemId);
+
+      if (baseName != null) {
+
+        baseName=Util.noExtName(baseName);
+
+        transletBaseName=Util.toJavaName(baseName);
+
+      }
+
+    }
+
+  }
+
+  return (transletBaseName != null) ? transletBaseName : DEFAULT_TRANSLET_NAME;
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Pass error messages from the compiler to the error listener
+
+ */
+
+private void passErrorsToListener(Vector messages){
+
+  try {
+
+    if (_errorListener == null || messages == null) {
+
+      return;
+
+    }
+
+    final int count=messages.size();
+
+    for (int pos=0; pos < count; pos++) {
+
+      String message=messages.elementAt(pos).toString();
+
+      _errorListener.error(new TransformerException(message));
+
+    }
+
+  }
+
+ catch (  TransformerException e) {
+
+  }
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Pass warning messages from the compiler to the error listener
+
+ */
+
+private void passWarningsToListener(Vector messages) throws TransformerException {
+
+  if (_errorListener == null || messages == null) {
+
+    return;
+
+  }
+
+  final int count=messages.size();
+
+  for (int pos=0; pos < count; pos++) {
+
+    ErrorMsg msg=(ErrorMsg)messages.elementAt(pos);
+
+    if (msg.isWarningError())     _errorListener.error(new TransformerConfigurationException(msg.toString()));
+
+ else     _errorListener.warning(new TransformerConfigurationException(msg.toString()));
+
+  }
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+public javax.xml.transform.Templates processFromNode(Node node) throws TransformerConfigurationException {
+
+  try {
+
+    TemplatesHandler builder=newTemplatesHandler();
+
+    TreeWalker walker=new TreeWalker(builder,new org.apache.xml.utils.DOM2Helper(),builder.getSystemId());
+
+    walker.traverse(node);
+
+    return builder.getTemplates();
+
+  }
+
+ catch (  org.xml.sax.SAXException se) {
+
+    if (m_errorListener != null) {
+
+      try {
+
+        m_errorListener.fatalError(new TransformerException(se));
+
+      }
+
+ catch (      TransformerConfigurationException ex) {
+
+        throw ex;
+
+      }
+
+catch (      TransformerException ex) {
+
+        throw new TransformerConfigurationException(ex);
+
+      }
+
+      return null;
+
+    }
+
+ else {
+
+      throw new TransformerConfigurationException(XSLMessages.createMessage(XSLTErrorResources.ER_PROCESSFROMNODE_FAILED,null),se);
+
+    }
+
+  }
+
+catch (  TransformerConfigurationException tce) {
+
+    throw tce;
+
+  }
+
+catch (  Exception e) {
+
+    if (m_errorListener != null) {
+
+      try {
+
+        m_errorListener.fatalError(new TransformerException(e));
+
+      }
+
+ catch (      TransformerConfigurationException ex) {
+
+        throw ex;
+
+      }
+
+catch (      TransformerException ex) {
+
+        throw new TransformerConfigurationException(ex);
+
+      }
+
+      return null;
+
+    }
+
+ else {
+
+      throw new TransformerConfigurationException(XSLMessages.createMessage(XSLTErrorResources.ER_PROCESSFROMNODE_FAILED,null),e);
+
+    }
+
+  }
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Process the stylesheet from a DOM tree, if the processor supports the "http://xml.org/trax/features/dom/input" feature.
+
+ * @param node     A DOM tree which must contain valid transform instructionsthat this processor understands.
+
+ * @param systemID The systemID from where xsl:includes and xsl:imports shouldbe resolved from.
+
+ * @return A Templates object capable of being used for transformation purposes.
+
+ * @throws TransformerConfigurationException
+
+ */
+
+javax.xml.transform.Templates processFromNode(Node node,String systemID) throws TransformerConfigurationException {
+
+  m_DOMsystemID=systemID;
+
+  return processFromNode(node);
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Read a given number of bytes from the InputStream into a byte array.
+
+ * @param bytes The byte array to store the input content.
+
+ * @param input The input stream.
+
+ * @param size  The number of bytes to read.
+
+ */
+
+private void readFromInputStream(byte[] bytes,InputStream input,int size) throws IOException {
+
+  int n=0;
+
+  int offset=0;
+
+  int length=size;
+
+  while (length > 0 && (n=input.read(bytes,offset,length)) > 0) {
+
+    offset=offset + n;
+
+    length=length - n;
+
+  }
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * Reset the per-session attributes to their default values
+
+ */
+
+private void resetTransientAttributes(){
+
+  _transletName=DEFAULT_TRANSLET_NAME;
+
+  _destinationDirectory=null;
+
+  _packageName=null;
+
+  _jarFileName=null;
+
+}
+
+Location: TransformerFactoryImpl.java
+
+Content: 
+
+/** 
+
+ * javax.xml.transform.sax.TransformerFactory implementation.
+
+ */
+
+public TransformerFactoryImpl(){
+
+  m_DTMManagerClass=XSLTCDTMManager.getDTMManagerClass();
+
+}
+

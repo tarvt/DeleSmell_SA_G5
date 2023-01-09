@@ -1,0 +1,108 @@
+Location: TestDelegationToken.java
+
+Content: 
+
+@Test public void testDelegationToken() throws Exception {
+
+  JobClient client;
+
+  client=user1.doAs(new PrivilegedExceptionAction<JobClient>(){
+
+    @Override public JobClient run() throws Exception {
+
+      return new JobClient(cluster.createJobConf());
+
+    }
+
+  }
+
+);
+
+  JobClient bobClient;
+
+  bobClient=user2.doAs(new PrivilegedExceptionAction<JobClient>(){
+
+    @Override public JobClient run() throws Exception {
+
+      return new JobClient(cluster.createJobConf());
+
+    }
+
+  }
+
+);
+
+  Token<DelegationTokenIdentifier> token=client.getDelegationToken(new Text(user1.getUserName()));
+
+  DataInputBuffer inBuf=new DataInputBuffer();
+
+  byte[] bytes=token.getIdentifier();
+
+  inBuf.reset(bytes,bytes.length);
+
+  DelegationTokenIdentifier ident=new DelegationTokenIdentifier();
+
+  ident.readFields(inBuf);
+
+  assertEquals("alice",ident.getUser().getUserName());
+
+  long createTime=ident.getIssueDate();
+
+  long maxTime=ident.getMaxDate();
+
+  long currentTime=System.currentTimeMillis();
+
+  System.out.println("create time: " + createTime);
+
+  System.out.println("current time: " + currentTime);
+
+  System.out.println("max time: " + maxTime);
+
+  assertTrue("createTime < current",createTime < currentTime);
+
+  assertTrue("current < maxTime",currentTime < maxTime);
+
+  client.renewDelegationToken(token);
+
+  client.renewDelegationToken(token);
+
+  try {
+
+    bobClient.renewDelegationToken(token);
+
+    Assert.fail("bob renew");
+
+  }
+
+ catch (  AccessControlException ace) {
+
+  }
+
+  try {
+
+    bobClient.cancelDelegationToken(token);
+
+    Assert.fail("bob renew");
+
+  }
+
+ catch (  AccessControlException ace) {
+
+  }
+
+  client.cancelDelegationToken(token);
+
+  try {
+
+    client.cancelDelegationToken(token);
+
+    Assert.fail("second alice cancel");
+
+  }
+
+ catch (  InvalidToken it) {
+
+  }
+
+}
+

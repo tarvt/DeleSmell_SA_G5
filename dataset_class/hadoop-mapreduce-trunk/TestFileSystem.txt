@@ -1,0 +1,504 @@
+Location: TestFileSystem.java
+
+Content: 
+
+static void checkPath(MiniDFSCluster cluster,FileSystem fileSys) throws IOException {
+
+  InetSocketAddress add=cluster.getNameNode().getNameNodeAddress();
+
+  fileSys.checkPath(new Path("hdfs://" + add.getHostName().toUpperCase() + ":"+ add.getPort()));
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public static void createControlFile(FileSystem fs,long megaBytes,int numFiles,long seed) throws Exception {
+
+  LOG.info("creating control file: " + megaBytes + " bytes, "+ numFiles+ " files");
+
+  Path controlFile=new Path(CONTROL_DIR,"files");
+
+  fs.delete(controlFile,true);
+
+  Random random=new Random(seed);
+
+  SequenceFile.Writer writer=SequenceFile.createWriter(fs,conf,controlFile,Text.class,LongWritable.class,CompressionType.NONE);
+
+  long totalSize=0;
+
+  long maxSize=((megaBytes / numFiles) * 2) + 1;
+
+  try {
+
+    while (totalSize < megaBytes) {
+
+      Text name=new Text(Long.toString(random.nextLong()));
+
+      long size=random.nextLong();
+
+      if (size < 0)       size=-size;
+
+      size=size % maxSize;
+
+      writer.append(name,new LongWritable(size));
+
+      totalSize+=size;
+
+    }
+
+  }
+
+  finally {
+
+    writer.close();
+
+  }
+
+  LOG.info("created control file for: " + totalSize + " bytes");
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public static void readTest(FileSystem fs,boolean fastCheck) throws Exception {
+
+  fs.delete(READ_DIR,true);
+
+  JobConf job=new JobConf(conf,TestFileSystem.class);
+
+  job.setBoolean("fs.test.fastCheck",fastCheck);
+
+  FileInputFormat.setInputPaths(job,CONTROL_DIR);
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setMapperClass(ReadMapper.class);
+
+  job.setReducerClass(LongSumReducer.class);
+
+  FileOutputFormat.setOutputPath(job,READ_DIR);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(LongWritable.class);
+
+  job.setNumReduceTasks(1);
+
+  JobClient.runJob(job);
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+static void runTestCache(int port) throws Exception {
+
+  Configuration conf=new Configuration();
+
+  MiniDFSCluster cluster=null;
+
+  try {
+
+    cluster=new MiniDFSCluster(port,conf,2,true,true,null,null);
+
+    URI uri=cluster.getFileSystem().getUri();
+
+    LOG.info("uri=" + uri);
+
+{
+
+      FileSystem fs=FileSystem.get(uri,new Configuration());
+
+      checkPath(cluster,fs);
+
+      for (int i=0; i < 100; i++) {
+
+        assertTrue(fs == FileSystem.get(uri,new Configuration()));
+
+      }
+
+    }
+
+    if (port == NameNode.DEFAULT_PORT) {
+
+      URI uri2=new URI(uri.getScheme(),uri.getUserInfo(),uri.getHost(),NameNode.DEFAULT_PORT,uri.getPath(),uri.getQuery(),uri.getFragment());
+
+      LOG.info("uri2=" + uri2);
+
+      FileSystem fs=FileSystem.get(uri2,conf);
+
+      checkPath(cluster,fs);
+
+      for (int i=0; i < 100; i++) {
+
+        assertTrue(fs == FileSystem.get(uri2,new Configuration()));
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    if (cluster != null)     cluster.shutdown();
+
+  }
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public static void seekTest(FileSystem fs,boolean fastCheck) throws Exception {
+
+  fs.delete(READ_DIR,true);
+
+  JobConf job=new JobConf(conf,TestFileSystem.class);
+
+  job.setBoolean("fs.test.fastCheck",fastCheck);
+
+  FileInputFormat.setInputPaths(job,CONTROL_DIR);
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setMapperClass(SeekMapper.class);
+
+  job.setReducerClass(LongSumReducer.class);
+
+  FileOutputFormat.setOutputPath(job,READ_DIR);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(LongWritable.class);
+
+  job.setNumReduceTasks(1);
+
+  JobClient.runJob(job);
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public void testCacheKeysAreCaseInsensitive() throws Exception {
+
+  Configuration conf=new Configuration();
+
+  FileSystem.Cache.Key lowercaseCachekey1=new FileSystem.Cache.Key(new URI("hftp://localhost:12345/"),conf);
+
+  FileSystem.Cache.Key lowercaseCachekey2=new FileSystem.Cache.Key(new URI("hftp://localhost:12345/"),conf);
+
+  assertEquals(lowercaseCachekey1,lowercaseCachekey2);
+
+  FileSystem.Cache.Key uppercaseCachekey=new FileSystem.Cache.Key(new URI("HFTP://Localhost:12345/"),conf);
+
+  assertEquals(lowercaseCachekey2,uppercaseCachekey);
+
+  List<FileSystem.Cache.Key> list=new ArrayList<FileSystem.Cache.Key>();
+
+  list.add(uppercaseCachekey);
+
+  assertTrue(list.contains(uppercaseCachekey));
+
+  assertTrue(list.contains(lowercaseCachekey2));
+
+  Set<FileSystem.Cache.Key> set=new HashSet<FileSystem.Cache.Key>();
+
+  set.add(uppercaseCachekey);
+
+  assertTrue(set.contains(uppercaseCachekey));
+
+  assertTrue(set.contains(lowercaseCachekey2));
+
+  Map<FileSystem.Cache.Key,String> map=new HashMap<FileSystem.Cache.Key,String>();
+
+  map.put(uppercaseCachekey,"");
+
+  assertTrue(map.containsKey(uppercaseCachekey));
+
+  assertTrue(map.containsKey(lowercaseCachekey2));
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public static void testCommandFormat() throws Exception {
+
+  CommandFormat cf;
+
+  cf=new CommandFormat("copyToLocal",2,2,"crc","ignoreCrc");
+
+  assertEquals(cf.parse(new String[]{"-get","file","-"},1).get(1),"-");
+
+  assertEquals(cf.parse(new String[]{"-get","file","-ignoreCrc","/foo"},1).get(1),"/foo");
+
+  cf=new CommandFormat("tail",1,1,"f");
+
+  assertEquals(cf.parse(new String[]{"-tail","fileName"},1).get(0),"fileName");
+
+  assertEquals(cf.parse(new String[]{"-tail","-f","fileName"},1).get(0),"fileName");
+
+  cf=new CommandFormat("setrep",2,2,"R","w");
+
+  assertEquals(cf.parse(new String[]{"-setrep","-R","2","/foo/bar"},1).get(1),"/foo/bar");
+
+  cf=new CommandFormat("put",2,10000);
+
+  assertEquals(cf.parse(new String[]{"-put","-","dest"},1).get(1),"dest");
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public void testFs() throws Exception {
+
+  testFs(10 * MEGA,100,0);
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public void testFsCache() throws Exception {
+
+{
+
+    long now=System.currentTimeMillis();
+
+    String[] users=new String[]{"foo","bar"};
+
+    final Configuration conf=new Configuration();
+
+    FileSystem[] fs=new FileSystem[users.length];
+
+    for (int i=0; i < users.length; i++) {
+
+      UserGroupInformation ugi=UserGroupInformation.createRemoteUser(users[i]);
+
+      fs[i]=ugi.doAs(new PrivilegedExceptionAction<FileSystem>(){
+
+        public FileSystem run() throws IOException {
+
+          return FileSystem.get(conf);
+
+        }
+
+      }
+
+);
+
+      for (int j=0; j < i; j++) {
+
+        assertFalse(fs[j] == fs[i]);
+
+      }
+
+    }
+
+    FileSystem.closeAll();
+
+  }
+
+{
+
+    try {
+
+      runTestCache(NameNode.DEFAULT_PORT);
+
+    }
+
+ catch (    java.net.BindException be) {
+
+      LOG.warn("Cannot test NameNode.DEFAULT_PORT (=" + NameNode.DEFAULT_PORT + ")",be);
+
+    }
+
+    runTestCache(0);
+
+  }
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public void testFsClose() throws Exception {
+
+{
+
+    Configuration conf=new Configuration();
+
+    new Path("file:///").getFileSystem(conf);
+
+    FileSystem.closeAll();
+
+  }
+
+{
+
+    Configuration conf=new Configuration();
+
+    new Path("hftp://localhost:12345/").getFileSystem(conf);
+
+    FileSystem.closeAll();
+
+  }
+
+{
+
+    Configuration conf=new Configuration();
+
+    FileSystem fs=new Path("hftp://localhost:12345/").getFileSystem(conf);
+
+    FileSystem.closeAll();
+
+  }
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public void testFsShutdownHook() throws Exception {
+
+  final Set<FileSystem> closed=Collections.synchronizedSet(new HashSet<FileSystem>());
+
+  Configuration conf=new Configuration();
+
+  Configuration confNoAuto=new Configuration();
+
+  conf.setClass("fs.test.impl",TestShutdownFileSystem.class,FileSystem.class);
+
+  confNoAuto.setClass("fs.test.impl",TestShutdownFileSystem.class,FileSystem.class);
+
+  confNoAuto.setBoolean("fs.automatic.close",false);
+
+  TestShutdownFileSystem fsWithAuto=(TestShutdownFileSystem)(new Path("test://a/").getFileSystem(conf));
+
+  TestShutdownFileSystem fsWithoutAuto=(TestShutdownFileSystem)(new Path("test://b/").getFileSystem(confNoAuto));
+
+  fsWithAuto.setClosedSet(closed);
+
+  fsWithoutAuto.setClosedSet(closed);
+
+  assertNotSame(fsWithAuto,fsWithoutAuto);
+
+  FileSystem.CACHE.closeAll(true);
+
+  assertEquals(1,closed.size());
+
+  assertTrue(closed.contains(fsWithAuto));
+
+  closed.clear();
+
+  FileSystem.closeAll();
+
+  assertEquals(1,closed.size());
+
+  assertTrue(closed.contains(fsWithoutAuto));
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public static void testFsUniqueness(long megaBytes,int numFiles,long seed) throws Exception {
+
+  FileSystem fs1=FileSystem.get(conf);
+
+  FileSystem fs2=FileSystem.get(conf);
+
+  assertTrue(fs1 == fs2);
+
+  fs1=FileSystem.newInstance(conf);
+
+  fs2=FileSystem.newInstance(conf);
+
+  assertTrue(fs1 != fs2 && !fs1.equals(fs2));
+
+  fs1.close();
+
+  fs2.close();
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public static void testFs(long megaBytes,int numFiles,long seed) throws Exception {
+
+  FileSystem fs=FileSystem.get(conf);
+
+  if (seed == 0)   seed=new Random().nextLong();
+
+  LOG.info("seed = " + seed);
+
+  createControlFile(fs,megaBytes,numFiles,seed);
+
+  writeTest(fs,false);
+
+  readTest(fs,false);
+
+  seekTest(fs,false);
+
+  fs.delete(CONTROL_DIR,true);
+
+  fs.delete(DATA_DIR,true);
+
+  fs.delete(WRITE_DIR,true);
+
+  fs.delete(READ_DIR,true);
+
+}
+
+Location: TestFileSystem.java
+
+Content: 
+
+public static void writeTest(FileSystem fs,boolean fastCheck) throws Exception {
+
+  fs.delete(DATA_DIR,true);
+
+  fs.delete(WRITE_DIR,true);
+
+  JobConf job=new JobConf(conf,TestFileSystem.class);
+
+  job.setBoolean("fs.test.fastCheck",fastCheck);
+
+  FileInputFormat.setInputPaths(job,CONTROL_DIR);
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setMapperClass(WriteMapper.class);
+
+  job.setReducerClass(LongSumReducer.class);
+
+  FileOutputFormat.setOutputPath(job,WRITE_DIR);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(LongWritable.class);
+
+  job.setNumReduceTasks(1);
+
+  JobClient.runJob(job);
+
+}
+

@@ -1,0 +1,438 @@
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * Used by INSERT, DELETE, UPDATE operations. This class will return a more appropriate message when there is no data source.
+
+ */
+
+public void checkDataReadOnly(){
+
+  if (dataSource.length() == 0) {
+
+    String name=getName().getSchemaQualifiedStatementName();
+
+    throw Error.error(ErrorCode.TEXT_TABLE_UNKNOWN_DATA_SOURCE,name);
+
+  }
+
+  if (isDataReadOnly()) {
+
+    throw Error.error(ErrorCode.DATA_IS_READONLY);
+
+  }
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * connects to the data source
+
+ */
+
+public void connect(Session session){
+
+  connect(session,isReadOnly);
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * connects to the data source
+
+ */
+
+private void connect(Session session,boolean withReadOnlyData){
+
+  if ((dataSource.length() == 0) || isConnected) {
+
+    return;
+
+  }
+
+  store=database.persistentStoreCollection.getStore(this);
+
+  TextCache cache=null;
+
+  TextFileReader reader=null;
+
+  boolean readOnly=isReadOnly || database.isReadOnly();
+
+  String securePath=database.logger.getSecurePath(dataSource,false,true);
+
+  if (securePath == null) {
+
+    throw (Error.error(ErrorCode.ACCESS_IS_DENIED,dataSource));
+
+  }
+
+  try {
+
+    cache=(TextCache)database.logger.textTableManager.openTextFilePersistence(this,securePath,readOnly,isReversed);
+
+    store.setCache(cache);
+
+    reader=cache.getTextFileReader();
+
+    if (cache.isIgnoreFirstLine()) {
+
+      reader.readHeaderLine();
+
+      cache.setHeaderInitialise(reader.getHeaderLine());
+
+    }
+
+    readDataIntoTable(session,store,reader);
+
+  }
+
+ catch (  Throwable t) {
+
+    long linenumber=reader == null ? 0 : reader.getLineNumber();
+
+    store.removeAll();
+
+    if (identitySequence != null) {
+
+      identitySequence.reset();
+
+    }
+
+    if (cache != null) {
+
+      database.logger.textTableManager.closeTextCache(this);
+
+      store.release();
+
+    }
+
+    throw Error.error(t,ErrorCode.TEXT_FILE,0,new Object[]{Long.valueOf(linenumber),t.toString()});
+
+  }
+
+  isConnected=true;
+
+  isReadOnly=withReadOnlyData;
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * disconnects from the data source
+
+ */
+
+public void disconnect(){
+
+  this.store=null;
+
+  PersistentStore store=database.persistentStoreCollection.getStore(this);
+
+  store.release();
+
+  isConnected=false;
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+public String getDataSource(){
+
+  return dataSource;
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+String getDataSourceDDL(){
+
+  String dataSource=getDataSource();
+
+  if (dataSource == null) {
+
+    return null;
+
+  }
+
+  StringBuffer sb=new StringBuffer(128);
+
+  sb.append(Tokens.T_SET).append(' ').append(Tokens.T_TABLE).append(' ');
+
+  sb.append(getName().getSchemaQualifiedStatementName());
+
+  sb.append(' ').append(Tokens.T_SOURCE).append(' ').append('\'');
+
+  sb.append(dataSource);
+
+  sb.append('\'');
+
+  return sb.toString();
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * Generates the SET TABLE <tablename> SOURCE HEADER <string> statement for a text table;
+
+ */
+
+String getDataSourceHeader(){
+
+  String header=getHeader();
+
+  if (header == null) {
+
+    return null;
+
+  }
+
+  StringBuffer sb=new StringBuffer(128);
+
+  sb.append(Tokens.T_SET).append(' ').append(Tokens.T_TABLE).append(' ');
+
+  sb.append(getName().getSchemaQualifiedStatementName());
+
+  sb.append(' ').append(Tokens.T_SOURCE).append(' ');
+
+  sb.append(Tokens.T_HEADER).append(' ');
+
+  sb.append(header);
+
+  return sb.toString();
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * Adds commitPersistence() call
+
+ */
+
+public void insertData(Session session,PersistentStore store,Object[] data){
+
+  Row row=(Row)store.getNewCachedObject(session,data,false);
+
+  store.indexRow(session,row);
+
+  store.commitPersistence(row);
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+public boolean isDescDataSource(){
+
+  return isReversed;
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * This method does some of the work involved with managing the creation and opening of the cache, the rest is done in Log.java and TextCache.java. Better clarification of the role of the methods is needed.
+
+ */
+
+private void openCache(Session session,String dataSourceNew,boolean isReversedNew,boolean isReadOnlyNew){
+
+  String dataSourceOld=dataSource;
+
+  boolean isReversedOld=isReversed;
+
+  boolean isReadOnlyOld=isReadOnly;
+
+  if (dataSourceNew == null) {
+
+    dataSourceNew="";
+
+  }
+
+  disconnect();
+
+  dataSource=dataSourceNew;
+
+  isReversed=(isReversedNew && dataSource.length() > 0);
+
+  try {
+
+    connect(session,isReadOnlyNew || isReversedNew);
+
+  }
+
+ catch (  HsqlException e) {
+
+    dataSource=dataSourceOld;
+
+    isReversed=isReversedOld;
+
+    connect(session,isReadOnlyOld);
+
+    throw e;
+
+  }
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+private void readDataIntoTable(Session session,PersistentStore store,TextFileReader reader){
+
+  while (true) {
+
+    RowInputInterface rowIn=reader.readObject();
+
+    if (rowIn == null) {
+
+      break;
+
+    }
+
+    Row row=(Row)store.get(rowIn);
+
+    if (row == null) {
+
+      break;
+
+    }
+
+    Object[] data=row.getData();
+
+    systemUpdateIdentityValue(data);
+
+    enforceRowConstraints(session,data);
+
+    store.indexRow(session,row);
+
+  }
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+public void setDataReadOnly(boolean value){
+
+  if (!value) {
+
+    if (isReversed) {
+
+      throw Error.error(ErrorCode.DATA_IS_READONLY);
+
+    }
+
+    if (database.isFilesReadOnly()) {
+
+      throw Error.error(ErrorCode.DATABASE_IS_READONLY);
+
+    }
+
+    if (isConnected()) {
+
+      store.getCache().close();
+
+      store.getCache().open(value);
+
+    }
+
+  }
+
+  isReadOnly=value;
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * High level command to assign a data source to the table definition. Reassigns only if the data source or direction has changed.
+
+ */
+
+void setDataSource(Session session,String dataSourceNew,boolean isReversedNew,boolean createFile){
+
+  if (getTableType() == Table.TEMP_TEXT_TABLE) {
+
+  }
+
+ else {
+
+    session.getGrantee().checkSchemaUpdateOrGrantRights(getSchemaName().name);
+
+  }
+
+  dataSourceNew=dataSourceNew.trim();
+
+  if (isReversedNew || (isReversedNew != isReversed) || !dataSource.equals(dataSourceNew)|| !isConnected) {
+
+    openCache(session,dataSourceNew,isReversedNew,isReadOnly);
+
+  }
+
+  if (isReversed) {
+
+    isReadOnly=true;
+
+  }
+
+}
+
+Location: TextTable.java
+
+Content: 
+
+/** 
+
+ * Constructs a new TextTable from the given arguments.
+
+ * @param db the owning database
+
+ * @param name the table's HsqlName
+
+ * @param type code (normal or temp text table)
+
+ */
+
+TextTable(Database db,HsqlNameManager.HsqlName name,int type){
+
+  super(db,name,type);
+
+  isWithDataSource=true;
+
+}
+

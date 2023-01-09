@@ -1,0 +1,416 @@
+Location: RowType.java
+
+Content: 
+
+public boolean canBeAssignedFrom(Type otherType){
+
+  if (otherType == null) {
+
+    return true;
+
+  }
+
+  if (!otherType.isRowType()) {
+
+    return false;
+
+  }
+
+  Type[] otherTypes=((RowType)otherType).getTypesArray();
+
+  if (dataTypes.length != otherTypes.length) {
+
+    return false;
+
+  }
+
+  for (int i=0; i < dataTypes.length; i++) {
+
+    if (!dataTypes[i].canBeAssignedFrom(otherTypes[i])) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public boolean canConvertFrom(Type otherType){
+
+  if (otherType == null) {
+
+    return true;
+
+  }
+
+  if (!otherType.isRowType()) {
+
+    return false;
+
+  }
+
+  Type[] otherTypes=((RowType)otherType).getTypesArray();
+
+  if (dataTypes.length != otherTypes.length) {
+
+    return false;
+
+  }
+
+  for (int i=0; i < dataTypes.length; i++) {
+
+    if (!dataTypes[i].canConvertFrom(otherTypes[i])) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public int compare(Session session,Object a,Object b,SortAndSlice sort){
+
+  if (a == b) {
+
+    return 0;
+
+  }
+
+  if (a == null) {
+
+    return -1;
+
+  }
+
+  if (b == null) {
+
+    return 1;
+
+  }
+
+  Object[] arra=(Object[])a;
+
+  Object[] arrb=(Object[])b;
+
+  int length=sort.columnCount;
+
+  for (int i=0; i < length; i++) {
+
+    int pos=sort.sortOrder[i];
+
+    a=arra[pos];
+
+    b=arrb[pos];
+
+    if (a == b) {
+
+      continue;
+
+    }
+
+    if (sort.sortNullsLast[i]) {
+
+      if (a == null) {
+
+        return 1;
+
+      }
+
+      if (b == null) {
+
+        return -1;
+
+      }
+
+    }
+
+    int result=dataTypes[pos].compare(session,a,b);
+
+    if (result != 0) {
+
+      if (sort.sortDescending[i]) {
+
+        return -result;
+
+      }
+
+      return result;
+
+    }
+
+  }
+
+  return 0;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public static String convertToSQLString(Object[] array,Type[] types,int maxUnitLength){
+
+  if (array == null) {
+
+    return Tokens.T_NULL;
+
+  }
+
+  StringBuffer sb=new StringBuffer();
+
+  sb.append('(');
+
+  for (int i=0; i < array.length; i++) {
+
+    String value;
+
+    if (i > 0) {
+
+      sb.append(',');
+
+    }
+
+    String string=types[i].convertToSQLString(array[i]);
+
+    if (maxUnitLength > 10 && string.length() > maxUnitLength) {
+
+      sb.append(string.substring(0,maxUnitLength - 4));
+
+      sb.append(" ...");
+
+    }
+
+ else {
+
+      sb.append(string);
+
+    }
+
+  }
+
+  sb.append(')');
+
+  return sb.toString();
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public Type getAggregateType(Type other){
+
+  if (other == null) {
+
+    return this;
+
+  }
+
+  if (other == SQL_ALL_TYPES) {
+
+    return this;
+
+  }
+
+  if (other == this) {
+
+    return this;
+
+  }
+
+  if (!other.isRowType()) {
+
+    throw Error.error(ErrorCode.X_42562);
+
+  }
+
+  Type[] newTypes=new Type[dataTypes.length];
+
+  Type[] otherTypes=((RowType)other).getTypesArray();
+
+  if (dataTypes.length != otherTypes.length) {
+
+    throw Error.error(ErrorCode.X_42564);
+
+  }
+
+  for (int i=0; i < dataTypes.length; i++) {
+
+    newTypes[i]=dataTypes[i].getAggregateType(otherTypes[i]);
+
+  }
+
+  return new RowType(newTypes);
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public Type getCombinedType(Session session,Type other,int operation){
+
+  if (operation != OpTypes.CONCAT) {
+
+    return getAggregateType(other);
+
+  }
+
+  if (other == null) {
+
+    return this;
+
+  }
+
+  if (!other.isRowType()) {
+
+    throw Error.error(ErrorCode.X_42562);
+
+  }
+
+  Type[] newTypes=new Type[dataTypes.length];
+
+  Type[] otherTypes=((RowType)other).getTypesArray();
+
+  if (dataTypes.length != otherTypes.length) {
+
+    throw Error.error(ErrorCode.X_42564);
+
+  }
+
+  for (int i=0; i < dataTypes.length; i++) {
+
+    newTypes[i]=dataTypes[i].getAggregateType(otherTypes[i]);
+
+  }
+
+  return new RowType(newTypes);
+
+}
+
+Location: RowType.java
+
+Content: 
+
+synchronized TypedComparator getComparator(Session session){
+
+  if (comparator == null) {
+
+    TypedComparator c=Type.newComparator(session);
+
+    SortAndSlice sort=new SortAndSlice();
+
+    sort.prepareMultiColumn(dataTypes.length);
+
+    c.setType(this,sort);
+
+    comparator=c;
+
+  }
+
+  return comparator;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public int getDegree(){
+
+  return dataTypes.length;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public int getJDBCPrecision(){
+
+  return 0;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public int getJDBCScale(){
+
+  return 0;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public Type[] getTypesArray(){
+
+  return dataTypes;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public int hashCode(Object a){
+
+  if (a == null) {
+
+    return 0;
+
+  }
+
+  int hash=0;
+
+  Object[] array=(Object[])a;
+
+  for (int i=0; i < dataTypes.length && i < 4; i++) {
+
+    hash+=dataTypes[i].hashCode(array[i]);
+
+  }
+
+  return hash;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public boolean isRowType(){
+
+  return true;
+
+}
+
+Location: RowType.java
+
+Content: 
+
+public RowType(Type[] dataTypes){
+
+  super(Types.SQL_ROW,Types.SQL_ROW,0,0);
+
+  this.dataTypes=dataTypes;
+
+}
+

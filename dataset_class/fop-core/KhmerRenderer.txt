@@ -1,0 +1,374 @@
+Location: KhmerRenderer.java
+
+Content: 
+
+private int getCharClass(final char uniChar){
+
+  int retValue=0;
+
+  int ch;
+
+  ch=uniChar;
+
+  if (ch > 255) {
+
+    if (ch >= '\u1780') {
+
+      ch-='\u1780';
+
+      if (ch < khmerCharClasses.length) {
+
+        retValue=khmerCharClasses[ch];
+
+      }
+
+    }
+
+  }
+
+  return retValue;
+
+}
+
+Location: KhmerRenderer.java
+
+Content: 
+
+/** 
+
+ * Re-order Khmer unicode for display with Khmer.ttf file on Android.
+
+ * @param strInput Khmer unicode string.
+
+ * @return String after render.
+
+ */
+
+public String render(final String strInput){
+
+  int cursor=0;
+
+  short state=0;
+
+  int charCount=strInput.length();
+
+  StringBuilder result=new StringBuilder();
+
+  while (cursor < charCount) {
+
+    String reserved="";
+
+    String signAbove="";
+
+    String signAfter="";
+
+    String base="";
+
+    String robat="";
+
+    String shifter="";
+
+    String vowelBefore="";
+
+    String vowelBelow="";
+
+    String vowelAbove="";
+
+    String vowelAfter="";
+
+    boolean coeng=false;
+
+    String cluster;
+
+    String coeng1="";
+
+    String coeng2="";
+
+    boolean shifterAfterCoeng=false;
+
+    while (cursor < charCount) {
+
+      char curChar=strInput.charAt(cursor);
+
+      int kChar=getCharClass(curChar);
+
+      int charClass=kChar & CF_CLASS_MASK;
+
+      try {
+
+        state=khmerStateTable[state][charClass];
+
+      }
+
+ catch (      Exception ex) {
+
+        state=-1;
+
+      }
+
+      if (state < 0) {
+
+        break;
+
+      }
+
+      if (kChar == XX) {
+
+        reserved=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == SA) {
+
+        signAbove=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == SP) {
+
+        signAfter=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == C1 || kChar == C2 || kChar == C3) {
+
+        if (coeng) {
+
+          if ("".equalsIgnoreCase(coeng1)) {
+
+            coeng1=Character.toString(COENG).concat(Character.toString(curChar));
+
+          }
+
+ else {
+
+            coeng2=Character.toString(COENG).concat(Character.toString(curChar));
+
+          }
+
+          coeng=false;
+
+        }
+
+ else {
+
+          base=Character.toString(curChar);
+
+        }
+
+      }
+
+ else       if (kChar == RB) {
+
+        robat=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == CS) {
+
+        if (!"".equalsIgnoreCase(coeng1)) {
+
+          shifterAfterCoeng=true;
+
+        }
+
+        shifter=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == DL) {
+
+        vowelBefore=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == DB) {
+
+        vowelBelow=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == DA) {
+
+        vowelAbove=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == DR) {
+
+        vowelAfter=Character.toString(curChar);
+
+      }
+
+ else       if (kChar == CO) {
+
+        coeng=true;
+
+      }
+
+ else       if (kChar == VA) {
+
+        vowelBefore=Character.toString(SRAE);
+
+        vowelAbove=Character.toString(strEcombining(curChar));
+
+      }
+
+ else       if (kChar == VR) {
+
+        vowelBefore=Character.toString(SRAE);
+
+        vowelAfter=Character.toString(strEcombining(curChar));
+
+      }
+
+      cursor+=1;
+
+    }
+
+    String coengBefore="";
+
+    if (CORO.equalsIgnoreCase(coeng1)) {
+
+      coengBefore=coeng1;
+
+      coeng1="";
+
+    }
+
+ else     if (CORO.equalsIgnoreCase(coeng2)) {
+
+      coengBefore=coeng2;
+
+      coeng2="";
+
+    }
+
+    if (!"".equalsIgnoreCase(base) && !"".equalsIgnoreCase(shifter)) {
+
+      if (!"".equalsIgnoreCase(vowelAbove)) {
+
+        shifter="";
+
+        vowelBelow=Character.toString(SRAU);
+
+      }
+
+    }
+
+    if (coeng && "".equalsIgnoreCase(coeng1)) {
+
+      coeng1=Character.toString(COENG);
+
+    }
+
+ else     if (coeng && "".equalsIgnoreCase(coeng2)) {
+
+      coeng2=Character.toString(MARK).concat(Character.toString(COENG));
+
+    }
+
+    String shifter1="";
+
+    String shifter2="";
+
+    if (shifterAfterCoeng) {
+
+      shifter2=shifter;
+
+    }
+
+ else {
+
+      shifter1=shifter;
+
+    }
+
+    boolean specialCaseBA=false;
+
+    String strMARKSRAAA=Character.toString(MARK).concat(Character.toString(SRAAA));
+
+    String strMARKSRAAU=Character.toString(MARK).concat(Character.toString(SRAAU));
+
+    if (Character.toString(BA).equalsIgnoreCase(base) && (Character.toString(SRAAA).equalsIgnoreCase(vowelAfter) || Character.toString(SRAAU).equalsIgnoreCase(vowelAfter) || strMARKSRAAA.equalsIgnoreCase(vowelAfter)|| strMARKSRAAU.equalsIgnoreCase(vowelAfter))) {
+
+      specialCaseBA=true;
+
+      if (!"".equalsIgnoreCase(coeng1)) {
+
+        String coeng1Complete=coeng1.substring(0,coeng1.length() - 1);
+
+        if (Character.toString(BA).equalsIgnoreCase(coeng1Complete) || Character.toString(YO).equalsIgnoreCase(coeng1Complete) || Character.toString(SA_C).equalsIgnoreCase(coeng1Complete)) {
+
+          specialCaseBA=false;
+
+        }
+
+      }
+
+    }
+
+    if (specialCaseBA) {
+
+      cluster=vowelBefore + coengBefore + base+ vowelAfter+ robat+ shifter1+ coeng1+ coeng2+ shifter2+ vowelBelow+ vowelAbove+ signAbove+ signAfter;
+
+    }
+
+ else {
+
+      cluster=vowelBefore + coengBefore + base+ robat+ shifter1+ coeng1+ coeng2+ shifter2+ vowelBelow+ vowelAbove+ vowelAfter+ signAbove+ signAfter;
+
+    }
+
+    result.append(cluster + reserved);
+
+    state=0;
+
+  }
+
+  return result.toString();
+
+}
+
+Location: KhmerRenderer.java
+
+Content: 
+
+private char strEcombining(final char chrInput){
+
+  char retChar=' ';
+
+  if (chrInput == SRAOE) {
+
+    retChar=SRAII;
+
+  }
+
+ else   if (chrInput == SRAYA) {
+
+    retChar=SRAYA;
+
+  }
+
+ else   if (chrInput == SRAIE) {
+
+    retChar=SRAIE;
+
+  }
+
+ else   if (chrInput == SRAOO) {
+
+    retChar=SRAAA;
+
+  }
+
+ else   if (chrInput == SRAAU) {
+
+    retChar=SRAAU;
+
+  }
+
+  return retChar;
+
+}
+

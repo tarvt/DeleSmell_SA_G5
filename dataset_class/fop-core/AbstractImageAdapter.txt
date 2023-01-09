@@ -1,0 +1,394 @@
+Location: AbstractImageAdapter.java
+
+Content: 
+
+/** 
+
+ * Creates a new PDFImage from an Image instance.
+
+ * @param image the image
+
+ * @param key XObject key
+
+ */
+
+public AbstractImageAdapter(Image image,String key){
+
+  this.image=image;
+
+  this.key=key;
+
+  if (log.isDebugEnabled()) {
+
+    log.debug("New ImageAdapter created for key: " + key);
+
+  }
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+/** 
+
+ * Disallows multiple filters.
+
+ */
+
+public void disallowMultipleFilters(){
+
+  multipleFiltersAllowed=false;
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+private static PDFICCStream getDefaultsRGBICCStream(PDFICCBasedColorSpace cs,PDFDocument doc,String profileDesc){
+
+  if (cs == null) {
+
+    if (profileDesc == null || !profileDesc.startsWith("sRGB")) {
+
+      log.warn("The default sRGB profile was indicated," + " but the profile description does not match what was expected: " + profileDesc);
+
+    }
+
+    cs=(PDFICCBasedColorSpace)doc.getResources().getColorSpace(new PDFName("DefaultRGB"));
+
+  }
+
+  if (cs == null) {
+
+    cs=PDFICCBasedColorSpace.setupsRGBColorSpace(doc);
+
+  }
+
+  return cs.getICCStream();
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public PDFICCStream getICCStream(){
+
+  return pdfICCStream;
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+private static Integer getIndexOfFirstTransparentColorInPalette(IndexColorModel icm){
+
+  byte[] alphas=new byte[icm.getMapSize()];
+
+  icm.getAlphas(alphas);
+
+  for (int i=0; i < icm.getMapSize(); i++) {
+
+    if ((alphas[i] & 0xFF) == 0) {
+
+      return i;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean isPS(){
+
+  return false;
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean multipleFiltersAllowed(){
+
+  return multipleFiltersAllowed;
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+/** 
+
+ * This is to be used by populateXObjectDictionary() when the image is palette based.
+
+ * @param dict the dictionary to fill in
+
+ * @param icm the image color model
+
+ */
+
+protected void populateXObjectDictionaryForIndexColorModel(PDFDictionary dict,IndexColorModel icm){
+
+  PDFArray indexed=new PDFArray(dict);
+
+  indexed.add(new PDFName("Indexed"));
+
+  if (icm.getColorSpace().getType() != ColorSpace.TYPE_RGB) {
+
+    log.warn("Indexed color space is not using RGB as base color space." + " The image may not be handled correctly." + " Base color space: " + icm.getColorSpace() + " Image: "+ image.getInfo());
+
+  }
+
+  int c=icm.getMapSize();
+
+  int hival=c - 1;
+
+  if (hival > MAX_HIVAL) {
+
+    throw new UnsupportedOperationException("hival must not go beyond " + MAX_HIVAL);
+
+  }
+
+  ByteArrayOutputStream baout=new ByteArrayOutputStream();
+
+  boolean isDeviceGray=false;
+
+  int[] palette=new int[c];
+
+  icm.getRGBs(palette);
+
+  byte[] reds=new byte[c];
+
+  byte[] greens=new byte[c];
+
+  byte[] blues=new byte[c];
+
+  icm.getReds(reds);
+
+  icm.getGreens(greens);
+
+  icm.getBlues(blues);
+
+  isDeviceGray=Arrays.equals(reds,blues) && Arrays.equals(blues,greens);
+
+  if (isDeviceGray) {
+
+    indexed.add(new PDFName("DeviceGray"));
+
+    try {
+
+      baout.write(blues);
+
+    }
+
+ catch (    IOException e) {
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+ else {
+
+    indexed.add(new PDFName(toPDFColorSpace(icm.getColorSpace()).getName()));
+
+    for (int i=0; i < c; i++) {
+
+      int entry=palette[i];
+
+      baout.write((entry & 0xFF0000) >> 16);
+
+      baout.write((entry & 0xFF00) >> 8);
+
+      baout.write(entry & 0xFF);
+
+    }
+
+  }
+
+  indexed.add(hival);
+
+  indexed.add(baout.toByteArray());
+
+  IOUtils.closeQuietly(baout);
+
+  dict.put("ColorSpace",indexed);
+
+  int bits=8;
+
+  if (image instanceof ImageRawPNG) {
+
+    bits=((ImageRawPNG)image).getBitDepth();
+
+  }
+
+ else {
+
+    Raster raster=((ImageRendered)image).getRenderedImage().getTile(0,0);
+
+    if (raster.getDataBuffer() instanceof DataBufferByte) {
+
+      bits=icm.getPixelSize();
+
+    }
+
+  }
+
+  dict.put("BitsPerComponent",bits);
+
+  Integer index=getIndexOfFirstTransparentColorInPalette(icm);
+
+  if (index != null) {
+
+    PDFArray mask=new PDFArray(dict);
+
+    mask.add(index);
+
+    mask.add(index);
+
+    dict.put("Mask",mask);
+
+  }
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+private static PDFICCStream setupColorProfile(PDFDocument doc,ICC_Profile prof,PDFDeviceColorSpace pdfCS){
+
+  boolean defaultsRGB=ColorProfileUtil.isDefaultsRGB(prof);
+
+  String desc=ColorProfileUtil.getICCProfileDescription(prof);
+
+  if (log.isDebugEnabled()) {
+
+    log.debug("Image returns ICC profile: " + desc + ", default sRGB="+ defaultsRGB);
+
+  }
+
+  PDFICCBasedColorSpace cs=doc.getResources().getICCColorSpaceByProfileName(desc);
+
+  PDFICCStream pdfICCStream;
+
+  if (!defaultsRGB) {
+
+    if (cs == null) {
+
+      pdfICCStream=doc.getFactory().makePDFICCStream();
+
+      pdfICCStream.setColorSpace(prof,pdfCS);
+
+      cs=doc.getFactory().makeICCBasedColorSpace(null,null,pdfICCStream);
+
+    }
+
+ else {
+
+      pdfICCStream=cs.getICCStream();
+
+    }
+
+  }
+
+ else {
+
+    pdfICCStream=getDefaultsRGBICCStream(cs,doc,desc);
+
+  }
+
+  return pdfICCStream;
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+private static PDFICCStream setupsRGBColorProfile(PDFDocument doc){
+
+  PDFICCBasedColorSpace cs=doc.getResources().getICCColorSpaceByProfileName("sRGB");
+
+  return getDefaultsRGBICCStream(cs,doc,"sRGB");
+
+}
+
+Location: AbstractImageAdapter.java
+
+Content: 
+
+/** 
+
+ * Converts a ColorSpace object to a PDFColorSpace object.
+
+ * @param cs ColorSpace instance
+
+ * @return PDFColorSpace new converted object
+
+ */
+
+public static PDFDeviceColorSpace toPDFColorSpace(ColorSpace cs){
+
+  if (cs == null) {
+
+    return null;
+
+  }
+
+  PDFDeviceColorSpace pdfCS=new PDFDeviceColorSpace(0);
+
+switch (cs.getType()) {
+
+case ColorSpace.TYPE_CMYK:
+
+    pdfCS.setColorSpace(PDFDeviceColorSpace.DEVICE_CMYK);
+
+  break;
+
+case ColorSpace.TYPE_GRAY:
+
+pdfCS.setColorSpace(PDFDeviceColorSpace.DEVICE_GRAY);
+
+break;
+
+default :
+
+pdfCS.setColorSpace(PDFDeviceColorSpace.DEVICE_RGB);
+
+}
+
+return pdfCS;
+
+}
+

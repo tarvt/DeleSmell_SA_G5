@@ -1,0 +1,320 @@
+Location: PDFTextPainter.java
+
+Content: 
+
+private void applyColorAndPaint(TextPaintInfo tpi){
+
+  Paint fillPaint=tpi.fillPaint;
+
+  Paint strokePaint=tpi.strokePaint;
+
+  Stroke stroke=tpi.strokeStroke;
+
+  int fillAlpha=PDFGraphics2D.OPAQUE;
+
+  if (fillPaint instanceof Color) {
+
+    Color col=(Color)fillPaint;
+
+    pdf.applyColor(col,true);
+
+    fillAlpha=col.getAlpha();
+
+  }
+
+  if (strokePaint instanceof Color) {
+
+    Color col=(Color)strokePaint;
+
+    pdf.applyColor(col,false);
+
+  }
+
+  pdf.applyPaint(fillPaint,true);
+
+  pdf.applyStroke(stroke);
+
+  if (strokePaint != null) {
+
+    pdf.applyPaint(strokePaint,false);
+
+  }
+
+  pdf.applyAlpha(fillAlpha,PDFGraphics2D.OPAQUE);
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+@Override protected void beginTextObject(){
+
+  applyColorAndPaint(tpi);
+
+  textUtil.beginTextObject();
+
+  boolean stroke=(tpi.strokePaint != null) && (tpi.strokeStroke != null);
+
+  textUtil.setTextRenderingMode(tpi.fillPaint != null,stroke,false);
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+@Override protected void clip(Shape clip){
+
+  pdf.writeClip(clip);
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+private void createTextUtil(){
+
+  textUtil=new PDFTextUtil(pdf.fontInfo){
+
+    protected void write(    String code){
+
+      pdf.currentStream.write(code);
+
+    }
+
+    protected void write(    StringBuffer code){
+
+      pdf.currentStream.append(code);
+
+    }
+
+  }
+
+;
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+@Override protected void endTextObject(){
+
+  textUtil.writeTJ();
+
+  textUtil.endTextObject();
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override protected boolean isSupported(Graphics2D g2d){
+
+  return g2d instanceof PDFGraphics2D;
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+/** 
+
+ * Create a new PDF text painter with the given font information.
+
+ * @param fi the font info
+
+ */
+
+public PDFTextPainter(FontInfo fi){
+
+  super(fi);
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+@Override protected void positionGlyph(Point2D prevPos,Point2D glyphPos,boolean reposition){
+
+  repositionNextGlyph=(prevPos == null || prevPos.getY() != glyphPos.getY() || reposition);
+
+  if (!repositionNextGlyph) {
+
+    double xdiff=glyphPos.getX() - prevPos.getX();
+
+    double cw=prevVisibleGlyphWidth;
+
+    double effxdiff=(1000 * xdiff) - cw;
+
+    if (effxdiff != 0) {
+
+      double adjust=(-effxdiff / font.getFontSize());
+
+      textUtil.adjustGlyphTJ(adjust * 1000);
+
+    }
+
+  }
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+@Override protected void preparePainting(Graphics2D g2d){
+
+  pdf=(PDFGraphics2D)g2d;
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+@Override protected void setInitialTransform(AffineTransform transform){
+
+  createTextUtil();
+
+  textUtil.concatMatrix(transform);
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+protected void writeGlyphs(FOPGVTGlyphVector gv,GeneralPath debugShapes) throws IOException {
+
+  if (gv.getGlyphPositionAdjustments() == null) {
+
+    super.writeGlyphs(gv,debugShapes);
+
+  }
+
+ else {
+
+    FOPGVTFont gvtFont=(FOPGVTFont)gv.getFont();
+
+    String fk=gvtFont.getFontKey();
+
+    Font f=gvtFont.getFont();
+
+    Point2D initialPos=gv.getGlyphPosition(0);
+
+    if (f.isMultiByte()) {
+
+      int fs=f.getFontSize();
+
+      float fsPoints=fs / 1000f;
+
+      double xc=0f;
+
+      double yc=0f;
+
+      double xoLast=0f;
+
+      double yoLast=0f;
+
+      textUtil.writeTextMatrix(new AffineTransform(1,0,0,-1,initialPos.getX(),initialPos.getY()));
+
+      textUtil.updateTf(fk,fsPoints,true,false);
+
+      int[][] dp=gv.getGlyphPositionAdjustments();
+
+      for (int i=0, n=gv.getNumGlyphs(); i < n; i++) {
+
+        int gc=gv.getGlyphCode(i);
+
+        int[] pa=((i > dp.length) || (dp[i] == null)) ? paZero : dp[i];
+
+        double xo=xc + pa[0];
+
+        double yo=yc + pa[1];
+
+        double xa=f.getWidth(gc);
+
+        double ya=0;
+
+        double xd=(xo - xoLast) / 1000f;
+
+        double yd=(yo - yoLast) / 1000f;
+
+        textUtil.writeTd(xd,yd);
+
+        textUtil.writeTj((char)gc,true,false);
+
+        xc+=xa + pa[2];
+
+        yc+=ya + pa[3];
+
+        xoLast=xo;
+
+        yoLast=yo;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: PDFTextPainter.java
+
+Content: 
+
+@Override protected void writeGlyph(char glyph,AffineTransform transform){
+
+  prevVisibleGlyphWidth=font.getWidth(glyph);
+
+  boolean encodingChanging=false;
+
+  if (!textUtil.isMultiByteFont(font.getFontName())) {
+
+    int encoding=glyph / 256;
+
+    glyph=(char)(glyph % 256);
+
+    if (textUtil.getCurrentEncoding() != encoding) {
+
+      textUtil.setCurrentEncoding(encoding);
+
+      encodingChanging=true;
+
+    }
+
+  }
+
+  if (repositionNextGlyph || encodingChanging) {
+
+    textUtil.writeTJ();
+
+    if (font != textUtil.getCurrentFont() || encodingChanging) {
+
+      textUtil.setCurrentFont(font);
+
+      textUtil.writeTf(font);
+
+    }
+
+    textUtil.writeTextMatrix(transform);
+
+  }
+
+  textUtil.writeTJMappedChar(glyph);
+
+}
+

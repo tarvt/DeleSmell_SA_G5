@@ -1,0 +1,806 @@
+Location: Log.java
+
+Content: 
+
+void backupData(){
+
+  DataFileCache.backupFile(database,baseFileName + Logger.dataFileExtension,baseFileName + Logger.backupFileExtension,false);
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Performs checkpoint including pre and post operations. Returns to the same state as before the checkpoint.
+
+ */
+
+boolean checkpointClose(){
+
+  if (filesReadOnly) {
+
+    return true;
+
+  }
+
+  database.logger.logInfoEvent("checkpointClose start");
+
+  synchLog();
+
+  database.lobManager.synch();
+
+  database.logger.logInfoEvent("checkpointClose synched");
+
+  deleteOldDataFiles();
+
+  try {
+
+    writeScript(false);
+
+    database.logger.logInfoEvent("checkpointClose script done");
+
+    if (cache != null) {
+
+      cache.reset();
+
+      cache.backupDataFile(true);
+
+    }
+
+    properties.setProperty(HsqlDatabaseProperties.hsqldb_script_format,database.logger.propScriptFormat);
+
+    properties.setDBModified(HsqlDatabaseProperties.FILES_MODIFIED_NEW);
+
+  }
+
+ catch (  Throwable t) {
+
+    deleteNewScript();
+
+    deleteNewBackup();
+
+    database.logger.logSevereEvent("checkpoint failed - recovered",t);
+
+    return false;
+
+  }
+
+  closeLog();
+
+  deleteLog();
+
+  renameNewScript();
+
+  renameNewBackup();
+
+  try {
+
+    properties.setDBModified(HsqlDatabaseProperties.FILES_NOT_MODIFIED);
+
+  }
+
+ catch (  Throwable e) {
+
+    database.logger.logSevereEvent("logger.checkpointClose properties file save failed",e);
+
+  }
+
+  database.logger.logInfoEvent("checkpointClose end");
+
+  return true;
+
+}
+
+Location: Log.java
+
+Content: 
+
+boolean checkpointReopen(){
+
+  if (filesReadOnly) {
+
+    return true;
+
+  }
+
+  database.sessionManager.resetLoggedSchemas();
+
+  try {
+
+    if (cache != null) {
+
+      cache.reopen();
+
+    }
+
+    if (dbLogWriter != null) {
+
+      hongshuai();
+
+      if (filesReadOnly) {
+
+        return;
+
+      }
+
+      Crypto crypto=database.logger.getCrypto();
+
+      try {
+
+        if (crypto == null) {
+
+          dbLogWriter=new ScriptWriterText(database,logFileName,false,false,false);
+
+        }
+
+ else {
+
+          dbLogWriter=new ScriptWriterEncode(database,logFileName,crypto);
+
+        }
+
+        dbLogWriter.setWriteDelay(writeDelay);
+
+        dbLogWriter.start();
+
+        isModified=false;
+
+      }
+
+ catch (      Throwable e) {
+
+        throw Error.error(ErrorCode.FILE_IO_ERROR,logFileName);
+
+      }
+
+    }
+
+  }
+
+ catch (  Throwable e) {
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: Log.java
+
+Content: 
+
+void closeLog(){
+
+  if (dbLogWriter != null) {
+
+    database.logger.logDetailEvent("log close size: " + dbLogWriter.size());
+
+    dbLogWriter.close();
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Close all the database files. If script argument is true, no .data or .backup file will remain and the .script file will contain all the data of the cached tables as well as memory tables. This is not used for filesReadOnly databases which use shutdown.
+
+ */
+
+void close(boolean script){
+
+  closeLog();
+
+  deleteOldDataFiles();
+
+  deleteOldTempFiles();
+
+  deleteTempFileDirectory();
+
+  writeScript(script);
+
+  database.logger.textTableManager.closeAllTextCaches(script);
+
+  if (cache != null) {
+
+    cache.close();
+
+  }
+
+  properties.setProperty(HsqlDatabaseProperties.hsqldb_script_format,database.logger.propScriptFormat);
+
+  properties.setDBModified(HsqlDatabaseProperties.FILES_MODIFIED_NEW);
+
+  deleteLog();
+
+  boolean complete=true;
+
+  if (cache != null) {
+
+    if (script) {
+
+      cache.deleteFile();
+
+      cache.deleteBackup();
+
+      if (fa.isStreamElement(cache.dataFileName)) {
+
+        database.logger.logInfoEvent("delete .data file failed ");
+
+        complete=false;
+
+      }
+
+      if (fa.isStreamElement(cache.backupFileName)) {
+
+        database.logger.logInfoEvent("delete .backup file failed ");
+
+        complete=false;
+
+      }
+
+    }
+
+ else {
+
+      cache.backupDataFile(false);
+
+    }
+
+  }
+
+  if (fa.isStreamElement(logFileName)) {
+
+    database.logger.logInfoEvent("delete .log file failed ");
+
+    complete=false;
+
+  }
+
+  renameNewScript();
+
+  if (complete) {
+
+    properties.setDBModified(HsqlDatabaseProperties.FILES_NOT_MODIFIED);
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+void deleteLog(){
+
+  fa.removeElement(logFileName);
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Deletes the leftovers from any previous unfinished operations.
+
+ */
+
+void deleteNewAndOldFiles(){
+
+  deleteOldDataFiles();
+
+  fa.removeElement(baseFileName + Logger.dataFileExtension + Logger.newFileExtension);
+
+  fa.removeElement(baseFileName + Logger.backupFileExtension + Logger.newFileExtension);
+
+  fa.removeElement(scriptFileName + Logger.newFileExtension);
+
+}
+
+Location: Log.java
+
+Content: 
+
+void deleteNewBackup(){
+
+  fa.removeElement(baseFileName + Logger.backupFileExtension + Logger.newFileExtension);
+
+}
+
+Location: Log.java
+
+Content: 
+
+void deleteNewScript(){
+
+  fa.removeElement(scriptFileName + Logger.newFileExtension);
+
+}
+
+Location: Log.java
+
+Content: 
+
+void deleteOldDataFiles(){
+
+  if (database.logger.isStoredFileAccess()) {
+
+    return;
+
+  }
+
+  try {
+
+    File file=new File(database.getCanonicalPath());
+
+    File[] list=file.getParentFile().listFiles();
+
+    if (list == null) {
+
+      return;
+
+    }
+
+    for (int i=0; i < list.length; i++) {
+
+      if (list[i].getName().startsWith(file.getName()) && list[i].getName().endsWith(Logger.oldFileExtension)) {
+
+        list[i].delete();
+
+      }
+
+    }
+
+  }
+
+ catch (  Throwable t) {
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+void deleteOldTempFiles(){
+
+  try {
+
+    if (database.logger.tempDirectoryPath == null) {
+
+      return;
+
+    }
+
+    File file=new File(database.logger.tempDirectoryPath);
+
+    File[] list=file.listFiles();
+
+    if (list == null) {
+
+      return;
+
+    }
+
+    for (int i=0; i < list.length; i++) {
+
+      list[i].delete();
+
+    }
+
+  }
+
+ catch (  Throwable t) {
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+void deleteTempFileDirectory(){
+
+  try {
+
+    if (database.logger.tempDirectoryPath == null) {
+
+      return;
+
+    }
+
+    File file=new File(database.logger.tempDirectoryPath);
+
+    file.delete();
+
+  }
+
+ catch (  Throwable t) {
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Returns true if lost space is above the threshold percentage.
+
+ */
+
+boolean forceDefrag(){
+
+  long limit=database.logger.propCacheDefragLimit * cache.getFileFreePos() / 100;
+
+  if (limit == 0) {
+
+    return false;
+
+  }
+
+  long floor=database.logger.propFileSpaceValue * 1024L * 1024;
+
+  if (floor > limit) {
+
+    limit=floor;
+
+  }
+
+  long lostSize=cache.getLostBlockSize();
+
+  return lostSize > limit;
+
+}
+
+Location: Log.java
+
+Content: 
+
+String getLogFileName(){
+
+  return logFileName;
+
+}
+
+Location: Log.java
+
+Content: 
+
+void initParams(){
+
+  maxLogSize=database.logger.getLogSize() * 1024L * 1024;
+
+  writeDelay=database.logger.getWriteDelay();
+
+  filesReadOnly=database.isFilesReadOnly();
+
+  scriptFileName=baseFileName + Logger.scriptFileExtension;
+
+  logFileName=baseFileName + Logger.logFileExtension;
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Checks all the caches and returns true if the modified flag is set for any
+
+ */
+
+boolean isAnyCacheModified(){
+
+  if (cache != null && cache.isModified()) {
+
+    return true;
+
+  }
+
+  return database.logger.textTableManager.isAnyTextCacheModified();
+
+}
+
+Location: Log.java
+
+Content: 
+
+Log(Database db){
+
+  database=db;
+
+  fa=db.logger.getFileAccess();
+
+  baseFileName=db.getPath();
+
+  properties=db.getProperties();
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Wrappers for opening-starting / stopping-closing the log file and writer.
+
+ */
+
+void openLog(){
+
+  if (filesReadOnly) {
+
+    return;
+
+  }
+
+  Crypto crypto=database.logger.getCrypto();
+
+  try {
+
+    if (crypto == null) {
+
+      dbLogWriter=new ScriptWriterText(database,logFileName,false,false,false);
+
+    }
+
+ else {
+
+      dbLogWriter=new ScriptWriterEncode(database,logFileName,crypto);
+
+    }
+
+    dbLogWriter.setWriteDelay(writeDelay);
+
+    dbLogWriter.start();
+
+    isModified=false;
+
+  }
+
+ catch (  Throwable e) {
+
+    throw Error.error(ErrorCode.FILE_IO_ERROR,logFileName);
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Performs all the commands in the .log file.
+
+ */
+
+private void processLog(){
+
+  if (fa.isStreamElement(logFileName)) {
+
+    boolean fullReplay=database.getURLProperties().isPropertyTrue(HsqlDatabaseProperties.hsqldb_full_log_replay);
+
+    ScriptRunner.runScript(database,logFileName,fullReplay);
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Performs all the commands in the .script file.
+
+ */
+
+private void processScript(){
+
+  ScriptReaderBase scr=null;
+
+  try {
+
+    Crypto crypto=database.logger.getCrypto();
+
+    if (crypto == null) {
+
+      boolean compressed=database.logger.propScriptFormat == 3;
+
+      scr=new ScriptReaderText(database,scriptFileName,compressed);
+
+    }
+
+ else {
+
+      scr=new ScriptReaderDecode(database,scriptFileName,crypto,false);
+
+    }
+
+    Session session=database.sessionManager.getSysSessionForScript(database);
+
+    scr.readAll(session);
+
+    scr.close();
+
+  }
+
+ catch (  Throwable e) {
+
+    if (scr != null) {
+
+      scr.close();
+
+      if (cache != null) {
+
+        cache.release();
+
+      }
+
+      database.logger.textTableManager.closeAllTextCaches(false);
+
+    }
+
+    database.logger.logWarningEvent("Script processing failure",e);
+
+    if (e instanceof HsqlException) {
+
+      throw (HsqlException)e;
+
+    }
+
+ else     if (e instanceof IOException) {
+
+      throw Error.error(ErrorCode.FILE_IO_ERROR,e);
+
+    }
+
+ else     if (e instanceof OutOfMemoryError) {
+
+      throw Error.error(ErrorCode.OUT_OF_MEMORY);
+
+    }
+
+ else {
+
+      throw Error.error(ErrorCode.GENERAL_ERROR,e);
+
+    }
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+void renameNewBackup(){
+
+  DataFileCache.renameBackupFile(database,baseFileName + Logger.backupFileExtension);
+
+}
+
+Location: Log.java
+
+Content: 
+
+void renameNewDataFile(){
+
+  DataFileCache.renameDataFile(database,baseFileName + Logger.dataFileExtension);
+
+}
+
+Location: Log.java
+
+Content: 
+
+boolean renameNewDataFileDone(){
+
+  return fa.isStreamElement(baseFileName + Logger.dataFileExtension) && !fa.isStreamElement(baseFileName + Logger.dataFileExtension + Logger.newFileExtension);
+
+}
+
+Location: Log.java
+
+Content: 
+
+void renameNewScript(){
+
+  if (fa.isStreamElement(scriptFileName + Logger.newFileExtension)) {
+
+    fa.removeElement(scriptFileName);
+
+    fa.renameElement(scriptFileName + Logger.newFileExtension,scriptFileName,true);
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+boolean renameNewScriptDone(){
+
+  return fa.isStreamElement(scriptFileName) && !fa.isStreamElement(scriptFileName + Logger.newFileExtension);
+
+}
+
+Location: Log.java
+
+Content: 
+
+private void setModified(){
+
+  if (!isModified) {
+
+    database.databaseProperties.setDBModified(HsqlDatabaseProperties.FILES_MODIFIED);
+
+    isModified=true;
+
+  }
+
+}
+
+Location: Log.java
+
+Content: 
+
+/** 
+
+ * Write the .script file as .script.new.
+
+ */
+
+void writeScript(boolean full){
+
+  deleteNewScript();
+
+  ScriptWriterBase scw;
+
+  Crypto crypto=database.logger.getCrypto();
+
+  if (crypto == null) {
+
+    boolean compressed=database.logger.propScriptFormat == 3;
+
+    scw=new ScriptWriterText(database,scriptFileName + Logger.newFileExtension,full,compressed);
+
+  }
+
+ else {
+
+    scw=new ScriptWriterEncode(database,scriptFileName + Logger.newFileExtension,full,crypto);
+
+  }
+
+  scw.writeAll();
+
+  scw.close();
+
+  scw=null;
+
+}
+

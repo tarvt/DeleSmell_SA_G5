@@ -1,0 +1,510 @@
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Create the identity matrix
+
+ */
+
+public CTM(){
+
+  a=1;
+
+  b=0;
+
+  c=0;
+
+  d=1;
+
+  e=0;
+
+  f=0;
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Initialize a CTM with the values of an AffineTransform.
+
+ * @param at the transformation matrix
+
+ */
+
+public CTM(AffineTransform at){
+
+  double[] matrix=new double[6];
+
+  at.getMatrix(matrix);
+
+  this.a=matrix[0];
+
+  this.b=matrix[1];
+
+  this.c=matrix[2];
+
+  this.d=matrix[3];
+
+  this.e=matrix[4];
+
+  this.f=matrix[5];
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Initialize a CTM with the values of another CTM.
+
+ * @param ctm another CTM
+
+ */
+
+protected CTM(CTM ctm){
+
+  this.a=ctm.a;
+
+  this.b=ctm.b;
+
+  this.c=ctm.c;
+
+  this.d=ctm.d;
+
+  this.e=ctm.e;
+
+  this.f=ctm.f;
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Initialize a CTM to the identity matrix with a translation specified by x and y
+
+ * @param x the x shift
+
+ * @param y the y shift.
+
+ */
+
+public CTM(double x,double y){
+
+  this.a=1;
+
+  this.b=0;
+
+  this.c=0;
+
+  this.d=1;
+
+  this.e=x;
+
+  this.f=y;
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Initialize a CTM from the passed arguments.
+
+ * @param a the x scale
+
+ * @param b the x shear
+
+ * @param c the y shear
+
+ * @param d the y scale
+
+ * @param e the x shift
+
+ * @param f the y shift
+
+ */
+
+public CTM(double a,double b,double c,double d,double e,double f){
+
+  this.a=a;
+
+  this.b=b;
+
+  this.c=c;
+
+  this.d=d;
+
+  this.e=e;
+
+  this.f=f;
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Construct a coordinate transformation matrix (CTM).
+
+ * @param absRefOrient absolute reference orientation
+
+ * @param writingMode the writing mode
+
+ * @param absVPrect absolute viewpoint rectangle
+
+ * @param reldims relative dimensions
+
+ * @return CTM the coordinate transformation matrix (CTM)
+
+ */
+
+public static CTM getCTMandRelDims(int absRefOrient,WritingMode writingMode,Rectangle2D absVPrect,FODimension reldims){
+
+  int width;
+
+  int height;
+
+  if (absRefOrient % 180 == 0) {
+
+    width=(int)absVPrect.getWidth();
+
+    height=(int)absVPrect.getHeight();
+
+  }
+
+ else {
+
+    height=(int)absVPrect.getWidth();
+
+    width=(int)absVPrect.getHeight();
+
+  }
+
+  CTM ctm=new CTM(absVPrect.getX(),absVPrect.getY());
+
+  if (absRefOrient != 0) {
+
+switch (absRefOrient) {
+
+case 90:
+
+case -270:
+
+      ctm=ctm.translate(0,width);
+
+    break;
+
+case 180:
+
+case -180:
+
+  ctm=ctm.translate(width,height);
+
+break;
+
+case 270:
+
+case -90:
+
+ctm=ctm.translate(height,0);
+
+break;
+
+default :
+
+throw new RuntimeException();
+
+}
+
+ctm=ctm.rotate(absRefOrient);
+
+}
+
+switch (writingMode.getEnumValue()) {
+
+case EN_TB_LR:
+
+case EN_TB_RL:
+
+reldims.ipd=height;
+
+reldims.bpd=width;
+
+break;
+
+case EN_LR_TB:
+
+case EN_RL_TB:
+
+default :
+
+reldims.ipd=width;
+
+reldims.bpd=height;
+
+break;
+
+}
+
+return ctm.multiply(CTM.getWMctm(writingMode,reldims.ipd,reldims.bpd));
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Return a CTM which will transform coordinates for a particular writing-mode into normalized first quandrant coordinates.
+
+ * @param wm A writing mode constant from fo.properties.WritingMode, ie.one of LR_TB, RL_TB, TB_RL, TB_LR.
+
+ * @param ipd The inline-progression dimension of the reference area whoseCTM is being set..
+
+ * @param bpd The block-progression dimension of the reference area whoseCTM is being set.
+
+ * @return a new CTM with the required transform
+
+ */
+
+public static CTM getWMctm(WritingMode wm,int ipd,int bpd){
+
+  CTM wmctm;
+
+switch (wm.getEnumValue()) {
+
+case EN_LR_TB:
+
+    return new CTM(CTM_LRTB);
+
+case EN_RL_TB:
+
+  return new CTM(CTM_RLTB);
+
+case EN_TB_RL:
+
+case EN_TB_LR:
+
+wmctm=new CTM(CTM_TBRL);
+
+wmctm.e=bpd;
+
+return wmctm;
+
+default :
+
+return null;
+
+}
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Multiply new passed CTM with this one and generate a new result CTM.
+
+ * @param premult The CTM to multiply with this one. The new one will bethe first multiplicand.
+
+ * @return CTM The result of multiplying premult * this.
+
+ */
+
+public CTM multiply(CTM premult){
+
+  return new CTM((premult.a * a) + (premult.b * c),(premult.a * b) + (premult.b * d),(premult.c * a) + (premult.d * c),(premult.c * b) + (premult.d * d),(premult.e * a) + (premult.f * c) + e,(premult.e * b) + (premult.f * d) + f);
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Rotate this CTM by "angle" radians and return a new result CTM. This is used to account for reference-orientation.
+
+ * @param angle The angle in radians. Positive angles are measured counter-clockwise.
+
+ * @return CTM The result of rotating this CTM.
+
+ */
+
+public CTM rotate(double angle){
+
+  double cos;
+
+  double sin;
+
+  if (angle == 90.0 || angle == -270.0) {
+
+    cos=0.0;
+
+    sin=1.0;
+
+  }
+
+ else   if (angle == 270.0 || angle == -90.0) {
+
+    cos=0.0;
+
+    sin=-1.0;
+
+  }
+
+ else   if (angle == 180.0 || angle == -180.0) {
+
+    cos=-1.0;
+
+    sin=0.0;
+
+  }
+
+ else {
+
+    double rad=Math.toRadians(angle);
+
+    cos=Math.cos(rad);
+
+    sin=Math.sin(rad);
+
+  }
+
+  CTM rotate=new CTM(cos,-sin,sin,cos,0,0);
+
+  return multiply(rotate);
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Scale this CTM by the passed x and y values and return a new result CTM.
+
+ * @param x The amount to scale along the x axis.
+
+ * @param y The amount to scale along the y axis.
+
+ * @return CTM The result of scaling this CTM.
+
+ */
+
+public CTM scale(double x,double y){
+
+  CTM scale=new CTM(x,0,0,y,0,0);
+
+  return multiply(scale);
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Returns this CTM as an AffineTransform object.
+
+ * @return the AffineTransform representation
+
+ */
+
+public AffineTransform toAffineTransform(){
+
+  return new AffineTransform(toArray());
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Transform a rectangle by the CTM to produce a rectangle in the transformed coordinate system.
+
+ * @param inRect The rectangle in the original coordinate system
+
+ * @return Rectangle2D The rectangle in the transformed coordinate system.
+
+ */
+
+public Rectangle2D transform(Rectangle2D inRect){
+
+  int x1t=(int)(inRect.getX() * a + inRect.getY() * c + e);
+
+  int y1t=(int)(inRect.getX() * b + inRect.getY() * d + f);
+
+  int x2t=(int)((inRect.getX() + inRect.getWidth()) * a + (inRect.getY() + inRect.getHeight()) * c + e);
+
+  int y2t=(int)((inRect.getX() + inRect.getWidth()) * b + (inRect.getY() + inRect.getHeight()) * d + f);
+
+  if (x1t > x2t) {
+
+    int tmp=x2t;
+
+    x2t=x1t;
+
+    x1t=tmp;
+
+  }
+
+  if (y1t > y2t) {
+
+    int tmp=y2t;
+
+    y2t=y1t;
+
+    y1t=tmp;
+
+  }
+
+  return new Rectangle(x1t,y1t,x2t - x1t,y2t - y1t);
+
+}
+
+Location: CTM.java
+
+Content: 
+
+/** 
+
+ * Translate this CTM by the passed x and y values and return a new result CTM.
+
+ * @param x The amount to translate along the x axis.
+
+ * @param y The amount to translate along the y axis.
+
+ * @return CTM The result of translating this CTM.
+
+ */
+
+public CTM translate(double x,double y){
+
+  CTM translate=new CTM(1,0,0,1,x,y);
+
+  return multiply(translate);
+
+}
+

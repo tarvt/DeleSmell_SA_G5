@@ -1,0 +1,156 @@
+Location: TestMapReduceLazyOutput.java
+
+Content: 
+
+public void createInput(FileSystem fs,int numMappers) throws Exception {
+
+  for (int i=0; i < numMappers; i++) {
+
+    OutputStream os=fs.create(new Path(INPUT,"text" + i + ".txt"));
+
+    Writer wr=new OutputStreamWriter(os);
+
+    for (    String inp : input) {
+
+      wr.write(inp + "\n");
+
+    }
+
+    wr.close();
+
+  }
+
+}
+
+Location: TestMapReduceLazyOutput.java
+
+Content: 
+
+private static void runTestLazyOutput(Configuration conf,Path output,int numReducers,boolean createLazily) throws Exception {
+
+  Job job=Job.getInstance(conf,"Test-Lazy-Output");
+
+  FileInputFormat.setInputPaths(job,INPUT);
+
+  FileOutputFormat.setOutputPath(job,output);
+
+  job.setJarByClass(TestMapReduceLazyOutput.class);
+
+  job.setInputFormatClass(TextInputFormat.class);
+
+  job.setOutputKeyClass(LongWritable.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setNumReduceTasks(numReducers);
+
+  job.setMapperClass(TestMapper.class);
+
+  job.setReducerClass(TestReducer.class);
+
+  if (createLazily) {
+
+    LazyOutputFormat.setOutputFormatClass(job,TextOutputFormat.class);
+
+  }
+
+ else {
+
+    job.setOutputFormatClass(TextOutputFormat.class);
+
+  }
+
+  assertTrue(job.waitForCompletion(true));
+
+}
+
+Location: TestMapReduceLazyOutput.java
+
+Content: 
+
+public void testLazyOutput() throws Exception {
+
+  MiniDFSCluster dfs=null;
+
+  MiniMRCluster mr=null;
+
+  FileSystem fileSys=null;
+
+  try {
+
+    Configuration conf=new Configuration();
+
+    dfs=new MiniDFSCluster(conf,NUM_HADOOP_SLAVES,true,null);
+
+    fileSys=dfs.getFileSystem();
+
+    mr=new MiniMRCluster(NUM_HADOOP_SLAVES,fileSys.getUri().toString(),1);
+
+    int numReducers=2;
+
+    int numMappers=NUM_HADOOP_SLAVES * NUM_MAPS_PER_NODE;
+
+    createInput(fileSys,numMappers);
+
+    Path output1=new Path("/testlazy/output1");
+
+    runTestLazyOutput(mr.createJobConf(),output1,numReducers,true);
+
+    Path[] fileList=FileUtil.stat2Paths(fileSys.listStatus(output1,new Utils.OutputFileUtils.OutputFilesFilter()));
+
+    for (int i=0; i < fileList.length; ++i) {
+
+      System.out.println("Test1 File list[" + i + "]"+ ": "+ fileList[i]);
+
+    }
+
+    assertTrue(fileList.length == (numReducers - 1));
+
+    Path output2=new Path("/testlazy/output2");
+
+    runTestLazyOutput(mr.createJobConf(),output2,0,true);
+
+    fileList=FileUtil.stat2Paths(fileSys.listStatus(output2,new Utils.OutputFileUtils.OutputFilesFilter()));
+
+    for (int i=0; i < fileList.length; ++i) {
+
+      System.out.println("Test2 File list[" + i + "]"+ ": "+ fileList[i]);
+
+    }
+
+    assertTrue(fileList.length == numMappers - 1);
+
+    Path output3=new Path("/testlazy/output3");
+
+    runTestLazyOutput(mr.createJobConf(),output3,0,false);
+
+    fileList=FileUtil.stat2Paths(fileSys.listStatus(output3,new Utils.OutputFileUtils.OutputFilesFilter()));
+
+    for (int i=0; i < fileList.length; ++i) {
+
+      System.out.println("Test3 File list[" + i + "]"+ ": "+ fileList[i]);
+
+    }
+
+    assertTrue(fileList.length == numMappers);
+
+  }
+
+  finally {
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+

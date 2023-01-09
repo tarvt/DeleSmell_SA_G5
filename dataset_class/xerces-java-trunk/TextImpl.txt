@@ -1,0 +1,632 @@
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * If any EntityReference to be removed has descendants that are not EntityReference, Text, or CDATASection nodes, the replaceWholeText method must fail before performing any modification of the document, raising a DOMException with the code NO_MODIFICATION_ALLOWED_ERR. Traverse previous siblings of the node to be replaced. If a previous sibling is an EntityReference node, get it's last child. If the first child was a Text or CDATASection node and its next siblings are neither a replaceable EntityReference or Text or CDATASection nodes, return false. IF the first child was neither Text nor CDATASection nor a replaceable EntityReference Node, then return true. If the first child was a Text or CDATASection node any its next sibling was not or was an EntityReference that did not contain only Text or CDATASection nodes, return false. Check this recursively for EntityReference nodes.
+
+ * @param node
+
+ * @return true - can replace text false - can't replace exception must beraised
+
+ */
+
+private boolean canModifyNext(Node node){
+
+  boolean textFirstChild=false;
+
+  Node next=node.getNextSibling();
+
+  while (next != null) {
+
+    short type=next.getNodeType();
+
+    if (type == Node.ENTITY_REFERENCE_NODE) {
+
+      Node firstChild=next.getFirstChild();
+
+      if (firstChild == null) {
+
+        return false;
+
+      }
+
+      while (firstChild != null) {
+
+        short lType=firstChild.getNodeType();
+
+        if (lType == Node.TEXT_NODE || lType == Node.CDATA_SECTION_NODE) {
+
+          textFirstChild=true;
+
+        }
+
+ else         if (lType == Node.ENTITY_REFERENCE_NODE) {
+
+          if (!canModifyNext(firstChild)) {
+
+            return false;
+
+          }
+
+ else {
+
+            textFirstChild=true;
+
+          }
+
+        }
+
+ else {
+
+          if (textFirstChild) {
+
+            return false;
+
+          }
+
+ else {
+
+            return true;
+
+          }
+
+        }
+
+        firstChild=firstChild.getNextSibling();
+
+      }
+
+    }
+
+ else     if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
+
+    }
+
+ else {
+
+      return true;
+
+    }
+
+    next=next.getNextSibling();
+
+  }
+
+  return true;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * If any EntityReference to be removed has descendants that are not EntityReference, Text, or CDATASection nodes, the replaceWholeText method must fail before performing any modification of the document, raising a DOMException with the code NO_MODIFICATION_ALLOWED_ERR. Traverse previous siblings of the node to be replaced. If a previous sibling is an EntityReference node, get it's last child. If the last child was a Text or CDATASection node and its previous siblings are neither a replaceable EntityReference or Text or CDATASection nodes, return false. IF the last child was neither Text nor CDATASection nor a replaceable EntityReference Node, then return true. If the last child was a Text or CDATASection node any its previous sibling was not or was an EntityReference that did not contain only Text or CDATASection nodes, return false. Check this recursively for EntityReference nodes.
+
+ * @param node
+
+ * @return true - can replace text false - can't replace exception must beraised
+
+ */
+
+private boolean canModifyPrev(Node node){
+
+  boolean textLastChild=false;
+
+  Node prev=node.getPreviousSibling();
+
+  while (prev != null) {
+
+    short type=prev.getNodeType();
+
+    if (type == Node.ENTITY_REFERENCE_NODE) {
+
+      Node lastChild=prev.getLastChild();
+
+      if (lastChild == null) {
+
+        return false;
+
+      }
+
+      while (lastChild != null) {
+
+        short lType=lastChild.getNodeType();
+
+        if (lType == Node.TEXT_NODE || lType == Node.CDATA_SECTION_NODE) {
+
+          textLastChild=true;
+
+        }
+
+ else         if (lType == Node.ENTITY_REFERENCE_NODE) {
+
+          if (!canModifyPrev(lastChild)) {
+
+            return false;
+
+          }
+
+ else {
+
+            textLastChild=true;
+
+          }
+
+        }
+
+ else {
+
+          if (textLastChild) {
+
+            return false;
+
+          }
+
+ else {
+
+            return true;
+
+          }
+
+        }
+
+        lastChild=lastChild.getPreviousSibling();
+
+      }
+
+    }
+
+ else     if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
+
+    }
+
+ else {
+
+      return true;
+
+    }
+
+    prev=prev.getPreviousSibling();
+
+  }
+
+  return true;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+public Node getNextSibling(){
+
+  if (fCol == fSchemaDOM.relations[fRow].length - 1) {
+
+    return null;
+
+  }
+
+  return fSchemaDOM.relations[fRow][fCol + 1];
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+public String getNodeName(){
+
+  return "#text";
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+public Node getParentNode(){
+
+  return fSchemaDOM.relations[fRow][0];
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+public Node getPreviousSibling(){
+
+  if (fCol == 1) {
+
+    return null;
+
+  }
+
+  return fSchemaDOM.relations[fRow][fCol - 1];
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * Concatenates the text of all logically-adjacent text nodes to the left of  the node
+
+ * @param node
+
+ * @param buffer
+
+ * @param parent
+
+ * @return true - if execution was stopped because the type of nodeother than EntityRef, Text, CDATA is encountered, otherwise return false
+
+ */
+
+private boolean getWholeTextBackward(Node node,StringBuffer buffer,Node parent){
+
+  boolean inEntRef=false;
+
+  if (parent != null) {
+
+    inEntRef=parent.getNodeType() == Node.ENTITY_REFERENCE_NODE;
+
+  }
+
+  while (node != null) {
+
+    short type=node.getNodeType();
+
+    if (type == Node.ENTITY_REFERENCE_NODE) {
+
+      if (getWholeTextBackward(node.getLastChild(),buffer,node)) {
+
+        return true;
+
+      }
+
+    }
+
+ else     if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
+
+      ((TextImpl)node).insertTextContent(buffer);
+
+    }
+
+ else {
+
+      return true;
+
+    }
+
+    node=node.getPreviousSibling();
+
+  }
+
+  if (inEntRef) {
+
+    getWholeTextBackward(parent.getPreviousSibling(),buffer,parent.getParentNode());
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * Concatenates the text of all logically-adjacent text nodes to the  right of this node
+
+ * @param node
+
+ * @param buffer
+
+ * @param parent 
+
+ * @return true - if execution was stopped because the type of nodeother than EntityRef, Text, CDATA is encountered, otherwise return false
+
+ */
+
+private boolean getWholeTextForward(Node node,StringBuffer buffer,Node parent){
+
+  boolean inEntRef=false;
+
+  if (parent != null) {
+
+    inEntRef=parent.getNodeType() == Node.ENTITY_REFERENCE_NODE;
+
+  }
+
+  while (node != null) {
+
+    short type=node.getNodeType();
+
+    if (type == Node.ENTITY_REFERENCE_NODE) {
+
+      if (getWholeTextForward(node.getFirstChild(),buffer,node)) {
+
+        return true;
+
+      }
+
+    }
+
+ else     if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
+
+      ((NodeImpl)node).getTextContent(buffer);
+
+    }
+
+ else {
+
+      return true;
+
+    }
+
+    node=node.getNextSibling();
+
+  }
+
+  if (inEntRef) {
+
+    getWholeTextForward(parent.getNextSibling(),buffer,parent.getParentNode());
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * Check if an EntityReference node has Text Only child nodes
+
+ * @param node
+
+ * @return true - Contains text only children
+
+ */
+
+private boolean hasTextOnlyChildren(Node node){
+
+  Node child=node;
+
+  if (child == null) {
+
+    return false;
+
+  }
+
+  child=child.getFirstChild();
+
+  while (child != null) {
+
+    int type=child.getNodeType();
+
+    if (type == Node.ENTITY_REFERENCE_NODE) {
+
+      return hasTextOnlyChildren(child);
+
+    }
+
+ else     if (type != Node.TEXT_NODE && type != Node.CDATA_SECTION_NODE && type != Node.ENTITY_REFERENCE_NODE) {
+
+      return false;
+
+    }
+
+    child=child.getNextSibling();
+
+  }
+
+  return true;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * internal method taking a StringBuffer in parameter and inserts the  text content at the start of the buffer
+
+ * @param buf
+
+ */
+
+protected void insertTextContent(StringBuffer buf) throws DOMException {
+
+  String content=getNodeValue();
+
+  if (content != null) {
+
+    buf.insert(0,content);
+
+  }
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * NON-DOM (used by DOMParser: Sets data to empty string.  Returns the value the data was set to.
+
+ */
+
+public String removeData(){
+
+  String olddata=data;
+
+  data="";
+
+  return olddata;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * NON-DOM (used by DOMParser): Reset data for the node. 
+
+ */
+
+public void replaceData(String value){
+
+  data=value;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * NON-DOM: Set whether this Text is ignorable whitespace.
+
+ */
+
+public void setIgnorableWhitespace(boolean ignore){
+
+  if (needsSyncData()) {
+
+    synchronizeData();
+
+  }
+
+  isIgnorableWhitespace(ignore);
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * NON-DOM: resets node and sets specified values for the current node
+
+ * @param ownerDoc
+
+ * @param data
+
+ */
+
+public void setValues(CoreDocumentImpl ownerDoc,String data){
+
+  flags=0;
+
+  nextSibling=null;
+
+  previousSibling=null;
+
+  setOwnerDocument(ownerDoc);
+
+  super.data=data;
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * Extracts a range of data from the node.
+
+ * @param offset Start offset of substring to extract.
+
+ * @param count The number of 16-bit units to extract.
+
+ * @return The specified substring. If the sum of <code>offset</code> and <code>count</code> exceeds the <code>length</code>, then all 16-bit  units to the end of the data are returned.
+
+ * @exception DOMException INDEX_SIZE_ERR: Raised if the specified <code>offset</code> is  negative or greater than the number of 16-bit units in  <code>data</code>, or if the specified <code>count</code> is  negative. <br>DOMSTRING_SIZE_ERR: Raised if the specified range of text does  not fit into a <code>DOMString</code>.
+
+ */
+
+public String substringData(int offset,int count) throws DOMException {
+
+  if (fData == null)   return null;
+
+  if (count < 0 || offset < 0 || offset > fData.length())   throw new DOMException(DOMException.INDEX_SIZE_ERR,"parameter error");
+
+  if (offset + count >= fData.length())   return fData.substring(offset);
+
+  return fData.substring(offset,offset + count);
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * Default constructor 
+
+ */
+
+public TextImpl(){
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+/** 
+
+ * Factory constructor. 
+
+ */
+
+public TextImpl(CoreDocumentImpl ownerDoc,String data){
+
+  super(ownerDoc,data);
+
+}
+
+Location: TextImpl.java
+
+Content: 
+
+public TextImpl(StringBuffer str,SchemaDOM sDOM,int row,int col){
+
+  fData=str.toString();
+
+  fSchemaDOM=sDOM;
+
+  fRow=row;
+
+  fCol=col;
+
+  rawname=prefix=localpart=uri=null;
+
+  nodeType=Node.TEXT_NODE;
+
+}
+

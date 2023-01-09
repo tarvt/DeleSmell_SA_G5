@@ -1,0 +1,1140 @@
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Checks whether the underlying file is an HSQLDB lock file and, if so, whether its heartbeat timestamp is live (is, as far as can be known, presumably in use by another <tt>LockFile</tt> instance) or stale. <p> The check conforms to the following rules: <p> <ol> <li>If the parameter <tt>withCreateNewFile</tt> is true,  {@link java.io.File#createNewFile()} is available and its invocationupon this object's <tt>file</tt> object indicates the underlying file was atomically created if and only if it did not yet exist, then return immediately (we have won the <em>race</em> to establish a lock file). <p> <li>Test again if the file exists, returning immediately if it does not (there's no file and hence no heartbeat to check). <p> An immediate return can occur here only under pre-JDK 1.2 runtimes; or when the underlying platform does not correctly support <tt>File.createNewFile()</tt>; or when the underlying file is deleted within a very short time after i.), above (typically on the order of microseconds). <p> If the underlying platform employs a kernel-enforced mandatory file locking blanket policy for open files (e.g. <em>Windows</em><sup>tm </sup>), then this is likely a non-issue. And if this case makes possible a race condition with another <tt>LockFile</tt> object (because the test for existence yields false and subsequent file creation is not atomic relative to all other file system actions), it is still <em>very</em> unlikely that so unfortunate a timing will occur as to allow simultaneous lock conditions to be established. Finally, if some non-<tt>LockFile</tt> entity deleted the file, then there are much worse things to worry about, in particular that the files this object is supposed to protect are in reality subject to arbitrary external modification and deletion by some uncooperative process.<p> <li>If a Java security exception is thrown while testing for existence, it is rethrown as a <tt>FileSecurityException</tt>. <li>Read the file's length. <li>If a Java security exception is thrown reading length, it is rethrown as a <tt>FileSecurityException</tt> (it <em>is</em> possible somebody concurrently refreshed the system Policy in the interim). <li>If the file does not have the expected length, a <tt>WrongLengthException</tt> is thrown (we're trying to check something that is not an HSQLDB lock file). <li>Open an input steam to read the file's <tt>MAGIC</tt> and heartbeat timestamp values. <li>If a file not found exception is thrown above, it is rethrown as an <tt>UnexpectedFileNotFoundException</tt> (we've already tested for existence). <li>If a Java security exception is thrown above, it is rethrown as a <tt>FileSecurityException</tt> (it <em>is</em> possible somebody concurrently refreshed the system Policy in the interim). <li>Read the <tt>MAGIC</tt> value. <li>If an end of file exception is thrown above, it is rethrown as an <tt>UnexpectedEndOfFileException</tt> (we've already tested the length... did someone truncate the file in the interim?). <li>If an I/O exception is thrown, it is rethrown as an <tt>UnexpectedFileIOException</tt> (we've already tested for existence, length and successfully opened a stream...did someone, for example, force unmount or physically remove the underlying device in the interim?) <li>If the value read in does not match the expected <tt>MAGIC</tt> value, a <tt>WrongMagicException</tt> is thrown (we're trying to check something that is not an HSQLDB lock file). <li>Read the heartbeat timestamp. <li>If a Java security exception is thrown above, it is rethrown as a <tt>FileSecurityException</tt> (it <em>is</em> possible somebody concurrently refreshed the system Policy in the interim). <li>If an end of file execution is thrown above, it is rethrown as an <tt>UnexpectedEndOfFileException</tt> (we've already tested the length... did someone truncate the file in the interim?). <li>If an I/O exception is thrown, it is rethrown as an <tt>UnexpectedFileIOException</tt> (we've already tested for existence, length and successfully opened a stream...did someone, for example, force unmount or physically remove the underlying device in the interim?) <li>If the timestamp read in is less than or equal to {@link #HEARTBEAT_INTERVAL_PADDED} milliseconds into the past orfuture, then a <tt>LockHeldExternallyException</tt> is thrown. <li>Otherwise, this method simply returns. </ol>
+
+ * @param withCreateNewFile if <tt>true</tt>, attempt to employ<tt>File.createNewFile()</tt> as part of the check so as to eliminate potential race conditions when establishing a new lock file
+
+ * @throws FileSecurityException if the check fails due to a Javasecurity permission check failure
+
+ * @throws LockHeldExternallyException if it is determined that thefile's heartbeat timestamp is less than <tt>HEARTBEAT_INTERVAL_PADDED</tt> into the past (or future)
+
+ * @throws UnexpectedEndOfFileException if an <tt>EOFException</tt> isthrown while reading either the magic or heartbeat timestamp values
+
+ * @throws UnexpectedFileIOException if an <tt>IOException</tt> other than<tt>EOFException</tt> is thrown while reading either the magic or heartbeat timestamp values
+
+ * @throws UnexpectedFileNotFoundException if a<tt>FileNotFoundException</tt> is thrown while attempting to open a stream to read the underlying file's magic and heartbeat timestamp values
+
+ * @throws WrongLengthException if it is determined that the lengthof the file does not equal  {@link #USED_REGION}
+
+ * @throws WrongMagicException if it is determined that the file'scontent does not start with  {@link #MAGIC}.
+
+ */
+
+private final void checkHeartbeat(boolean withCreateNewFile) throws LockFile.FileSecurityException, LockFile.LockHeldExternallyException, LockFile.UnexpectedEndOfFileException, LockFile.UnexpectedFileIOException, LockFile.UnexpectedFileNotFoundException, LockFile.WrongLengthException, LockFile.WrongMagicException {
+
+  long now;
+
+  long lastHeartbeat;
+
+  long length=0;
+
+  try {
+
+    if (withCreateNewFile) {
+
+      try {
+
+        if (file.createNewFile()) {
+
+          return;
+
+        }
+
+      }
+
+ catch (      IOException ioe) {
+
+      }
+
+    }
+
+    if (!file.exists()) {
+
+      return;
+
+    }
+
+    length=file.length();
+
+  }
+
+ catch (  SecurityException se) {
+
+    throw new FileSecurityException(this,"checkHeartbeat",se);
+
+  }
+
+  if (length != USED_REGION) {
+
+    if (length == 0) {
+
+      file.delete();
+
+      return;
+
+    }
+
+    throw new WrongLengthException(this,"checkHeartbeat",length);
+
+  }
+
+  now=System.currentTimeMillis();
+
+  lastHeartbeat=readHeartbeat();
+
+  if (Math.abs(now - lastHeartbeat) <= (HEARTBEAT_INTERVAL_PADDED)) {
+
+    throw new LockHeldExternallyException(this,"checkHeartbeat",now,lastHeartbeat);
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Checks whether the given <tt>DataInputStream</tt> contains the {@link #MAGIC} value.
+
+ * @param dis the stream to check
+
+ * @throws FileSecurityException if a required system property value cannotbe accessed, or if a Java security manager exists and its <tt> {@link java.lang.SecurityManager#checkRead}</tt> method denies read access to the file
+
+ * @throws UnexpectedEndOfFileException if an <tt>EOFException</tt> isthrown while reading the <tt>DataInputStream</tt>
+
+ * @throws UnexpectedFileIOException if an <tt>IOException</tt> other than<tt>EOFException</tt> is thrown while reading the <tt>DataInputStream</tt>
+
+ * @throws WrongMagicException if a value other than <tt>MAGIC</tt> is readfrom the <tt>DataInputStream</tt>
+
+ */
+
+private final void checkMagic(final DataInputStream dis) throws LockFile.FileSecurityException, LockFile.UnexpectedEndOfFileException, LockFile.UnexpectedFileIOException, LockFile.WrongMagicException {
+
+  boolean success=true;
+
+  final byte[] magic=new byte[MAGIC.length];
+
+  try {
+
+    for (int i=0; i < MAGIC.length; i++) {
+
+      magic[i]=dis.readByte();
+
+      if (MAGIC[i] != magic[i]) {
+
+        success=false;
+
+      }
+
+    }
+
+  }
+
+ catch (  SecurityException ex) {
+
+    throw new FileSecurityException(this,"checkMagic",ex);
+
+  }
+
+catch (  EOFException ex) {
+
+    throw new UnexpectedEndOfFileException(this,"checkMagic",ex);
+
+  }
+
+catch (  IOException ex) {
+
+    throw new UnexpectedFileIOException(this,"checkMagic",ex);
+
+  }
+
+  if (!success) {
+
+    throw new WrongMagicException(this,"checkMagic",magic);
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Closes this object's  {@link #raf RandomAccessFile}. <p> As a side-effect, the associated <tt>FileChannel</tt> object, if any, is closed as well.
+
+ * @throws UnexpectedFileIOException if an <tt>IOException</tt> is thrown
+
+ */
+
+private final void closeRAF() throws LockFile.UnexpectedFileIOException {
+
+  if (raf != null) {
+
+    try {
+
+      raf.close();
+
+    }
+
+ catch (    IOException ex) {
+
+      throw new UnexpectedFileIOException(this,"closeRAF",ex);
+
+    }
+
+ finally {
+
+      raf=null;
+
+    }
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Provides any optional locking actions for the  {@link #tryLock() tryLock()} template method. <p>Descendants are free to provide additional functionality here, using the following rules: <p> <b>PRE:</b><p> This method is called only from <tt>tryLock()</tt> and it is called if and only if <tt>tryLock()</tt> successfully invokes <tt>pollHeartbeat()</tt> and <tt>openRAF()</tt> first. <p> From this, it can be inferred that upon entry: <p> <ol> <li><tt>locked == false</tt>. <li><tt>raf</tt> is a non-null instance that can be used to get a <tt>FileChannel</tt> instance, if desired. <li>the underlying file either did not exist before invoking <tt>openRAF()</tt> or it was a valid but stale HSQLDB lock file because it: <ol style="list-style-type: lower-roman"> <li>did exist, <li>was readable on <tt>USED_REGION</tt>, <li>had the expected length and <tt>MAGIC</tt> value and <li>had a stale heartbeat timestamp value. </ol> </ol> <p> Further, it can be assumed that this object's heatbeat task is definitely cancelled and/or has never been scheduled at this point, so whatever timestamp is recorded in the lock file, if it did pre-exist, was written by a different <tt>LockFile</tt> instance or as the result of a previous, successful <tt>tryLock()</tt> invocation upon this <tt>LockFile</tt> instance. <p> Finally, it is important that this method does not rethrow any exceptions it encounters as unchecked exceptions to the calling context. <p> <b>POST:</b><p> This method should return <tt>false</tt> if optional locking work is not performed or if it fails, else <tt>true</tt>. <p> In general, if optional locking work fails, then any resources acquired in the process should be freed before this method returns. In this way, the surrounding implementation can take advantage of a <tt>false</tt> return value to avoid calling  {@link #doOptionalReleaseActions() doOptionalReleaseActions()} as part of the{@link #tryRelease() tryRelease()} method. <p><b>Note:</b><p> The default implementation does nothing and always returns <tt>false</tt>. <p>
+
+ * @return <tt>true</tt> if optional lock actions are performed and theysucceed, else <tt>false</tt>
+
+ */
+
+protected boolean doOptionalLockActions(){
+
+  return false;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Provides any optional release actions for the  {@link #tryRelease() tryRelease()} template method. <p><b>PRE:</b> <p> It is important that this method does not rethrow any exceptions it encounters as unchecked exceptions to the calling context. <p> <b>POST:</b> <p> In general, <tt>false</tt> should be returned if optional locking work is not performed or if it fails, else <tt>true</tt>.  However, the return value is currently treated  as purely informative. <p> <b>Note:</b> <p> The default implementation does nothing and always returns false. <p>
+
+ * @return <tt>true</tt> if optional release actions are performed and theysucceed, else <tt>false</tt>
+
+ */
+
+protected boolean doOptionalReleaseActions(){
+
+  return false;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves the canonical path of this object's lock file, as a <tt>String</tt> object. <p>
+
+ * @return the canonical path of this object's lock file.
+
+ */
+
+public final String getCanonicalPath(){
+
+  return cpath;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves the interval, in milliseconds, that <tt>pollHeartbeat</tt> waits between failed invocations of <tt>checkHeartbeat</tt>. The value is obtained in the following manner: <p> <ol> <li>interval is assigned <tt>10 + (HEARTBEAT_INTERVAL_PADDED getPollHeartbeatRetries())</tt> <li>interval is assigned <tt>Long.getLong(POLL_INTERVAL_PROPERTY, interval)</tt>, inside a try-catch block, to silently ignore any security exception. <li>If interval is less than or equal to zero (0), interval is reassigned <tt>10 + (HEARTBEAT_INTERVAL_PADDED / getPollHeartbeatRetries())</tt> </ol>
+
+ * @return the interval, in milliseconds, that <tt>pollHeartbeat</tt>waits between failed invocations of <tt>checkHeartbeat</tt>
+
+ */
+
+public long getPollHeartbeatInterval(){
+
+  int retries=getPollHeartbeatRetries();
+
+  long interval=10 + (HEARTBEAT_INTERVAL_PADDED / retries);
+
+  try {
+
+    interval=Long.getLong(POLL_INTERVAL_PROPERTY,interval).longValue();
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  if (interval <= 0) {
+
+    interval=10 + (HEARTBEAT_INTERVAL_PADDED / retries);
+
+  }
+
+  return interval;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves the number of times <tt>checkHeartbeat</tt> may fail before <tt>pollHeartbeat</tt> fails as a consequence. <p> The value is obtained in the following manner: <p> <ol> <li>retries is assigned <tt>POLL_RETRIES_DEFAULT</tt>. <li>retries is assigned <tt>Integer.getInteger(POLL_RETRIES_PROPERTY, retries)</tt> inside a try-catch block to silently ignore any security exception. <li>If retries is less than one (1), retries is assigned one (1). </ol>
+
+ * @return the number of times <tt>checkHeartbeat</tt> may fail before<tt>pollHeartbeat</tt> fails as a consequence.
+
+ */
+
+public int getPollHeartbeatRetries(){
+
+  int retries=POLL_RETRIES_DEFAULT;
+
+  try {
+
+    retries=Integer.getInteger(HsqlDatabaseProperties.system_lockfile_poll_retries_property,retries).intValue();
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  if (retries < 1) {
+
+    retries=1;
+
+  }
+
+  return retries;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves whether this object has successfully obtained and is still holding (has not yet released) a cooperative lock condition on its lock file. <p> <b>Note:</b> <p> Due to platform-independence restrictions placed on a JVM, it is quite possible to successfully acquire a lock condition and yet for the condition to become invalid while still held. <p> For instance, under JVMs with no <tt>java.nio</tt> package or under operating systems that do not apply mandatory file locking (especially mandatory locking that precludes deletion), it is quite possible for another process or even an uncooperative bit of code running in the same JVM to overwrite or delete the target lock file while this object holds a lock condition. <p> Because of this, the <tt>isValid()</tt> method is provided in the public interface in order to allow clients to detect at least a subset of such situations. <p>
+
+ * @return <tt>true</tt> if this object has successfully obtained and isstill holding (has not yet released) a lock condition, else <tt>false</tt>
+
+ * @see #isValid
+
+ */
+
+public final boolean isLocked(){
+
+  return locked;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves whether there is potentially already a cooperative lock, operating system lock or some other situation preventing a cooperative lock condition from being acquired using the specified path.
+
+ * @param path the path to test
+
+ * @return <tt>true</tt> if there is currently something preventing theacquisition of a cooperative lock condition using the specified <tt>path</tt>, else <tt>false</tt>
+
+ */
+
+public static boolean isLocked(final String path){
+
+  boolean locked=true;
+
+  try {
+
+    LockFile lockFile=LockFile.newLockFile(path);
+
+    lockFile.checkHeartbeat(false);
+
+    locked=false;
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  return locked;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves whether this object holds a valid lock condition on its lock file. <p> More formally, this method retrieves true if and only if: <p> <pre> isLocked() && file != null && file.exists() && raf != null </pre>
+
+ * @return <tt>true</tt> if this object holds a valid lock condition on itslock file; else <tt>false</tt>
+
+ * @throws SecurityException if a required system property value cannotbe accessed, or if a Java security manager exists and its <tt>checkRead</tt> method denies read access to the lock file;
+
+ */
+
+public boolean isValid(){
+
+  return isLocked() && file != null && file.exists() && raf != null;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * To allow subclassing without exposing a public constructor.
+
+ */
+
+protected LockFile(){
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * {@link org.hsqldb.persist.Logger#acquireLock(java.lang.String)}delegate.<p> Retrieves a new <tt>LockFile</tt> object holding a cooperative lock condition upon the file with the given path, appended with the extension '.lck'. <p>
+
+ * @param path of the lock file, to which will be appended '.lck'
+
+ * @throws org.hsqldb.HsqlException if the lock condition cannotbe obtained for any reason.
+
+ * @return a new <tt>LockFile</tt> object holding a cooperative lockcondition upon the file with the given path, appended with the extension '.lck'
+
+ */
+
+public static LockFile newLockFileLock(final String path) throws HsqlException {
+
+  LockFile lockFile=null;
+
+  try {
+
+    lockFile=LockFile.newLockFile(path + ".lck");
+
+  }
+
+ catch (  LockFile.BaseException e) {
+
+    throw Error.error(ErrorCode.LOCK_FILE_ACQUISITION_FAILURE,e.getMessage());
+
+  }
+
+  boolean locked=false;
+
+  try {
+
+    locked=lockFile.tryLock();
+
+  }
+
+ catch (  LockFile.BaseException e) {
+
+    throw Error.error(ErrorCode.LOCK_FILE_ACQUISITION_FAILURE,e.getMessage());
+
+  }
+
+  if (!locked) {
+
+    throw Error.error(ErrorCode.LOCK_FILE_ACQUISITION_FAILURE,lockFile.toString());
+
+  }
+
+  return lockFile;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves a <tt>LockFile</tt> instance, initialized with a <tt>File</tt> object whose path is the canonical form of the one specified by the given <tt>path</tt> argument. <p> The resulting <tt>LockFile</tt> instance does not yet hold a lock condition on the file with the given path, nor does it guarantee that the file pre-exists or is created. However, upon successful execution, it is guaranteed that all required parent directories have been created and that the underlying platform has verified the specified path is legal on the file system of the underlying storage partition.
+
+ * @return a <tt>LockFile</tt> instance initialized with a <tt>File</tt>object whose path is the one specified by the given <tt>path</tt> argument.
+
+ * @param path the path of the <tt>File</tt> object with which the retrieved<tt>LockFile</tt> object is to be initialized
+
+ * @throws FileCanonicalizationException if an I/O error occurs uponcanonicalization of the given path, which is possible because it may be illegal on the runtime file system or because construction of the canonical path name may require native file system queries
+
+ * @throws FileSecurityException if a required system property value cannotbe accessed, or if a security manager exists and its <tt> {@link java.lang.SecurityManager#checkRead}</tt> method denies read access to the file; or if its <tt> {@link java.lang.SecurityManager#checkRead(java.lang.String)}</tt> method does not permit verification of the existence of all necessary parent directories; or if the <tt> {@link java.lang.SecurityManager#checkWrite(java.lang.String)}</tt> method does not permit all necessary parent directories to be created
+
+ */
+
+public static LockFile newLockFile(final String path) throws FileCanonicalizationException, FileSecurityException {
+
+  LockFile lockFile=newNIOLockFile();
+
+  if (lockFile == null) {
+
+    lockFile=new LockFile();
+
+  }
+
+  lockFile.setPath(path);
+
+  return lockFile;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves a new <tt>NIOLockFile</tt>, or <tt>null</tt> if not available under the current runtime environment.
+
+ * @return a new <tt>NIOLockFile</tt>, or <tt>null</tt> if not availableunder the current runtime environment
+
+ */
+
+private static LockFile newNIOLockFile(){
+
+  if (NIO_FILELOCK_AVAILABLE && NIO_LOCKFILE_CLASS != null) {
+
+    try {
+
+      return (LockFile)NIO_LOCKFILE_CLASS.newInstance();
+
+    }
+
+ catch (    Exception e) {
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Opens (constructs) this object's  {@link #raf RandomAccessFile}. <p>
+
+ * @throws UnexpectedFileNotFoundException if a<tt>FileNotFoundException</tt> is thrown in response to constructing the <tt>RandomAccessFile</tt> object.
+
+ * @throws FileSecurityException if a required system property value cannotbe accessed, or if a Java security manager exists and its <tt> {@link java.lang.SecurityManager#checkRead}</tt> method denies read access to the file; or if its <tt> {@link java.lang.SecurityManager#checkWrite(java.lang.String)}</tt> method denies write access to the file
+
+ */
+
+private final void openRAF() throws LockFile.UnexpectedFileNotFoundException, LockFile.FileSecurityException, LockFile.UnexpectedFileIOException {
+
+  try {
+
+    raf=new RandomAccessFile(file,"rw");
+
+  }
+
+ catch (  SecurityException ex) {
+
+    throw new FileSecurityException(this,"openRAF",ex);
+
+  }
+
+catch (  FileNotFoundException ex) {
+
+    throw new UnexpectedFileNotFoundException(this,"openRAF",ex);
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves the last written hearbeat timestamp from this object's lock file.  If this object's lock file does not exist, then <tt>Long.MIN_VALUE </tt> (the earliest time representable as a <tt>long</tt> in Java) is returned immediately. <p>
+
+ * @return the hearbeat timestamp read from this object's lock file,as a <tt>long</tt> value or, if this object's lock file does not exist, <tt>Long.MIN_VALUE</tt>, the earliest time representable as a <tt>long</tt> in Java.
+
+ * @throws FileSecurityException if a required system property value cannotbe accessed, or if a Java security manager exists and its <tt> {@link java.lang.SecurityManager#checkRead}</tt> method denies read access to the file
+
+ * @throws UnexpectedEndOfFileException if an <tt>EOFException</tt> isthrown while attempting to read the target file's <tt>MAGIC</tt> or heartbeat timestamp value
+
+ * @throws UnexpectedFileNotFoundException if, after successfully testingfor existence, the target file is not found a moment later while attempting to read its <tt>MAGIC</tt> and heartbeat timestamp values
+
+ * @throws UnexpectedFileIOException if any other input stream error occurs
+
+ * @throws WrongMagicException if the lock file does not start with thethe  {@link #MAGIC} value
+
+ */
+
+private final long readHeartbeat() throws LockFile.FileSecurityException, LockFile.UnexpectedFileNotFoundException, LockFile.UnexpectedEndOfFileException, LockFile.UnexpectedFileIOException, LockFile.WrongMagicException {
+
+  FileInputStream fis=null;
+
+  DataInputStream dis=null;
+
+  try {
+
+    if (!file.exists()) {
+
+      return Long.MIN_VALUE;
+
+    }
+
+    fis=new FileInputStream(file);
+
+    dis=new DataInputStream(fis);
+
+    checkMagic(dis);
+
+    return dis.readLong();
+
+  }
+
+ catch (  SecurityException ex) {
+
+    throw new FileSecurityException(this,"readHeartbeat",ex);
+
+  }
+
+catch (  FileNotFoundException ex) {
+
+    throw new UnexpectedFileNotFoundException(this,"readHeartbeat",ex);
+
+  }
+
+catch (  EOFException ex) {
+
+    throw new UnexpectedEndOfFileException(this,"readHeartbeat",ex);
+
+  }
+
+catch (  IOException ex) {
+
+    throw new UnexpectedFileIOException(this,"readHeartbeat",ex);
+
+  }
+
+ finally {
+
+    if (fis != null) {
+
+      try {
+
+        fis.close();
+
+      }
+
+ catch (      IOException ioe) {
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Initializes this object with a <tt>File</tt> object whose path has the canonical form of the given <tt>path</tt> argument. <p> <b>PRE</b>:<p> <ol> <li>This method is called once and <em>only</em> once per <tt>Lockfile</tt> instance. <li>It is <em>always</em> the first method called after <tt>LockFile</tt> construction <li>The supplied <tt>path</tt> argument is <em>never</em> <tt>null</tt>. </ol>
+
+ * @param path the abstract path representing the file this object is touse as its lock file
+
+ * @throws FileCanonicalizationException if an I/O error occurs uponcanonicalization of the given path, which is possible because the given path may be illegal on the runtime file system or because construction of the canonical pathname may require native file system queries
+
+ * @throws FileSecurityException if a required system property value cannotbe accessed, or if a Java security manager exists and its <tt> {@link java.lang.SecurityManager#checkRead}</tt> method denies read access to the file; or if its <tt> {@link java.lang.SecurityManager#checkRead(java.lang.String)}</tt> method does not permit verification of the existence of all necessary parent directories; or if its <tt> {@link java.lang.SecurityManager#checkWrite(java.lang.String)}</tt> method does not permit all necessary parent directories to be created
+
+ */
+
+private final void setPath(String path) throws LockFile.FileCanonicalizationException, LockFile.FileSecurityException {
+
+  path=FileUtil.getFileUtil().canonicalOrAbsolutePath(path);
+
+  this.file=new File(path);
+
+  try {
+
+    FileUtil.getFileUtil().makeParentDirectories(this.file);
+
+  }
+
+ catch (  SecurityException ex) {
+
+    throw new FileSecurityException(this,"setPath",ex);
+
+  }
+
+  try {
+
+    this.file=FileUtil.getFileUtil().canonicalFile(path);
+
+  }
+
+ catch (  SecurityException ex) {
+
+    throw new FileSecurityException(this,"setPath",ex);
+
+  }
+
+catch (  IOException ex) {
+
+    throw new FileCanonicalizationException(this,"setPath",ex);
+
+  }
+
+  this.cpath=this.file.getPath();
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Schedules the lock heartbeat task.
+
+ */
+
+private final void startHeartbeat(){
+
+  if (timerTask == null || HsqlTimer.isCancelled(timerTask)) {
+
+    Runnable runner=new HeartbeatRunner();
+
+    timerTask=timer.schedulePeriodicallyAfter(0,HEARTBEAT_INTERVAL,runner,true);
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Cancels the lock heartbeat task.
+
+ */
+
+private final void stopHeartbeat(){
+
+  if (timerTask != null && !HsqlTimer.isCancelled(timerTask)) {
+
+    HsqlTimer.cancel(timerTask);
+
+    timerTask=null;
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Retrieves an implementation-specific tail value for the <tt>toString()</tt> method. <p> The default implementation returns the empty string.
+
+ * @return an implementation-specific tail value for the <tt>toString()</tt>method
+
+ * @see #toString
+
+ */
+
+protected String toStringImpl(){
+
+  return "";
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Attempts to obtain a cooperative lock condition upon this object's lock file. <p>
+
+ * @return <tt>true</tt> if this object already holds a lock or the lock wasobtained successfully, else <tt>false</tt>
+
+ * @throws FileSecurityException if the lock condition could not beobtained due to a Java security permission violation
+
+ * @throws LockHeldExternallyException if the lock condition could notbe obtained because the target file's heartbeat timestamp indicated that a lock condition was held by another <tt>LockFile</tt>.
+
+ * @throws UnexpectedFileNotFoundException if the lock condition could notbe obtained because the target file became unavailable between a successful test for existence and an attempt to read its <tt>MAGIC</tt> or heartbeat timestamp value.
+
+ * @throws UnexpectedEndOfFileException if the lock condition could not beobtained because <tt>EOFException</tt> was raised while trying to read the <tt>MAGIC</tt> or heartbeat timestamp value of the target file
+
+ * @throws UnexpectedFileIOException if the lock condition could not beobtained due to an <tt>IOException</tt> other than <tt>EOFException</tt>
+
+ * @throws WrongLengthException if the lock condition could not be obtainedbecause the target file was the wrong length
+
+ * @throws WrongMagicException if the lock condition could not be obtainedbecause the target file had the wrong <tt>MAGIC</tt> value
+
+ * @return <tt>true</tt> if and only if a lock condition is obtained;<tt>false</tt> otherwise.  In general, an exception will <em>always</em> be thrown if a lock condition cannot be obtained for any reason
+
+ */
+
+public final boolean tryLock() throws LockFile.FileSecurityException, LockFile.LockHeldExternallyException, LockFile.UnexpectedFileNotFoundException, LockFile.UnexpectedEndOfFileException, LockFile.UnexpectedFileIOException, LockFile.WrongLengthException, LockFile.WrongMagicException {
+
+  if (this.locked) {
+
+    return true;
+
+  }
+
+  try {
+
+    hongshuai();
+
+    boolean success=false;
+
+    int retries=getPollHeartbeatRetries();
+
+    long interval=getPollHeartbeatInterval();
+
+    LockFile.BaseException reason=null;
+
+    for (int i=retries; i > 0; i--) {
+
+      try {
+
+        checkHeartbeat(true);
+
+        success=true;
+
+        break;
+
+      }
+
+ catch (      LockFile.BaseException ex) {
+
+        reason=ex;
+
+      }
+
+      try {
+
+        Thread.sleep(interval);
+
+      }
+
+ catch (      InterruptedException ex) {
+
+        break;
+
+      }
+
+    }
+
+    if (!success) {
+
+      if (reason instanceof FileSecurityException) {
+
+        throw (FileSecurityException)reason;
+
+      }
+
+ else       if (reason instanceof LockHeldExternallyException) {
+
+        throw (LockHeldExternallyException)reason;
+
+      }
+
+ else       if (reason instanceof UnexpectedFileNotFoundException) {
+
+        throw (UnexpectedFileNotFoundException)reason;
+
+      }
+
+ else       if (reason instanceof UnexpectedEndOfFileException) {
+
+        throw (UnexpectedEndOfFileException)reason;
+
+      }
+
+ else       if (reason instanceof UnexpectedFileIOException) {
+
+        throw (UnexpectedFileIOException)reason;
+
+      }
+
+ else       if (reason instanceof WrongLengthException) {
+
+        throw (WrongLengthException)reason;
+
+      }
+
+ else       if (reason instanceof WrongMagicException) {
+
+        throw (WrongMagicException)reason;
+
+      }
+
+    }
+
+    openRAF();
+
+    doOptionalLockActions();
+
+    writeMagic();
+
+    writeHeartbeat();
+
+    FileUtil.getFileUtil().deleteOnExit(file);
+
+    this.locked=true;
+
+    startHeartbeat();
+
+  }
+
+  finally {
+
+    if (!locked) {
+
+      doOptionalReleaseActions();
+
+      try {
+
+        closeRAF();
+
+      }
+
+ catch (      Exception ex) {
+
+      }
+
+    }
+
+  }
+
+  return this.locked;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Attempts to release any cooperative lock condition this object may hold upon its lock file. <p>
+
+ * @return <tt>true</tt> if this object does not currently hold alock condition or the lock is released completely (including successful file deletion), else <tt>false</tt>.
+
+ * @throws FileSecurityException if a <tt>SecurityException</tt> is raisedin the process of releasing the lock condition
+
+ * @throws UnexpectedFileIOException if an IoException is raised in theprocess of releasing the lock condition
+
+ */
+
+public final boolean tryRelease() throws LockFile.FileSecurityException, LockFile.UnexpectedFileIOException {
+
+  boolean released=!locked;
+
+  if (released) {
+
+    return true;
+
+  }
+
+  stopHeartbeat();
+
+  doOptionalReleaseActions();
+
+  UnexpectedFileIOException closeRAFReason=null;
+
+  FileSecurityException securityReason=null;
+
+  try {
+
+    try {
+
+      closeRAF();
+
+    }
+
+ catch (    UnexpectedFileIOException ex) {
+
+      closeRAFReason=ex;
+
+    }
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    Exception ex) {
+
+    }
+
+    try {
+
+      released=file.delete();
+
+    }
+
+ catch (    SecurityException ex) {
+
+      securityReason=new FileSecurityException(this,"tryRelease",ex);
+
+    }
+
+  }
+
+  finally {
+
+    this.locked=false;
+
+  }
+
+  if (closeRAFReason != null) {
+
+    throw closeRAFReason;
+
+  }
+
+ else   if (securityReason != null) {
+
+    throw securityReason;
+
+  }
+
+  return released;
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Writes the current hearbeat timestamp value to this object's lock file. <p>
+
+ * @throws FileSecurityException possibly never (seek and write are nativemethods whose JavaDoc entries do not actually specify throwing <tt>SecurityException</tt>).  However, it is conceivable that these native methods may, in turn, access Java methods that do throw <tt>SecurityException</tt>. In this case, a <tt>SecurityException</tt> might be thrown if a required system property value cannot be accessed, or if a security manager exists and its <tt> {@link java.lang.SecurityManager#checkWrite(java.io.FileDescriptor)}</tt> method denies write access to the file
+
+ * @throws UnexpectedEndOfFileException if an end of file exception isthrown while attempting to write the heartbeat timestamp value to the target file (typically, this cannot happen, but the case is included to distinguish it from the general IOException case).
+
+ * @throws UnexpectedFileIOException if the current heartbeat timestampvalue cannot be written due to an underlying I/O error
+
+ */
+
+private final void writeHeartbeat() throws LockFile.FileSecurityException, LockFile.UnexpectedEndOfFileException, LockFile.UnexpectedFileIOException {
+
+  try {
+
+    raf.seek(MAGIC.length);
+
+    raf.writeLong(System.currentTimeMillis());
+
+  }
+
+ catch (  SecurityException ex) {
+
+    throw new FileSecurityException(this,"writeHeartbeat",ex);
+
+  }
+
+catch (  EOFException ex) {
+
+    throw new UnexpectedEndOfFileException(this,"writeHeartbeat",ex);
+
+  }
+
+catch (  IOException ex) {
+
+    throw new UnexpectedFileIOException(this,"writeHeartbeat",ex);
+
+  }
+
+}
+
+Location: LockFile.java
+
+Content: 
+
+/** 
+
+ * Writes the  {@link #MAGIC} value to this object's lock file thatdistinguishes it as an HSQLDB lock file. <p>
+
+ * @throws FileSecurityException possibly never (seek and write are nativemethods whose JavaDoc entries do not actually specify throwing <tt>SecurityException</tt>).  However, it is conceivable that these native methods may, in turn, access Java methods that do throw <tt>SecurityException</tt>. In this case, a <tt>SecurityException</tt> might be thrown if a required system property value cannot be accessed, or if a security manager exists and its <tt> {@link java.lang.SecurityManager#checkWrite(java.io.FileDescriptor)}</tt> method denies write access to the file
+
+ * @throws UnexpectedEndOfFileException if an end of file exception isthrown while attempting to write the <tt>MAGIC</tt> value to the target file (typically, this cannot happen, but the case is included to distinguish it from the general <tt>IOException</tt> case).
+
+ * @throws UnexpectedFileIOException if any other I/O error occurs whileattempting to write the <tt>MAGIC</tt> value to the target file.
+
+ */
+
+private final void writeMagic() throws LockFile.FileSecurityException, LockFile.UnexpectedEndOfFileException, LockFile.UnexpectedFileIOException {
+
+  try {
+
+    raf.seek(0);
+
+    raf.write(MAGIC);
+
+  }
+
+ catch (  SecurityException ex) {
+
+    throw new FileSecurityException(this,"writeMagic",ex);
+
+  }
+
+catch (  EOFException ex) {
+
+    throw new UnexpectedEndOfFileException(this,"writeMagic",ex);
+
+  }
+
+catch (  IOException ex) {
+
+    throw new UnexpectedFileIOException(this,"writeMagic",ex);
+
+  }
+
+}
+

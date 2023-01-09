@@ -1,0 +1,52 @@
+Location: TestDebugScriptWithLinuxTaskController.java
+
+Content: 
+
+@Test public void testDebugScriptExecutionAsDifferentUser() throws Exception {
+
+  if (!super.shouldRun()) {
+
+    return;
+
+  }
+
+  super.startCluster();
+
+  TestDebugScript.setupDebugScriptDirs();
+
+  final Path inDir=new Path("input");
+
+  final Path outDir=new Path("output");
+
+  JobConf conf=super.getClusterConf();
+
+  FileSystem fs=inDir.getFileSystem(conf);
+
+  fs.mkdirs(inDir);
+
+  Path p=new Path(inDir,"1.txt");
+
+  fs.createNewFile(p);
+
+  String splits[]=System.getProperty(ClusterWithLinuxTaskController.TASKCONTROLLER_UGI).split(",");
+
+  JobID jobId=UserGroupInformation.createUserForTesting(splits[0],new String[]{splits[1]}).doAs(new PrivilegedExceptionAction<JobID>(){
+
+    public JobID run() throws IOException {
+
+      return TestDebugScript.runFailingMapJob(TestDebugScriptWithLinuxTaskController.this.getClusterConf(),inDir,outDir);
+
+    }
+
+  }
+
+);
+
+  TaskAttemptID taskId=new TaskAttemptID(new TaskID(jobId,TaskType.MAP,0),0);
+
+  TestDebugScript.verifyDebugScriptOutput(taskId,splits[0],taskTrackerSpecialGroup,"-rw-rw----");
+
+  TestDebugScript.cleanupDebugScriptDirs();
+
+}
+

@@ -1,0 +1,458 @@
+Location: KeyFieldHelper.java
+
+Content: 
+
+public int getEndOffset(byte[] b,int start,int end,int[] lengthIndices,KeyDescription k){
+
+  if (k.endFieldIdx == 0) {
+
+    return end - 1;
+
+  }
+
+  if (lengthIndices[0] >= k.endFieldIdx) {
+
+    int position=0;
+
+    int i;
+
+    for (i=1; i < k.endFieldIdx; i++) {
+
+      position+=lengthIndices[i] + keyFieldSeparator.length;
+
+    }
+
+    if (k.endChar == 0) {
+
+      position+=lengthIndices[i];
+
+    }
+
+    if (position + k.endChar <= (end - start)) {
+
+      return start + position + k.endChar - 1;
+
+    }
+
+    return end - 1;
+
+  }
+
+  return end - 1;
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+public int getStartOffset(byte[] b,int start,int end,int[] lengthIndices,KeyDescription k){
+
+  if (lengthIndices[0] >= k.beginFieldIdx) {
+
+    int position=0;
+
+    for (int i=1; i < k.beginFieldIdx; i++) {
+
+      position+=lengthIndices[i] + keyFieldSeparator.length;
+
+    }
+
+    if (position + k.beginChar <= (end - start)) {
+
+      return start + position + k.beginChar - 1;
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+public int[] getWordLengths(byte[] b,int start,int end){
+
+  if (!keySpecSeen) {
+
+    return new int[]{1};
+
+  }
+
+  int[] lengths=new int[10];
+
+  int currLenLengths=lengths.length;
+
+  int idx=1;
+
+  int pos;
+
+  while ((pos=UTF8ByteArrayUtils.findBytes(b,start,end,keyFieldSeparator)) != -1) {
+
+    if (++idx == currLenLengths) {
+
+      int[] temp=lengths;
+
+      lengths=new int[(currLenLengths=currLenLengths * 2)];
+
+      System.arraycopy(temp,0,lengths,0,temp.length);
+
+    }
+
+    lengths[idx - 1]=pos - start;
+
+    start=pos + 1;
+
+  }
+
+  if (start != end) {
+
+    lengths[idx]=end - start;
+
+  }
+
+  lengths[0]=idx;
+
+  return lengths;
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+public List<KeyDescription> keySpecs(){
+
+  return allKeySpecs;
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+private KeyDescription parseKey(String arg,StringTokenizer args){
+
+  String keyArgs=null;
+
+  if (arg.length() == 2) {
+
+    if (args.hasMoreTokens()) {
+
+      keyArgs=args.nextToken();
+
+    }
+
+  }
+
+ else {
+
+    keyArgs=arg.substring(2);
+
+  }
+
+  if (keyArgs == null || keyArgs.length() == 0) {
+
+    return null;
+
+  }
+
+  StringTokenizer st=new StringTokenizer(keyArgs,"nr.,",true);
+
+  KeyDescription key=new KeyDescription();
+
+  String token;
+
+  if (st.hasMoreTokens()) {
+
+    token=st.nextToken();
+
+    key.beginFieldIdx=Integer.parseInt(token);
+
+  }
+
+  if (st.hasMoreTokens()) {
+
+    token=st.nextToken();
+
+    if (token.equals(".")) {
+
+      token=st.nextToken();
+
+      key.beginChar=Integer.parseInt(token);
+
+      if (st.hasMoreTokens()) {
+
+        token=st.nextToken();
+
+      }
+
+ else {
+
+        return key;
+
+      }
+
+    }
+
+    do {
+
+      if (token.equals("n")) {
+
+        key.numeric=true;
+
+      }
+
+ else       if (token.equals("r")) {
+
+        key.reverse=true;
+
+      }
+
+ else       break;
+
+      if (st.hasMoreTokens()) {
+
+        token=st.nextToken();
+
+      }
+
+ else {
+
+        return key;
+
+      }
+
+    }
+
+ while (true);
+
+    if (token.equals(",")) {
+
+      token=st.nextToken();
+
+      key.endFieldIdx=Integer.parseInt(token);
+
+      if (st.hasMoreTokens()) {
+
+        token=st.nextToken();
+
+        if (token.equals(".")) {
+
+          token=st.nextToken();
+
+          key.endChar=Integer.parseInt(token);
+
+          if (st.hasMoreTokens()) {
+
+            token=st.nextToken();
+
+          }
+
+ else {
+
+            return key;
+
+          }
+
+        }
+
+        do {
+
+          if (token.equals("n")) {
+
+            key.numeric=true;
+
+          }
+
+ else           if (token.equals("r")) {
+
+            key.reverse=true;
+
+          }
+
+ else {
+
+            throw new IllegalArgumentException("Invalid -k argument. " + "Must be of the form -k pos1,[pos2], where pos is of the form " + "f[.c]nr");
+
+          }
+
+          if (st.hasMoreTokens()) {
+
+            token=st.nextToken();
+
+          }
+
+ else {
+
+            break;
+
+          }
+
+        }
+
+ while (true);
+
+      }
+
+      return key;
+
+    }
+
+    throw new IllegalArgumentException("Invalid -k argument. " + "Must be of the form -k pos1,[pos2], where pos is of the form " + "f[.c]nr");
+
+  }
+
+  return key;
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+public void parseOption(String option){
+
+  if (option == null || option.equals("")) {
+
+    return;
+
+  }
+
+  StringTokenizer args=new StringTokenizer(option);
+
+  KeyDescription global=new KeyDescription();
+
+  while (args.hasMoreTokens()) {
+
+    String arg=args.nextToken();
+
+    if (arg.equals("-n")) {
+
+      global.numeric=true;
+
+    }
+
+    if (arg.equals("-r")) {
+
+      global.reverse=true;
+
+    }
+
+    if (arg.equals("-nr")) {
+
+      global.numeric=true;
+
+      global.reverse=true;
+
+    }
+
+    if (arg.startsWith("-k")) {
+
+      KeyDescription k=parseKey(arg,args);
+
+      if (k != null) {
+
+        allKeySpecs.add(k);
+
+        keySpecSeen=true;
+
+      }
+
+    }
+
+  }
+
+  for (  KeyDescription key : allKeySpecs) {
+
+    if (!(key.reverse | key.numeric)) {
+
+      key.reverse=global.reverse;
+
+      key.numeric=global.numeric;
+
+    }
+
+  }
+
+  if (allKeySpecs.size() == 0) {
+
+    allKeySpecs.add(global);
+
+  }
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+private void printKey(KeyDescription key){
+
+  System.out.println("key.beginFieldIdx: " + key.beginFieldIdx);
+
+  System.out.println("key.beginChar: " + key.beginChar);
+
+  System.out.println("key.endFieldIdx: " + key.endFieldIdx);
+
+  System.out.println("key.endChar: " + key.endChar);
+
+  System.out.println("key.numeric: " + key.numeric);
+
+  System.out.println("key.reverse: " + key.reverse);
+
+  System.out.println("parseKey over");
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+public void setKeyFieldSeparator(String keyFieldSeparator){
+
+  try {
+
+    this.keyFieldSeparator=keyFieldSeparator.getBytes("UTF-8");
+
+  }
+
+ catch (  UnsupportedEncodingException e) {
+
+    throw new RuntimeException("The current system does not " + "support UTF-8 encoding!",e);
+
+  }
+
+}
+
+Location: KeyFieldHelper.java
+
+Content: 
+
+/** 
+
+ * Required for backcompatibility with num.key.fields.for.partition in {@link KeyFieldBasedPartitioner} 
+
+ */
+
+public void setKeyFieldSpec(int start,int end){
+
+  if (end >= start) {
+
+    KeyDescription k=new KeyDescription();
+
+    k.beginFieldIdx=start;
+
+    k.endFieldIdx=end;
+
+    keySpecSeen=true;
+
+    allKeySpecs.add(k);
+
+  }
+
+}
+

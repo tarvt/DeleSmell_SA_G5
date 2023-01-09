@@ -1,0 +1,1298 @@
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Add a line with block content
+
+ * @param context the context for adding areas
+
+ * @param pos the position for which the line is generated
+
+ * @param isLastPosition true if this is the last position of this LM
+
+ */
+
+private void addBlockArea(LayoutContext context,Position pos,boolean isLastPosition){
+
+  List positionList=new ArrayList(1);
+
+  Position innerPosition=pos.getPosition();
+
+  positionList.add(innerPosition);
+
+  LayoutManager lastLM=null;
+
+  if (isLastPosition) {
+
+    lastLM=innerPosition.getLM();
+
+  }
+
+  LineArea lineArea=new LineArea();
+
+  lineArea.setChangeBarList(getChangeBarList());
+
+  setCurrentArea(lineArea);
+
+  LayoutContext lc=LayoutContext.newInstance();
+
+  lc.setAlignmentContext(alignmentContext);
+
+  setChildContext(lc);
+
+  PositionIterator childPosIter=new PositionIterator(positionList.listIterator());
+
+  LayoutContext blocklc=LayoutContext.offspringOf(context);
+
+  blocklc.setLeadingSpace(new SpaceSpecifier(true));
+
+  blocklc.setTrailingSpace(new SpaceSpecifier(false));
+
+  blocklc.setFlags(LayoutContext.RESOLVE_LEADING_SPACE,true);
+
+  LayoutManager childLM;
+
+  while ((childLM=childPosIter.getNextChildLM()) != null) {
+
+    blocklc.setFlags(LayoutContext.LAST_AREA,(context.isLastArea() && childLM == lastLM));
+
+    blocklc.setStackLimitBP(context.getStackLimitBP());
+
+    childLM.addAreas(childPosIter,blocklc);
+
+    blocklc.setLeadingSpace(blocklc.getTrailingSpace());
+
+    blocklc.setTrailingSpace(new SpaceSpecifier(false));
+
+  }
+
+  lineArea.updateExtentsFromChildren();
+
+  if (lineArea.getBidiLevel() >= 0) {
+
+    BidiResolver.reorder(lineArea);
+
+  }
+
+  parentLayoutManager.addChildArea(lineArea);
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Add a line with inline content
+
+ * @param context the context for adding areas
+
+ * @param lbp the position for which the line is generated
+
+ * @param isLastPosition true if this is the last position of this LM
+
+ */
+
+private void addInlineArea(LayoutContext context,LineBreakPosition lbp,boolean isLastPosition){
+
+  KnuthSequence seq=knuthParagraphs.get(lbp.parIndex);
+
+  int startElementIndex=lbp.startIndex;
+
+  int endElementIndex=lbp.getLeafPos();
+
+  LineArea lineArea=new LineArea((lbp.getLeafPos() < seq.size() - 1 ? textAlignment : textAlignmentLast),lbp.difference,lbp.availableStretch,lbp.availableShrink);
+
+  lineArea.setChangeBarList(getChangeBarList());
+
+  if (lbp.startIndent != 0) {
+
+    lineArea.addTrait(Trait.START_INDENT,lbp.startIndent);
+
+  }
+
+  if (lbp.endIndent != 0) {
+
+    lineArea.addTrait(Trait.END_INDENT,lbp.endIndent);
+
+  }
+
+  lineArea.setBPD(lbp.lineHeight);
+
+  lineArea.setIPD(lbp.lineWidth);
+
+  lineArea.setBidiLevel(bidiLevel);
+
+  lineArea.addTrait(Trait.SPACE_BEFORE,lbp.spaceBefore);
+
+  lineArea.addTrait(Trait.SPACE_AFTER,lbp.spaceAfter);
+
+  alignmentContext.resizeLine(lbp.lineHeight,lbp.baseline);
+
+  if (seq instanceof Paragraph) {
+
+    Paragraph currPar=(Paragraph)seq;
+
+    startElementIndex+=(startElementIndex == 0) ? currPar.ignoreAtStart : 0;
+
+    if (endElementIndex == (currPar.size() - 1)) {
+
+      endElementIndex-=currPar.ignoreAtEnd;
+
+      lineArea.setIPD(lineArea.getIPD() - lastLineEndIndent.getValue(this));
+
+    }
+
+  }
+
+  ListIterator seqIterator=seq.listIterator(endElementIndex);
+
+  KnuthElement lastElement=(KnuthElement)seqIterator.next();
+
+  LayoutManager lastLM=lastElement.getLayoutManager();
+
+  if (lastElement.isGlue()) {
+
+    if (whiteSpaceTreament == EN_IGNORE_IF_SURROUNDING_LINEFEED || whiteSpaceTreament == EN_IGNORE || whiteSpaceTreament == EN_IGNORE_IF_BEFORE_LINEFEED) {
+
+      endElementIndex--;
+
+      seqIterator.previous();
+
+      if (seqIterator.hasPrevious()) {
+
+        lastLM=((KnuthElement)seqIterator.previous()).getLayoutManager();
+
+      }
+
+    }
+
+  }
+
+  if (whiteSpaceTreament == EN_IGNORE_IF_SURROUNDING_LINEFEED || whiteSpaceTreament == EN_IGNORE || whiteSpaceTreament == EN_IGNORE_IF_AFTER_LINEFEED) {
+
+    seqIterator=seq.listIterator(startElementIndex);
+
+    while (seqIterator.hasNext() && !((KnuthElement)seqIterator.next()).isBox()) {
+
+      startElementIndex++;
+
+    }
+
+  }
+
+  PositionIterator inlinePosIter=new KnuthPossPosIter(seq,startElementIndex,endElementIndex + 1);
+
+  LayoutContext lc=LayoutContext.offspringOf(context);
+
+  lc.setAlignmentContext(alignmentContext);
+
+  lc.setSpaceAdjust(lbp.dAdjust);
+
+  lc.setIPDAdjust(lbp.ipdAdjust);
+
+  lc.setLeadingSpace(new SpaceSpecifier(true));
+
+  lc.setTrailingSpace(new SpaceSpecifier(false));
+
+  lc.setFlags(LayoutContext.RESOLVE_LEADING_SPACE,true);
+
+  setCurrentArea(lineArea);
+
+  setChildContext(lc);
+
+  LayoutManager childLM;
+
+  while ((childLM=inlinePosIter.getNextChildLM()) != null) {
+
+    lc.setFlags(LayoutContext.LAST_AREA,(childLM == lastLM));
+
+    childLM.addAreas(inlinePosIter,lc);
+
+    lc.setLeadingSpace(lc.getTrailingSpace());
+
+    lc.setTrailingSpace(new SpaceSpecifier(false));
+
+  }
+
+  if (context.getSpaceAfter() > 0 && (!context.isLastArea() || !isLastPosition)) {
+
+    lineArea.setBPD(lineArea.getBPD() + context.getSpaceAfter());
+
+  }
+
+  lineArea.finish();
+
+  if (lineArea.getBidiLevel() >= 0) {
+
+    BidiResolver.reorder(lineArea);
+
+  }
+
+  parentLayoutManager.addChildArea(lineArea);
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Phase 1 of Knuth algorithm: Collect all inline Knuth elements before determining line breaks.
+
+ * @param context the LayoutContext
+
+ */
+
+private void collectInlineKnuthElements(LayoutContext context){
+
+  LayoutContext inlineLC=LayoutContext.copyOf(context);
+
+  boolean previousIsBox=false;
+
+  StringBuffer trace=new StringBuffer("LineLM:");
+
+  Paragraph lastPar=null;
+
+  InlineLevelLayoutManager curLM;
+
+  while ((curLM=(InlineLevelLayoutManager)getChildLM()) != null) {
+
+    List inlineElements=curLM.getNextKnuthElements(inlineLC,effectiveAlignment);
+
+    if (inlineElements == null || inlineElements.size() == 0) {
+
+      continue;
+
+    }
+
+    if (lastPar != null) {
+
+      KnuthSequence firstSeq=(KnuthSequence)inlineElements.get(0);
+
+      if (!firstSeq.isInlineSequence()) {
+
+        lastPar.endParagraph();
+
+        ElementListObserver.observe(lastPar,"line",null);
+
+        lastPar=null;
+
+        if (log.isTraceEnabled()) {
+
+          trace.append(" ]");
+
+        }
+
+        previousIsBox=false;
+
+      }
+
+      if (lastPar != null) {
+
+        KnuthElement thisElement;
+
+        thisElement=(KnuthElement)firstSeq.get(0);
+
+        if (thisElement.isBox() && !thisElement.isAuxiliary() && previousIsBox) {
+
+          lastPar.addALetterSpace();
+
+        }
+
+      }
+
+    }
+
+    for (    Object inlineElement : inlineElements) {
+
+      KnuthSequence sequence=(KnuthSequence)inlineElement;
+
+      if (sequence.isInlineSequence()) {
+
+        ListElement lastElement=sequence.getLast();
+
+        assert lastElement != null;
+
+        previousIsBox=lastElement.isBox() && !((KnuthElement)lastElement).isAuxiliary() && ((KnuthElement)lastElement).getWidth() != 0;
+
+        if (lastPar == null) {
+
+          lastPar=new Paragraph(this,textAlignment,textAlignmentLast,textIndent.getValue(this),lastLineEndIndent.getValue(this));
+
+          lastPar.startSequence();
+
+          if (log.isTraceEnabled()) {
+
+            trace.append(" [");
+
+          }
+
+        }
+
+ else {
+
+          if (log.isTraceEnabled()) {
+
+            trace.append(" +");
+
+          }
+
+        }
+
+        lastPar.addAll(sequence);
+
+        if (log.isTraceEnabled()) {
+
+          trace.append(" I");
+
+        }
+
+        if (lastElement.isPenalty() && ((KnuthPenalty)lastElement).getPenalty() == -KnuthPenalty.INFINITE) {
+
+          lastPar.removeLast();
+
+          if (!lastPar.containsBox()) {
+
+            lastPar.add(new KnuthGlue(ipd,0,ipd,null,true));
+
+          }
+
+          lastPar.endParagraph();
+
+          ElementListObserver.observe(lastPar,"line",null);
+
+          lastPar=null;
+
+          if (log.isTraceEnabled()) {
+
+            trace.append(" ]");
+
+          }
+
+          previousIsBox=false;
+
+        }
+
+      }
+
+ else {
+
+        knuthParagraphs.add(sequence);
+
+        if (log.isTraceEnabled()) {
+
+          trace.append(" B");
+
+        }
+
+      }
+
+    }
+
+  }
+
+  if (lastPar != null) {
+
+    lastPar.endParagraph();
+
+    ElementListObserver.observe(lastPar,"line",fobj.getId());
+
+    if (log.isTraceEnabled()) {
+
+      trace.append(" ]");
+
+    }
+
+  }
+
+  log.trace(trace);
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+private void createElements(List<ListElement> list,LineLayoutPossibilities llPoss,Position elementPosition){
+
+  int innerLines=0;
+
+  int optionalLines=0;
+
+  int conditionalOptionalLines=0;
+
+  int eliminableLines=0;
+
+  int conditionalEliminableLines=0;
+
+  int firstLines=fobj.getOrphans();
+
+  int lastLines=fobj.getWidows();
+
+  List<KnuthElement> breaker=new LinkedList<KnuthElement>();
+
+  if (fobj.getOrphans() + fobj.getWidows() <= llPoss.getMinLineCount()) {
+
+    innerLines=llPoss.getMinLineCount() - (fobj.getOrphans() + fobj.getWidows());
+
+    optionalLines=llPoss.getMaxLineCount() - llPoss.getOptLineCount();
+
+    eliminableLines=llPoss.getOptLineCount() - llPoss.getMinLineCount();
+
+  }
+
+ else   if (fobj.getOrphans() + fobj.getWidows() <= llPoss.getOptLineCount()) {
+
+    optionalLines=llPoss.getMaxLineCount() - llPoss.getOptLineCount();
+
+    eliminableLines=llPoss.getOptLineCount() - (fobj.getOrphans() + fobj.getWidows());
+
+    conditionalEliminableLines=(fobj.getOrphans() + fobj.getWidows()) - llPoss.getMinLineCount();
+
+  }
+
+ else   if (fobj.getOrphans() + fobj.getWidows() <= llPoss.getMaxLineCount()) {
+
+    optionalLines=llPoss.getMaxLineCount() - (fobj.getOrphans() + fobj.getWidows());
+
+    conditionalOptionalLines=(fobj.getOrphans() + fobj.getWidows()) - llPoss.getOptLineCount();
+
+    conditionalEliminableLines=llPoss.getOptLineCount() - llPoss.getMinLineCount();
+
+    firstLines-=conditionalOptionalLines;
+
+  }
+
+ else {
+
+    conditionalOptionalLines=llPoss.getMaxLineCount() - llPoss.getOptLineCount();
+
+    conditionalEliminableLines=llPoss.getOptLineCount() - llPoss.getMinLineCount();
+
+    firstLines=llPoss.getOptLineCount();
+
+    lastLines=0;
+
+  }
+
+  if (lastLines != 0 && (conditionalOptionalLines > 0 || conditionalEliminableLines > 0)) {
+
+    breaker.add(new KnuthPenalty(0,KnuthElement.INFINITE,false,elementPosition,false));
+
+    breaker.add(new KnuthGlue(0,-conditionalOptionalLines * constantLineHeight,-conditionalEliminableLines * constantLineHeight,Adjustment.LINE_NUMBER_ADJUSTMENT,elementPosition,false));
+
+    breaker.add(new KnuthPenalty(conditionalOptionalLines * constantLineHeight,0,false,elementPosition,false));
+
+    breaker.add(new KnuthGlue(0,conditionalOptionalLines * constantLineHeight,conditionalEliminableLines * constantLineHeight,Adjustment.LINE_NUMBER_ADJUSTMENT,elementPosition,false));
+
+  }
+
+ else   if (lastLines != 0) {
+
+    breaker.add(new KnuthPenalty(0,0,false,elementPosition,false));
+
+  }
+
+  list.add(new KnuthBox(firstLines * constantLineHeight,elementPosition,(lastLines == 0 && conditionalOptionalLines == 0 && conditionalEliminableLines == 0)));
+
+  if (conditionalOptionalLines > 0 || conditionalEliminableLines > 0) {
+
+    list.add(new KnuthPenalty(0,KnuthElement.INFINITE,false,elementPosition,false));
+
+    list.add(new KnuthGlue(0,conditionalOptionalLines * constantLineHeight,conditionalEliminableLines * constantLineHeight,Adjustment.LINE_NUMBER_ADJUSTMENT,elementPosition,false));
+
+    list.add(new KnuthBox(0,elementPosition,(lastLines == 0)));
+
+  }
+
+  for (int i=0; i < optionalLines; i++) {
+
+    list.addAll(breaker);
+
+    list.add(new KnuthBox(0,elementPosition,false));
+
+    list.add(new KnuthPenalty(0,KnuthElement.INFINITE,false,elementPosition,false));
+
+    list.add(new KnuthGlue(0,constantLineHeight,0,Adjustment.LINE_NUMBER_ADJUSTMENT,elementPosition,false));
+
+    list.add(new KnuthBox(0,elementPosition,false));
+
+  }
+
+  for (int i=0; i < eliminableLines; i++) {
+
+    list.addAll(breaker);
+
+    list.add(new KnuthBox(constantLineHeight,elementPosition,false));
+
+    list.add(new KnuthPenalty(0,KnuthElement.INFINITE,false,elementPosition,false));
+
+    list.add(new KnuthGlue(0,0,constantLineHeight,Adjustment.LINE_NUMBER_ADJUSTMENT,elementPosition,false));
+
+    list.add(new KnuthBox(0,elementPosition,false));
+
+  }
+
+  for (int i=0; i < innerLines; i++) {
+
+    list.addAll(breaker);
+
+    list.add(new KnuthBox(constantLineHeight,elementPosition,false));
+
+  }
+
+  if (lastLines > 0) {
+
+    list.addAll(breaker);
+
+    list.add(new KnuthBox(lastLines * constantLineHeight,elementPosition,true));
+
+  }
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Phase 2 of Knuth algorithm: find optimal break points.
+
+ * @param alignment alignment in BP direction of the paragraph
+
+ * @param context the layout context
+
+ * @return a list of Knuth elements representing broken lines
+
+ */
+
+private List<ListElement> createLineBreaks(int alignment,LayoutContext context){
+
+  Iterator<KnuthSequence> paragraphsIterator=knuthParagraphs.iterator();
+
+  lineLayoutsList=new LineLayoutPossibilities[knuthParagraphs.size()];
+
+  LineLayoutPossibilities llPoss;
+
+  for (int i=0; paragraphsIterator.hasNext(); i++) {
+
+    KnuthSequence seq=paragraphsIterator.next();
+
+    if (!seq.isInlineSequence()) {
+
+      llPoss=new LineLayoutPossibilities();
+
+    }
+
+ else {
+
+      llPoss=findOptimalBreakingPoints(alignment,(Paragraph)seq,!paragraphsIterator.hasNext());
+
+    }
+
+    lineLayoutsList[i]=llPoss;
+
+  }
+
+  setFinished(true);
+
+  return postProcessLineBreaks(alignment,context);
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Find hyphenation points for every word in the current paragraph.
+
+ * @param currPar the paragraph whose words will be hyphenated
+
+ */
+
+private void findHyphenationPoints(Paragraph currPar){
+
+  ListIterator currParIterator=currPar.listIterator(currPar.ignoreAtStart);
+
+  List updateList=new LinkedList();
+
+  KnuthElement firstElement;
+
+  KnuthElement nextElement;
+
+  InlineLevelLayoutManager currLM=null;
+
+  int boxCount;
+
+  int auxCount;
+
+  StringBuffer sbChars;
+
+  while (currParIterator.hasNext()) {
+
+    firstElement=(KnuthElement)currParIterator.next();
+
+    if (firstElement.getLayoutManager() != currLM) {
+
+      currLM=(InlineLevelLayoutManager)firstElement.getLayoutManager();
+
+      if (currLM != null) {
+
+        updateList.add(new Update(currLM,currParIterator.previousIndex()));
+
+      }
+
+ else {
+
+        break;
+
+      }
+
+    }
+
+ else     if (currLM == null) {
+
+      break;
+
+    }
+
+    if (firstElement.isBox() && !firstElement.isAuxiliary()) {
+
+      boxCount=1;
+
+      auxCount=0;
+
+      sbChars=new StringBuffer();
+
+      sbChars.append(currLM.getWordChars(firstElement.getPosition()));
+
+      while (currParIterator.hasNext()) {
+
+        nextElement=(KnuthElement)currParIterator.next();
+
+        if (nextElement.isBox() && !nextElement.isAuxiliary()) {
+
+          if (currLM != nextElement.getLayoutManager()) {
+
+            currLM=(InlineLevelLayoutManager)nextElement.getLayoutManager();
+
+            updateList.add(new Update(currLM,currParIterator.previousIndex()));
+
+          }
+
+          boxCount++;
+
+          sbChars.append(currLM.getWordChars(nextElement.getPosition()));
+
+        }
+
+ else         if (!nextElement.isAuxiliary()) {
+
+          currParIterator.previous();
+
+          break;
+
+        }
+
+ else {
+
+          if (currLM != nextElement.getLayoutManager()) {
+
+            currLM=(InlineLevelLayoutManager)nextElement.getLayoutManager();
+
+            updateList.add(new Update(currLM,currParIterator.previousIndex()));
+
+          }
+
+          auxCount++;
+
+        }
+
+      }
+
+      if (log.isTraceEnabled()) {
+
+        log.trace(" Word to hyphenate: " + sbChars);
+
+      }
+
+      HyphContext hc=getHyphenContext(sbChars);
+
+      if (hc != null) {
+
+        KnuthElement element=null;
+
+        for (int i=0; i < (boxCount + auxCount); i++) {
+
+          currParIterator.previous();
+
+        }
+
+        for (int i=0; i < (boxCount + auxCount); i++) {
+
+          element=(KnuthElement)currParIterator.next();
+
+          if (element.isBox() && !element.isAuxiliary()) {
+
+            ((InlineLevelLayoutManager)element.getLayoutManager()).hyphenate(element.getPosition(),hc);
+
+          }
+
+ else {
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+  processUpdates(currPar,updateList);
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Find the optimal linebreaks for a paragraph
+
+ * @param alignment alignment of the paragraph
+
+ * @param currPar the Paragraph for which the linebreaks are found
+
+ * @param isLastPar flag indicating whether currPar is the last paragraph
+
+ * @return the line layout possibilities for the paragraph
+
+ */
+
+private LineLayoutPossibilities findOptimalBreakingPoints(int alignment,Paragraph currPar,boolean isLastPar){
+
+  lineLayouts=new LineLayoutPossibilities();
+
+  double maxAdjustment=1;
+
+  LineBreakingAlgorithm alg=new LineBreakingAlgorithm(alignment,textAlignment,textAlignmentLast,textIndent.getValue(this),currPar.lineFiller.getOpt(),lineHeight.getValue(this),lead,follow,(knuthParagraphs.indexOf(currPar) == 0),hyphenationLadderCount.getEnum() == EN_NO_LIMIT ? 0 : hyphenationLadderCount.getValue(),this);
+
+  alg.setConstantLineWidth(ipd);
+
+  boolean canWrap=(wrapOption != EN_NO_WRAP);
+
+  boolean canHyphenate=(canWrap && hyphenationProperties.hyphenate.getEnum() == EN_TRUE);
+
+  if (canHyphenate && !hyphenationPerformed) {
+
+    hyphenationPerformed=isLastPar;
+
+    findHyphenationPoints(currPar);
+
+  }
+
+  int allowedBreaks=(canWrap ? BreakingAlgorithm.NO_FLAGGED_PENALTIES : BreakingAlgorithm.ONLY_FORCED_BREAKS);
+
+  int breakingPoints=alg.findBreakingPoints(currPar,maxAdjustment,false,allowedBreaks);
+
+  if (breakingPoints == 0 || alignment == EN_JUSTIFY) {
+
+    if (breakingPoints > 0) {
+
+      alg.resetAlgorithm();
+
+      lineLayouts.savePossibilities(false);
+
+    }
+
+ else {
+
+      log.debug("No set of breaking points found with maxAdjustment = " + maxAdjustment);
+
+    }
+
+    log.debug("Hyphenation possible? " + canHyphenate);
+
+    if (canHyphenate && allowedBreaks != BreakingAlgorithm.ONLY_FORCED_BREAKS) {
+
+      allowedBreaks=BreakingAlgorithm.ALL_BREAKS;
+
+    }
+
+ else {
+
+      maxAdjustment=5;
+
+    }
+
+    breakingPoints=alg.findBreakingPoints(currPar,maxAdjustment,false,allowedBreaks);
+
+    if (breakingPoints == 0) {
+
+      if (log.isDebugEnabled()) {
+
+        log.debug("No set of breaking points found with maxAdjustment = " + maxAdjustment + (canHyphenate ? " and hyphenation" : ""));
+
+      }
+
+      maxAdjustment=20;
+
+      alg.findBreakingPoints(currPar,maxAdjustment,true,allowedBreaks);
+
+    }
+
+    lineLayouts.restorePossibilities();
+
+  }
+
+  return lineLayouts;
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+private int getEffectiveAlignment(int alignment,int alignmentLast){
+
+  if (textAlignment != EN_JUSTIFY && textAlignmentLast == EN_JUSTIFY) {
+
+    return 0;
+
+  }
+
+ else {
+
+    return textAlignment;
+
+  }
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override public boolean getGeneratesLineArea(){
+
+  return true;
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+private HyphContext getHyphenContext(StringBuffer sbChars){
+
+  Hyphenation hyph=Hyphenator.hyphenate(hyphenationProperties.language.getString(),hyphenationProperties.country.getString(),getFObj().getUserAgent().getHyphenationResourceResolver(),getFObj().getUserAgent().getHyphenationPatternNames(),sbChars.toString(),hyphenationProperties.hyphenationRemainCharacterCount.getValue(),hyphenationProperties.hyphenationPushCharacterCount.getValue(),getFObj().getUserAgent());
+
+  if (hyph != null) {
+
+    return new HyphContext(hyph.getHyphenationPoints());
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Get a sequence of KnuthElements representing the content of the node assigned to the LM.
+
+ * @param context   the LayoutContext used to store layout information
+
+ * @param alignment the desired text alignment
+
+ * @param restartPosition position at restart
+
+ * @return the list of KnuthElements
+
+ * @see LayoutManager#getNextKnuthElements(LayoutContext,int)
+
+ */
+
+public List getNextKnuthElements(LayoutContext context,int alignment,LeafPosition restartPosition){
+
+  log.trace("Restarting line breaking from index " + restartPosition.getIndex());
+
+  int parIndex=restartPosition.getLeafPos();
+
+  KnuthSequence paragraph=knuthParagraphs.get(parIndex);
+
+  if (paragraph instanceof Paragraph) {
+
+    ((Paragraph)paragraph).ignoreAtStart=0;
+
+    isFirstInBlock=false;
+
+  }
+
+  paragraph.subList(0,restartPosition.getIndex() + 1).clear();
+
+  Iterator<KnuthElement> iter=paragraph.iterator();
+
+  while (iter.hasNext() && !iter.next().isBox()) {
+
+    iter.remove();
+
+  }
+
+  if (!iter.hasNext()) {
+
+    knuthParagraphs.remove(parIndex);
+
+  }
+
+  if (knuthParagraphs.size() == 0) {
+
+    setFinished(true);
+
+    return null;
+
+  }
+
+  ipd=context.getRefIPD();
+
+  return createLineBreaks(context.getBPAlignment(),context);
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Whether this LM can handle horizontal overflow error messages (only a BlockContainerLayoutManager can).
+
+ * @param milliPoints horizontal overflow
+
+ * @return true if handled by a BlockContainerLayoutManager
+
+ */
+
+public boolean handleOverflow(int milliPoints){
+
+  if (getParent() instanceof BlockLayoutManager) {
+
+    return ((BlockLayoutManager)getParent()).handleOverflow(milliPoints);
+
+  }
+
+  return false;
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Create a new Line Layout Manager. This is used by the block layout manager to create line managers for handling inline areas flowing into line areas.
+
+ * @param block the block formatting object
+
+ * @param lh the default line height
+
+ * @param l the default lead, from top to baseline
+
+ * @param f the default follow, from baseline to bottom
+
+ */
+
+public LineLayoutManager(Block block,Length lh,int l,int f){
+
+  super(block);
+
+  fobj=block;
+
+  fobjIter=null;
+
+  lineHeight=lh;
+
+  lead=l;
+
+  follow=f;
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean mustKeepTogether(){
+
+  return ((BlockLevelLayoutManager)getParent()).mustKeepTogether();
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean mustKeepWithNext(){
+
+  return !getKeepWithNext().isAuto();
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean mustKeepWithPrevious(){
+
+  return !getKeepWithPrevious().isAuto();
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates the element list in BP direction for the broken lines.
+
+ * @param alignment the currently applicable vertical alignment
+
+ * @param context the layout context
+
+ * @return the newly built element list
+
+ */
+
+private List<ListElement> postProcessLineBreaks(int alignment,LayoutContext context){
+
+  List<ListElement> returnList=new LinkedList<ListElement>();
+
+  int endIndex=-1;
+
+  for (int p=0; p < knuthParagraphs.size(); p++) {
+
+    if (p > 0) {
+
+      Keep keep=getKeepTogether();
+
+      returnList.add(new BreakElement(new Position(this),keep.getPenalty(),keep.getContext(),context));
+
+    }
+
+    LineLayoutPossibilities llPoss=lineLayoutsList[p];
+
+    KnuthSequence seq=knuthParagraphs.get(p);
+
+    if (!seq.isInlineSequence()) {
+
+      List<ListElement> targetList=new LinkedList<ListElement>();
+
+      for (      Object aSeq : seq) {
+
+        ListElement tempElement;
+
+        tempElement=(ListElement)aSeq;
+
+        LayoutManager lm=tempElement.getLayoutManager();
+
+        if (baselineOffset < 0 && lm != null && lm.hasLineAreaDescendant()) {
+
+          baselineOffset=lm.getBaselineOffset();
+
+        }
+
+        if (lm != this) {
+
+          tempElement.setPosition(notifyPos(new NonLeafPosition(this,tempElement.getPosition())));
+
+        }
+
+        targetList.add(tempElement);
+
+      }
+
+      returnList.addAll(targetList);
+
+    }
+
+ else     if (seq.isInlineSequence() && alignment == EN_JUSTIFY) {
+
+      Position returnPosition=new LeafPosition(this,p);
+
+      createElements(returnList,llPoss,returnPosition);
+
+    }
+
+ else {
+
+      int startIndex=0;
+
+      int previousEndIndex=0;
+
+      for (int i=0; i < llPoss.getChosenLineCount(); i++) {
+
+        int orphans=fobj.getOrphans();
+
+        int widows=fobj.getWidows();
+
+        if (handlingFloat()) {
+
+          orphans=1;
+
+          widows=1;
+
+        }
+
+        if (returnList.size() > 0 && i > 0 && i >= orphans && i <= llPoss.getChosenLineCount() - widows) {
+
+          Keep keep=getKeepTogether();
+
+          returnList.add(new BreakElement(new LeafPosition(this,p,endIndex),keep.getPenalty(),keep.getContext(),context));
+
+        }
+
+        endIndex=llPoss.getChosenPosition(i).getLeafPos();
+
+        List<FootnoteBodyLayoutManager> footnoteList=FootenoteUtil.getFootnotes(seq,startIndex,endIndex);
+
+        List<FloatContentLayoutManager> floats=FloatContentLayoutManager.checkForFloats(seq,startIndex,endIndex);
+
+        startIndex=endIndex + 1;
+
+        LineBreakPosition lbp=llPoss.getChosenPosition(i);
+
+        if (baselineOffset < 0) {
+
+          baselineOffset=lbp.spaceBefore + lbp.baseline;
+
+        }
+
+        if (floats.isEmpty()) {
+
+          returnList.add(new KnuthBlockBox(lbp.lineHeight + lbp.spaceBefore + lbp.spaceAfter,footnoteList,lbp,false));
+
+        }
+
+ else {
+
+          returnList.add(new KnuthBlockBox(0,Collections.emptyList(),null,false,floats));
+
+          Keep keep=getKeepTogether();
+
+          returnList.add(new BreakElement(new LeafPosition(this,p,previousEndIndex),keep.getPenalty(),keep.getContext(),context));
+
+          returnList.add(new KnuthBlockBox(lbp.lineHeight + lbp.spaceBefore + lbp.spaceAfter,footnoteList,lbp,false));
+
+        }
+
+        previousEndIndex=endIndex;
+
+      }
+
+    }
+
+  }
+
+  return returnList;
+
+}
+
+Location: LineLayoutManager.java
+
+Content: 
+
+private void processUpdates(Paragraph par,List updateList){
+
+  ListIterator updateListIterator=updateList.listIterator();
+
+  Update currUpdate;
+
+  int elementsAdded=0;
+
+  while (updateListIterator.hasNext()) {
+
+    currUpdate=(Update)updateListIterator.next();
+
+    int fromIndex=currUpdate.firstIndex;
+
+    int toIndex;
+
+    if (updateListIterator.hasNext()) {
+
+      Update nextUpdate=(Update)updateListIterator.next();
+
+      toIndex=nextUpdate.firstIndex;
+
+      updateListIterator.previous();
+
+    }
+
+ else {
+
+      toIndex=par.size() - par.ignoreAtEnd - elementsAdded;
+
+    }
+
+    if (currUpdate.inlineLM.applyChanges(par.subList(fromIndex + elementsAdded,toIndex + elementsAdded))) {
+
+      List newElements=currUpdate.inlineLM.getChangedKnuthElements(par.subList(fromIndex + elementsAdded,toIndex + elementsAdded),effectiveAlignment);
+
+      par.subList(fromIndex + elementsAdded,toIndex + elementsAdded).clear();
+
+      par.addAll(fromIndex + elementsAdded,newElements);
+
+      elementsAdded+=newElements.size() - (toIndex - fromIndex);
+
+    }
+
+  }
+
+  updateList.clear();
+
+}
+

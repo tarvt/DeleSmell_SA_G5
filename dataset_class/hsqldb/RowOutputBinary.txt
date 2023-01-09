@@ -1,0 +1,392 @@
+Location: RowOutputBinary.java
+
+Content: 
+
+/** 
+
+ * @param extra amount of extra space
+
+ */
+
+public void ensureRoom(int extra){
+
+  super.ensureRoom(extra);
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public int getSize(int[] array){
+
+  return 4 + array.length * 5;
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+/** 
+
+ * Calculate the size of byte array required to store a row.
+
+ * @param data - the row data
+
+ * @param l - number of data[] elements to include in calculation
+
+ * @param types - array of java.sql.Types values
+
+ * @return size of byte array
+
+ */
+
+public int getSize(Object[] data,int l,Type[] types){
+
+  int s=0;
+
+  for (int i=0; i < l; i++) {
+
+    Object o=data[i];
+
+    s+=getSize(o,types[i]);
+
+  }
+
+  return s;
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+private int getSize(Object o,Type type){
+
+  int s=1;
+
+  if (o == null) {
+
+    return s;
+
+  }
+
+switch (type.typeCode) {
+
+case Types.SQL_ALL_TYPES:
+
+    break;
+
+case Types.SQL_CHAR:
+
+case Types.SQL_VARCHAR:
+
+  s+=INT_STORE_SIZE;
+
+s+=StringConverter.getUTFSize((String)o);
+
+break;
+
+case Types.TINYINT:
+
+case Types.SQL_SMALLINT:
+
+s+=2;
+
+break;
+
+case Types.SQL_INTEGER:
+
+s+=4;
+
+break;
+
+case Types.SQL_BIGINT:
+
+case Types.SQL_REAL:
+
+case Types.SQL_FLOAT:
+
+case Types.SQL_DOUBLE:
+
+s+=8;
+
+break;
+
+case Types.SQL_NUMERIC:
+
+case Types.SQL_DECIMAL:
+
+s+=8;
+
+BigDecimal bigdecimal=(BigDecimal)o;
+
+BigInteger bigint=bigdecimal.unscaledValue();
+
+s+=bigint.toByteArray().length;
+
+break;
+
+case Types.SQL_BOOLEAN:
+
+s+=1;
+
+break;
+
+case Types.SQL_DATE:
+
+s+=8;
+
+break;
+
+case Types.SQL_TIME:
+
+s+=8;
+
+break;
+
+case Types.SQL_TIME_WITH_TIME_ZONE:
+
+s+=12;
+
+break;
+
+case Types.SQL_TIMESTAMP:
+
+s+=12;
+
+break;
+
+case Types.SQL_TIMESTAMP_WITH_TIME_ZONE:
+
+s+=16;
+
+break;
+
+case Types.SQL_INTERVAL_YEAR:
+
+case Types.SQL_INTERVAL_YEAR_TO_MONTH:
+
+case Types.SQL_INTERVAL_MONTH:
+
+s+=8;
+
+break;
+
+case Types.SQL_INTERVAL_DAY:
+
+case Types.SQL_INTERVAL_DAY_TO_HOUR:
+
+case Types.SQL_INTERVAL_DAY_TO_MINUTE:
+
+case Types.SQL_INTERVAL_DAY_TO_SECOND:
+
+case Types.SQL_INTERVAL_HOUR:
+
+case Types.SQL_INTERVAL_HOUR_TO_MINUTE:
+
+case Types.SQL_INTERVAL_HOUR_TO_SECOND:
+
+case Types.SQL_INTERVAL_MINUTE:
+
+case Types.SQL_INTERVAL_MINUTE_TO_SECOND:
+
+case Types.SQL_INTERVAL_SECOND:
+
+s+=12;
+
+break;
+
+case Types.SQL_BINARY:
+
+case Types.SQL_VARBINARY:
+
+case Types.SQL_GUID:
+
+s+=INT_STORE_SIZE;
+
+s+=((BinaryData)o).length(null);
+
+break;
+
+case Types.SQL_BIT:
+
+case Types.SQL_BIT_VARYING:
+
+s+=INT_STORE_SIZE;
+
+s+=((BinaryData)o).length(null);
+
+break;
+
+case Types.SQL_CLOB:
+
+case Types.SQL_BLOB:
+
+s+=8;
+
+break;
+
+case Types.SQL_ARRAY:
+
+{
+
+s+=4;
+
+Object[] array=(Object[])o;
+
+type=type.collectionBaseType();
+
+for (int i=0; i < array.length; i++) {
+
+s+=getSize(array[i],type);
+
+}
+
+break;
+
+}
+
+case Types.OTHER:
+
+JavaObjectData jo=(JavaObjectData)o;
+
+s+=INT_STORE_SIZE;
+
+s+=jo.getBytesLength();
+
+break;
+
+default :
+
+throw Error.runtimeError(ErrorCode.U_S0500,"RowOutputBinary");
+
+}
+
+return s;
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public RowOutputBinary(){
+
+  this(new byte[64]);
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+/** 
+
+ * Constructor used for network transmission of result sets
+
+ * @param buffer byte[]
+
+ */
+
+public RowOutputBinary(byte[] buffer){
+
+  super(buffer);
+
+  this.scale=1;
+
+  this.mask=~(scale - 1);
+
+  this.sizePosition=-1;
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public RowOutputBinary(int initialSize,int scale){
+
+  super(initialSize);
+
+  this.scale=scale;
+
+  this.mask=~(scale - 1);
+
+  this.sizePosition=-1;
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public void writeArray(int[] o){
+
+  writeInt(o.length);
+
+  for (int i=0; i < o.length; i++) {
+
+    write(1);
+
+    writeInt(o[i]);
+
+  }
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public void writeByteArray16(byte[] b){
+
+  write(b,0,16);
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public void writeByteArray(byte[] b){
+
+  writeInt(b.length);
+
+  write(b,0,b.length);
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public void writeCharArray(char[] c){
+
+  writeInt(c.length);
+
+  write(c,0,c.length);
+
+}
+
+Location: RowOutputBinary.java
+
+Content: 
+
+public void writeIntData(int i,int position){
+
+  int temp=count;
+
+  count=position;
+
+  writeInt(i);
+
+  if (count < temp) {
+
+    count=temp;
+
+  }
+
+}
+

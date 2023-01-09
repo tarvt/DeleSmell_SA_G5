@@ -1,0 +1,650 @@
+Location: TableBase.java
+
+Content: 
+
+final void addIndexStructure(Index index){
+
+  indexList=getNewIndexArray(index,indexList);
+
+  setBestRowIdentifiers();
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+final void addIndex(Session session,Index index){
+
+  Index[] list=getNewIndexArray(index,indexList);
+
+  try {
+
+    resetAccessorKeys(session,list);
+
+  }
+
+ catch (  HsqlException e) {
+
+    for (int i=0; i < indexList.length; i++) {
+
+      indexList[i].setPosition(i);
+
+    }
+
+    throw e;
+
+  }
+
+  indexList=list;
+
+  setBestRowIdentifiers();
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public void clearAllData(PersistentStore store){
+
+  store.removeAll();
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public void clearAllData(Session session){
+
+  PersistentStore store=getRowStore(session);
+
+  store.removeAll();
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final Index createAndAddIndexStructure(Session session,HsqlName name,int[] columns,boolean[] descending,boolean[] nullsLast,boolean unique,boolean constraint,boolean forward){
+
+  Index newindex=createIndexStructure(name,columns,descending,nullsLast,unique,constraint,forward);
+
+  addIndex(session,newindex);
+
+  return newindex;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final Index createIndexStructure(HsqlName name,int[] columns,boolean[] descending,boolean[] nullsLast,boolean unique,boolean constraint,boolean forward){
+
+  int s=columns.length;
+
+  int[] cols=new int[s];
+
+  Type[] types=new Type[s];
+
+  for (int j=0; j < s; j++) {
+
+    cols[j]=columns[j];
+
+    types[j]=colTypes[cols[j]];
+
+  }
+
+  long id=database.persistentStoreCollection.getNextId();
+
+  Index newIndex=database.logger.newIndex(name,id,this,cols,descending,nullsLast,types,false,unique,constraint,forward);
+
+  return newIndex;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+/** 
+
+ * Create new memory-resident index. For MEMORY and TEXT tables.
+
+ */
+
+public final Index createIndex(Session session,HsqlName name,int[] columns,boolean[] descending,boolean[] nullsLast,boolean unique,boolean constraint,boolean forward){
+
+  Index newIndex=createAndAddIndexStructure(session,name,columns,descending,nullsLast,unique,constraint,forward);
+
+  return newIndex;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final void createPrimaryIndex(int[] pkcols,Type[] pktypes,HsqlName name){
+
+  Index newIndex=getNewPrimaryIndex(pkcols,pktypes,name);
+
+  addIndexStructure(newIndex);
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+/** 
+
+ * Performs Table structure modification and changes to the index nodes to remove a given index from a MEMORY or TEXT table. Not for PK index.
+
+ */
+
+public void dropIndex(Session session,int todrop){
+
+  Index[] list=(Index[])ArrayUtil.toAdjustedArray(indexList,null,todrop,-1);
+
+  for (int i=0; i < list.length; i++) {
+
+    list[i].setPosition(i);
+
+  }
+
+  resetAccessorKeys(session,list);
+
+  indexList=list;
+
+  setBestRowIdentifiers();
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public boolean[] getColumnNotNull(){
+
+  return this.colNotNull;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+/** 
+
+ * Returns the count of all columns.
+
+ */
+
+public final int getDataColumnCount(){
+
+  return colTypes.length;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final boolean[] getEmptyColumnCheckList(){
+
+  return emptyColumnCheckList;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final Object[] getEmptyRowData(){
+
+  return new Object[getDataColumnCount()];
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final int getIndexCount(){
+
+  return indexList.length;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+/** 
+
+ * Returns the indexes
+
+ */
+
+public final Index[] getIndexList(){
+
+  return indexList;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+/** 
+
+ * Returns empty boolean array.
+
+ */
+
+public final boolean[] getNewColumnCheckList(){
+
+  return new boolean[getColumnCount()];
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+static Index[] getNewIndexArray(Index index,Index[] list){
+
+  int i=0;
+
+  for (; i < list.length; i++) {
+
+    Index current=list[i];
+
+    int order=index.getIndexOrderValue() - current.getIndexOrderValue();
+
+    if (order < 0) {
+
+      break;
+
+    }
+
+  }
+
+  list=(Index[])ArrayUtil.toAdjustedArray(list,index,i,1);
+
+  for (i=0; i < list.length; i++) {
+
+    list[i].setPosition(i);
+
+  }
+
+  return list;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+Index getNewPrimaryIndex(int[] pkcols,Type[] pktypes,HsqlName name){
+
+  long id=database.persistentStoreCollection.getNextId();
+
+  return database.logger.newIndex(name,id,this,pkcols,null,null,pktypes,true,pkcols.length > 0,pkcols.length > 0,false);
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final Index getPrimaryIndex(){
+
+  return indexList.length > 0 ? indexList[0] : null;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final int[] getPrimaryKey(){
+
+  return indexList[0].getColumns();
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final Type[] getPrimaryKeyTypes(){
+
+  return indexList[0].getColumnTypes();
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public PersistentStore getRowStore(Session session){
+
+  return store == null ? session.sessionData.persistentStoreCollection.getStore(this) : store;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final int getTableType(){
+
+  return tableType;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final boolean hasPrimaryKey(){
+
+  return indexList[0].getColumnCount() > 0;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+/** 
+
+ * Returns true if the table has any rows at all.
+
+ */
+
+public final boolean isEmpty(Session session){
+
+  if (getIndexCount() == 0) {
+
+    return true;
+
+  }
+
+  PersistentStore store=getRowStore(session);
+
+  return getIndex(0).isEmpty(store);
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public boolean isTransactional(){
+
+  return isTransactional;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final boolean onCommitPreserve(){
+
+  return persistenceScope == TableBase.SCOPE_SESSION;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final RowIterator rowIterator(PersistentStore store){
+
+  return getPrimaryIndex().firstRow(store);
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final RowIterator rowIterator(Session session){
+
+  PersistentStore store=getRowStore(session);
+
+  return getPrimaryIndex().firstRow(session,store,0,null);
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+/** 
+
+ * This method is called whenever there is a change to table structure and serves two purposes: (a) to reset the best set of columns that identify the rows of the table (b) to reset the best index that can be used to find rows of the table given a column value. (a) gives most weight to a primary key index, followed by a unique address with the lowest count of nullable columns. Otherwise there is no best row identifier. (b) finds for each column an index with a corresponding first column. It uses any type of visible index and accepts the one with the largest column count. bestIndex is the user defined, primary key, the first unique index, or the first non-unique index. NULL if there is no user-defined index.
+
+ */
+
+public final void setBestRowIdentifiers(){
+
+  int[] briCols=null;
+
+  int briColsCount=0;
+
+  boolean isStrict=false;
+
+  int nNullCount=0;
+
+  if (colNotNull == null) {
+
+    return;
+
+  }
+
+  bestIndex=null;
+
+  bestIndexForColumn=new int[colTypes.length];
+
+  ArrayUtil.fillArray(bestIndexForColumn,-1);
+
+  for (int i=0; i < indexList.length; i++) {
+
+    Index index=indexList[i];
+
+    int[] cols=index.getColumns();
+
+    int colsCount=index.getColumnCount();
+
+    if (colsCount == 0) {
+
+      continue;
+
+    }
+
+    if (i == 0) {
+
+      isStrict=true;
+
+    }
+
+    if (bestIndexForColumn[cols[0]] == -1) {
+
+      bestIndexForColumn[cols[0]]=i;
+
+    }
+
+ else {
+
+      Index existing=indexList[bestIndexForColumn[cols[0]]];
+
+      if (colsCount > existing.getColumns().length) {
+
+        bestIndexForColumn[cols[0]]=i;
+
+      }
+
+    }
+
+    if (!index.isUnique()) {
+
+      if (bestIndex == null) {
+
+        bestIndex=index;
+
+      }
+
+      continue;
+
+    }
+
+    int nnullc=0;
+
+    for (int j=0; j < colsCount; j++) {
+
+      if (colNotNull[cols[j]]) {
+
+        nnullc++;
+
+      }
+
+    }
+
+    if (bestIndex != null) {
+
+      bestIndex=index;
+
+    }
+
+    if (nnullc == colsCount) {
+
+      if (briCols == null || briColsCount != nNullCount || colsCount < briColsCount) {
+
+        briCols=cols;
+
+        briColsCount=colsCount;
+
+        nNullCount=colsCount;
+
+        isStrict=true;
+
+      }
+
+      continue;
+
+    }
+
+ else     if (isStrict) {
+
+      continue;
+
+    }
+
+ else     if (briCols == null || colsCount < briColsCount || nnullc > nNullCount) {
+
+      briCols=cols;
+
+      briColsCount=colsCount;
+
+      nNullCount=nnullc;
+
+    }
+
+  }
+
+  if (briCols == null || briColsCount == briCols.length) {
+
+    bestRowIdentifierCols=briCols;
+
+  }
+
+ else {
+
+    bestRowIdentifierCols=ArrayUtil.arraySlice(briCols,0,briColsCount);
+
+  }
+
+  bestRowIdentifierStrict=isStrict;
+
+  if (indexList[0].getColumnCount() > 0) {
+
+    bestIndex=indexList[0];
+
+  }
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public final void setIndexes(Index[] indexes){
+
+  this.indexList=indexes;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public void setSpaceID(int id){
+
+  tableSpace=id;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public void setTransactional(boolean value){
+
+  isTransactional=value;
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+TableBase(){
+
+}
+
+Location: TableBase.java
+
+Content: 
+
+public TableBase(Session session,Database database,int scope,int type,Type[] colTypes){
+
+  tableType=type;
+
+  persistenceScope=scope;
+
+  isSessionBased=true;
+
+  persistenceId=database.persistentStoreCollection.getNextId();
+
+  this.database=database;
+
+  this.colTypes=colTypes;
+
+  columnCount=colTypes.length;
+
+  indexList=Index.emptyArray;
+
+  emptyColumnCheckList=new boolean[columnCount];
+
+  createPrimaryIndex(ValuePool.emptyIntArray,Type.emptyArray,null);
+
+}
+

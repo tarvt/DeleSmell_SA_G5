@@ -1,0 +1,560 @@
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Try the best we can to convert a Java encoding to a XML-style encoding. <p> This is not a public API.
+
+ * @param encoding non-null reference to encoding string, java style.
+
+ * @return ISO-style encoding string.
+
+ * @xsl.usage internal
+
+ */
+
+private static String convertJava2MimeEncoding(String encoding){
+
+  EncodingInfo enc=(EncodingInfo)_encodingTableKeyJava.get(toUpperCaseFast(encoding));
+
+  if (null != enc)   return enc.name;
+
+  return encoding;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Try the best we can to convert a Java encoding to a XML-style encoding. <p> This is not a public API.
+
+ * @param encoding non-null reference to encoding string, java style.
+
+ * @return ISO-style encoding string.<p> This method is not a public API.
+
+ * @xsl.usage internal
+
+ */
+
+public static String convertMime2JavaEncoding(String encoding){
+
+  for (int i=0; i < _encodings.length; ++i) {
+
+    if (_encodings[i].name.equalsIgnoreCase(encoding)) {
+
+      return _encodings[i].javaName;
+
+    }
+
+  }
+
+  return encoding;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Returns the EncodingInfo object for the specified encoding, never null, although the encoding name inside the returned EncodingInfo object will be if we can't find a "real" EncodingInfo for the encoding. <p> This is not a public API.
+
+ * @param encoding The encoding
+
+ * @return The object that is used to determine if characters are in the givenencoding.
+
+ * @xsl.usage internal
+
+ */
+
+static EncodingInfo getEncodingInfo(String encoding){
+
+  EncodingInfo ei;
+
+  String normalizedEncoding=toUpperCaseFast(encoding);
+
+  ei=(EncodingInfo)_encodingTableKeyJava.get(normalizedEncoding);
+
+  if (ei == null)   ei=(EncodingInfo)_encodingTableKeyMime.get(normalizedEncoding);
+
+  if (ei == null) {
+
+    ei=new EncodingInfo(null,null,'\u0000');
+
+  }
+
+  return ei;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Characters with values at or below the high code point are in the encoding. Code point values above this one may or may not be in the encoding, but lower ones certainly are. <p> This is for performance.
+
+ * @param encoding The encoding
+
+ * @return The code point for which characters at or below this code point arein the encoding. Characters with higher code point may or may not be in the encoding. A value of zero is returned if the high code point is unknown. <p> This method is not a public API.
+
+ * @xsl.usage internal
+
+ */
+
+static public char getHighChar(String encoding){
+
+  final char highCodePoint;
+
+  EncodingInfo ei;
+
+  String normalizedEncoding=toUpperCaseFast(encoding);
+
+  ei=(EncodingInfo)_encodingTableKeyJava.get(normalizedEncoding);
+
+  if (ei == null)   ei=(EncodingInfo)_encodingTableKeyMime.get(normalizedEncoding);
+
+  if (ei != null)   highCodePoint=ei.getHighChar();
+
+ else   highCodePoint=0;
+
+  return highCodePoint;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Get the proper mime encoding. From the XSLT recommendation: "The encoding attribute specifies the preferred encoding to use for outputting the result tree. XSLT processors are required to respect values of UTF-8 and UTF-16. For other values, if the XSLT processor does not support the specified encoding it may signal an error; if it does not signal an error it should use UTF-8 or UTF-16 instead. The XSLT processor must not use an encoding whose name does not match the EncName production of the XML Recommendation [XML]. If no encoding attribute is specified, then the XSLT processor should use either UTF-8 or UTF-16." <p> This is not a public API.
+
+ * @param encoding Reference to java-style encoding string, which may be null,in which case a default will be found.
+
+ * @return The ISO-style encoding string, or null if failure.
+
+ * @xsl.usage internal
+
+ */
+
+static String getMimeEncoding(String encoding){
+
+  if (null == encoding) {
+
+    try {
+
+      encoding=System.getProperty("file.encoding","UTF8");
+
+      if (null != encoding) {
+
+        String jencoding=(encoding.equalsIgnoreCase("Cp1252") || encoding.equalsIgnoreCase("ISO8859_1") || encoding.equalsIgnoreCase("8859_1")|| encoding.equalsIgnoreCase("UTF8")) ? DEFAULT_MIME_ENCODING : convertJava2MimeEncoding(encoding);
+
+        encoding=(null != jencoding) ? jencoding : DEFAULT_MIME_ENCODING;
+
+      }
+
+ else {
+
+        encoding=DEFAULT_MIME_ENCODING;
+
+      }
+
+    }
+
+ catch (    SecurityException se) {
+
+      encoding=DEFAULT_MIME_ENCODING;
+
+    }
+
+  }
+
+ else {
+
+    encoding=convertJava2MimeEncoding(encoding);
+
+  }
+
+  return encoding;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Returns a writer for the specified encoding based on an output stream. <p> This is not a public API.
+
+ * @param output   The output stream
+
+ * @param encoding The encoding MIME name, not a Java name for the encoding.
+
+ * @return A suitable writer
+
+ * @throws UnsupportedEncodingException There is no convertor to support thisencoding
+
+ * @xsl.usage internal
+
+ */
+
+static Writer getWriter(OutputStream output,String encoding) throws UnsupportedEncodingException {
+
+  for (int i=0; i < _encodings.length; ++i) {
+
+    if (_encodings[i].name.equalsIgnoreCase(encoding)) {
+
+      try {
+
+        String javaName=_encodings[i].javaName;
+
+        OutputStreamWriter osw=new OutputStreamWriter(output,javaName);
+
+        return osw;
+
+      }
+
+ catch (      java.lang.IllegalArgumentException iae) {
+
+      }
+
+catch (      UnsupportedEncodingException usee) {
+
+      }
+
+    }
+
+  }
+
+  try {
+
+    return new OutputStreamWriter(output,encoding);
+
+  }
+
+ catch (  java.lang.IllegalArgumentException iae) {
+
+    throw new UnsupportedEncodingException(encoding);
+
+  }
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Return true if the character is the high member of a surrogate pair. <p> This is not a public API.
+
+ * @param ch the character to test
+
+ * @xsl.usage internal
+
+ */
+
+static boolean isHighUTF16Surrogate(char ch){
+
+  return ('\uD800' <= ch && ch <= '\uDBFF');
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Return true if the character is the low member of a surrogate pair. <p> This is not a public API.
+
+ * @param ch the character to test
+
+ * @xsl.usage internal
+
+ */
+
+static boolean isLowUTF16Surrogate(char ch){
+
+  return ('\uDC00' <= ch && ch <= '\uDFFF');
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Determines if the encoding specified was recognized by the serializer or not.
+
+ * @param encoding The encoding
+
+ * @return boolean - true if the encoding was recognized else false
+
+ */
+
+public static boolean isRecognizedEncoding(String encoding){
+
+  EncodingInfo ei;
+
+  String normalizedEncoding=encoding.toUpperCase();
+
+  ei=(EncodingInfo)_encodingTableKeyJava.get(normalizedEncoding);
+
+  if (ei == null)   ei=(EncodingInfo)_encodingTableKeyMime.get(normalizedEncoding);
+
+  if (ei != null)   return true;
+
+  return false;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Get the length of the Mime names within the property value
+
+ * @param val The value of the property, which should contain a comma separatedlist of Mime names, followed optionally by a space and the high char value
+
+ * @return
+
+ */
+
+private static int lengthOfMimeNames(String val){
+
+  int len=val.indexOf(' ');
+
+  if (len < 0)   len=val.length();
+
+  return len;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Load a list of all the supported encodings. System property "encodings" formatted using URL syntax may define an external encodings list. Thanks to Sergey Ushakov for the code contribution!
+
+ * @xsl.usage internal
+
+ */
+
+private static EncodingInfo[] loadEncodingInfo(){
+
+  try {
+
+    final InputStream is;
+
+    is=SecuritySupport.getResourceAsStream(ObjectFactory.findClassLoader(),ENCODINGS_FILE);
+
+    Properties props=new Properties();
+
+    if (is != null) {
+
+      props.load(is);
+
+      is.close();
+
+    }
+
+ else {
+
+    }
+
+    int totalEntries=props.size();
+
+    List encodingInfo_list=new ArrayList();
+
+    Enumeration keys=props.keys();
+
+    for (int i=0; i < totalEntries; ++i) {
+
+      String javaName=(String)keys.nextElement();
+
+      String val=props.getProperty(javaName);
+
+      int len=lengthOfMimeNames(val);
+
+      String mimeName;
+
+      char highChar;
+
+      if (len == 0) {
+
+        mimeName=javaName;
+
+        highChar='\u0000';
+
+      }
+
+ else {
+
+        try {
+
+          final String highVal=val.substring(len).trim();
+
+          highChar=(char)Integer.decode(highVal).intValue();
+
+        }
+
+ catch (        NumberFormatException e) {
+
+          highChar=0;
+
+        }
+
+        String mimeNames=val.substring(0,len);
+
+        StringTokenizer st=new StringTokenizer(mimeNames,",");
+
+        for (boolean first=true; st.hasMoreTokens(); first=false) {
+
+          mimeName=st.nextToken();
+
+          EncodingInfo ei=new EncodingInfo(mimeName,javaName,highChar);
+
+          encodingInfo_list.add(ei);
+
+          _encodingTableKeyMime.put(mimeName.toUpperCase(),ei);
+
+          if (first)           _encodingTableKeyJava.put(javaName.toUpperCase(),ei);
+
+        }
+
+      }
+
+    }
+
+    EncodingInfo[] ret_ei=new EncodingInfo[encodingInfo_list.size()];
+
+    encodingInfo_list.toArray(ret_ei);
+
+    return ret_ei;
+
+  }
+
+ catch (  java.net.MalformedURLException mue) {
+
+    throw new org.apache.xml.serializer.utils.WrappedRuntimeException(mue);
+
+  }
+
+catch (  java.io.IOException ioe) {
+
+    throw new org.apache.xml.serializer.utils.WrappedRuntimeException(ioe);
+
+  }
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Return the unicode code point represented by the char. A bit of a dummy method, since all it does is return the char, but as an int value. <p> This is not a public API.
+
+ * @param ch the char.
+
+ * @xsl.usage internal
+
+ */
+
+static int toCodePoint(char ch){
+
+  int codePoint=ch;
+
+  return codePoint;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * Return the unicode code point represented by the high/low surrogate pair. <p> This is not a public API.
+
+ * @param highSurrogate the high char of the high/low pair
+
+ * @param lowSurrogate  the low char of the high/low pair
+
+ * @xsl.usage internal
+
+ */
+
+static int toCodePoint(char highSurrogate,char lowSurrogate){
+
+  int codePoint=((highSurrogate - 0xd800) << 10) + (lowSurrogate - 0xdc00) + 0x10000;
+
+  return codePoint;
+
+}
+
+Location: Encodings.java
+
+Content: 
+
+/** 
+
+ * A fast and cheap way to uppercase a String that is only made of printable ASCII characters. <p> This is not a public API.
+
+ * @param s a String of ASCII characters
+
+ * @return an uppercased version of the input String, possibly the same String.
+
+ * @xsl.usage internal
+
+ */
+
+static private String toUpperCaseFast(final String s){
+
+  boolean different=false;
+
+  final int mx=s.length();
+
+  char[] chars=new char[mx];
+
+  for (int i=0; i < mx; i++) {
+
+    char ch=s.charAt(i);
+
+    if ('a' <= ch && ch <= 'z') {
+
+      ch=(char)(ch + ('A' - 'a'));
+
+      different=true;
+
+    }
+
+    chars[i]=ch;
+
+  }
+
+  final String upper;
+
+  if (different)   upper=String.valueOf(chars);
+
+ else   upper=s;
+
+  return upper;
+
+}
+

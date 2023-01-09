@@ -1,0 +1,196 @@
+Location: BARRIER.java
+
+Content: 
+
+protected void cancelBarrierOpener(){
+
+  if (barrier_opener_future != null) {
+
+    barrier_opener_future.cancel(true);
+
+    barrier_opener_future=null;
+
+  }
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+/** 
+
+ * Close the barrier. Temporarily remove all threads which are waiting or blocked, re-insert them after the call 
+
+ */
+
+public void closeBarrier() throws TimeoutException {
+
+  if (!barrier_closed.compareAndSet(false,true))   return;
+
+  long target_time=0, wait_time=0, start=System.currentTimeMillis();
+
+  in_flight_threads.remove(Thread.currentThread());
+
+  lock.lock();
+
+  try {
+
+    while (barrier_closed.get() && !in_flight_threads.isEmpty()) {
+
+      if (target_time == 0 && flush_timeout > 0)       target_time=System.currentTimeMillis() + flush_timeout;
+
+      in_flight_threads.keySet().removeIf(thread -> !thread.isAlive() || thread.getState() == Thread.State.TERMINATED);
+
+      if (in_flight_threads.isEmpty())       break;
+
+      try {
+
+        if (flush_timeout <= 0)         no_pending_threads.await();
+
+ else {
+
+          if ((wait_time=target_time - System.currentTimeMillis()) <= 0)           break;
+
+          no_pending_threads.await(wait_time,TimeUnit.MILLISECONDS);
+
+        }
+
+      }
+
+ catch (      InterruptedException e) {
+
+      }
+
+    }
+
+    if (flush_timeout > 0 && !in_flight_threads.isEmpty()) {
+
+      long time=System.currentTimeMillis() - start;
+
+      throw new TimeoutException(local_addr + ": failed flushing pending threads in " + time+ " ms; threads:\n"+ printInFlightThreads());
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+  if (max_close_time > 0)   scheduleBarrierOpener();
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+protected void flushQueue(final Map<Address,Message> queue){
+
+  if (queue.isEmpty())   return;
+
+  for (  Message msg : queue.values()) {
+
+    boolean oob=msg.isFlagSet(Message.Flag.OOB), internal=msg.isFlagSet(Message.Flag.INTERNAL);
+
+    transport.msg_processing_policy.process(msg,oob,internal);
+
+  }
+
+  queue.clear();
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+@ManagedAttribute(description="Lists the members whose unicast messages are let through") public String getHoles(){
+
+  return holes.toString();
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+@ManagedAttribute public int getInFlightThreadsCount(){
+
+  return getNumberOfInFlightThreads();
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+public int getNumberOfInFlightThreads(){
+
+  return in_flight_threads.size();
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+@ManagedAttribute public boolean isOpenerScheduled(){
+
+  return barrier_opener_future != null && !barrier_opener_future.isDone() && !barrier_opener_future.isCancelled();
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+@ManagedOperation(description="Lists the in-flight threads") protected String printInFlightThreads(){
+
+  return in_flight_threads.keySet().stream().map(Object::toString).collect(Collectors.joining("\n"));
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+protected void scheduleBarrierOpener(){
+
+  if (barrier_opener_future == null || barrier_opener_future.isDone()) {
+
+    barrier_opener_future=timer.schedule(this::openBarrier,max_close_time,TimeUnit.MILLISECONDS,false);
+
+  }
+
+}
+
+Location: BARRIER.java
+
+Content: 
+
+protected void unblock(final Thread current_thread){
+
+  if (in_flight_threads.remove(current_thread) == NULL && in_flight_threads.isEmpty()) {
+
+    lock.lock();
+
+    try {
+
+      no_pending_threads.signalAll();
+
+    }
+
+  finally {
+
+      lock.unlock();
+
+    }
+
+  }
+
+}
+

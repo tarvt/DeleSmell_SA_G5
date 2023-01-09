@@ -1,0 +1,714 @@
+Location: ConfigManager.java
+
+Content: 
+
+public ConfigManager(Configuration conf) throws IOException, SAXException, RaidConfigurationException, ClassNotFoundException, ParserConfigurationException {
+
+  this.conf=conf;
+
+  this.configFileName=conf.get("raid.config.file");
+
+  this.doReload=conf.getBoolean("raid.config.reload",true);
+
+  this.reloadInterval=conf.getLong("raid.config.reload.interval",RELOAD_INTERVAL);
+
+  this.periodicity=conf.getLong("raid.policy.rescan.interval",RESCAN_INTERVAL);
+
+  this.harPartfileSize=conf.getLong("raid.har.partfile.size",HAR_PARTFILE_SIZE);
+
+  this.maxJobsPerPolicy=conf.getInt("raid.distraid.max.jobs",DISTRAID_MAX_JOBS);
+
+  this.maxFilesPerJob=conf.getInt("raid.distraid.max.files",DISTRAID_MAX_FILES);
+
+  if (configFileName == null) {
+
+    String msg="No raid.config.file given in conf - " + "the Hadoop Raid utility cannot run. Aborting....";
+
+    LOG.warn(msg);
+
+    throw new IOException(msg);
+
+  }
+
+  reloadConfigs();
+
+  lastSuccessfulReload=RaidNode.now();
+
+  lastReloadAttempt=RaidNode.now();
+
+  running=true;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+public synchronized long getHarPartfileSize(){
+
+  return harPartfileSize;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+public synchronized int getMaxFilesPerJob(){
+
+  return maxFilesPerJob;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+public synchronized int getMaxJobsPerPolicy(){
+
+  return maxJobsPerPolicy;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+public synchronized long getPeriodicity(){
+
+  return periodicity;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+/** 
+
+ * Updates the in-memory data structures from the config file. This file is expected to be in the following whitespace-separated format: <configuration> <srcPath prefix="hdfs://hadoop.myhost.com:9000/user/warehouse/u_full/*"> <policy name = RaidScanWeekly> <destPath> hdfs://dfsname.myhost.com:9000/archive/</destPath> <parentPolicy> RaidScanMonthly</parentPolicy> <property> <name>targetReplication</name> <value>2</value> <description> after RAIDing, decrease the replication factor of the file to  this value. </description> </property> <property> <name>metaReplication</name> <value>2</value> <description> the replication factor of the RAID meta file </description> </property> <property> <name>stripeLength</name> <value>10</value> <description> the number of blocks to RAID together </description> </property> </policy> </srcPath> </configuration> Blank lines and lines starting with # are ignored.
+
+ * @throws IOException if the config file cannot be read.
+
+ * @throws RaidConfigurationException if configuration entries are invalid.
+
+ * @throws ClassNotFoundException if user-defined policy classes cannot be loaded
+
+ * @throws ParserConfigurationException if XML parser is misconfigured.
+
+ * @throws SAXException if config file is malformed.
+
+ * @returns A new set of policy categories.
+
+ */
+
+void reloadConfigs() throws IOException, ParserConfigurationException, SAXException, ClassNotFoundException, RaidConfigurationException {
+
+  if (configFileName == null) {
+
+    return;
+
+  }
+
+  File file=new File(configFileName);
+
+  if (!file.exists()) {
+
+    throw new RaidConfigurationException("Configuration file " + configFileName + " does not exist.");
+
+  }
+
+  List<PolicyList> all=new ArrayList<PolicyList>();
+
+  long periodicityValue=periodicity;
+
+  DocumentBuilderFactory docBuilderFactory=DocumentBuilderFactory.newInstance();
+
+  docBuilderFactory.setIgnoringComments(true);
+
+  docBuilderFactory.setNamespaceAware(true);
+
+  try {
+
+    docBuilderFactory.setXIncludeAware(true);
+
+  }
+
+ catch (  UnsupportedOperationException e) {
+
+    LOG.error("Failed to set setXIncludeAware(true) for raid parser " + docBuilderFactory + ":"+ e,e);
+
+  }
+
+  LOG.error("Reloading config file " + file);
+
+  DocumentBuilder builder=docBuilderFactory.newDocumentBuilder();
+
+  Document doc=builder.parse(file);
+
+  Element root=doc.getDocumentElement();
+
+  if (!"configuration".equalsIgnoreCase(root.getTagName()))   throw new RaidConfigurationException("Bad configuration file: " + "top-level element not <configuration>");
+
+  NodeList elements=root.getChildNodes();
+
+  Map<String,PolicyInfo> existingPolicies=new HashMap<String,PolicyInfo>();
+
+  for (int i=0; i < elements.getLength(); i++) {
+
+    Node node=elements.item(i);
+
+    if (!(node instanceof Element)) {
+
+      continue;
+
+    }
+
+    Element element=(Element)node;
+
+    String elementTagName=element.getTagName();
+
+    if ("srcPath".equalsIgnoreCase(elementTagName)) {
+
+      String srcPathPrefix=element.getAttribute("prefix");
+
+      PolicyList policyList=null;
+
+      if (srcPathPrefix != null && srcPathPrefix.length() != 0) {
+
+        policyList=new PolicyList();
+
+        all.add(policyList);
+
+        policyList.setSrcPath(conf,srcPathPrefix);
+
+      }
+
+      NodeList policies=element.getChildNodes();
+
+      for (int j=0; j < policies.getLength(); j++) {
+
+        Node node1=policies.item(j);
+
+        if (!(node1 instanceof Element)) {
+
+          continue;
+
+        }
+
+        Element policy=(Element)node1;
+
+        if (!"policy".equalsIgnoreCase(policy.getTagName())) {
+
+          throw new RaidConfigurationException("Bad configuration file: " + "Expecting <policy> for srcPath " + srcPathPrefix);
+
+        }
+
+        String policyName=policy.getAttribute("name");
+
+        PolicyInfo curr=new PolicyInfo(policyName,conf);
+
+        if (srcPathPrefix != null && srcPathPrefix.length() > 0) {
+
+          curr.setSrcPath(srcPathPrefix);
+
+        }
+
+        NodeList properties=policy.getChildNodes();
+
+        PolicyInfo parent=null;
+
+        for (int k=0; k < properties.getLength(); k++) {
+
+          Node node2=properties.item(k);
+
+          if (!(node2 instanceof Element)) {
+
+            continue;
+
+          }
+
+          Element property=(Element)node2;
+
+          String propertyName=property.getTagName();
+
+          if ("erasureCode".equalsIgnoreCase(propertyName)) {
+
+            String text=((Text)property.getFirstChild()).getData().trim();
+
+            LOG.info(policyName + ".erasureCode = " + text);
+
+            curr.setErasureCode(text);
+
+          }
+
+ else           if ("description".equalsIgnoreCase(propertyName)) {
+
+            String text=((Text)property.getFirstChild()).getData().trim();
+
+            curr.setDescription(text);
+
+          }
+
+ else           if ("parentPolicy".equalsIgnoreCase(propertyName)) {
+
+            String text=((Text)property.getFirstChild()).getData().trim();
+
+            parent=existingPolicies.get(text);
+
+          }
+
+ else           if ("property".equalsIgnoreCase(propertyName)) {
+
+            NodeList nl=property.getChildNodes();
+
+            String pname=null, pvalue=null;
+
+            for (int l=0; l < nl.getLength(); l++) {
+
+              Node node3=nl.item(l);
+
+              if (!(node3 instanceof Element)) {
+
+                continue;
+
+              }
+
+              Element item=(Element)node3;
+
+              String itemName=item.getTagName();
+
+              if ("name".equalsIgnoreCase(itemName)) {
+
+                pname=((Text)item.getFirstChild()).getData().trim();
+
+              }
+
+ else               if ("value".equalsIgnoreCase(itemName)) {
+
+                pvalue=((Text)item.getFirstChild()).getData().trim();
+
+              }
+
+            }
+
+            if (pname != null && pvalue != null) {
+
+              LOG.info(policyName + "." + pname+ " = "+ pvalue);
+
+              curr.setProperty(pname,pvalue);
+
+            }
+
+          }
+
+ else {
+
+            LOG.warn("Found bad property " + propertyName + " for srcPath"+ srcPathPrefix+ " policy name "+ policyName+ ". Ignoring.");
+
+          }
+
+        }
+
+        PolicyInfo pinfo;
+
+        if (parent != null) {
+
+          pinfo=new PolicyInfo(policyName,conf);
+
+          pinfo.copyFrom(parent);
+
+          pinfo.copyFrom(curr);
+
+        }
+
+ else {
+
+          pinfo=curr;
+
+        }
+
+        if (policyList != null) {
+
+          policyList.add(pinfo);
+
+        }
+
+        existingPolicies.put(policyName,pinfo);
+
+      }
+
+    }
+
+  }
+
+  setAllPolicies(all);
+
+  periodicity=periodicityValue;
+
+  return;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+/** 
+
+ * Reload config file if it hasn't been loaded in a while Returns true if the file was reloaded.
+
+ */
+
+public synchronized boolean reloadConfigsIfNecessary(){
+
+  long time=RaidNode.now();
+
+  if (time > lastReloadAttempt + reloadInterval) {
+
+    lastReloadAttempt=time;
+
+    try {
+
+      File file=new File(configFileName);
+
+      long lastModified=file.lastModified();
+
+      if (lastModified > lastSuccessfulReload && time > lastModified + RELOAD_WAIT) {
+
+        hongshuai();
+
+        if (configFileName == null) {
+
+          return;
+
+        }
+
+        File file=new File(configFileName);
+
+        if (!file.exists()) {
+
+          throw new RaidConfigurationException("Configuration file " + configFileName + " does not exist.");
+
+        }
+
+        List<PolicyList> all=new ArrayList<PolicyList>();
+
+        long periodicityValue=periodicity;
+
+        DocumentBuilderFactory docBuilderFactory=DocumentBuilderFactory.newInstance();
+
+        docBuilderFactory.setIgnoringComments(true);
+
+        docBuilderFactory.setNamespaceAware(true);
+
+        try {
+
+          docBuilderFactory.setXIncludeAware(true);
+
+        }
+
+ catch (        UnsupportedOperationException e) {
+
+          LOG.error("Failed to set setXIncludeAware(true) for raid parser " + docBuilderFactory + ":"+ e,e);
+
+        }
+
+        LOG.error("Reloading config file " + file);
+
+        DocumentBuilder builder=docBuilderFactory.newDocumentBuilder();
+
+        Document doc=builder.parse(file);
+
+        Element root=doc.getDocumentElement();
+
+        if (!"configuration".equalsIgnoreCase(root.getTagName()))         throw new RaidConfigurationException("Bad configuration file: " + "top-level element not <configuration>");
+
+        NodeList elements=root.getChildNodes();
+
+        Map<String,PolicyInfo> existingPolicies=new HashMap<String,PolicyInfo>();
+
+        for (int i=0; i < elements.getLength(); i++) {
+
+          Node node=elements.item(i);
+
+          if (!(node instanceof Element)) {
+
+            continue;
+
+          }
+
+          Element element=(Element)node;
+
+          String elementTagName=element.getTagName();
+
+          if ("srcPath".equalsIgnoreCase(elementTagName)) {
+
+            String srcPathPrefix=element.getAttribute("prefix");
+
+            PolicyList policyList=null;
+
+            if (srcPathPrefix != null && srcPathPrefix.length() != 0) {
+
+              policyList=new PolicyList();
+
+              all.add(policyList);
+
+              policyList.setSrcPath(conf,srcPathPrefix);
+
+            }
+
+            NodeList policies=element.getChildNodes();
+
+            for (int j=0; j < policies.getLength(); j++) {
+
+              Node node1=policies.item(j);
+
+              if (!(node1 instanceof Element)) {
+
+                continue;
+
+              }
+
+              Element policy=(Element)node1;
+
+              if (!"policy".equalsIgnoreCase(policy.getTagName())) {
+
+                throw new RaidConfigurationException("Bad configuration file: " + "Expecting <policy> for srcPath " + srcPathPrefix);
+
+              }
+
+              String policyName=policy.getAttribute("name");
+
+              PolicyInfo curr=new PolicyInfo(policyName,conf);
+
+              if (srcPathPrefix != null && srcPathPrefix.length() > 0) {
+
+                curr.setSrcPath(srcPathPrefix);
+
+              }
+
+              NodeList properties=policy.getChildNodes();
+
+              PolicyInfo parent=null;
+
+              for (int k=0; k < properties.getLength(); k++) {
+
+                Node node2=properties.item(k);
+
+                if (!(node2 instanceof Element)) {
+
+                  continue;
+
+                }
+
+                Element property=(Element)node2;
+
+                String propertyName=property.getTagName();
+
+                if ("erasureCode".equalsIgnoreCase(propertyName)) {
+
+                  String text=((Text)property.getFirstChild()).getData().trim();
+
+                  LOG.info(policyName + ".erasureCode = " + text);
+
+                  curr.setErasureCode(text);
+
+                }
+
+ else                 if ("description".equalsIgnoreCase(propertyName)) {
+
+                  String text=((Text)property.getFirstChild()).getData().trim();
+
+                  curr.setDescription(text);
+
+                }
+
+ else                 if ("parentPolicy".equalsIgnoreCase(propertyName)) {
+
+                  String text=((Text)property.getFirstChild()).getData().trim();
+
+                  parent=existingPolicies.get(text);
+
+                }
+
+ else                 if ("property".equalsIgnoreCase(propertyName)) {
+
+                  NodeList nl=property.getChildNodes();
+
+                  String pname=null, pvalue=null;
+
+                  for (int l=0; l < nl.getLength(); l++) {
+
+                    Node node3=nl.item(l);
+
+                    if (!(node3 instanceof Element)) {
+
+                      continue;
+
+                    }
+
+                    Element item=(Element)node3;
+
+                    String itemName=item.getTagName();
+
+                    if ("name".equalsIgnoreCase(itemName)) {
+
+                      pname=((Text)item.getFirstChild()).getData().trim();
+
+                    }
+
+ else                     if ("value".equalsIgnoreCase(itemName)) {
+
+                      pvalue=((Text)item.getFirstChild()).getData().trim();
+
+                    }
+
+                  }
+
+                  if (pname != null && pvalue != null) {
+
+                    LOG.info(policyName + "." + pname+ " = "+ pvalue);
+
+                    curr.setProperty(pname,pvalue);
+
+                  }
+
+                }
+
+ else {
+
+                  LOG.warn("Found bad property " + propertyName + " for srcPath"+ srcPathPrefix+ " policy name "+ policyName+ ". Ignoring.");
+
+                }
+
+              }
+
+              PolicyInfo pinfo;
+
+              if (parent != null) {
+
+                pinfo=new PolicyInfo(policyName,conf);
+
+                pinfo.copyFrom(parent);
+
+                pinfo.copyFrom(curr);
+
+              }
+
+ else {
+
+                pinfo=curr;
+
+              }
+
+              if (policyList != null) {
+
+                policyList.add(pinfo);
+
+              }
+
+              existingPolicies.put(policyName,pinfo);
+
+            }
+
+          }
+
+        }
+
+        setAllPolicies(all);
+
+        periodicity=periodicityValue;
+
+        lastSuccessfulReload=time;
+
+        lastReloadAttemptFailed=false;
+
+        return true;
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+      if (!lastReloadAttemptFailed) {
+
+        LOG.error("Failed to reload config file - " + "will use existing configuration.",e);
+
+      }
+
+      lastReloadAttemptFailed=true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+/** 
+
+ * Set a collection of all policies
+
+ */
+
+protected synchronized void setAllPolicies(Collection<PolicyList> value){
+
+  this.allPolicies=value;
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+/** 
+
+ * Start a background thread to reload the config file
+
+ */
+
+void startReload(){
+
+  if (doReload) {
+
+    reloadThread=new UpdateThread();
+
+    reloadThread.start();
+
+  }
+
+}
+
+Location: ConfigManager.java
+
+Content: 
+
+/** 
+
+ * Stop the background thread that reload the config file
+
+ */
+
+void stopReload() throws InterruptedException {
+
+  if (reloadThread != null) {
+
+    running=false;
+
+    reloadThread.interrupt();
+
+    reloadThread.join();
+
+    reloadThread=null;
+
+  }
+
+}
+

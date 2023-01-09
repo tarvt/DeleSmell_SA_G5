@@ -1,0 +1,214 @@
+Location: IntermediateForm.java
+
+Content: 
+
+/** 
+
+ * Close the Lucene index writer associated with the intermediate form, if created. Do not close the ram directory. In fact, there is no need to close a ram directory.
+
+ * @throws IOException
+
+ */
+
+public void closeWriter() throws IOException {
+
+  if (writer != null) {
+
+    writer.close();
+
+    writer=null;
+
+  }
+
+}
+
+Location: IntermediateForm.java
+
+Content: 
+
+/** 
+
+ * Configure using an index update configuration.
+
+ * @param iconf  the index update configuration
+
+ */
+
+public void configure(IndexUpdateConfiguration iconf){
+
+  this.iconf=iconf;
+
+}
+
+Location: IntermediateForm.java
+
+Content: 
+
+private IndexWriter createWriter() throws IOException {
+
+  IndexWriter writer=new IndexWriter(dir,false,null,new KeepOnlyLastCommitDeletionPolicy());
+
+  writer.setUseCompoundFile(false);
+
+  if (iconf != null) {
+
+    int maxFieldLength=iconf.getIndexMaxFieldLength();
+
+    if (maxFieldLength > 0) {
+
+      writer.setMaxFieldLength(maxFieldLength);
+
+    }
+
+  }
+
+  return writer;
+
+}
+
+Location: IntermediateForm.java
+
+Content: 
+
+/** 
+
+ * Get an iterator for the delete terms in the intermediate form.
+
+ * @return an iterator for the delete terms
+
+ */
+
+public Iterator<Term> deleteTermIterator(){
+
+  return deleteList.iterator();
+
+}
+
+Location: IntermediateForm.java
+
+Content: 
+
+/** 
+
+ * Constructor
+
+ * @throws IOException
+
+ */
+
+public IntermediateForm() throws IOException {
+
+  deleteList=new ConcurrentLinkedQueue<Term>();
+
+  dir=new RAMDirectory();
+
+  writer=null;
+
+  numDocs=0;
+
+}
+
+Location: IntermediateForm.java
+
+Content: 
+
+/** 
+
+ * This method is used by the index update mapper and process a document operation into the current intermediate form.
+
+ * @param doc  input document operation
+
+ * @param analyzer  the analyzer
+
+ * @throws IOException
+
+ */
+
+public void process(DocumentAndOp doc,Analyzer analyzer) throws IOException {
+
+  if (doc.getOp() == DocumentAndOp.Op.DELETE || doc.getOp() == DocumentAndOp.Op.UPDATE) {
+
+    deleteList.add(doc.getTerm());
+
+  }
+
+  if (doc.getOp() == DocumentAndOp.Op.INSERT || doc.getOp() == DocumentAndOp.Op.UPDATE) {
+
+    if (writer == null) {
+
+      writer=createWriter();
+
+    }
+
+    writer.addDocument(doc.getDocument(),analyzer);
+
+    numDocs++;
+
+  }
+
+}
+
+Location: IntermediateForm.java
+
+Content: 
+
+/** 
+
+ * This method is used by the index update combiner and process an intermediate form into the current intermediate form. More specifically, the input intermediate forms are a single-document ram index and/or a single delete term.
+
+ * @param form  the input intermediate form
+
+ * @throws IOException
+
+ */
+
+public void process(IntermediateForm form) throws IOException {
+
+  if (form.deleteList.size() > 0) {
+
+    deleteList.addAll(form.deleteList);
+
+  }
+
+  if (form.dir.sizeInBytes() > 0) {
+
+    if (writer == null) {
+
+      writer=createWriter();
+
+    }
+
+    writer.addIndexesNoOptimize(new Directory[]{form.dir});
+
+    numDocs++;
+
+  }
+
+}
+
+Location: IntermediateForm.java
+
+Content: 
+
+/** 
+
+ * The total size of files in the directory and ram used by the index writer. It does not include memory used by the delete list.
+
+ * @return the total size in bytes
+
+ */
+
+public long totalSizeInBytes() throws IOException {
+
+  long size=dir.sizeInBytes();
+
+  if (writer != null) {
+
+    size+=writer.ramSizeInBytes();
+
+  }
+
+  return size;
+
+}
+

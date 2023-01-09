@@ -1,0 +1,422 @@
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Compiles an SQL statement and returns a CompiledStatement Object
+
+ * @param session the session
+
+ * @throws Throwable
+
+ * @return CompiledStatement
+
+ */
+
+Statement compile(Session session,Result cmd) throws Throwable {
+
+  writeLock.lock();
+
+  try {
+
+    int props=cmd.getExecuteProperties();
+
+    Statement cs=null;
+
+    String sql=cmd.getMainString();
+
+    long csid=getStatementID(session.currentSchema,sql);
+
+    if (csid >= 0) {
+
+      cs=(Statement)csidMap.get(csid);
+
+    }
+
+    if (cs == null || !cs.isValid() || cs.getCompileTimestamp() < database.schemaManager.getSchemaChangeTimestamp() || cs.getCursorPropertiesRequest() != props) {
+
+      cs=session.compileStatement(sql,props);
+
+      cs.setCursorPropertiesRequest(props);
+
+      csid=registerStatement(csid,cs);
+
+    }
+
+    int useCount=useMap.get(csid,0) + 1;
+
+    useMap.put(csid,useCount);
+
+    cs.setGeneratedColumnInfo(cmd.getGeneratedResultType(),cmd.getGeneratedResultMetaData());
+
+    return cs;
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Removes one (or all) of the links between a session and a compiled statement. If the statement is not linked with any other session, it is removed from management.
+
+ * @param csid the compiled statement identifier
+
+ */
+
+void freeStatement(long csid){
+
+  readLock.lock();
+
+  try {
+
+    if (csid == -1) {
+
+      return;
+
+    }
+
+    int useCount=useMap.get(csid,1);
+
+    if (useCount > 1) {
+
+      useMap.put(csid,useCount - 1);
+
+      return;
+
+    }
+
+    Statement cs=(Statement)csidMap.remove(csid);
+
+    if (cs != null) {
+
+      int schemaid=cs.getSchemaName().hashCode();
+
+      LongValueHashMap sqlMap=(LongValueHashMap)schemaMap.get(schemaid);
+
+      String sql=cs.getSQL();
+
+      sqlMap.remove(sql);
+
+    }
+
+    useMap.remove(csid);
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves the registered compiled statement identifier associated with the specified SQL String, or a value less than zero, if no such statement has been registered.
+
+ * @param schema the schema id
+
+ * @param sql the SQL String
+
+ * @return the compiled statement identifier associated with thespecified SQL String
+
+ */
+
+private long getStatementID(HsqlName schema,String sql){
+
+  LongValueHashMap sqlMap=(LongValueHashMap)schemaMap.get(schema.hashCode());
+
+  if (sqlMap == null) {
+
+    return -1;
+
+  }
+
+  return sqlMap.get(sql,-1);
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Returns an existing CompiledStatement object with the given statement identifier. Returns null if the CompiledStatement object has been invalidated and cannot be recompiled
+
+ * @param session the session
+
+ * @param csid the identifier of the requested CompiledStatement object
+
+ * @return the requested CompiledStatement object
+
+ */
+
+public Statement getStatement(Session session,long csid){
+
+  readLock.lock();
+
+  try {
+
+    Statement cs=(Statement)csidMap.get(csid);
+
+    if (cs == null) {
+
+      return null;
+
+    }
+
+    if (cs.getCompileTimestamp() < database.schemaManager.getSchemaChangeTimestamp()) {
+
+      Statement newStatement=recompileStatement(session,cs);
+
+      if (newStatement == null) {
+
+        freeStatement(csid);
+
+        return null;
+
+      }
+
+      registerStatement(cs.getID(),newStatement);
+
+      return newStatement;
+
+    }
+
+    return cs;
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Recompiles an existing statement
+
+ * @param session the session
+
+ * @param statement the old CompiledStatement object
+
+ * @return the requested CompiledStatement object
+
+ */
+
+public Statement getStatement(Session session,Statement statement){
+
+  readLock.lock();
+
+  try {
+
+    long csid=statement.getID();
+
+    Statement cs=(Statement)csidMap.get(csid);
+
+    if (cs != null) {
+
+      return getStatement(session,csid);
+
+    }
+
+    cs=recompileStatement(session,statement);
+
+    return cs;
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves the next compiled statement identifier in the sequence.
+
+ * @return the next compiled statement identifier in the sequence.
+
+ */
+
+private long nextID(){
+
+  next_cs_id++;
+
+  return next_cs_id;
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+private Statement recompileStatement(Session session,Statement cs){
+
+  HsqlName oldSchema=session.getCurrentSchemaHsqlName();
+
+  Statement newStatement;
+
+  try {
+
+    HsqlName schema=cs.getSchemaName();
+
+    int props=cs.getCursorPropertiesRequest();
+
+    if (schema != null) {
+
+      session.setSchema(schema.name);
+
+    }
+
+    boolean setGenerated=cs.generatedResultMetaData() != null;
+
+    newStatement=session.compileStatement(cs.getSQL(),props);
+
+    newStatement.setCursorPropertiesRequest(props);
+
+    if (!cs.getResultMetaData().areTypesCompatible(newStatement.getResultMetaData())) {
+
+      return null;
+
+    }
+
+    if (!cs.getParametersMetaData().areTypesCompatible(newStatement.getParametersMetaData())) {
+
+      return null;
+
+    }
+
+    newStatement.setCompileTimestamp(database.txManager.getGlobalChangeTimestamp());
+
+    if (setGenerated) {
+
+      StatementDML si=(StatementDML)cs;
+
+      newStatement.setGeneratedColumnInfo(si.generatedType,si.generatedInputMetaData);
+
+    }
+
+  }
+
+ catch (  Throwable t) {
+
+    return null;
+
+  }
+
+ finally {
+
+    session.setCurrentSchemaHsqlName(oldSchema);
+
+  }
+
+  return newStatement;
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Registers a compiled statement to be managed. The only caller should be a Session that is attempting to prepare a statement for the first time or process a statement that has been invalidated due to DDL changes.
+
+ * @param csid existing id or negative if the statement is not yet managed
+
+ * @param cs The CompiledStatement to add
+
+ * @return The compiled statement id assigned to the CompiledStatementobject
+
+ */
+
+private long registerStatement(long csid,Statement cs){
+
+  cs.setCompileTimestamp(database.txManager.getGlobalChangeTimestamp());
+
+  int schemaid=cs.getSchemaName().hashCode();
+
+  LongValueHashMap sqlMap=(LongValueHashMap)schemaMap.get(schemaid);
+
+  if (sqlMap == null) {
+
+    sqlMap=new LongValueHashMap();
+
+    schemaMap.put(schemaid,sqlMap);
+
+  }
+
+  if (csid < 0) {
+
+    csid=nextID();
+
+  }
+
+  cs.setID(csid);
+
+  sqlMap.put(cs.getSQL(),csid);
+
+  csidMap.put(csid,cs);
+
+  return csid;
+
+}
+
+Location: StatementManager.java
+
+Content: 
+
+/** 
+
+ * Constructs a new instance of <code>CompiledStatementManager</code>.
+
+ * @param database the Database instance for which this object is tomanage compiled statement objects.
+
+ */
+
+StatementManager(Database database){
+
+  this.database=database;
+
+  schemaMap=new IntKeyHashMap();
+
+  csidMap=new LongKeyHashMap();
+
+  useMap=new LongKeyIntValueHashMap();
+
+  next_cs_id=0;
+
+}
+

@@ -1,0 +1,530 @@
+Location: ReplCache.java
+
+Content: 
+
+public void addChangeListener(ChangeListener l){
+
+  change_listeners.add(l);
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public void changed(){
+
+  notifyChangeListeners();
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+@ManagedAttribute public int getClusterSize(){
+
+  return view != null ? view.size() : 0;
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public short getDefaultReplicationCount(){
+
+  return default_replication_count;
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public HashFunctionFactory getHashFunctionFactory(){
+
+  return hash_function_factory;
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+private void mcastClear(Set<K> keys,boolean synchronous){
+
+  try {
+
+    ResponseMode mode=synchronous ? ResponseMode.GET_ALL : ResponseMode.GET_NONE;
+
+    disp.callRemoteMethods(null,new MethodCall(REMOVE_MANY,keys),new RequestOptions(mode,call_timeout));
+
+  }
+
+ catch (  Throwable t) {
+
+    if (log.isWarnEnabled())     log.warn("clear() failed",t);
+
+  }
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public void mcastEntries(){
+
+  for (  Map.Entry<K,Cache.Value<Value<V>>> entry : l2_cache.entrySet()) {
+
+    K key=entry.getKey();
+
+    Cache.Value<Value<V>> val=entry.getValue();
+
+    if (val == null) {
+
+      if (log.isWarnEnabled())       log.warn(key + " has no value associated; ignoring");
+
+      continue;
+
+    }
+
+    Value<V> tmp=val.getValue();
+
+    if (tmp == null) {
+
+      if (log.isWarnEnabled())       log.warn(key + " has no value associated; ignoring");
+
+      continue;
+
+    }
+
+    V real_value=tmp.getVal();
+
+    short repl_count=tmp.getReplicationCount();
+
+    if (repl_count > 1) {
+
+      _remove(key);
+
+      mcastPut(key,real_value,repl_count,val.getTimeout(),false);
+
+    }
+
+  }
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+private void mcastPut(K key,V val,short repl_count,long caching_time,boolean synchronous){
+
+  try {
+
+    ResponseMode mode=synchronous ? ResponseMode.GET_ALL : ResponseMode.GET_NONE;
+
+    disp.callRemoteMethods(null,new MethodCall(PUT,key,val,repl_count,caching_time),new RequestOptions(mode,call_timeout));
+
+  }
+
+ catch (  Throwable t) {
+
+    if (log.isWarnEnabled())     log.warn("put() failed",t);
+
+  }
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+private void move(Address dest,K key,V val,short repl_count,long caching_time,boolean synchronous){
+
+  try {
+
+    ResponseMode mode=synchronous ? ResponseMode.GET_ALL : ResponseMode.GET_NONE;
+
+    disp.callRemoteMethod(dest,new MethodCall(PUT_FORCE,key,val,repl_count,caching_time,true),new RequestOptions(mode,call_timeout));
+
+  }
+
+ catch (  Throwable t) {
+
+    if (log.isWarnEnabled())     log.warn("move() failed",t);
+
+  }
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+private void notifyChangeListeners(){
+
+  for (  ChangeListener l : change_listeners) {
+
+    try {
+
+      l.changed();
+
+    }
+
+ catch (    Throwable t) {
+
+      if (log.isErrorEnabled())       log.error("failed notifying change listener",t);
+
+    }
+
+  }
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+/** 
+
+ * Places a key/value pair into one or several nodes in the cluster.
+
+ * @param key The key, needs to be serializable
+
+ * @param val The value, needs to be serializable
+
+ * @param repl_count Number of replicas. The total number of times a data item should be present in a cluster.Needs to be &gt; 0 <ul> <li>-1: create key/val in all the nodes in the cluster <li>1: create key/val only in one node in the cluster, picked by computing the consistent hash of KEY <li>K &gt; 1: create key/val in those nodes in the cluster which match the consistent hashes created for KEY </ul>
+
+ * @param timeout Expiration time for key/value.<ul> <li>-1: don't cache at all in the L1 cache <li>0: cache forever, until removed or evicted because we need space for newer elements <li>&gt; 0: number of milliseconds to keep an idle element in the cache. An element is idle when not accessed. </ul>
+
+ */
+
+@ManagedOperation public void put(K key,V val,short repl_count,long timeout){
+
+  put(key,val,repl_count,timeout,false);
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+/** 
+
+ * Places a key/value pair into one or several nodes in the cluster.
+
+ * @param key The key, needs to be serializable
+
+ * @param val The value, needs to be serializable
+
+ * @param repl_count Number of replicas. The total number of times a data item should be present in a cluster.Needs to be &gt; 0 <ul> <li>-1: create key/val in all the nodes in the cluster <li>1: create key/val only in one node in the cluster, picked by computing the consistent hash of KEY <li>K &gt; 1: create key/val in those nodes in the cluster which match the consistent hashes created for KEY </ul>
+
+ * @param timeout Expiration time for key/value.<ul> <li>-1: don't cache at all in the L1 cache <li>0: cache forever, until removed or evicted because we need space for newer elements <li>&gt; 0: number of milliseconds to keep an idle element in the cache. An element is idle when not accessed. </ul>
+
+ * @param synchronous Whether or not to block until all cluster nodes have applied the change
+
+ */
+
+@ManagedOperation public void put(K key,V val,short repl_count,long timeout,boolean synchronous){
+
+  if (repl_count == 0) {
+
+    if (log.isWarnEnabled())     log.warn("repl_count of 0 is invalid, data will not be stored in the cluster");
+
+    return;
+
+  }
+
+  mcastPut(key,val,repl_count,timeout,synchronous);
+
+  if (l1_cache != null && timeout >= 0)   l1_cache.put(key,val,timeout);
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+private void rebalance(List<Address> old_nodes,List<Address> new_nodes){
+
+  HashFunction<K> old_func=hash_function_factory.create();
+
+  old_func.installNodes(old_nodes);
+
+  HashFunction<K> new_func=hash_function_factory.create();
+
+  new_func.installNodes(new_nodes);
+
+  boolean is_coord=Util.isCoordinator(ch);
+
+  List<K> keys=new ArrayList<>(l2_cache.getInternalMap().keySet());
+
+  for (  K key : keys) {
+
+    Cache.Value<Value<V>> val=l2_cache.getEntry(key);
+
+    if (log.isTraceEnabled())     log.trace("==== rebalancing " + key);
+
+    if (val == null) {
+
+      if (log.isWarnEnabled())       log.warn(key + " has no value associated; ignoring");
+
+      continue;
+
+    }
+
+    Value<V> tmp=val.getValue();
+
+    if (tmp == null) {
+
+      if (log.isWarnEnabled())       log.warn(key + " has no value associated; ignoring");
+
+      continue;
+
+    }
+
+    V real_value=tmp.getVal();
+
+    short repl_count=tmp.getReplicationCount();
+
+    List<Address> new_mbrs=Util.newMembers(old_nodes,new_nodes);
+
+    if (repl_count == -1) {
+
+      if (is_coord) {
+
+        for (        Address new_mbr : new_mbrs) {
+
+          move(new_mbr,key,real_value,repl_count,val.getTimeout(),false);
+
+        }
+
+      }
+
+    }
+
+ else     if (repl_count == 1) {
+
+      List<Address> tmp_nodes=new_func.hash(key,repl_count);
+
+      if (!tmp_nodes.isEmpty()) {
+
+        Address mbr=tmp_nodes.get(0);
+
+        if (!mbr.equals(local_addr)) {
+
+          move(mbr,key,real_value,repl_count,val.getTimeout(),false);
+
+          _remove(key);
+
+        }
+
+      }
+
+    }
+
+ else     if (repl_count > 1) {
+
+      List<Address> tmp_old=old_func.hash(key,repl_count);
+
+      List<Address> tmp_new=new_func.hash(key,repl_count);
+
+      if (log.isTraceEnabled())       log.trace("old nodes: " + tmp_old + "\nnew nodes: "+ tmp_new);
+
+      if (tmp_old != null && tmp_new != null && tmp_old.equals(tmp_new))       continue;
+
+      mcastPut(key,real_value,repl_count,val.getTimeout(),false);
+
+      if (tmp_new != null && !tmp_new.contains(local_addr)) {
+
+        _remove(key);
+
+      }
+
+    }
+
+ else {
+
+      throw new IllegalStateException("replication count is invalid (" + repl_count + ")");
+
+    }
+
+  }
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public void removeChangeListener(ChangeListener l){
+
+  change_listeners.remove(l);
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+/** 
+
+ * Removes key in all nodes in the cluster, both from their local hashmaps and L1 caches
+
+ * @param key The key, needs to be serializable
+
+ */
+
+@ManagedOperation public void remove(K key,boolean synchronous){
+
+  try {
+
+    disp.callRemoteMethods(null,new MethodCall(REMOVE,key),new RequestOptions(synchronous ? ResponseMode.GET_ALL : ResponseMode.GET_NONE,call_timeout));
+
+    if (l1_cache != null)     l1_cache.remove(key);
+
+  }
+
+ catch (  Throwable t) {
+
+    if (log.isWarnEnabled())     log.warn("remove() failed",t);
+
+  }
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public ReplCache(String props,String cluster_name){
+
+  this.props=props;
+
+  this.cluster_name=cluster_name;
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public void setDefaultReplicationCount(short default_replication_count){
+
+  this.default_replication_count=default_replication_count;
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public void setHashFunctionFactory(HashFunctionFactory<K> hash_function_factory){
+
+  this.hash_function_factory=hash_function_factory;
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public V _put(K key,V val,short repl_count,long timeout){
+
+  return _put(key,val,repl_count,timeout,false);
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+/** 
+
+ * @param key
+
+ * @param val
+
+ * @param repl_count
+
+ * @param timeout
+
+ * @param force Skips acceptance checking and simply adds the key/value
+
+ * @return
+
+ */
+
+public V _put(K key,V val,short repl_count,long timeout,boolean force){
+
+  if (!force) {
+
+    boolean accept=repl_count == -1;
+
+    if (!accept) {
+
+      if (view != null && repl_count >= view.size()) {
+
+        accept=true;
+
+      }
+
+ else {
+
+        List<Address> selected_hosts=hash_function != null ? hash_function.hash(key,repl_count) : null;
+
+        if (selected_hosts != null) {
+
+          if (log.isTraceEnabled())           log.trace("local=" + local_addr + ", hosts="+ selected_hosts);
+
+          for (          Address addr : selected_hosts) {
+
+            if (addr.equals(local_addr)) {
+
+              accept=true;
+
+              break;
+
+            }
+
+          }
+
+        }
+
+        if (!accept)         return null;
+
+      }
+
+    }
+
+  }
+
+  if (log.isTraceEnabled())   log.trace("_put(" + key + ", "+ val+ ", "+ repl_count+ ", "+ timeout+ ")");
+
+  Value<V> value=new Value<>(val,repl_count);
+
+  Value<V> retval=l2_cache.put(key,value,timeout);
+
+  if (l1_cache != null)   l1_cache.remove(key);
+
+  notifyChangeListeners();
+
+  return retval != null ? retval.getVal() : null;
+
+}
+
+Location: ReplCache.java
+
+Content: 
+
+public void _removeMany(Set<K> keys){
+
+  if (log.isTraceEnabled())   log.trace("_removeMany(): " + keys.size() + " entries");
+
+  keys.forEach(this::_remove);
+
+}
+

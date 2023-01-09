@@ -1,0 +1,596 @@
+Location: Executing.java
+
+Content: 
+
+public void addExecutorListener(Future<?> future,ExecutorNotification listener){
+
+  if (listener != null)   notifiers.put(future,listener);
+
+}
+
+Location: Executing.java
+
+Content: 
+
+public Executing(){
+
+  _awaitingReturn=Collections.synchronizedMap(new HashMap<>());
+
+  _running=Collections.synchronizedMap(new HashMap<>());
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleConsumerFoundResponse(long threadId,Address address){
+
+  final Runnable runnable=_awaitingConsumer.poll();
+
+  Owner owner;
+
+  if (runnable == null) {
+
+    owner=new Owner(address,threadId);
+
+    sendToCoordinator(Type.CONSUMER_READY,owner.getRequestId(),owner.getAddress());
+
+  }
+
+ else {
+
+    final Long requestId=_requestId.get(runnable);
+
+    if (requestId == null) {
+
+      return;
+
+    }
+
+    owner=new Owner(address,requestId);
+
+    _awaitingReturn.put(owner,runnable);
+
+    if (local_addr.equals(owner.getAddress())) {
+
+      handleTaskSubmittedRequest(runnable,local_addr,requestId,threadId);
+
+    }
+
+ else {
+
+      try {
+
+        if (runnable instanceof DistributedFuture) {
+
+          Callable<?> callable=((DistributedFuture<?>)runnable).getCallable();
+
+          sendThreadRequest(owner.getAddress(),threadId,Type.RUN_SUBMITTED,requestId,callable);
+
+        }
+
+ else {
+
+          sendThreadRequest(owner.getAddress(),threadId,Type.RUN_SUBMITTED,requestId,runnable);
+
+        }
+
+      }
+
+ catch (      IllegalArgumentException e) {
+
+        ExecutorNotification notificiation=notifiers.remove(runnable);
+
+        if (notificiation != null) {
+
+          notificiation.throwableEncountered(e);
+
+        }
+
+        throw e;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleConsumerReadyRequest(long requestId,Address address){
+
+  Owner requestor;
+
+  final Owner source=new Owner(address,requestId);
+
+  _consumerLock.lock();
+
+  try {
+
+    requestor=_runRequests.poll();
+
+    if (requestor == null && !_consumersAvailable.contains(source)) {
+
+      _consumersAvailable.add(source);
+
+    }
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+  if (requestor != null) {
+
+    sendRequest(requestor.getAddress(),Type.CONSUMER_FOUND,source.getRequestId(),source.getAddress());
+
+    sendRemoveRunRequest(requestor);
+
+  }
+
+ else {
+
+    sendNewConsumerRequest(source);
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleConsumerUnreadyRequest(long requestId,Address address){
+
+  Owner consumer=new Owner(address,requestId);
+
+  _consumerLock.lock();
+
+  try {
+
+    _consumersAvailable.remove(consumer);
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+  sendRemoveConsumerRequest(consumer);
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleExceptionResponse(Address source,long requestId,Throwable throwable){
+
+  Runnable runnable=_awaitingReturn.remove(new Owner(source,requestId));
+
+  if (runnable != null) {
+
+    _requestId.remove(runnable);
+
+  }
+
+  if (runnable instanceof RunnableFuture<?>) {
+
+    RunnableFuture<?> future=(RunnableFuture<?>)runnable;
+
+    ExecutorNotification notifier=notifiers.remove(future);
+
+    if (notifier != null) {
+
+      notifier.throwableEncountered(throwable);
+
+    }
+
+  }
+
+ else {
+
+    log.error(Util.getMessage("RuntimeErrorEncounteredFromClusterExecuteRunnableMethod"),throwable);
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleInterruptRequest(Address source,long requestId){
+
+  Owner owner=new Owner(source,requestId);
+
+  Runnable runnable=removeKeyForValue(_running,owner);
+
+  Thread thread=null;
+
+  if (runnable != null) {
+
+    thread=_runnableThreads.remove(runnable);
+
+  }
+
+  if (thread != null) {
+
+    thread.interrupt();
+
+  }
+
+ else   if (log.isTraceEnabled())   log.trace("Message could not be interrupted due to it already returned");
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleNewConsumer(Owner sender){
+
+  _consumerLock.lock();
+
+  try {
+
+    if (!_consumersAvailable.contains(sender)) {
+
+      _consumersAvailable.add(sender);
+
+    }
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleNewRunRequest(Owner sender){
+
+  _consumerLock.lock();
+
+  try {
+
+    if (!_runRequests.contains(sender)) {
+
+      _runRequests.add(sender);
+
+    }
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleRemoveConsumer(Owner sender){
+
+  _consumerLock.lock();
+
+  try {
+
+    _consumersAvailable.remove(sender);
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleRemoveRunRequest(Owner sender){
+
+  _consumerLock.lock();
+
+  try {
+
+    _runRequests.remove(sender);
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleTaskRejectedResponse(Address source,long requestId){
+
+  Runnable runnable=_awaitingReturn.remove(new Owner(source,requestId));
+
+  if (runnable != null) {
+
+    _awaitingConsumer.add(runnable);
+
+    Long taskRequestId=_requestId.get(runnable);
+
+    if (taskRequestId != requestId) {
+
+      log.warn("Task Request Id doesn't match in rejection");
+
+    }
+
+    sendToCoordinator(RUN_REQUEST,taskRequestId,local_addr);
+
+  }
+
+ else {
+
+    log.error(Util.getMessage("ErrorResubmittingTaskForRequestId") + requestId);
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleTaskRequest(long requestId,Address address){
+
+  final Owner consumer;
+
+  Owner source=new Owner(address,requestId);
+
+  _consumerLock.lock();
+
+  try {
+
+    consumer=_consumersAvailable.poll();
+
+    if (consumer == null && !_runRequests.contains(source)) {
+
+      _runRequests.add(source);
+
+    }
+
+  }
+
+  finally {
+
+    _consumerLock.unlock();
+
+  }
+
+  if (consumer != null) {
+
+    sendRequest(source.getAddress(),Type.CONSUMER_FOUND,consumer.getRequestId(),consumer.getAddress());
+
+    sendRemoveConsumerRequest(consumer);
+
+  }
+
+ else {
+
+    sendNewRunRequest(source);
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleTaskSubmittedRequest(Runnable runnable,Address source,long requestId,long threadId){
+
+  _running.put(runnable,new Owner(source,requestId));
+
+  boolean received;
+
+  try {
+
+    _tasks.put(threadId,runnable);
+
+    CyclicBarrier barrier=_taskBarriers.remove(threadId);
+
+    if (received=(barrier != null)) {
+
+      barrier.await(10,TimeUnit.MILLISECONDS);
+
+    }
+
+  }
+
+ catch (  InterruptedException e) {
+
+    if (log.isDebugEnabled())     log.debug("Interrupted while handing off task");
+
+    Thread.currentThread().interrupt();
+
+    received=false;
+
+  }
+
+catch (  BrokenBarrierException e) {
+
+    if (log.isDebugEnabled())     log.debug("Consumer " + threadId + " has been interrupted, "+ "must retry to submit elsewhere");
+
+    received=false;
+
+  }
+
+catch (  TimeoutException e) {
+
+    if (log.isDebugEnabled())     log.debug("Timeout waiting to hand off to barrier, consumer " + threadId + " must be slow");
+
+    received=false;
+
+  }
+
+  if (!received) {
+
+    _tasks.remove(threadId);
+
+    if (log.isDebugEnabled())     log.debug("Run rejected not able to pass off to consumer");
+
+    sendRequest(source,Type.RUN_REJECTED,requestId,null);
+
+    _running.remove(runnable);
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void handleValueResponse(Address source,long requestId,Object value){
+
+  Runnable runnable=_awaitingReturn.remove(new Owner(source,requestId));
+
+  if (runnable != null) {
+
+    _requestId.remove(runnable);
+
+  }
+
+  if (runnable instanceof RunnableFuture<?>) {
+
+    RunnableFuture<?> future=(RunnableFuture<?>)runnable;
+
+    ExecutorNotification notifier=notifiers.remove(future);
+
+    if (notifier != null) {
+
+      notifier.resultReturned(value);
+
+    }
+
+  }
+
+ else {
+
+    log.warn("Runnable was not found in awaiting");
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected static <V,K>V removeKeyForValue(Map<V,K> map,K value){
+
+synchronized (map) {
+
+    Iterator<Entry<V,K>> iter=map.entrySet().iterator();
+
+    while (iter.hasNext()) {
+
+      Entry<V,K> entry=iter.next();
+
+      if (entry.getValue().equals(value)) {
+
+        iter.remove();
+
+        return entry.getKey();
+
+      }
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void sendRequest(Address dest,Type type,long requestId,Object object){
+
+  Request req=new Request(type,object,requestId);
+
+  Message msg=new Message(dest,req).putHeader(id,new ExecutorHeader());
+
+  if (bypass_bundling)   msg.setFlag(Message.Flag.DONT_BUNDLE);
+
+  if (log.isTraceEnabled())   log.trace("[" + local_addr + "] --> ["+ (dest == null ? "ALL" : dest)+ "] "+ req);
+
+  try {
+
+    down_prot.down(msg);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedSending") + type + " request: "+ ex);
+
+  }
+
+}
+
+Location: Executing.java
+
+Content: 
+
+protected void sendThreadRequest(Address dest,long threadId,Type type,long requestId,Object object){
+
+  RequestWithThread req=new RequestWithThread(type,object,requestId,threadId);
+
+  Message msg=new Message(dest,req).putHeader(id,new ExecutorHeader());
+
+  if (bypass_bundling)   msg.setFlag(Message.Flag.DONT_BUNDLE);
+
+  if (log.isTraceEnabled())   log.trace("[" + local_addr + "] --> ["+ (dest == null ? "ALL" : dest)+ "] "+ req);
+
+  try {
+
+    down_prot.down(msg);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedSending") + type + " request: "+ ex);
+
+  }
+
+}
+

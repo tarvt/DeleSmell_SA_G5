@@ -1,0 +1,320 @@
+Location: NNBenchWithoutMR.java
+
+Content: 
+
+/** 
+
+ * Returns when the current number of seconds from the epoch equals the command line argument given by <code>-startTime</code>. This allows multiple instances of this program, running on clock synchronized nodes, to start at roughly the same time.
+
+ */
+
+static void barrier(){
+
+  long sleepTime;
+
+  while ((sleepTime=startTime - System.currentTimeMillis()) > 0) {
+
+    try {
+
+      Thread.sleep(sleepTime);
+
+    }
+
+ catch (    InterruptedException ex) {
+
+    }
+
+  }
+
+}
+
+Location: NNBenchWithoutMR.java
+
+Content: 
+
+/** 
+
+ * Create and write to a given number of files.  Repeat each remote operation until is suceeds (does not throw an exception).
+
+ * @return the number of exceptions caught
+
+ */
+
+static int createWrite(){
+
+  int totalExceptions=0;
+
+  FSDataOutputStream out=null;
+
+  boolean success;
+
+  for (int index=0; index < numFiles; index++) {
+
+    int singleFileExceptions=0;
+
+    do {
+
+      try {
+
+        out=fileSys.create(new Path(taskDir,"" + index),false,512,(short)1,bytesPerBlock);
+
+        success=true;
+
+      }
+
+ catch (      IOException ioe) {
+
+        success=false;
+
+        totalExceptions++;
+
+        handleException("creating file #" + index,ioe,++singleFileExceptions);
+
+      }
+
+    }
+
+ while (!success);
+
+    long toBeWritten=bytesPerFile;
+
+    while (toBeWritten > 0) {
+
+      int nbytes=(int)Math.min(buffer.length,toBeWritten);
+
+      toBeWritten-=nbytes;
+
+      try {
+
+        out.write(buffer,0,nbytes);
+
+      }
+
+ catch (      IOException ioe) {
+
+        totalExceptions++;
+
+        handleException("writing to file #" + index,ioe,++singleFileExceptions);
+
+      }
+
+    }
+
+    do {
+
+      try {
+
+        out.close();
+
+        success=true;
+
+      }
+
+ catch (      IOException ioe) {
+
+        success=false;
+
+        totalExceptions++;
+
+        handleException("closing file #" + index,ioe,++singleFileExceptions);
+
+      }
+
+    }
+
+ while (!success);
+
+  }
+
+  return totalExceptions;
+
+}
+
+Location: NNBenchWithoutMR.java
+
+Content: 
+
+/** 
+
+ * Delete a given number of files.  Repeat each remote operation until is suceeds (does not throw an exception).
+
+ * @return the number of exceptions caught
+
+ */
+
+static int delete(){
+
+  int totalExceptions=0;
+
+  boolean success;
+
+  for (int index=0; index < numFiles; index++) {
+
+    int singleFileExceptions=0;
+
+    do {
+
+      try {
+
+        fileSys.delete(new Path(taskDir,"A" + index),true);
+
+        success=true;
+
+      }
+
+ catch (      IOException ioe) {
+
+        success=false;
+
+        totalExceptions++;
+
+        handleException("creating file #" + index,ioe,++singleFileExceptions);
+
+      }
+
+    }
+
+ while (!success);
+
+  }
+
+  return totalExceptions;
+
+}
+
+Location: NNBenchWithoutMR.java
+
+Content: 
+
+static private void handleException(String operation,Throwable e,int singleFileExceptions){
+
+  LOG.warn("Exception while " + operation + ": "+ StringUtils.stringifyException(e));
+
+  if (singleFileExceptions >= maxExceptionsPerFile) {
+
+    throw new RuntimeException(singleFileExceptions + " exceptions for a single file exceeds threshold. Aborting");
+
+  }
+
+}
+
+Location: NNBenchWithoutMR.java
+
+Content: 
+
+/** 
+
+ * Open and read a given number of files.
+
+ * @return the number of exceptions caught
+
+ */
+
+static int openRead(){
+
+  int totalExceptions=0;
+
+  FSDataInputStream in;
+
+  for (int index=0; index < numFiles; index++) {
+
+    int singleFileExceptions=0;
+
+    try {
+
+      in=fileSys.open(new Path(taskDir,"" + index),512);
+
+      long toBeRead=bytesPerFile;
+
+      while (toBeRead > 0) {
+
+        int nbytes=(int)Math.min(buffer.length,toBeRead);
+
+        toBeRead-=nbytes;
+
+        try {
+
+          in.read(buffer,0,nbytes);
+
+        }
+
+ catch (        IOException ioe) {
+
+          totalExceptions++;
+
+          handleException("reading from file #" + index,ioe,++singleFileExceptions);
+
+        }
+
+      }
+
+      in.close();
+
+    }
+
+ catch (    IOException ioe) {
+
+      totalExceptions++;
+
+      handleException("opening file #" + index,ioe,++singleFileExceptions);
+
+    }
+
+  }
+
+  return totalExceptions;
+
+}
+
+Location: NNBenchWithoutMR.java
+
+Content: 
+
+/** 
+
+ * Rename a given number of files.  Repeat each remote operation until is suceeds (does not throw an exception).
+
+ * @return the number of exceptions caught
+
+ */
+
+static int rename(){
+
+  int totalExceptions=0;
+
+  boolean success;
+
+  for (int index=0; index < numFiles; index++) {
+
+    int singleFileExceptions=0;
+
+    do {
+
+      try {
+
+        fileSys.rename(new Path(taskDir,"" + index),new Path(taskDir,"A" + index));
+
+        success=true;
+
+      }
+
+ catch (      IOException ioe) {
+
+        success=false;
+
+        totalExceptions++;
+
+        handleException("creating file #" + index,ioe,++singleFileExceptions);
+
+      }
+
+    }
+
+ while (!success);
+
+  }
+
+  return totalExceptions;
+
+}
+

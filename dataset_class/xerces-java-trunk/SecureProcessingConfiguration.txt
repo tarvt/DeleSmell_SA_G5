@@ -1,0 +1,632 @@
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+protected void checkEntitySizeLimits(int sizeOfEntity,int delta,boolean isPE){
+
+  fTotalEntitySize+=delta;
+
+  if (fTotalEntitySize > TOTAL_ENTITY_SIZE_LIMIT_SYSTEM_VALUE) {
+
+    fErrorReporter.reportError(XMLMessageFormatter.XML_DOMAIN,"TotalEntitySizeLimitExceeded",new Object[]{new Integer(TOTAL_ENTITY_SIZE_LIMIT_SYSTEM_VALUE)},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+  }
+
+  if (isPE) {
+
+    if (sizeOfEntity > MAX_PARAMETER_ENTITY_SIZE_LIMIT_SYSTEM_VALUE) {
+
+      fErrorReporter.reportError(XMLMessageFormatter.XML_DOMAIN,"MaxParameterEntitySizeLimitExceeded",new Object[]{new Integer(MAX_PARAMETER_ENTITY_SIZE_LIMIT_SYSTEM_VALUE)},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+    }
+
+  }
+
+ else   if (sizeOfEntity > MAX_GENERAL_ENTITY_SIZE_LIMIT_SYSTEM_VALUE) {
+
+    fErrorReporter.reportError(XMLMessageFormatter.XML_DOMAIN,"MaxGeneralEntitySizeLimitExceeded",new Object[]{new Integer(MAX_GENERAL_ENTITY_SIZE_LIMIT_SYSTEM_VALUE)},XMLErrorReporter.SEVERITY_FATAL_ERROR);
+
+  }
+
+}
+
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+private void configurePipelineCommon(boolean isXML10){
+
+  if (fSecurityManager != null) {
+
+    fTotalEntitySize=0;
+
+    if (fInternalEntityMonitor == null) {
+
+      fInternalEntityMonitor=new InternalEntityMonitor();
+
+    }
+
+    final XMLDTDScanner dtdScanner;
+
+    final XMLDTDProcessor dtdProcessor;
+
+    if (isXML10) {
+
+      dtdScanner=fDTDScanner;
+
+      dtdProcessor=fDTDProcessor;
+
+    }
+
+ else {
+
+      dtdScanner=fXML11DTDScanner;
+
+      dtdProcessor=fXML11DTDProcessor;
+
+    }
+
+    dtdScanner.setDTDHandler(fInternalEntityMonitor);
+
+    fInternalEntityMonitor.setDTDSource(dtdScanner);
+
+    fInternalEntityMonitor.setDTDHandler(dtdProcessor);
+
+    dtdProcessor.setDTDSource(fInternalEntityMonitor);
+
+  }
+
+}
+
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+private boolean getPropertyValue(String propertyName,boolean defaultValue){
+
+  try {
+
+    String propertyValue=SecuritySupport.getSystemProperty(propertyName);
+
+    if (propertyValue != null && propertyValue.length() > 0) {
+
+      if (DEBUG) {
+
+        debugPrintln("found system property \"" + propertyName + "\", value="+ propertyValue);
+
+      }
+
+      final boolean booleanValue=Boolean.valueOf(propertyValue).booleanValue();
+
+      fLimitSpecified=true;
+
+      return booleanValue;
+
+    }
+
+  }
+
+ catch (  VirtualMachineError vme) {
+
+    throw vme;
+
+  }
+
+catch (  ThreadDeath td) {
+
+    throw td;
+
+  }
+
+catch (  Throwable e) {
+
+    if (DEBUG) {
+
+      debugPrintln(e.getClass().getName() + ": " + e.getMessage());
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+  try {
+
+    boolean fExists=false;
+
+    File f=null;
+
+    try {
+
+      String javah=SecuritySupport.getSystemProperty("java.home");
+
+      String configFile=javah + File.separator + "lib"+ File.separator+ "jaxp.properties";
+
+      f=new File(configFile);
+
+      fExists=SecuritySupport.getFileExists(f);
+
+    }
+
+ catch (    SecurityException se) {
+
+      lastModified=-1;
+
+      jaxpProperties=null;
+
+    }
+
+synchronized (SecureProcessingConfiguration.class) {
+
+      boolean runBlock=false;
+
+      FileInputStream fis=null;
+
+      try {
+
+        if (lastModified >= 0) {
+
+          if ((fExists) && (lastModified < (lastModified=SecuritySupport.getLastModified(f)))) {
+
+            runBlock=true;
+
+          }
+
+ else {
+
+            if (!fExists) {
+
+              lastModified=-1;
+
+              jaxpProperties=null;
+
+            }
+
+          }
+
+        }
+
+ else {
+
+          if (fExists) {
+
+            runBlock=true;
+
+            lastModified=SecuritySupport.getLastModified(f);
+
+          }
+
+        }
+
+        if (runBlock == true) {
+
+          jaxpProperties=new Properties();
+
+          fis=SecuritySupport.getFileInputStream(f);
+
+          jaxpProperties.load(fis);
+
+        }
+
+      }
+
+ catch (      Exception x) {
+
+        lastModified=-1;
+
+        jaxpProperties=null;
+
+      }
+
+ finally {
+
+        if (fis != null) {
+
+          try {
+
+            fis.close();
+
+          }
+
+ catch (          IOException exc) {
+
+          }
+
+        }
+
+      }
+
+    }
+
+    if (jaxpProperties != null) {
+
+      String propertyValue=jaxpProperties.getProperty(propertyName);
+
+      if (propertyValue != null && propertyValue.length() > 0) {
+
+        if (DEBUG) {
+
+          debugPrintln("found \"" + propertyName + "\" in jaxp.properties, value="+ propertyValue);
+
+        }
+
+        final boolean booleanValue=Boolean.valueOf(propertyValue).booleanValue();
+
+        fLimitSpecified=true;
+
+        return booleanValue;
+
+      }
+
+    }
+
+  }
+
+ catch (  VirtualMachineError vme) {
+
+    throw vme;
+
+  }
+
+catch (  ThreadDeath td) {
+
+    throw td;
+
+  }
+
+catch (  Throwable e) {
+
+    if (DEBUG) {
+
+      debugPrintln(e.getClass().getName() + ": " + e.getMessage());
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+  return defaultValue;
+
+}
+
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+private int getPropertyValue(String propertyName,int defaultValue){
+
+  try {
+
+    String propertyValue=SecuritySupport.getSystemProperty(propertyName);
+
+    if (propertyValue != null && propertyValue.length() > 0) {
+
+      if (DEBUG) {
+
+        debugPrintln("found system property \"" + propertyName + "\", value="+ propertyValue);
+
+      }
+
+      final int intValue=Integer.parseInt(propertyValue);
+
+      fLimitSpecified=true;
+
+      if (intValue > 0) {
+
+        return intValue;
+
+      }
+
+      return Integer.MAX_VALUE;
+
+    }
+
+  }
+
+ catch (  VirtualMachineError vme) {
+
+    throw vme;
+
+  }
+
+catch (  ThreadDeath td) {
+
+    throw td;
+
+  }
+
+catch (  Throwable e) {
+
+    if (DEBUG) {
+
+      debugPrintln(e.getClass().getName() + ": " + e.getMessage());
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+  try {
+
+    boolean fExists=false;
+
+    File f=null;
+
+    try {
+
+      String javah=SecuritySupport.getSystemProperty("java.home");
+
+      String configFile=javah + File.separator + "lib"+ File.separator+ "jaxp.properties";
+
+      f=new File(configFile);
+
+      fExists=SecuritySupport.getFileExists(f);
+
+    }
+
+ catch (    SecurityException se) {
+
+      lastModified=-1;
+
+      jaxpProperties=null;
+
+    }
+
+synchronized (SecureProcessingConfiguration.class) {
+
+      boolean runBlock=false;
+
+      FileInputStream fis=null;
+
+      try {
+
+        if (lastModified >= 0) {
+
+          if ((fExists) && (lastModified < (lastModified=SecuritySupport.getLastModified(f)))) {
+
+            runBlock=true;
+
+          }
+
+ else {
+
+            if (!fExists) {
+
+              lastModified=-1;
+
+              jaxpProperties=null;
+
+            }
+
+          }
+
+        }
+
+ else {
+
+          if (fExists) {
+
+            runBlock=true;
+
+            lastModified=SecuritySupport.getLastModified(f);
+
+          }
+
+        }
+
+        if (runBlock == true) {
+
+          jaxpProperties=new Properties();
+
+          fis=SecuritySupport.getFileInputStream(f);
+
+          jaxpProperties.load(fis);
+
+        }
+
+      }
+
+ catch (      Exception x) {
+
+        lastModified=-1;
+
+        jaxpProperties=null;
+
+      }
+
+ finally {
+
+        if (fis != null) {
+
+          try {
+
+            fis.close();
+
+          }
+
+ catch (          IOException exc) {
+
+          }
+
+        }
+
+      }
+
+    }
+
+    if (jaxpProperties != null) {
+
+      String propertyValue=jaxpProperties.getProperty(propertyName);
+
+      if (propertyValue != null && propertyValue.length() > 0) {
+
+        if (DEBUG) {
+
+          debugPrintln("found \"" + propertyName + "\" in jaxp.properties, value="+ propertyValue);
+
+        }
+
+        final int intValue=Integer.parseInt(propertyValue);
+
+        fLimitSpecified=true;
+
+        if (intValue > 0) {
+
+          return intValue;
+
+        }
+
+        return Integer.MAX_VALUE;
+
+      }
+
+    }
+
+  }
+
+ catch (  VirtualMachineError vme) {
+
+    throw vme;
+
+  }
+
+catch (  ThreadDeath td) {
+
+    throw td;
+
+  }
+
+catch (  Throwable e) {
+
+    if (DEBUG) {
+
+      debugPrintln(e.getClass().getName() + ": " + e.getMessage());
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+  return defaultValue;
+
+}
+
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+/** 
+
+ * Default constructor. 
+
+ */
+
+public SecureProcessingConfiguration(){
+
+  this(null,null,null);
+
+}
+
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+/** 
+
+ * Constructs a parser configuration using the specified symbol table. 
+
+ * @param symbolTable The symbol table to use.
+
+ */
+
+public SecureProcessingConfiguration(SymbolTable symbolTable){
+
+  this(symbolTable,null,null);
+
+}
+
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+/** 
+
+ * Constructs a parser configuration using the specified symbol table and grammar pool. <p>
+
+ * @param symbolTable The symbol table to use.
+
+ * @param grammarPool The grammar pool to use.
+
+ */
+
+public SecureProcessingConfiguration(SymbolTable symbolTable,XMLGrammarPool grammarPool){
+
+  this(symbolTable,grammarPool,null);
+
+}
+
+Location: SecureProcessingConfiguration.java
+
+Content: 
+
+/** 
+
+ * Constructs a parser configuration using the specified symbol table, grammar pool, and parent settings. <p>
+
+ * @param symbolTable    The symbol table to use.
+
+ * @param grammarPool    The grammar pool to use.
+
+ * @param parentSettings The parent settings.
+
+ */
+
+public SecureProcessingConfiguration(SymbolTable symbolTable,XMLGrammarPool grammarPool,XMLComponentManager parentSettings){
+
+  super(symbolTable,grammarPool,parentSettings);
+
+  fJavaSecurityManagerEnabled=(System.getSecurityManager() != null);
+
+  ENTITY_EXPANSION_LIMIT_SYSTEM_VALUE=getPropertyValue(ENTITY_EXPANSION_LIMIT_PROPERTY_NAME,ENTITY_EXPANSION_LIMIT_DEFAULT_VALUE);
+
+  MAX_OCCUR_LIMIT_SYSTEM_VALUE=getPropertyValue(MAX_OCCUR_LIMIT_PROPERTY_NAME,MAX_OCCUR_LIMIT_DEFAULT_VALUE);
+
+  TOTAL_ENTITY_SIZE_LIMIT_SYSTEM_VALUE=getPropertyValue(TOTAL_ENTITY_SIZE_LIMIT_PROPERTY_NAME,TOTAL_ENTITY_SIZE_LIMIT_DEFAULT_VALUE);
+
+  MAX_GENERAL_ENTITY_SIZE_LIMIT_SYSTEM_VALUE=getPropertyValue(MAX_GENERAL_ENTITY_SIZE_LIMIT_PROPERTY_NAME,MAX_GENERAL_ENTITY_SIZE_LIMIT_DEFAULT_VALUE);
+
+  MAX_PARAMETER_ENTITY_SIZE_LIMIT_SYSTEM_VALUE=getPropertyValue(MAX_PARAMETER_ENTITY_SIZE_LIMIT_PROPERTY_NAME,MAX_PARAMETER_ENTITY_SIZE_LIMIT_DEFAULT_VALUE);
+
+  RESOLVE_EXTERNAL_ENTITIES_SYSTEM_VALUE=getPropertyValue(RESOLVE_EXTERNAL_ENTITIES_PROPERTY_NAME,RESOLVE_EXTERNAL_ENTITIES_DEFAULT_VALUE);
+
+  if (fJavaSecurityManagerEnabled || fLimitSpecified) {
+
+    if (!RESOLVE_EXTERNAL_ENTITIES_SYSTEM_VALUE) {
+
+      super.setFeature(EXTERNAL_GENERAL_ENTITIES,false);
+
+      super.setFeature(EXTERNAL_PARAMETER_ENTITIES,false);
+
+      super.setFeature(LOAD_EXTERNAL_DTD,false);
+
+    }
+
+    fSecurityManager=new org.apache.xerces.util.SecurityManager();
+
+    fSecurityManager.setEntityExpansionLimit(ENTITY_EXPANSION_LIMIT_SYSTEM_VALUE);
+
+    fSecurityManager.setMaxOccurNodeLimit(MAX_OCCUR_LIMIT_SYSTEM_VALUE);
+
+    super.setProperty(SECURITY_MANAGER_PROPERTY,fSecurityManager);
+
+  }
+
+  fExternalEntityMonitor=new ExternalEntityMonitor();
+
+  super.setProperty(ENTITY_RESOLVER_PROPERTY,fExternalEntityMonitor);
+
+}
+

@@ -1,0 +1,292 @@
+Location: Step.java
+
+Content: 
+
+/** 
+
+ * Returns the vector containing all predicates for this step.
+
+ */
+
+public void addPredicates(Vector predicates){
+
+  if (_predicates == null) {
+
+    _predicates=predicates;
+
+  }
+
+ else {
+
+    _predicates.addAll(predicates);
+
+  }
+
+}
+
+Location: Step.java
+
+Content: 
+
+/** 
+
+ * Returns 'true' if this step has a parent pattern. This method will return 'false' if this step occurs on its own under an element like <xsl:for-each> or <xsl:apply-templates>.
+
+ */
+
+private boolean hasParentPattern(){
+
+  final SyntaxTreeNode parent=getParent();
+
+  return (parent instanceof ParentPattern || parent instanceof ParentLocationPath || parent instanceof UnionPathExpr|| parent instanceof FilterParentPath);
+
+}
+
+Location: Step.java
+
+Content: 
+
+/** 
+
+ * Returns 'true' if this step has any predicates
+
+ */
+
+private boolean hasPredicates(){
+
+  return _predicates != null && _predicates.size() > 0;
+
+}
+
+Location: Step.java
+
+Content: 
+
+/** 
+
+ * True if this step is the abbreviated step '..'
+
+ */
+
+public boolean isAbbreviatedDDot(){
+
+  return _nodeType == NodeTest.ANODE && _axis == Axis.PARENT;
+
+}
+
+Location: Step.java
+
+Content: 
+
+/** 
+
+ * True if this step is the abbreviated step '.'
+
+ */
+
+public boolean isAbbreviatedDot(){
+
+  return _nodeType == NodeTest.ANODE && _axis == Axis.SELF;
+
+}
+
+Location: Step.java
+
+Content: 
+
+/** 
+
+ * Returns 'true' if this step is used within a predicate
+
+ */
+
+private boolean isPredicate(){
+
+  SyntaxTreeNode parent=this;
+
+  while (parent != null) {
+
+    parent=parent.getParent();
+
+    if (parent instanceof Predicate)     return true;
+
+  }
+
+  return false;
+
+}
+
+Location: Step.java
+
+Content: 
+
+public Step(int axis,int nodeType,Vector predicates){
+
+  _axis=axis;
+
+  _nodeType=nodeType;
+
+  _predicates=predicates;
+
+}
+
+Location: Step.java
+
+Content: 
+
+/** 
+
+ * Translate a sequence of predicates. Each predicate is translated by constructing an instance of <code>CurrentNodeListIterator</code> which is initialized from another iterator (recursive call), a filter and a closure (call to translate on the predicate) and "this".
+
+ */
+
+public void translatePredicates(ClassGenerator classGen,MethodGenerator methodGen){
+
+  final ConstantPoolGen cpg=classGen.getConstantPool();
+
+  final InstructionList il=methodGen.getInstructionList();
+
+  int idx=0;
+
+  if (_predicates.size() == 0) {
+
+    translate(classGen,methodGen);
+
+  }
+
+ else {
+
+    final Predicate predicate=(Predicate)_predicates.lastElement();
+
+    _predicates.remove(predicate);
+
+    if (predicate.isNodeValueTest()) {
+
+      Step step=predicate.getStep();
+
+      il.append(methodGen.loadDOM());
+
+      if (step.isAbbreviatedDot()) {
+
+        translate(classGen,methodGen);
+
+        il.append(new ICONST(DOM.RETURN_CURRENT));
+
+      }
+
+ else {
+
+        ParentLocationPath path=new ParentLocationPath(this,step);
+
+        try {
+
+          path.typeCheck(getParser().getSymbolTable());
+
+        }
+
+ catch (        TypeCheckError e) {
+
+        }
+
+        path.translate(classGen,methodGen);
+
+        il.append(new ICONST(DOM.RETURN_PARENT));
+
+      }
+
+      predicate.translate(classGen,methodGen);
+
+      idx=cpg.addInterfaceMethodref(DOM_INTF,GET_NODE_VALUE_ITERATOR,GET_NODE_VALUE_ITERATOR_SIG);
+
+      il.append(new INVOKEINTERFACE(idx,5));
+
+    }
+
+ else     if (predicate.isNthDescendant()) {
+
+      il.append(methodGen.loadDOM());
+
+      il.append(new ICONST(predicate.getPosType()));
+
+      predicate.translate(classGen,methodGen);
+
+      il.append(new ICONST(0));
+
+      idx=cpg.addInterfaceMethodref(DOM_INTF,"getNthDescendant","(IIZ)" + NODE_ITERATOR_SIG);
+
+      il.append(new INVOKEINTERFACE(idx,4));
+
+    }
+
+ else     if (predicate.isNthPositionFilter()) {
+
+      idx=cpg.addMethodref(NTH_ITERATOR_CLASS,"<init>","(" + NODE_ITERATOR_SIG + "I)V");
+
+      translatePredicates(classGen,methodGen);
+
+      LocalVariableGen iteratorTemp=methodGen.addLocalVariable("step_tmp1",Util.getJCRefType(NODE_ITERATOR_SIG),null,null);
+
+      iteratorTemp.setStart(il.append(new ASTORE(iteratorTemp.getIndex())));
+
+      predicate.translate(classGen,methodGen);
+
+      LocalVariableGen predicateValueTemp=methodGen.addLocalVariable("step_tmp2",Util.getJCRefType("I"),null,null);
+
+      predicateValueTemp.setStart(il.append(new ISTORE(predicateValueTemp.getIndex())));
+
+      il.append(new NEW(cpg.addClass(NTH_ITERATOR_CLASS)));
+
+      il.append(DUP);
+
+      iteratorTemp.setEnd(il.append(new ALOAD(iteratorTemp.getIndex())));
+
+      predicateValueTemp.setEnd(il.append(new ILOAD(predicateValueTemp.getIndex())));
+
+      il.append(new INVOKESPECIAL(idx));
+
+    }
+
+ else {
+
+      idx=cpg.addMethodref(CURRENT_NODE_LIST_ITERATOR,"<init>","(" + NODE_ITERATOR_SIG + CURRENT_NODE_LIST_FILTER_SIG+ NODE_SIG+ TRANSLET_SIG+ ")V");
+
+      translatePredicates(classGen,methodGen);
+
+      LocalVariableGen iteratorTemp=methodGen.addLocalVariable("step_tmp1",Util.getJCRefType(NODE_ITERATOR_SIG),null,null);
+
+      iteratorTemp.setStart(il.append(new ASTORE(iteratorTemp.getIndex())));
+
+      predicate.translateFilter(classGen,methodGen);
+
+      LocalVariableGen filterTemp=methodGen.addLocalVariable("step_tmp2",Util.getJCRefType(CURRENT_NODE_LIST_FILTER_SIG),null,null);
+
+      filterTemp.setStart(il.append(new ASTORE(filterTemp.getIndex())));
+
+      il.append(new NEW(cpg.addClass(CURRENT_NODE_LIST_ITERATOR)));
+
+      il.append(DUP);
+
+      iteratorTemp.setEnd(il.append(new ALOAD(iteratorTemp.getIndex())));
+
+      filterTemp.setEnd(il.append(new ALOAD(filterTemp.getIndex())));
+
+      il.append(methodGen.loadCurrentNode());
+
+      il.append(classGen.loadTranslet());
+
+      if (classGen.isExternal()) {
+
+        final String className=classGen.getClassName();
+
+        il.append(new CHECKCAST(cpg.addClass(className)));
+
+      }
+
+      il.append(new INVOKESPECIAL(idx));
+
+    }
+
+  }
+
+}
+

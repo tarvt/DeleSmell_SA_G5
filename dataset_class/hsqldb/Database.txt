@@ -1,0 +1,824 @@
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Clears the data structures, making them elligible for garbage collection.
+
+ */
+
+void clearStructures(){
+
+  if (schemaManager != null) {
+
+    schemaManager.release();
+
+  }
+
+  if (checkpointRunner != null) {
+
+    checkpointRunner.stop();
+
+  }
+
+  if (timeoutRunner != null) {
+
+    timeoutRunner.stop();
+
+  }
+
+  lobManager=null;
+
+  granteeManager=null;
+
+  userManager=null;
+
+  nameManager=null;
+
+  schemaManager=null;
+
+  sessionManager=null;
+
+  dbInfo=null;
+
+  checkpointRunner=null;
+
+  timeoutRunner=null;
+
+}
+
+Location: Database.java
+
+Content: 
+
+void closeIfLast(){
+
+  if (sessionManager.isEmpty() && dbState == DATABASE_ONLINE) {
+
+    if (shutdownOnNoConnection) {
+
+      try {
+
+        close(CLOSEMODE_NORMAL);
+
+      }
+
+ catch (      HsqlException e) {
+
+      }
+
+    }
+
+ else {
+
+      logger.synchLog();
+
+    }
+
+  }
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Constructs a new Session that operates within (is connected to) the context of this Database object. <p> If successful, the new Session object initially operates on behalf of the user specified by the supplied user name. Throws if username or password is invalid.
+
+ */
+
+Session connect(String username,String password,String zoneString,int timeZoneSeconds){
+
+  readLock.lock();
+
+  try {
+
+    if (getState() != DATABASE_ONLINE) {
+
+      throw Error.error(ErrorCode.X_08001);
+
+    }
+
+    if (username.equalsIgnoreCase("SA")) {
+
+      username="SA";
+
+    }
+
+    User user=userManager.getUser(username,password);
+
+    Session session=sessionManager.newSession(this,user,databaseReadOnly,true,zoneString,timeZoneSeconds);
+
+    return session;
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void createObjectStructures(){
+
+  nameManager=new HsqlNameManager(this);
+
+  databaseUniqueName=nameManager.newHsqlName("",false,SchemaObject.DATABASE);
+
+  lobManager=new LobManager(this);
+
+  granteeManager=new GranteeManager(this);
+
+  userManager=new UserManager(this);
+
+  schemaManager=new SchemaManager(this);
+
+  persistentStoreCollection=new PersistentStoreCollectionDatabase(this);
+
+  isReferentialIntegrity=true;
+
+  sessionManager=new SessionManager(this);
+
+  collation=Collation.newDatabaseInstance();
+
+  dbInfo=DatabaseInformation.newDatabaseInformation(this);
+
+  txManager=new TransactionManager2PL(this);
+
+  lobManager.createSchema();
+
+  sessionManager.getSysLobSession().setSchema(SqlInvariants.LOBS_SCHEMA);
+
+  schemaManager.setSchemaChangeTimestamp();
+
+  schemaManager.createSystemTables();
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Constructs a new Database object.
+
+ * @param type is the type of the database: "mem:", "file:", "res:"
+
+ * @param path is the given path to the database files
+
+ * @param canonicalPath is the canonical path
+
+ * @param props property overrides placed on the connect URL
+
+ * @exception HsqlException if the specified name and pathcombination is illegal or unavailable, or the database files the name and path resolves to are in use by another process
+
+ */
+
+Database(DatabaseType type,String path,String canonicalPath,HsqlProperties props){
+
+  setState(Database.DATABASE_SHUTDOWN);
+
+  this.databaseType=type;
+
+  this.path=path;
+
+  this.canonicalPath=canonicalPath;
+
+  this.urlProperties=props;
+
+  if (databaseType == DatabaseType.DB_RES) {
+
+    filesInJar=true;
+
+    filesReadOnly=true;
+
+  }
+
+  logger=new Logger(this);
+
+  shutdownOnNoConnection=urlProperties.isPropertyTrue(HsqlDatabaseProperties.url_shutdown);
+
+  recoveryMode=urlProperties.getIntegerProperty(HsqlDatabaseProperties.url_recover,0);
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Returns the GranteeManager for this Database.
+
+ */
+
+public GranteeManager getGranteeManager(){
+
+  return granteeManager;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public int getResultMaxMemoryRows(){
+
+  return resultMaxMemoryRows;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Returns the schema and authorisation statements for the database.
+
+ */
+
+public Result getScript(boolean indexRoots){
+
+  Result r=Result.newSingleColumnResult("COMMAND");
+
+  String[] list=logger.getPropertiesSQL(indexRoots);
+
+  r.addRows(list);
+
+  list=getSettingsSQL();
+
+  r.addRows(list);
+
+  list=granteeManager.getSQL();
+
+  r.addRows(list);
+
+  list=schemaManager.getSQLArray();
+
+  r.addRows(list);
+
+  list=schemaManager.getCommentsSQL();
+
+  r.addRows(list);
+
+  list=schemaManager.getTableSpaceSQL();
+
+  r.addRows(list);
+
+  if (indexRoots) {
+
+    list=schemaManager.getIndexRootsSQL();
+
+    r.addRows(list);
+
+  }
+
+  list=schemaManager.getTablePropsSQL(!indexRoots);
+
+  r.addRows(list);
+
+  list=userManager.getAuthenticationSQL();
+
+  r.addRows(list);
+
+  list=userManager.getInitialSchemaSQL();
+
+  r.addRows(list);
+
+  list=granteeManager.getRightsSQL();
+
+  r.addRows(list);
+
+  return r;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Returns the SessionManager for the database.
+
+ */
+
+public SessionManager getSessionManager(){
+
+  return sessionManager;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public String[] getSettingsSQL(){
+
+  HsqlArrayList list=new HsqlArrayList();
+
+  StringBuffer sb=new StringBuffer();
+
+  if (!getCatalogName().name.equals(SqlInvariants.DEFAULT_CATALOG_NAME)) {
+
+    String name=getCatalogName().statementName;
+
+    sb.append("ALTER CATALOG PUBLIC RENAME TO ").append(name);
+
+    list.add(sb.toString());
+
+    sb.setLength(0);
+
+  }
+
+  if (!collation.isDefaultCollation()) {
+
+    list.add(collation.getDatabaseCollationSQL());
+
+  }
+
+  HashMappedList lobTables=schemaManager.getTables(SqlInvariants.LOBS_SCHEMA);
+
+  for (int i=0; i < lobTables.size(); i++) {
+
+    Table table=(Table)lobTables.get(i);
+
+    if (table.isCached()) {
+
+      sb.append(Tokens.T_SET).append(' ').append(Tokens.T_TABLE);
+
+      sb.append(' ');
+
+      sb.append(table.getName().getSchemaQualifiedStatementName());
+
+      sb.append(' ').append(Tokens.T_TYPE).append(' ');
+
+      sb.append(Tokens.T_CACHED);
+
+      list.add(sb.toString());
+
+      sb.setLength(0);
+
+    }
+
+  }
+
+  String[] array=new String[list.size()];
+
+  list.toArray(array);
+
+  return array;
+
+}
+
+Location: Database.java
+
+Content: 
+
+String getStateString(){
+
+  int state=getState();
+
+switch (state) {
+
+case DATABASE_CLOSING:
+
+    return "DATABASE_CLOSING";
+
+case DATABASE_ONLINE:
+
+  return "DATABASE_ONLINE";
+
+case DATABASE_OPENING:
+
+return "DATABASE_OPENING";
+
+case DATABASE_SHUTDOWN:
+
+return "DATABASE_SHUTDOWN";
+
+default :
+
+return "UNKNOWN";
+
+}
+
+}
+
+Location: Database.java
+
+Content: 
+
+public TimeoutRunner getTimeoutRunner(){
+
+  return timeoutRunner;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public String getURI(){
+
+  return databaseType.value() + canonicalPath;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public HsqlProperties getURLProperties(){
+
+  return urlProperties;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Returns the UserManager for this Database.
+
+ */
+
+public UserManager getUserManager(){
+
+  return userManager;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Is this in filesInJar mode?
+
+ */
+
+public boolean isFilesInJar(){
+
+  return filesInJar;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Is this in filesReadOnly mode?
+
+ */
+
+public boolean isFilesReadOnly(){
+
+  return filesReadOnly;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Is referential integrity currently enforced?
+
+ */
+
+public boolean isReferentialIntegrity(){
+
+  return isReferentialIntegrity;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setAvgScale(int scale){
+
+  sqlAvgScale=scale;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setCharacterLiteral(boolean mode){
+
+  sqlCharLiteral=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setConcatNulls(boolean mode){
+
+  sqlConcatNulls=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setConvertTrunc(boolean mode){
+
+  sqlConvertTruncate=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setDoubleNaN(boolean mode){
+
+  sqlDoubleNaN=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * After this call all CACHED and TEXT tables will be set to read-only mode. Changes to MEMORY tables will NOT be stored or updated in the script file. This mode is intended for use with read-only media where data should not be persisted.
+
+ */
+
+public void setFilesReadOnly(){
+
+  filesReadOnly=true;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setLiveObject(boolean mode){
+
+  sqlLiveObject=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setLongVarIsLob(boolean mode){
+
+  sqlLongvarIsLob=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setNullsFirst(boolean mode){
+
+  sqlNullsFirst=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setNullsOrder(boolean mode){
+
+  sqlNullsOrder=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Puts this Database object in global read-only mode. After this call, all existing and future sessions are limited to read-only transactions. Any following attempts to update the state of the database will result in throwing an HsqlException.
+
+ */
+
+public void setReadOnly(){
+
+  databaseReadOnly=true;
+
+  filesReadOnly=true;
+
+}
+
+Location: Database.java
+
+Content: 
+
+/** 
+
+ * Sets the isReferentialIntegrity attribute.
+
+ */
+
+public void setReferentialIntegrity(boolean ref){
+
+  isReferentialIntegrity=ref;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setRegularNames(boolean mode){
+
+  sqlRegularNames=mode;
+
+  nameManager.setSqlRegularNames(mode);
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setRestrictExec(boolean mode){
+
+  sqlRestrictExec=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setResultMaxMemoryRows(int size){
+
+  resultMaxMemoryRows=size;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setStrictColumnSize(boolean mode){
+
+  sqlEnforceSize=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setStrictNames(boolean mode){
+
+  sqlEnforceNames=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setStrictReferences(boolean mode){
+
+  sqlEnforceRefs=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setStrictTDCD(boolean mode){
+
+  sqlEnforceTDCD=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setStrictTDCU(boolean mode){
+
+  sqlEnforceTDCU=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setStrictTypes(boolean mode){
+
+  sqlEnforceTypes=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setSyntaxDb2(boolean mode){
+
+  sqlSyntaxDb2=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setSyntaxMss(boolean mode){
+
+  sqlSyntaxMss=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setSyntaxMys(boolean mode){
+
+  sqlSyntaxMys=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setSyntaxOra(boolean mode){
+
+  sqlSyntaxOra=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setSyntaxPgs(boolean mode){
+
+  sqlSyntaxPgs=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setSysIndexNames(boolean mode){
+
+  sqlSysIndexNames=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setTranslateTTI(boolean mode){
+
+  sqlTranslateTTI=mode;
+
+}
+
+Location: Database.java
+
+Content: 
+
+public void setUniqueNulls(boolean mode){
+
+  sqlUniqueNulls=mode;
+
+}
+

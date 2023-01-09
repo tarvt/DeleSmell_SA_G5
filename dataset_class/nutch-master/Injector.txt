@@ -1,0 +1,206 @@
+Location: Injector.java
+
+Content: 
+
+public Injector(){
+
+}
+
+Location: Injector.java
+
+Content: 
+
+public Injector(Configuration conf){
+
+  setConf(conf);
+
+}
+
+Location: Injector.java
+
+Content: 
+
+public void inject(Path crawlDb,Path urlDir) throws IOException, ClassNotFoundException, InterruptedException {
+
+  inject(crawlDb,urlDir,false,false);
+
+}
+
+Location: Injector.java
+
+Content: 
+
+public void inject(Path crawlDb,Path urlDir,boolean overwrite,boolean update) throws IOException, ClassNotFoundException, InterruptedException {
+
+  inject(crawlDb,urlDir,overwrite,update,true,true,false);
+
+}
+
+Location: Injector.java
+
+Content: 
+
+public void inject(Path crawlDb,Path urlDir,boolean overwrite,boolean update,boolean normalize,boolean filter,boolean filterNormalizeAll) throws IOException, ClassNotFoundException, InterruptedException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("Injector: starting at {}",sdf.format(start));
+
+  LOG.info("Injector: crawlDb: {}",crawlDb);
+
+  LOG.info("Injector: urlDir: {}",urlDir);
+
+  LOG.info("Injector: Converting injected urls to crawl db entries.");
+
+  Configuration conf=getConf();
+
+  conf.setLong("injector.current.time",System.currentTimeMillis());
+
+  conf.setBoolean("db.injector.overwrite",overwrite);
+
+  conf.setBoolean("db.injector.update",update);
+
+  conf.setBoolean(CrawlDbFilter.URL_NORMALIZING,normalize);
+
+  conf.setBoolean(CrawlDbFilter.URL_FILTERING,filter);
+
+  conf.setBoolean(URL_FILTER_NORMALIZE_ALL,filterNormalizeAll);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  FileSystem fs=crawlDb.getFileSystem(conf);
+
+  Path current=new Path(crawlDb,CrawlDb.CURRENT_NAME);
+
+  if (!fs.exists(current))   fs.mkdirs(current);
+
+  Path tempCrawlDb=new Path(crawlDb,"crawldb-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Path lock=CrawlDb.lock(conf,crawlDb,false);
+
+  Job job=Job.getInstance(conf,"inject " + urlDir);
+
+  job.setJarByClass(Injector.class);
+
+  job.setMapperClass(InjectMapper.class);
+
+  job.setReducerClass(InjectReducer.class);
+
+  job.setOutputFormatClass(MapFileOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(CrawlDatum.class);
+
+  job.setSpeculativeExecution(false);
+
+  MultipleInputs.addInputPath(job,current,SequenceFileInputFormat.class);
+
+  FileStatus[] seedFiles=urlDir.getFileSystem(getConf()).listStatus(urlDir);
+
+  int numSeedFiles=0;
+
+  for (  FileStatus seedFile : seedFiles) {
+
+    if (seedFile.isFile()) {
+
+      MultipleInputs.addInputPath(job,seedFile.getPath(),KeyValueTextInputFormat.class);
+
+      numSeedFiles++;
+
+      LOG.info("Injecting seed URL file {}",seedFile.getPath());
+
+    }
+
+ else {
+
+      LOG.warn("Skipped non-file input in {}: {}",urlDir,seedFile.getPath());
+
+    }
+
+  }
+
+  if (numSeedFiles == 0) {
+
+    LOG.error("No seed files to inject found in {}",urlDir);
+
+    LockUtil.removeLockFile(fs,lock);
+
+    return;
+
+  }
+
+  FileOutputFormat.setOutputPath(job,tempCrawlDb);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Injector job did not succeed, job status: " + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      NutchJob.cleanupAfterFailure(tempCrawlDb,lock,fs);
+
+      throw new RuntimeException(message);
+
+    }
+
+    CrawlDb.install(job,crawlDb);
+
+    if (LOG.isInfoEnabled()) {
+
+      long urlsInjected=job.getCounters().findCounter("injector","urls_injected").getValue();
+
+      long urlsFiltered=job.getCounters().findCounter("injector","urls_filtered").getValue();
+
+      long urlsMerged=job.getCounters().findCounter("injector","urls_merged").getValue();
+
+      long urlsPurged404=job.getCounters().findCounter("injector","urls_purged_404").getValue();
+
+      long urlsPurgedFilter=job.getCounters().findCounter("injector","urls_purged_filter").getValue();
+
+      LOG.info("Injector: Total urls rejected by filters: " + urlsFiltered);
+
+      LOG.info("Injector: Total urls injected after normalization and filtering: " + urlsInjected);
+
+      LOG.info("Injector: Total urls injected but already in CrawlDb: " + urlsMerged);
+
+      LOG.info("Injector: Total new urls injected: " + (urlsInjected - urlsMerged));
+
+      if (filterNormalizeAll) {
+
+        LOG.info("Injector: Total urls removed from CrawlDb by filters: {}",urlsPurgedFilter);
+
+      }
+
+      if (conf.getBoolean(CrawlDb.CRAWLDB_PURGE_404,false)) {
+
+        LOG.info("Injector: Total urls with status gone removed from CrawlDb (db.update.purge.404): {}",urlsPurged404);
+
+      }
+
+      long end=System.currentTimeMillis();
+
+      LOG.info("Injector: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException|NullPointerException e) {
+
+    LOG.error("Injector job failed: {}",e.getMessage());
+
+    NutchJob.cleanupAfterFailure(tempCrawlDb,lock,fs);
+
+    throw e;
+
+  }
+
+}
+

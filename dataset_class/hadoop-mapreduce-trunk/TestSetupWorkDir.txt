@@ -1,0 +1,248 @@
+Location: TestSetupWorkDir.java
+
+Content: 
+
+void createEmptyDir(FileSystem fs,Path dir) throws IOException {
+
+  if (fs.exists(dir)) {
+
+    fs.delete(dir,true);
+
+  }
+
+  if (!fs.mkdirs(dir)) {
+
+    throw new IOException("Unable to create directory " + dir);
+
+  }
+
+}
+
+Location: TestSetupWorkDir.java
+
+Content: 
+
+/** 
+
+ * Create a file 
+
+ * @param fs filesystem
+
+ * @param dir directory location of the file
+
+ * @param fileName filename
+
+ * @throws IOException
+
+ */
+
+static void createFile(FileSystem fs,Path dir,String fileName) throws IOException {
+
+  Path p=new Path(dir,fileName);
+
+  DataOutputStream out=fs.create(p);
+
+  out.writeBytes("dummy input");
+
+  out.close();
+
+}
+
+Location: TestSetupWorkDir.java
+
+Content: 
+
+static void createSubDirAndFile(FileSystem fs,Path dir) throws IOException {
+
+  Path subDir=new Path(dir,"subDir");
+
+  fs.mkdirs(subDir);
+
+  createFile(fs,dir,"file");
+
+}
+
+Location: TestSetupWorkDir.java
+
+Content: 
+
+/** 
+
+ * Creates 1 subdirectory and 1 file under dir2. Creates 1 subdir, 1 file, 1 symlink to a dir and a symlink to a file under dir1. Creates dir1/subDir, dir1/file, dir2/subDir, dir2/file, dir1/symlinkSubDir->dir2/subDir, dir1/symlinkFile->dir2/file.
+
+ */
+
+static void createSubDirsAndSymLinks(JobConf jobConf,Path dir1,Path dir2) throws IOException {
+
+  FileSystem fs=FileSystem.getLocal(jobConf);
+
+  createSubDirAndFile(fs,dir1);
+
+  createSubDirAndFile(fs,dir2);
+
+  FileUtil.symLink(dir2 + "/subDir",dir1 + "/symlinkSubDir");
+
+  FileUtil.symLink(dir2 + "/file",dir1 + "/symlinkFile");
+
+}
+
+Location: TestSetupWorkDir.java
+
+Content: 
+
+/** 
+
+ * Validates if TaskRunner.setupWorkDir() is properly cleaning up the contents of workDir and creating tmp dir under it (even though workDir contains symlinks to files/directories).
+
+ */
+
+public void testSetupWorkDir() throws IOException {
+
+  Path rootDir=new Path(System.getProperty("test.build.data","/tmp"),"testSetupWorkDir");
+
+  Path myWorkDir=new Path(rootDir,"./work");
+
+  Path myTargetDir=new Path(rootDir,"./tmp");
+
+  JobConf jConf=new JobConf();
+
+  FileSystem fs=FileSystem.getLocal(jConf);
+
+  createEmptyDir(fs,myWorkDir);
+
+  createEmptyDir(fs,myTargetDir);
+
+  createSubDirsAndSymLinks(jConf,myWorkDir,myTargetDir);
+
+  assertTrue("Did not create symlinks/files/dirs properly. Check " + myWorkDir + " and "+ myTargetDir,(fs.listStatus(myWorkDir).length == 4) && (fs.listStatus(myTargetDir).length == 2));
+
+  jConf.set(MRJobConfig.CACHE_SYMLINK,"no");
+
+  TaskRunner.setupWorkDir(jConf,new File(myWorkDir.toUri().getPath()));
+
+  assertTrue(myWorkDir + " is not cleaned up properly.",fs.exists(myWorkDir) && (fs.listStatus(myWorkDir).length == 1));
+
+  assertTrue(fs.listStatus(myWorkDir)[0].getPath().toUri().getPath().toString().equals(myWorkDir.toString() + "/tmp"));
+
+  assertTrue("Dir " + myTargetDir + " seem to be modified.",fs.exists(myTargetDir) && (fs.listStatus(myTargetDir).length == 2));
+
+  fs.delete(rootDir,true);
+
+}
+
+Location: TestSetupWorkDir.java
+
+Content: 
+
+/** 
+
+ * Invalid distributed cache files errors out with IOException
+
+ * @throws IOException , URISyntaxException 
+
+ */
+
+public void testSetupWorkDirDistCacheSymlinkInvalid() throws IOException, URISyntaxException {
+
+  JobConf jConf=new JobConf();
+
+  FileSystem fs=FileSystem.getLocal(jConf);
+
+  Path rootDir=new Path(System.getProperty("test.build.data","/tmp"),"testSetupWorkDirSymlinkFailure");
+
+  Path myTargetDir=new Path(rootDir,"./tmp");
+
+  createEmptyDir(fs,myTargetDir);
+
+  createFile(fs,myTargetDir,"cacheFile.txt");
+
+  TrackerDistributedCacheManager.setLocalFiles(jConf,(myTargetDir.toString() + Path.SEPARATOR + "cacheFile.txt"));
+
+  assertTrue("Did not create cache file in " + myTargetDir,(fs.listStatus(myTargetDir).length == 1));
+
+  jConf.set(MRJobConfig.CACHE_SYMLINK,"yes");
+
+  Path myWorkDir=new Path(rootDir,"./work");
+
+  createEmptyDir(fs,myWorkDir);
+
+  DistributedCache.addCacheFile(new URI(myWorkDir.toString() + Path.SEPARATOR + "file.txt#invalid/abc"),jConf);
+
+  try {
+
+    TaskRunner.setupWorkDir(jConf,new File(myWorkDir.toUri().getPath()));
+
+    assertFalse("TaskRunner.setupWorkDir() did not throw exception when" + " given invalid cache file",true);
+
+  }
+
+ catch (  IOException e) {
+
+    assertTrue(myWorkDir + " does not have cache symlink.",fs.exists(myWorkDir) && (fs.listStatus(myWorkDir).length == 0));
+
+  }
+
+  fs.delete(rootDir,true);
+
+}
+
+Location: TestSetupWorkDir.java
+
+Content: 
+
+/** 
+
+ * Validates distributed cache symlink getting created fine
+
+ * @throws IOException , URISyntaxException 
+
+ */
+
+public void testSetupWorkDirDistCacheSymlinkValid() throws IOException, URISyntaxException {
+
+  JobConf jConf=new JobConf();
+
+  FileSystem fs=FileSystem.getLocal(jConf);
+
+  Path rootDir=new Path(System.getProperty("test.build.data","/tmp"),"testSetupWorkDirSymlinkFailure");
+
+  Path myTargetDir=new Path(rootDir,"./tmp");
+
+  createEmptyDir(fs,myTargetDir);
+
+  createFile(fs,myTargetDir,"cacheFile.txt");
+
+  TrackerDistributedCacheManager.setLocalFiles(jConf,(myTargetDir.toString() + Path.SEPARATOR + "cacheFile.txt"));
+
+  assertTrue("Did not create cache file in " + myTargetDir,(fs.listStatus(myTargetDir).length == 1));
+
+  jConf.set(MRJobConfig.CACHE_SYMLINK,"yes");
+
+  Path myWorkDir=new Path(rootDir,"./work");
+
+  createEmptyDir(fs,myWorkDir);
+
+  DistributedCache.addCacheFile(new URI(myWorkDir.toString() + Path.SEPARATOR + "file.txt#valid"),jConf);
+
+  TaskRunner.setupWorkDir(jConf,new File(myWorkDir.toUri().getPath()));
+
+  assertTrue(myWorkDir + " does not have cache symlink.",fs.exists(myWorkDir) && (fs.listStatus(myWorkDir).length == 2));
+
+  boolean foundValid=false;
+
+  for (  FileStatus fstat : fs.listStatus(myWorkDir)) {
+
+    if (fstat.getPath().toUri() != null && fstat.getPath().toUri().getPath().toString().equals(myWorkDir.toString() + Path.SEPARATOR + "valid")) {
+
+      foundValid=true;
+
+    }
+
+  }
+
+  assertTrue("Valid symlink not created",foundValid);
+
+  fs.delete(rootDir,true);
+
+}
+

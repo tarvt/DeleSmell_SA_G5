@@ -1,0 +1,482 @@
+Location: GridMixRunner.java
+
+Content: 
+
+private void addAllJobs(GridMixJob job) throws IOException {
+
+  for (  Size size : EnumSet.allOf(Size.class)) {
+
+    addJobs(job,size);
+
+  }
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+public void addjobs() throws IOException {
+
+  for (  GridMixJob jobtype : EnumSet.allOf(GridMixJob.class)) {
+
+    addAllJobs(jobtype);
+
+  }
+
+  System.out.println("total " + gridmix.getWaitingJobList().size() + " jobs");
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private void addJobs(GridMixJob job,Size size) throws IOException {
+
+  final String prefix=String.format("%s.%sJobs",job.getName(),size);
+
+  int[] numJobs=getInts(config,prefix + ".numOfJobs",size.defaultNumJobs());
+
+  int[] numReduces=getInts(config,prefix + ".numOfReduces",size.defaultNumReducers());
+
+  if (numJobs.length != numReduces.length) {
+
+    throw new IOException("Configuration error: " + prefix + ".numOfJobs must match "+ prefix+ ".numOfReduces");
+
+  }
+
+  int numMapoutputCompressed=config.getInt(prefix + ".numOfMapoutputCompressed",0);
+
+  int numOutputCompressed=config.getInt(prefix + ".numOfOutputCompressed",size.defaultNumJobs());
+
+  int totalJobs=0;
+
+  for (  int nJob : numJobs) {
+
+    totalJobs+=nJob;
+
+  }
+
+  int currentIndex=0;
+
+  for (int i=0; i < numJobs.length; ++i) {
+
+    for (int j=0; j < numJobs[i]; ++j) {
+
+      boolean mapoutputComp=select(totalJobs,numMapoutputCompressed,currentIndex);
+
+      boolean outputComp=select(totalJobs,numOutputCompressed,currentIndex);
+
+      job.addJob(numReduces[i],mapoutputComp,outputComp,size,gridmix);
+
+      ++numOfJobs;
+
+      ++currentIndex;
+
+    }
+
+  }
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private static String addTSSuffix(String s){
+
+  Date date=Calendar.getInstance().getTime();
+
+  String ts=String.valueOf(date.getTime());
+
+  return s + "_" + ts;
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private static void clearDir(String dir){
+
+  try {
+
+    Path outfile=new Path(dir);
+
+    fs.delete(outfile,true);
+
+  }
+
+ catch (  IOException ex) {
+
+    ex.printStackTrace();
+
+    System.out.println("delete file error:");
+
+    System.out.println(ex.toString());
+
+  }
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private static String getInputDirsFor(String jobType,String defaultIndir){
+
+  String inputFile[]=config.getStrings(jobType,defaultIndir);
+
+  StringBuffer indirBuffer=new StringBuffer();
+
+  for (int i=0; i < inputFile.length; i++) {
+
+    indirBuffer=indirBuffer.append(inputFile[i]).append(",");
+
+  }
+
+  return indirBuffer.substring(0,indirBuffer.length() - 1);
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private static int[] getInts(Configuration conf,String name,int defaultV){
+
+  String[] vals=conf.getStrings(name,String.valueOf(defaultV));
+
+  int[] results=new int[vals.length];
+
+  for (int i=0; i < vals.length; ++i) {
+
+    results[i]=Integer.parseInt(vals[i]);
+
+  }
+
+  return results;
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private TreeMap<String,String> getStatForJob(ControlledJob cjob){
+
+  TreeMap<String,String> retv=new TreeMap<String,String>();
+
+  JobID mapreduceID=cjob.getMapredJobID();
+
+  Job job=cjob.getJob();
+
+  String jobName=job.getJobName();
+
+  retv.put("JobId",mapreduceID.toString());
+
+  retv.put("JobName",jobName);
+
+  TaskExecutionStats theTaskExecutionStats=new TaskExecutionStats();
+
+  try {
+
+    Counters jobCounters=job.getCounters();
+
+    Iterator<CounterGroup> groups=jobCounters.iterator();
+
+    while (groups.hasNext()) {
+
+      CounterGroup g=groups.next();
+
+      String gn=g.getName();
+
+      Iterator<Counter> cs=g.iterator();
+
+      while (cs.hasNext()) {
+
+        Counter c=cs.next();
+
+        String n=c.getName();
+
+        long v=c.getValue();
+
+        retv.put(mapreduceID + "." + jobName+ "."+ gn+ "."+ n,"" + v);
+
+      }
+
+    }
+
+    JobClient jc=new JobClient(job.getConfiguration());
+
+    TaskReport[] maps=jc.getMapTaskReports((org.apache.hadoop.mapred.JobID)mapreduceID);
+
+    TaskReport[] reduces=jc.getReduceTaskReports((org.apache.hadoop.mapred.JobID)mapreduceID);
+
+    retv.put(mapreduceID + "." + jobName+ "."+ "numOfMapTasks","" + maps.length);
+
+    retv.put(mapreduceID + "." + jobName+ "."+ "numOfReduceTasks","" + reduces.length);
+
+    long[] mapExecutionTimes=new long[maps.length];
+
+    long[] reduceExecutionTimes=new long[reduces.length];
+
+    Date date=Calendar.getInstance().getTime();
+
+    long startTime=date.getTime();
+
+    long finishTime=0;
+
+    for (int j=0; j < maps.length; j++) {
+
+      TaskReport map=maps[j];
+
+      long thisStartTime=map.getStartTime();
+
+      long thisFinishTime=map.getFinishTime();
+
+      if (thisStartTime > 0 && thisFinishTime > 0) {
+
+        mapExecutionTimes[j]=thisFinishTime - thisStartTime;
+
+      }
+
+      if (startTime > thisStartTime) {
+
+        startTime=thisStartTime;
+
+      }
+
+      if (finishTime < thisFinishTime) {
+
+        finishTime=thisFinishTime;
+
+      }
+
+    }
+
+    theTaskExecutionStats.computeStats("mapExecutionTimeStats",mapExecutionTimes);
+
+    retv.put(mapreduceID + "." + jobName+ "."+ "mapStartTime","" + startTime);
+
+    retv.put(mapreduceID + "." + jobName+ "."+ "mapEndTime","" + finishTime);
+
+    for (int j=0; j < reduces.length; j++) {
+
+      TaskReport reduce=reduces[j];
+
+      long thisStartTime=reduce.getStartTime();
+
+      long thisFinishTime=reduce.getFinishTime();
+
+      if (thisStartTime > 0 && thisFinishTime > 0) {
+
+        reduceExecutionTimes[j]=thisFinishTime - thisStartTime;
+
+      }
+
+      if (startTime > thisStartTime) {
+
+        startTime=thisStartTime;
+
+      }
+
+      if (finishTime < thisFinishTime) {
+
+        finishTime=thisFinishTime;
+
+      }
+
+    }
+
+    theTaskExecutionStats.computeStats("reduceExecutionTimeStats",reduceExecutionTimes);
+
+    retv.put(mapreduceID + "." + jobName+ "."+ "reduceStartTime","" + startTime);
+
+    retv.put(mapreduceID + "." + jobName+ "."+ "reduceEndTime","" + finishTime);
+
+    if (cjob.getJobState() == ControlledJob.State.SUCCESS) {
+
+      retv.put(mapreduceID + "." + "jobStatus","successful");
+
+    }
+
+ else     if (cjob.getJobState() == ControlledJob.State.FAILED) {
+
+      retv.put(mapreduceID + "." + jobName+ "."+ "jobStatus","failed");
+
+    }
+
+ else {
+
+      retv.put(mapreduceID + "." + jobName+ "."+ "jobStatus","unknown");
+
+    }
+
+    Iterator<Entry<String,SimpleStats>> entries=theTaskExecutionStats.theStats.entrySet().iterator();
+
+    while (entries.hasNext()) {
+
+      Entry<String,SimpleStats> e=entries.next();
+
+      SimpleStats v=e.getValue();
+
+      retv.put(mapreduceID + "." + jobName+ "."+ e.getKey()+ "."+ "min","" + v.minValue);
+
+      retv.put(mapreduceID + "." + jobName+ "."+ e.getKey()+ "."+ "max","" + v.maxValue);
+
+      retv.put(mapreduceID + "." + jobName+ "."+ e.getKey()+ "."+ "medium","" + v.mediumValue);
+
+      retv.put(mapreduceID + "." + jobName+ "."+ e.getKey()+ "."+ "avg","" + v.averageValue);
+
+      retv.put(mapreduceID + "." + jobName+ "."+ e.getKey()+ "."+ "numOfItems","" + v.n);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+  }
+
+  return retv;
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+public GridMixRunner() throws IOException {
+
+  gridmix=new JobControl("GridMix");
+
+  if (null == config || null == fs) {
+
+    throw new IOException("Bad configuration. Cannot continue.");
+
+  }
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private static Configuration initConfig(){
+
+  Configuration conf=new Configuration();
+
+  String configFile=System.getenv("GRIDMIXCONFIG");
+
+  if (configFile == null) {
+
+    String configDir=System.getProperty("user.dir");
+
+    if (configDir == null) {
+
+      configDir=".";
+
+    }
+
+    configFile=configDir + "/" + GRIDMIXCONFIG;
+
+  }
+
+  try {
+
+    Path fileResource=new Path(configFile);
+
+    conf.addResource(fileResource);
+
+  }
+
+ catch (  Exception e) {
+
+    System.err.println("Error reading config file " + configFile + ":"+ e.getMessage());
+
+    return null;
+
+  }
+
+  return conf;
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private static FileSystem initFs(){
+
+  try {
+
+    return FileSystem.get(config);
+
+  }
+
+ catch (  Exception e) {
+
+    System.out.println("fs initation error: " + e.getMessage());
+
+  }
+
+  return null;
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private void printJobStat(TreeMap<String,String> stat){
+
+  Iterator<Entry<String,String>> entries=stat.entrySet().iterator();
+
+  while (entries.hasNext()) {
+
+    Entry<String,String> e=entries.next();
+
+    System.out.println(e.getKey() + "\t" + e.getValue());
+
+  }
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private void printStatsForJobs(List<ControlledJob> jobs){
+
+  for (int i=0; i < jobs.size(); i++) {
+
+    printJobStat(getStatForJob(jobs.get(i)));
+
+  }
+
+}
+
+Location: GridMixRunner.java
+
+Content: 
+
+private boolean select(int total,int selected,int index){
+
+  if (selected <= 0 || selected >= total) {
+
+    return selected > 0;
+
+  }
+
+  int step=total / selected;
+
+  int effectiveTotal=total - total % selected;
+
+  return (index <= effectiveTotal - 1 && (index % step == 0));
+
+}
+

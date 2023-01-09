@@ -1,0 +1,454 @@
+Location: BlobType.java
+
+Content: 
+
+public boolean acceptsPrecision(){
+
+  return true;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public BlobType(long precision){
+
+  super(Types.SQL_BLOB,precision);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public Object castToType(SessionInterface session,Object a,Type otherType){
+
+  if (a == null) {
+
+    return null;
+
+  }
+
+  if (otherType.typeCode == Types.SQL_BLOB) {
+
+    BlobData b=(BlobData)a;
+
+    long blobLength=b.length(session);
+
+    if (blobLength > precision) {
+
+      blobLength=precision;
+
+      session.addWarning(Error.error(ErrorCode.W_01004));
+
+      b=b.getBlob(session,0,blobLength);
+
+      return b;
+
+    }
+
+    return a;
+
+  }
+
+  if (otherType.typeCode == Types.SQL_BINARY || otherType.typeCode == Types.SQL_VARBINARY) {
+
+    BlobData b=(BlobData)a;
+
+    long blobLength=b.length(session);
+
+    if (blobLength > precision) {
+
+      blobLength=precision;
+
+      session.addWarning(Error.error(ErrorCode.W_01004));
+
+    }
+
+    BlobData blob=session.createBlob(b.length(session));
+
+    blob.setBytes(session,0,b.getBytes(),0,(int)blobLength);
+
+    return blob;
+
+  }
+
+  throw Error.error(ErrorCode.X_42561);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public int compare(Session session,Object a,Object b){
+
+  if (a == b) {
+
+    return 0;
+
+  }
+
+  if (a == null) {
+
+    return -1;
+
+  }
+
+  if (b == null) {
+
+    return 1;
+
+  }
+
+  if (b instanceof BinaryData) {
+
+    return session.database.lobManager.compare((BlobData)a,((BlobData)b).getBytes());
+
+  }
+
+  return session.database.lobManager.compare((BlobData)a,(BlobData)b);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public Object convertJavaToSQL(SessionInterface session,Object a){
+
+  if (a == null) {
+
+    return null;
+
+  }
+
+  if (a instanceof JDBCBlobClient) {
+
+    return ((JDBCBlobClient)a).getBlob();
+
+  }
+
+  throw Error.error(ErrorCode.X_42561);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public Object convertSQLToJava(SessionInterface session,Object a){
+
+  if (a == null) {
+
+    return null;
+
+  }
+
+  if (a instanceof BlobDataID) {
+
+    BlobDataID blob=(BlobDataID)a;
+
+    return new JDBCBlobClient(session,blob);
+
+  }
+
+  throw Error.error(ErrorCode.X_42561);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public Object convertToDefaultType(SessionInterface session,Object a){
+
+  if (a == null) {
+
+    return null;
+
+  }
+
+  if (a instanceof byte[]) {
+
+    return new BinaryData((byte[])a,false);
+
+  }
+
+  throw Error.error(ErrorCode.X_42561);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public String convertToSQLString(Object a){
+
+  if (a == null) {
+
+    return Tokens.T_NULL;
+
+  }
+
+  return convertToString(a);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public String convertToString(Object a){
+
+  if (a == null) {
+
+    return null;
+
+  }
+
+  return Long.toString(((BlobData)a).getId());
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+/** 
+
+ * @todo - implement 
+
+ */
+
+public Object convertToTypeLimits(SessionInterface session,Object a){
+
+  return a;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public Object convertToType(SessionInterface session,Object a,Type otherType){
+
+  BlobData b=null;
+
+  if (a == null) {
+
+    return null;
+
+  }
+
+  if (otherType.typeCode == Types.SQL_BLOB) {
+
+    b=(BlobData)a;
+
+    long blobLength=b.length(session);
+
+    if (blobLength > precision) {
+
+      throw Error.error(ErrorCode.X_22001);
+
+    }
+
+    return a;
+
+  }
+
+  if (otherType.typeCode == Types.SQL_CLOB) {
+
+    a=Type.SQL_VARCHAR.convertToType(session,a,otherType);
+
+    otherType=Type.SQL_VARCHAR;
+
+  }
+
+  if (otherType.typeCode == Types.SQL_VARCHAR || otherType.typeCode == Types.SQL_CHAR) {
+
+    a=session.getScanner().convertToBinary((String)a,false);
+
+    otherType=Type.SQL_VARBINARY;
+
+  }
+
+  if (otherType.typeCode == Types.SQL_BINARY || otherType.typeCode == Types.SQL_VARBINARY) {
+
+    b=(BlobData)a;
+
+    long blobLength=b.length(session);
+
+    if (blobLength > precision) {
+
+      throw Error.error(ErrorCode.X_22001);
+
+    }
+
+    BlobData blob=session.createBlob(b.length(session));
+
+    blob.setBytes(session,0,b.getBytes());
+
+    return blob;
+
+  }
+
+  throw Error.error(ErrorCode.X_42561);
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public int displaySize(){
+
+  return precision > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int)precision;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public String getDefinition(){
+
+  long factor=precision;
+
+  String multiplier=null;
+
+  if (precision % (1024 * 1024 * 1024) == 0) {
+
+    factor=precision / (1024 * 1024 * 1024);
+
+    multiplier=Tokens.T_G_FACTOR;
+
+  }
+
+ else   if (precision % (1024 * 1024) == 0) {
+
+    factor=precision / (1024 * 1024);
+
+    multiplier=Tokens.T_M_FACTOR;
+
+  }
+
+ else   if (precision % (1024) == 0) {
+
+    factor=precision / (1024);
+
+    multiplier=Tokens.T_K_FACTOR;
+
+  }
+
+  StringBuffer sb=new StringBuffer(16);
+
+  sb.append(getNameString());
+
+  sb.append('(');
+
+  sb.append(factor);
+
+  if (multiplier != null) {
+
+    sb.append(multiplier);
+
+  }
+
+  sb.append(')');
+
+  return sb.toString();
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public String getFullNameString(){
+
+  return "BINARY LARGE OBJECT";
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public Class getJDBCClass(){
+
+  return java.sql.Blob.class;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public String getJDBCClassName(){
+
+  return "java.sql.Blob";
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public int getJDBCTypeCode(){
+
+  return Types.BLOB;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public long getMaxPrecision(){
+
+  return maxBlobPrecision;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public String getNameString(){
+
+  return Tokens.T_BLOB;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public boolean isBinaryType(){
+
+  return true;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public boolean isLobType(){
+
+  return true;
+
+}
+
+Location: BlobType.java
+
+Content: 
+
+public boolean requiresPrecision(){
+
+  return false;
+
+}
+

@@ -1,0 +1,408 @@
+Location: LazyRemovalCache.java
+
+Content: 
+
+public void addAllIfAbsent(Map<K,V> m){
+
+  addAll(m,true);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public void addAll(Map<K,V> m){
+
+  addAll(m,false);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+protected void addAll(Map<K,V> m,boolean if_absent){
+
+  if (m == null)   return;
+
+  for (  Map.Entry<K,V> entry : m.entrySet()) {
+
+    K key=entry.getKey();
+
+    V val=entry.getValue();
+
+    Entry<V> e=new Entry<>(val);
+
+    if (if_absent)     map.putIfAbsent(key,e);
+
+ else     map.put(key,e);
+
+  }
+
+  checkMaxSizeExceeded();
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public boolean addIfAbsent(K key,V val){
+
+  return add(key,val,true);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+protected boolean add(K key,V val,boolean if_absent){
+
+  boolean added=false;
+
+  if (key != null && val != null) {
+
+    Entry<V> entry=new Entry<>(val);
+
+    added=if_absent ? map.putIfAbsent(key,entry) == null : map.put(key,entry) == null;
+
+    if (added)     checkMaxSizeExceeded();
+
+  }
+
+  return added;
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+private void checkMaxSizeExceeded(){
+
+  if (map.size() > max_elements)   removeMarkedElements(false);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public void clear(boolean force){
+
+  if (force)   map.clear();
+
+ else {
+
+    for (    Map.Entry<K,Entry<V>> entry : map.entrySet()) {
+
+      Entry<V> val=entry.getValue();
+
+      if (val != null) {
+
+        Entry<V> tmp=entry.getValue();
+
+        if (tmp != null)         tmp.setRemovable(true);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+/** 
+
+ * Returns true if all of the keys in keys are present. Returns false if one or more of the keys are absent 
+
+ */
+
+public boolean containsKeys(Collection<K> keys){
+
+  for (  K key : keys)   if (!map.containsKey(key))   return false;
+
+  return true;
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public boolean containsKey(K key){
+
+  return map.containsKey(key);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public Map<K,V> contents(){
+
+  return contents(false);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public Map<K,V> contents(boolean skip_removed_values){
+
+  Map<K,V> retval=new HashMap<>();
+
+  for (  Map.Entry<K,Entry<V>> entry : map.entrySet()) {
+
+    Entry<V> val=entry.getValue();
+
+    if (val.isRemovable() && skip_removed_values)     continue;
+
+    retval.put(entry.getKey(),entry.getValue().val);
+
+  }
+
+  return retval;
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public K getByValue(V val){
+
+  if (val == null)   return null;
+
+  for (  Map.Entry<K,Entry<V>> entry : map.entrySet()) {
+
+    Entry<V> v=entry.getValue();
+
+    if (Objects.equals(v.val,val))     return entry.getKey();
+
+  }
+
+  return null;
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public Set<K> keySet(){
+
+  return map.keySet();
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public LazyRemovalCache(){
+
+  this(200,5000L);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance
+
+ * @param max_elements The max number of elements in the cache
+
+ * @param max_age The max age (in ms) an entry can have before it is considered expired (and can be removed onthe next sweep)
+
+ */
+
+public LazyRemovalCache(int max_elements,long max_age){
+
+  this.max_elements=max_elements;
+
+  this.max_age=TimeUnit.NANOSECONDS.convert(max_age,TimeUnit.MILLISECONDS);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+/** 
+
+ * Adds all value which have not been marked as removable to the returned set
+
+ * @return
+
+ */
+
+public Set<V> nonRemovedValues(){
+
+  return map.values().stream().filter(entry -> !entry.removable).map(entry -> entry.val).collect(Collectors.toSet());
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public String printCache(Printable print_function){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Map.Entry<K,Entry<V>> entry : map.entrySet()) {
+
+    K key=entry.getKey();
+
+    sb.append(print_function.print(key,entry.getValue()));
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public void removeAll(Collection<K> keys,boolean force){
+
+  if (keys == null || keys.isEmpty())   return;
+
+  if (force)   map.keySet().removeAll(keys);
+
+ else {
+
+    for (    K key : keys) {
+
+      Entry<V> entry=map.get(key);
+
+      if (entry != null)       entry.setRemovable(true);
+
+    }
+
+  }
+
+  checkMaxSizeExceeded();
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+/** 
+
+ * Removes elements marked as removable
+
+ */
+
+public void removeMarkedElements(){
+
+  removeMarkedElements(false);
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+/** 
+
+ * Removes elements marked as removable
+
+ * @param force If set to true, all elements marked as 'removable' will get removed, regardless of expiration
+
+ */
+
+public void removeMarkedElements(boolean force){
+
+  long curr_time=System.nanoTime();
+
+  for (Iterator<Map.Entry<K,Entry<V>>> it=map.entrySet().iterator(); it.hasNext(); ) {
+
+    Map.Entry<K,Entry<V>> entry=it.next();
+
+    Entry<V> tmp=entry.getValue();
+
+    if (tmp == null)     continue;
+
+    if (tmp.removable && (force || (curr_time - tmp.timestamp) >= max_age)) {
+
+      it.remove();
+
+    }
+
+  }
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public void retainAll(Collection<K> keys,boolean force){
+
+  if (keys == null || keys.isEmpty())   return;
+
+  if (force)   map.keySet().retainAll(keys);
+
+ else {
+
+    map.entrySet().stream().filter(entry -> !keys.contains(entry.getKey())).forEach(entry -> {
+
+      Entry<V> val=entry.getValue();
+
+      if (val != null)       val.setRemovable(true);
+
+    }
+
+);
+
+  }
+
+  for (  K key : keys) {
+
+    Entry<V> val=map.get(key);
+
+    if (val != null && val.removable)     val.setRemovable(false);
+
+  }
+
+  checkMaxSizeExceeded();
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public Set<V> values(){
+
+  return map.values().stream().map(entry -> entry.val).collect(Collectors.toSet());
+
+}
+
+Location: LazyRemovalCache.java
+
+Content: 
+
+public Iterable<Entry<V>> valuesIterator(){
+
+  return () -> map.values().iterator();
+
+}
+

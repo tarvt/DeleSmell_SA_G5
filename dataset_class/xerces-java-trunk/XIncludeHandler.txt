@@ -1,0 +1,2238 @@
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Caches a notation.
+
+ * @param name the name of the notation
+
+ * @param identifier the location of the notation
+
+ * @param augmentations any Augmentations that were on the original notation declaration
+
+ */
+
+protected void addNotation(String name,XMLResourceIdentifier identifier,Augmentations augmentations){
+
+  Notation not=new Notation();
+
+  not.name=name;
+
+  not.systemId=identifier.getLiteralSystemId();
+
+  not.publicId=identifier.getPublicId();
+
+  not.baseURI=identifier.getBaseSystemId();
+
+  not.expandedSystemId=identifier.getExpandedSystemId();
+
+  not.augmentations=augmentations;
+
+  fNotations.add(not);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Caches an unparsed entity.
+
+ * @param name the name of the unparsed entity
+
+ * @param identifier the location of the unparsed entity
+
+ * @param augmentations any Augmentations that were on the original unparsed entity declaration
+
+ */
+
+protected void addUnparsedEntity(String name,XMLResourceIdentifier identifier,String notation,Augmentations augmentations){
+
+  UnparsedEntity ent=new UnparsedEntity();
+
+  ent.name=name;
+
+  ent.systemId=identifier.getLiteralSystemId();
+
+  ent.publicId=identifier.getPublicId();
+
+  ent.baseURI=identifier.getBaseSystemId();
+
+  ent.expandedSystemId=identifier.getExpandedSystemId();
+
+  ent.notation=notation;
+
+  ent.augmentations=augmentations;
+
+  fUnparsedEntities.add(ent);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * The purpose of this method is to check if a Notation conflicts with a previously declared notation in the current pipeline stack.  If there is no conflict, the Notation is sent by the root pipeline.
+
+ * @param not the Notation to check for conflicts
+
+ */
+
+protected void checkAndSendNotation(Notation not){
+
+  if (isRootDocument()) {
+
+    int index=fNotations.indexOf(not);
+
+    if (index == -1) {
+
+      XMLResourceIdentifier id=new XMLResourceIdentifierImpl(not.publicId,not.systemId,not.baseURI,not.expandedSystemId);
+
+      addNotation(not.name,id,not.augmentations);
+
+      if (fSendUEAndNotationEvents && fDTDHandler != null) {
+
+        fDTDHandler.notationDecl(not.name,id,not.augmentations);
+
+      }
+
+    }
+
+ else {
+
+      Notation localNotation=(Notation)fNotations.get(index);
+
+      if (!not.isDuplicate(localNotation)) {
+
+        reportFatalError("NonDuplicateNotation",new Object[]{not.name});
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    fParentXIncludeHandler.checkAndSendNotation(not);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * The purpose of this method is to check if an UnparsedEntity conflicts with a previously declared entity in the current pipeline stack.  If there is no conflict, the UnparsedEntity is sent by the root pipeline.
+
+ * @param ent the UnparsedEntity to check for conflicts
+
+ */
+
+protected void checkAndSendUnparsedEntity(UnparsedEntity ent){
+
+  if (isRootDocument()) {
+
+    int index=fUnparsedEntities.indexOf(ent);
+
+    if (index == -1) {
+
+      XMLResourceIdentifier id=new XMLResourceIdentifierImpl(ent.publicId,ent.systemId,ent.baseURI,ent.expandedSystemId);
+
+      addUnparsedEntity(ent.name,id,ent.notation,ent.augmentations);
+
+      if (fSendUEAndNotationEvents && fDTDHandler != null) {
+
+        fDTDHandler.unparsedEntityDecl(ent.name,id,ent.notation,ent.augmentations);
+
+      }
+
+    }
+
+ else {
+
+      UnparsedEntity localEntity=(UnparsedEntity)fUnparsedEntities.get(index);
+
+      if (!ent.isDuplicate(localEntity)) {
+
+        reportFatalError("NonDuplicateUnparsedEntity",new Object[]{ent.name});
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    fParentXIncludeHandler.checkAndSendUnparsedEntity(ent);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Checks whether the root element has already been processed.
+
+ */
+
+private void checkMultipleRootElements(){
+
+  if (getRootElementProcessed()) {
+
+    reportFatalError("MultipleRootElements");
+
+  }
+
+  setRootElementProcessed(true);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Checks if a Notation with the given name was declared in the DTD of the document for the current pipeline.  If so, that Notation is passed to the root pipeline to be checked for conflicts, and sent to the root DTDHandler
+
+ * @param notName the name of the Notation to check
+
+ */
+
+protected void checkNotation(String notName){
+
+  Notation not=new Notation();
+
+  not.name=notName;
+
+  int index=fNotations.indexOf(not);
+
+  if (index != -1) {
+
+    not=(Notation)fNotations.get(index);
+
+    checkAndSendNotation(not);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Checks if an UnparsedEntity with the given name was declared in the DTD of the document for the current pipeline.  If so, then the notation for the UnparsedEntity is checked. If that turns out okay, then the UnparsedEntity is passed to the root pipeline to be checked for conflicts, and sent to the root DTDHandler.
+
+ * @param entName the name of the UnparsedEntity to check
+
+ */
+
+protected void checkUnparsedEntity(String entName){
+
+  UnparsedEntity ent=new UnparsedEntity();
+
+  ent.name=entName;
+
+  int index=fUnparsedEntities.indexOf(ent);
+
+  if (index != -1) {
+
+    ent=(UnparsedEntity)fUnparsedEntities.get(index);
+
+    checkNotation(ent.notation);
+
+    checkAndSendUnparsedEntity(ent);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Checks whether the string only contains white space characters.
+
+ * @param value the text to check
+
+ */
+
+private void checkWhitespace(XMLString value){
+
+  int end=value.offset + value.length;
+
+  for (int i=value.offset; i < end; ++i) {
+
+    if (!XMLChar.isSpace(value.ch[i])) {
+
+      reportFatalError("ContentIllegalAtTopLevel");
+
+      return;
+
+    }
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+private void copyFeatures1(Enumeration features,String featurePrefix,XMLComponentManager from,ParserConfigurationSettings to){
+
+  while (features.hasMoreElements()) {
+
+    String featureId=featurePrefix + (String)features.nextElement();
+
+    to.addRecognizedFeatures(new String[]{featureId});
+
+    try {
+
+      to.setFeature(featureId,from.getFeature(featureId));
+
+    }
+
+ catch (    XMLConfigurationException e) {
+
+    }
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+private void copyFeatures1(Enumeration features,String featurePrefix,XMLComponentManager from,XMLParserConfiguration to){
+
+  while (features.hasMoreElements()) {
+
+    String featureId=featurePrefix + (String)features.nextElement();
+
+    boolean value=from.getFeature(featureId);
+
+    try {
+
+      to.setFeature(featureId,value);
+
+    }
+
+ catch (    XMLConfigurationException e) {
+
+    }
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void copyFeatures(XMLComponentManager from,ParserConfigurationSettings to){
+
+  Enumeration features=Constants.getXercesFeatures();
+
+  copyFeatures1(features,Constants.XERCES_FEATURE_PREFIX,from,to);
+
+  features=Constants.getSAXFeatures();
+
+  copyFeatures1(features,Constants.SAX_FEATURE_PREFIX,from,to);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void copyFeatures(XMLComponentManager from,XMLParserConfiguration to){
+
+  Enumeration features=Constants.getXercesFeatures();
+
+  copyFeatures1(features,Constants.XERCES_FEATURE_PREFIX,from,to);
+
+  features=Constants.getSAXFeatures();
+
+  copyFeatures1(features,Constants.SAX_FEATURE_PREFIX,from,to);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns a new <code>XMLInputSource</code> from the given parameters.
+
+ */
+
+private XMLInputSource createInputSource(String publicId,String systemId,String baseSystemId,String accept,String acceptLanguage){
+
+  HTTPInputSource httpSource=new HTTPInputSource(publicId,systemId,baseSystemId);
+
+  if (accept != null && accept.length() > 0) {
+
+    httpSource.setHTTPRequestProperty(XIncludeHandler.HTTP_ACCEPT,accept);
+
+  }
+
+  if (acceptLanguage != null && acceptLanguage.length() > 0) {
+
+    httpSource.setHTTPRequestProperty(XIncludeHandler.HTTP_ACCEPT_LANGUAGE,acceptLanguage);
+
+  }
+
+  return httpSource;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+private String escapeHref(String href){
+
+  int len=href.length();
+
+  int ch;
+
+  StringBuffer buffer=new StringBuffer(len * 3);
+
+  int i=0;
+
+  for (; i < len; i++) {
+
+    ch=href.charAt(i);
+
+    if (ch > 0x7E) {
+
+      break;
+
+    }
+
+    if (ch < 0x20) {
+
+      return href;
+
+    }
+
+    if (gNeedEscaping[ch]) {
+
+      buffer.append('%');
+
+      buffer.append(gAfterEscaping1[ch]);
+
+      buffer.append(gAfterEscaping2[ch]);
+
+    }
+
+ else {
+
+      buffer.append((char)ch);
+
+    }
+
+  }
+
+  if (i < len) {
+
+    for (int j=i; j < len; ++j) {
+
+      ch=href.charAt(j);
+
+      if ((ch >= 0x20 && ch <= 0x7E) || (ch >= 0xA0 && ch <= 0xD7FF) || (ch >= 0xF900 && ch <= 0xFDCF)|| (ch >= 0xFDF0 && ch <= 0xFFEF)) {
+
+        continue;
+
+      }
+
+      if (XMLChar.isHighSurrogate(ch) && ++j < len) {
+
+        int ch2=href.charAt(j);
+
+        if (XMLChar.isLowSurrogate(ch2)) {
+
+          ch2=XMLChar.supplemental((char)ch,(char)ch2);
+
+          if (ch2 < 0xF0000 && (ch2 & 0xFFFF) <= 0xFFFD) {
+
+            continue;
+
+          }
+
+        }
+
+      }
+
+      return href;
+
+    }
+
+    byte[] bytes=null;
+
+    byte b;
+
+    try {
+
+      bytes=href.substring(i).getBytes("UTF-8");
+
+    }
+
+ catch (    java.io.UnsupportedEncodingException e) {
+
+      return href;
+
+    }
+
+    len=bytes.length;
+
+    for (i=0; i < len; i++) {
+
+      b=bytes[i];
+
+      if (b < 0) {
+
+        ch=b + 256;
+
+        buffer.append('%');
+
+        buffer.append(gHexChs[ch >> 4]);
+
+        buffer.append(gHexChs[ch & 0xf]);
+
+      }
+
+ else       if (gNeedEscaping[b]) {
+
+        buffer.append('%');
+
+        buffer.append(gAfterEscaping1[b]);
+
+        buffer.append(gAfterEscaping2[b]);
+
+      }
+
+ else {
+
+        buffer.append((char)b);
+
+      }
+
+    }
+
+  }
+
+  if (buffer.length() != len) {
+
+    return buffer.toString();
+
+  }
+
+ else {
+
+    return href;
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Gets the base URI that was in use at that depth
+
+ * @param depth
+
+ * @return the base URI
+
+ */
+
+public String getBaseURI(int depth){
+
+  int scope=scopeOfBaseURI(depth);
+
+  return (String)fExpandedSystemID.elementAt(scope);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns the [base URI] of the include parent.
+
+ * @return the base URI of the include parent.
+
+ */
+
+private String getIncludeParentBaseURI(){
+
+  int depth=getIncludeParentDepth();
+
+  if (!isRootDocument() && depth == 0) {
+
+    return fParentXIncludeHandler.getIncludeParentBaseURI();
+
+  }
+
+ else {
+
+    return this.getBaseURI(depth);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns the depth of the include parent.  Here, the include parent is calculated as the last non-include or non-fallback element. It is assumed this method is called when the current element is a top level included item. Returning 0 indicates that the top level element in this document was an include element.
+
+ * @return the depth of the top level include element
+
+ */
+
+private int getIncludeParentDepth(){
+
+  for (int i=fDepth - 1; i >= 0; i--) {
+
+    if (!getSawInclude(i) && !getSawFallback(i)) {
+
+      return i;
+
+    }
+
+  }
+
+  return 0;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns the [language] of the include parent.
+
+ * @return the language property of the include parent.
+
+ */
+
+private String getIncludeParentLanguage(){
+
+  int depth=getIncludeParentDepth();
+
+  if (!isRootDocument() && depth == 0) {
+
+    return fParentXIncludeHandler.getIncludeParentLanguage();
+
+  }
+
+ else {
+
+    return getLanguage(depth);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Gets the language that was in use at that depth.
+
+ * @param depth
+
+ * @return the language
+
+ */
+
+public String getLanguage(int depth){
+
+  int scope=scopeOfLanguage(depth);
+
+  return (String)fLanguageStack.elementAt(scope);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns a URI, relative to the include parent's base URI, of the current [base URI].  For instance, if the current [base URI] was "dir1/dir2/file.xml" and the include parent's [base URI] was "dir/", this would return "dir2/file.xml".
+
+ * @return the relative URI
+
+ */
+
+protected String getRelativeBaseURI() throws MalformedURIException {
+
+  int includeParentDepth=getIncludeParentDepth();
+
+  String relativeURI=this.getRelativeURI(includeParentDepth);
+
+  if (isRootDocument()) {
+
+    return relativeURI;
+
+  }
+
+ else {
+
+    if (relativeURI.length() == 0) {
+
+      relativeURI=fCurrentBaseURI.getLiteralSystemId();
+
+    }
+
+    if (includeParentDepth == 0) {
+
+      if (fParentRelativeURI == null) {
+
+        fParentRelativeURI=fParentXIncludeHandler.getRelativeBaseURI();
+
+      }
+
+      if (fParentRelativeURI.length() == 0) {
+
+        return relativeURI;
+
+      }
+
+      URI base=new URI(fParentRelativeURI,true);
+
+      URI uri=new URI(base,relativeURI);
+
+      final String baseScheme=base.getScheme();
+
+      final String literalScheme=uri.getScheme();
+
+      if (!isEqual(baseScheme,literalScheme)) {
+
+        return relativeURI;
+
+      }
+
+      final String baseAuthority=base.getAuthority();
+
+      final String literalAuthority=uri.getAuthority();
+
+      if (!isEqual(baseAuthority,literalAuthority)) {
+
+        return uri.getSchemeSpecificPart();
+
+      }
+
+      final String literalPath=uri.getPath();
+
+      final String literalQuery=uri.getQueryString();
+
+      final String literalFragment=uri.getFragment();
+
+      if (literalQuery != null || literalFragment != null) {
+
+        StringBuffer buffer=new StringBuffer();
+
+        if (literalPath != null) {
+
+          buffer.append(literalPath);
+
+        }
+
+        if (literalQuery != null) {
+
+          buffer.append('?');
+
+          buffer.append(literalQuery);
+
+        }
+
+        if (literalFragment != null) {
+
+          buffer.append('#');
+
+          buffer.append(literalFragment);
+
+        }
+
+        return buffer.toString();
+
+      }
+
+      return literalPath;
+
+    }
+
+ else {
+
+      return relativeURI;
+
+    }
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns a relative URI, which when resolved against the base URI at the specified depth, will create the current base URI. This is accomplished by merged the literal system IDs.
+
+ * @param depth the depth at which to start creating the relative URI
+
+ * @return a relative URI to convert the base URI at the given depth to the currentbase URI
+
+ */
+
+public String getRelativeURI(int depth) throws MalformedURIException {
+
+  int start=scopeOfBaseURI(depth) + 1;
+
+  if (start == fBaseURIScope.size()) {
+
+    return "";
+
+  }
+
+  URI uri=new URI("file",(String)fLiteralSystemID.elementAt(start));
+
+  for (int i=start + 1; i < fBaseURIScope.size(); i++) {
+
+    uri=new URI(uri,(String)fLiteralSystemID.elementAt(i));
+
+  }
+
+  return uri.getPath();
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns the current element depth of the result infoset.
+
+ */
+
+private int getResultDepth(){
+
+  return fResultDepth;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns whether the root element has been processed.
+
+ */
+
+private boolean getRootElementProcessed(){
+
+  return isRootDocument() ? fSeenRootElement : fParentXIncludeHandler.getRootElementProcessed();
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns whether an &lt;fallback&gt; was encountered at the specified depth, as an ancestor of the current element, or as a sibling of an ancestor of the current element.
+
+ * @param depth
+
+ */
+
+protected boolean getSawFallback(int depth){
+
+  if (depth >= fSawFallback.length) {
+
+    return false;
+
+  }
+
+  return fSawFallback[depth];
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Return whether an &lt;include&gt; was encountered at the specified depth, as an ancestor of the current item.
+
+ * @param depth
+
+ * @return true if an include was seen at the given depth, false otherwise
+
+ */
+
+protected boolean getSawInclude(int depth){
+
+  if (depth >= fSawInclude.length) {
+
+    return false;
+
+  }
+
+  return fSawInclude[depth];
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected int getState(){
+
+  return fState[fDepth];
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected int getState(int depth){
+
+  return fState[depth];
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void handleFallbackElement(){
+
+  if (!getSawInclude(fDepth - 1)) {
+
+    if (getState() == STATE_IGNORE) {
+
+      return;
+
+    }
+
+    reportFatalError("FallbackParent");
+
+  }
+
+  setSawInclude(fDepth,false);
+
+  fNamespaceContext.setContextInvalid();
+
+  if (getSawFallback(fDepth)) {
+
+    reportFatalError("MultipleFallbacks");
+
+  }
+
+ else {
+
+    setSawFallback(fDepth,true);
+
+  }
+
+  if (getState() == STATE_EXPECT_FALLBACK) {
+
+    setState(STATE_NORMAL_PROCESSING);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected boolean handleIncludeElement(XMLAttributes attributes) throws XNIException {
+
+  if (getSawInclude(fDepth - 1)) {
+
+    reportFatalError("IncludeChild",new Object[]{XINCLUDE_INCLUDE});
+
+  }
+
+  if (getState() == STATE_IGNORE) {
+
+    return true;
+
+  }
+
+  setSawInclude(fDepth,true);
+
+  fNamespaceContext.setContextInvalid();
+
+  String href=attributes.getValue(XINCLUDE_ATTR_HREF);
+
+  String parse=attributes.getValue(XINCLUDE_ATTR_PARSE);
+
+  String xpointer=attributes.getValue(XPOINTER);
+
+  String accept=attributes.getValue(XINCLUDE_ATTR_ACCEPT);
+
+  String acceptLanguage=attributes.getValue(XINCLUDE_ATTR_ACCEPT_LANGUAGE);
+
+  if (parse == null) {
+
+    parse=XINCLUDE_PARSE_XML;
+
+  }
+
+  if (href == null) {
+
+    href=XMLSymbols.EMPTY_STRING;
+
+  }
+
+  if (href.length() == 0 && XINCLUDE_PARSE_XML.equals(parse)) {
+
+    if (xpointer == null) {
+
+      reportFatalError("XpointerMissing");
+
+    }
+
+ else {
+
+      Locale locale=(fErrorReporter != null) ? fErrorReporter.getLocale() : null;
+
+      String reason=fXIncludeMessageFormatter.formatMessage(locale,"XPointerStreamability",null);
+
+      reportResourceError("XMLResourceError",new Object[]{href,reason});
+
+      return false;
+
+    }
+
+  }
+
+  URI hrefURI=null;
+
+  try {
+
+    hrefURI=new URI(href,true);
+
+    if (hrefURI.getFragment() != null) {
+
+      reportFatalError("HrefFragmentIdentifierIllegal",new Object[]{href});
+
+    }
+
+  }
+
+ catch (  URI.MalformedURIException exc) {
+
+    String newHref=escapeHref(href);
+
+    if (href != newHref) {
+
+      href=newHref;
+
+      try {
+
+        hrefURI=new URI(href,true);
+
+        if (hrefURI.getFragment() != null) {
+
+          reportFatalError("HrefFragmentIdentifierIllegal",new Object[]{href});
+
+        }
+
+      }
+
+ catch (      URI.MalformedURIException exc2) {
+
+        reportFatalError("HrefSyntacticallyInvalid",new Object[]{href});
+
+      }
+
+    }
+
+ else {
+
+      reportFatalError("HrefSyntacticallyInvalid",new Object[]{href});
+
+    }
+
+  }
+
+  if (accept != null && !isValidInHTTPHeader(accept)) {
+
+    reportFatalError("AcceptMalformed",null);
+
+    accept=null;
+
+  }
+
+  if (acceptLanguage != null && !isValidInHTTPHeader(acceptLanguage)) {
+
+    reportFatalError("AcceptLanguageMalformed",null);
+
+    acceptLanguage=null;
+
+  }
+
+  XMLInputSource includedSource=null;
+
+  if (fEntityResolver != null) {
+
+    try {
+
+      XMLResourceIdentifier resourceIdentifier=new XMLResourceIdentifierImpl(null,href,fCurrentBaseURI.getExpandedSystemId(),XMLEntityManager.expandSystemId(href,fCurrentBaseURI.getExpandedSystemId(),false));
+
+      includedSource=fEntityResolver.resolveEntity(resourceIdentifier);
+
+      if (includedSource != null && !(includedSource instanceof HTTPInputSource) && (accept != null || acceptLanguage != null) && includedSource.getCharacterStream() == null && includedSource.getByteStream() == null) {
+
+        includedSource=createInputSource(includedSource.getPublicId(),includedSource.getSystemId(),includedSource.getBaseSystemId(),accept,acceptLanguage);
+
+      }
+
+    }
+
+ catch (    IOException e) {
+
+      reportResourceError("XMLResourceError",new Object[]{href,e.getMessage()},e);
+
+      return false;
+
+    }
+
+  }
+
+  if (includedSource == null) {
+
+    if (accept != null || acceptLanguage != null) {
+
+      includedSource=createInputSource(null,href,fCurrentBaseURI.getExpandedSystemId(),accept,acceptLanguage);
+
+    }
+
+ else {
+
+      includedSource=new XMLInputSource(null,href,fCurrentBaseURI.getExpandedSystemId());
+
+    }
+
+  }
+
+  if (parse.equals(XINCLUDE_PARSE_XML)) {
+
+    if ((xpointer != null && fXPointerChildConfig == null) || (xpointer == null && fXIncludeChildConfig == null)) {
+
+      String parserName=XINCLUDE_DEFAULT_CONFIGURATION;
+
+      if (xpointer != null)       parserName="org.apache.xerces.parsers.XPointerParserConfiguration";
+
+      fChildConfig=(XMLParserConfiguration)ObjectFactory.newInstance(parserName,ObjectFactory.findClassLoader(),true);
+
+      if (fSymbolTable != null)       fChildConfig.setProperty(SYMBOL_TABLE,fSymbolTable);
+
+      if (fErrorReporter != null)       fChildConfig.setProperty(ERROR_REPORTER,fErrorReporter);
+
+      if (fEntityResolver != null)       fChildConfig.setProperty(ENTITY_RESOLVER,fEntityResolver);
+
+      fChildConfig.setProperty(SECURITY_MANAGER,fSecurityManager);
+
+      fChildConfig.setProperty(BUFFER_SIZE,new Integer(fBufferSize));
+
+      fNeedCopyFeatures=true;
+
+      fChildConfig.setProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.NAMESPACE_CONTEXT_PROPERTY,fNamespaceContext);
+
+      fChildConfig.setFeature(XINCLUDE_FIXUP_BASE_URIS,fFixupBaseURIs);
+
+      fChildConfig.setFeature(XINCLUDE_FIXUP_LANGUAGE,fFixupLanguage);
+
+      if (xpointer != null) {
+
+        XPointerHandler newHandler=(XPointerHandler)fChildConfig.getProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.XPOINTER_HANDLER_PROPERTY);
+
+        fXPtrProcessor=newHandler;
+
+        ((XPointerHandler)fXPtrProcessor).setProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.NAMESPACE_CONTEXT_PROPERTY,fNamespaceContext);
+
+        ((XPointerHandler)fXPtrProcessor).setProperty(XINCLUDE_FIXUP_BASE_URIS,fFixupBaseURIs ? Boolean.TRUE : Boolean.FALSE);
+
+        ((XPointerHandler)fXPtrProcessor).setProperty(XINCLUDE_FIXUP_LANGUAGE,fFixupLanguage ? Boolean.TRUE : Boolean.FALSE);
+
+        if (fErrorReporter != null)         ((XPointerHandler)fXPtrProcessor).setProperty(ERROR_REPORTER,fErrorReporter);
+
+        newHandler.setParent(this);
+
+        newHandler.setHref(href);
+
+        newHandler.setXIncludeLocator(fXIncludeLocator);
+
+        newHandler.setDocumentHandler(this.getDocumentHandler());
+
+        fXPointerChildConfig=fChildConfig;
+
+      }
+
+ else {
+
+        XIncludeHandler newHandler=(XIncludeHandler)fChildConfig.getProperty(Constants.XERCES_PROPERTY_PREFIX + Constants.XINCLUDE_HANDLER_PROPERTY);
+
+        newHandler.setParent(this);
+
+        newHandler.setHref(href);
+
+        newHandler.setXIncludeLocator(fXIncludeLocator);
+
+        newHandler.setDocumentHandler(this.getDocumentHandler());
+
+        fXIncludeChildConfig=fChildConfig;
+
+      }
+
+    }
+
+    if (xpointer != null) {
+
+      fChildConfig=fXPointerChildConfig;
+
+      try {
+
+        ((XPointerProcessor)fXPtrProcessor).parseXPointer(xpointer);
+
+      }
+
+ catch (      XNIException ex) {
+
+        reportResourceError("XMLResourceError",new Object[]{href,ex.getMessage()});
+
+        return false;
+
+      }
+
+    }
+
+ else {
+
+      fChildConfig=fXIncludeChildConfig;
+
+    }
+
+    if (fNeedCopyFeatures) {
+
+      copyFeatures(fSettings,fChildConfig);
+
+    }
+
+    fNeedCopyFeatures=false;
+
+    try {
+
+      fHasIncludeReportedContent=false;
+
+      fNamespaceContext.pushScope();
+
+      fChildConfig.parse(includedSource);
+
+      fXIncludeLocator.setLocator(fDocLocation);
+
+      if (fErrorReporter != null) {
+
+        fErrorReporter.setDocumentLocator(fDocLocation);
+
+      }
+
+      if (xpointer != null) {
+
+        if (!((XPointerProcessor)fXPtrProcessor).isXPointerResolved()) {
+
+          Locale locale=(fErrorReporter != null) ? fErrorReporter.getLocale() : null;
+
+          String reason=fXIncludeMessageFormatter.formatMessage(locale,"XPointerResolutionUnsuccessful",null);
+
+          reportResourceError("XMLResourceError",new Object[]{href,reason});
+
+          return false;
+
+        }
+
+      }
+
+    }
+
+ catch (    XNIException e) {
+
+      fXIncludeLocator.setLocator(fDocLocation);
+
+      if (fErrorReporter != null) {
+
+        fErrorReporter.setDocumentLocator(fDocLocation);
+
+      }
+
+      reportFatalError("XMLParseError",new Object[]{href});
+
+    }
+
+catch (    IOException e) {
+
+      fXIncludeLocator.setLocator(fDocLocation);
+
+      if (fErrorReporter != null) {
+
+        fErrorReporter.setDocumentLocator(fDocLocation);
+
+      }
+
+      if (fHasIncludeReportedContent) {
+
+        throw new XNIException(e);
+
+      }
+
+      reportResourceError("XMLResourceError",new Object[]{href,e.getMessage()},e);
+
+      return false;
+
+    }
+
+ finally {
+
+      fNamespaceContext.popScope();
+
+    }
+
+  }
+
+ else   if (parse.equals(XINCLUDE_PARSE_TEXT)) {
+
+    String encoding=attributes.getValue(XINCLUDE_ATTR_ENCODING);
+
+    includedSource.setEncoding(encoding);
+
+    XIncludeTextReader textReader=null;
+
+    try {
+
+      fHasIncludeReportedContent=false;
+
+      if (!fIsXML11) {
+
+        if (fXInclude10TextReader == null) {
+
+          fXInclude10TextReader=new XIncludeTextReader(includedSource,this,fBufferSize);
+
+        }
+
+ else {
+
+          fXInclude10TextReader.setInputSource(includedSource);
+
+        }
+
+        textReader=fXInclude10TextReader;
+
+      }
+
+ else {
+
+        if (fXInclude11TextReader == null) {
+
+          fXInclude11TextReader=new XInclude11TextReader(includedSource,this,fBufferSize);
+
+        }
+
+ else {
+
+          fXInclude11TextReader.setInputSource(includedSource);
+
+        }
+
+        textReader=fXInclude11TextReader;
+
+      }
+
+      textReader.setErrorReporter(fErrorReporter);
+
+      textReader.parse();
+
+    }
+
+ catch (    MalformedByteSequenceException ex) {
+
+      fErrorReporter.reportError(ex.getDomain(),ex.getKey(),ex.getArguments(),XMLErrorReporter.SEVERITY_FATAL_ERROR,ex);
+
+    }
+
+catch (    CharConversionException e) {
+
+      fErrorReporter.reportError(XMLMessageFormatter.XML_DOMAIN,"CharConversionFailure",null,XMLErrorReporter.SEVERITY_FATAL_ERROR,e);
+
+    }
+
+catch (    IOException e) {
+
+      if (fHasIncludeReportedContent) {
+
+        throw new XNIException(e);
+
+      }
+
+      reportResourceError("TextResourceError",new Object[]{href,e.getMessage()},e);
+
+      return false;
+
+    }
+
+ finally {
+
+      if (textReader != null) {
+
+        try {
+
+          textReader.close();
+
+        }
+
+ catch (        IOException e) {
+
+          reportResourceError("TextResourceError",new Object[]{href,e.getMessage()},e);
+
+          return false;
+
+        }
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    reportFatalError("InvalidParseValue",new Object[]{parse});
+
+  }
+
+  return true;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns true if the element has the namespace "http://www.w3.org/2001/XInclude"
+
+ * @param element the element to check
+
+ * @return true if the element has the namespace "http://www.w3.org/2001/XInclude"
+
+ */
+
+protected boolean hasXIncludeNamespace(QName element){
+
+  return element.uri == XINCLUDE_NS_URI || fNamespaceContext.getURI(element.prefix) == XINCLUDE_NS_URI;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+private boolean isEqual(String one,String two){
+
+  return (one == two || (one != null && one.equals(two)));
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Checks if the element is an &lt;fallback&gt; element.  The element must have the XInclude namespace, and a local name of "fallback".
+
+ * @param element the element to check
+
+ * @return true if the element is an &lt;fallback; element
+
+ * @see #hasXIncludeNamespace(QName)
+
+ */
+
+protected boolean isFallbackElement(QName element){
+
+  return element.localpart.equals(XINCLUDE_FALLBACK) && hasXIncludeNamespace(element);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Checks if the element is an &lt;include&gt; element.  The element must have the XInclude namespace, and a local name of "include".
+
+ * @param element the element to check
+
+ * @return true if the element is an &lt;include&gt; element
+
+ * @see #hasXIncludeNamespace(QName)
+
+ */
+
+protected boolean isIncludeElement(QName element){
+
+  return element.localpart.equals(XINCLUDE_INCLUDE) && hasXIncludeNamespace(element);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected boolean isRootDocument(){
+
+  return fParentXIncludeHandler == null;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns true if the current element is a top level included item.  This means it's either the child of a fallback element, or the top level item in an included document
+
+ * @return true if the current element is a top level included item
+
+ */
+
+protected boolean isTopLevelIncludedItem(){
+
+  return isTopLevelIncludedItemViaInclude() || isTopLevelIncludedItemViaFallback();
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected boolean isTopLevelIncludedItemViaFallback(){
+
+  return getSawFallback(fDepth - 1);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected boolean isTopLevelIncludedItemViaInclude(){
+
+  return fDepth == 1 && !isRootDocument();
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns <code>true</code> if the given string  would be valid in an HTTP header.
+
+ * @param value string to check
+
+ * @return <code>true</code> if the given stringwould be valid in an HTTP header
+
+ */
+
+private boolean isValidInHTTPHeader(String value){
+
+  char ch;
+
+  for (int i=value.length() - 1; i >= 0; --i) {
+
+    ch=value.charAt(i);
+
+    if (ch < 0x20 || ch > 0x7E) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Modify the augmentations.  Add an [included] infoset item, if the current element is a top level included item.
+
+ * @param augs the Augmentations to modify.
+
+ * @return the modified Augmentations
+
+ */
+
+protected Augmentations modifyAugmentations(Augmentations augs){
+
+  return modifyAugmentations(augs,false);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Modify the augmentations.  Add an [included] infoset item, if <code>force</code> is true, or if the current element is a top level included item.
+
+ * @param augs the Augmentations to modify.
+
+ * @param force whether to force modification
+
+ * @return the modified Augmentations
+
+ */
+
+protected Augmentations modifyAugmentations(Augmentations augs,boolean force){
+
+  if (force || isTopLevelIncludedItem()) {
+
+    if (augs == null) {
+
+      augs=new AugmentationsImpl();
+
+    }
+
+    augs.putItem(XINCLUDE_INCLUDED,Boolean.TRUE);
+
+  }
+
+  return augs;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Search for a xml:base attribute, and if one is found, put the new base URI into effect.
+
+ */
+
+protected void processXMLBaseAttributes(XMLAttributes attributes){
+
+  String baseURIValue=attributes.getValue(NamespaceContext.XML_URI,"base");
+
+  if (baseURIValue != null) {
+
+    try {
+
+      String expandedValue=XMLEntityManager.expandSystemId(baseURIValue,fCurrentBaseURI.getExpandedSystemId(),false);
+
+      fCurrentBaseURI.setLiteralSystemId(baseURIValue);
+
+      fCurrentBaseURI.setBaseSystemId(fCurrentBaseURI.getExpandedSystemId());
+
+      fCurrentBaseURI.setExpandedSystemId(expandedValue);
+
+      saveBaseURI();
+
+    }
+
+ catch (    MalformedURIException e) {
+
+    }
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Search for a xml:lang attribute, and if one is found, put the new  [language] into effect.
+
+ */
+
+protected void processXMLLangAttributes(XMLAttributes attributes){
+
+  String language=attributes.getValue(NamespaceContext.XML_URI,"lang");
+
+  if (language != null) {
+
+    fCurrentLanguage=language;
+
+    saveLanguage(fCurrentLanguage);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+private void reportError(String key,Object[] args,short severity,Exception exception){
+
+  if (fErrorReporter != null) {
+
+    fErrorReporter.reportError(XIncludeMessageFormatter.XINCLUDE_DOMAIN,key,args,severity,exception);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void reportFatalError(String key){
+
+  this.reportFatalError(key,null);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void reportFatalError(String key,Object[] args){
+
+  this.reportFatalError(key,args,null);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void reportFatalError(String key,Object[] args,Exception exception){
+
+  this.reportError(key,args,XMLErrorReporter.SEVERITY_FATAL_ERROR,exception);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void reportResourceError(String key){
+
+  this.reportResourceError(key,null);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void reportResourceError(String key,Object[] args){
+
+  this.reportResourceError(key,args,null);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void reportResourceError(String key,Object[] args,Exception exception){
+
+  this.reportError(key,args,XMLErrorReporter.SEVERITY_WARNING,exception);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Discards the URIs at the top of the stack, and restores the ones beneath it.
+
+ */
+
+protected void restoreBaseURI(){
+
+  fBaseURI.pop();
+
+  fLiteralSystemID.pop();
+
+  fExpandedSystemID.pop();
+
+  fBaseURIScope.pop();
+
+  fCurrentBaseURI.setBaseSystemId((String)fBaseURI.peek());
+
+  fCurrentBaseURI.setLiteralSystemId((String)fLiteralSystemID.peek());
+
+  fCurrentBaseURI.setExpandedSystemId((String)fExpandedSystemID.peek());
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Discards the language at the top of the stack, and returns the one beneath it.
+
+ */
+
+public String restoreLanguage(){
+
+  fLanguageStack.pop();
+
+  fLanguageScope.pop();
+
+  return (String)fLanguageStack.peek();
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns true if the current [base URI] is the same as the [base URI] that was in effect on the include parent.  This method should <em>only</em> be called when the current element is a top level included element, i.e. the direct child of a fallback element, or the root elements in an included document. The "include parent" is the element which, in the result infoset, will be the direct parent of the current element.
+
+ * @return true if the [base URIs] are the same string
+
+ */
+
+protected boolean sameBaseURIAsIncludeParent(){
+
+  String parentBaseURI=getIncludeParentBaseURI();
+
+  String baseURI=fCurrentBaseURI.getExpandedSystemId();
+
+  return parentBaseURI != null && parentBaseURI.equals(baseURI);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Returns true if the current [language] is equivalent to the [language] that was in effect on the include parent, taking case-insensitivity into account as per [RFC 3066].  This method should <em>only</em> be called when the current element is a top level included element, i.e. the direct child of a fallback element, or the root elements in an included document. The "include parent" is the element which, in the result infoset, will be the direct parent of the current element.
+
+ * @return true if the [language] properties have the same valuetaking case-insensitivity into account as per [RFC 3066].
+
+ */
+
+protected boolean sameLanguageAsIncludeParent(){
+
+  String parentLanguage=getIncludeParentLanguage();
+
+  return parentLanguage != null && parentLanguage.equalsIgnoreCase(fCurrentLanguage);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Saves the current base URI to the top of the stack.
+
+ */
+
+protected void saveBaseURI(){
+
+  fBaseURIScope.push(fDepth);
+
+  fBaseURI.push(fCurrentBaseURI.getBaseSystemId());
+
+  fLiteralSystemID.push(fCurrentBaseURI.getLiteralSystemId());
+
+  fExpandedSystemID.push(fCurrentBaseURI.getExpandedSystemId());
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Saves the given language on the top of the stack.
+
+ * @param language the language to push onto the stack.
+
+ */
+
+protected void saveLanguage(String language){
+
+  fLanguageScope.push(fDepth);
+
+  fLanguageStack.push(language);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+private int scopeOfBaseURI(int depth){
+
+  for (int i=fBaseURIScope.size() - 1; i >= 0; i--) {
+
+    if (fBaseURIScope.elementAt(i) <= depth)     return i;
+
+  }
+
+  return -1;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+private int scopeOfLanguage(int depth){
+
+  for (int i=fLanguageScope.size() - 1; i >= 0; i--) {
+
+    if (fLanguageScope.elementAt(i) <= depth)     return i;
+
+  }
+
+  return -1;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Checks if the file indicated by the given system id has already been included in the current stack.
+
+ * @param includedSysId the system id to check for inclusion
+
+ * @return true if the source has already been included
+
+ */
+
+protected boolean searchForRecursiveIncludes(String includedSysId){
+
+  if (includedSysId.equals(fCurrentBaseURI.getExpandedSystemId())) {
+
+    return true;
+
+  }
+
+ else   if (fParentXIncludeHandler == null) {
+
+    return false;
+
+  }
+
+ else {
+
+    return fParentXIncludeHandler.searchForRecursiveIncludes(includedSysId);
+
+  }
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void setHref(String href){
+
+  fHrefFromParent=href;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Set the parent of this XIncludeHandler in the tree
+
+ * @param parent
+
+ */
+
+protected void setParent(XIncludeHandler parent){
+
+  fParentXIncludeHandler=parent;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Sets whether the root element has been processed.
+
+ */
+
+private void setRootElementProcessed(boolean seenRoot){
+
+  if (isRootDocument()) {
+
+    fSeenRootElement=seenRoot;
+
+    return;
+
+  }
+
+  fParentXIncludeHandler.setRootElementProcessed(seenRoot);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Records that an &lt;fallback&gt; was encountered at the specified depth, as an ancestor of the current element, or as a sibling of an ancestor of the current element.
+
+ * @param depth
+
+ * @param val
+
+ */
+
+protected void setSawFallback(int depth,boolean val){
+
+  if (depth >= fSawFallback.length) {
+
+    boolean[] newarray=new boolean[depth * 2];
+
+    System.arraycopy(fSawFallback,0,newarray,0,fSawFallback.length);
+
+    fSawFallback=newarray;
+
+  }
+
+  fSawFallback[depth]=val;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+/** 
+
+ * Records that an &lt;include&gt; was encountered at the specified depth, as an ancestor of the current item.
+
+ * @param depth
+
+ * @param val
+
+ */
+
+protected void setSawInclude(int depth,boolean val){
+
+  if (depth >= fSawInclude.length) {
+
+    boolean[] newarray=new boolean[depth * 2];
+
+    System.arraycopy(fSawInclude,0,newarray,0,fSawInclude.length);
+
+    fSawInclude=newarray;
+
+  }
+
+  fSawInclude[depth]=val;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void setState(int state){
+
+  if (fDepth >= fState.length) {
+
+    int[] newarray=new int[fDepth * 2];
+
+    System.arraycopy(fState,0,newarray,0,fState.length);
+
+    fState=newarray;
+
+  }
+
+  fState[fDepth]=state;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void setupCurrentBaseURI(XMLLocator locator){
+
+  fCurrentBaseURI.setBaseSystemId(locator.getBaseSystemId());
+
+  if (locator.getLiteralSystemId() != null) {
+
+    fCurrentBaseURI.setLiteralSystemId(locator.getLiteralSystemId());
+
+  }
+
+ else {
+
+    fCurrentBaseURI.setLiteralSystemId(fHrefFromParent);
+
+  }
+
+  String expandedSystemId=locator.getExpandedSystemId();
+
+  if (expandedSystemId == null) {
+
+    try {
+
+      expandedSystemId=XMLEntityManager.expandSystemId(fCurrentBaseURI.getLiteralSystemId(),fCurrentBaseURI.getBaseSystemId(),false);
+
+      if (expandedSystemId == null) {
+
+        expandedSystemId=fCurrentBaseURI.getLiteralSystemId();
+
+      }
+
+    }
+
+ catch (    MalformedURIException e) {
+
+      reportFatalError("ExpandedSystemId");
+
+    }
+
+  }
+
+  fCurrentBaseURI.setExpandedSystemId(expandedSystemId);
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+protected void setXIncludeLocator(XMLLocatorWrapper locator){
+
+  fXIncludeLocator=locator;
+
+}
+
+Location: XIncludeHandler.java
+
+Content: 
+
+public XIncludeHandler(){
+
+  fDepth=0;
+
+  fSawFallback[fDepth]=false;
+
+  fSawInclude[fDepth]=false;
+
+  fState[fDepth]=STATE_NORMAL_PROCESSING;
+
+  fNotations=new ArrayList();
+
+  fUnparsedEntities=new ArrayList();
+
+  fBaseURIScope=new IntStack();
+
+  fBaseURI=new Stack();
+
+  fLiteralSystemID=new Stack();
+
+  fExpandedSystemID=new Stack();
+
+  fCurrentBaseURI=new XMLResourceIdentifierImpl();
+
+  fLanguageScope=new IntStack();
+
+  fLanguageStack=new Stack();
+
+  fCurrentLanguage=null;
+
+}
+

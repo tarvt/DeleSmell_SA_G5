@@ -1,0 +1,122 @@
+Location: TestConcurrentRead.java
+
+Content: 
+
+@BeforeClass static public void globalSetUp() throws IOException {
+
+  conf=new Configuration();
+
+  lfs=FileSystem.getLocal(conf);
+
+  Path rootInputDir=new Path(System.getProperty("test.tools.input.dir","")).makeQualified(lfs.getUri(),lfs.getWorkingDirectory());
+
+  path=new Path(rootInputDir,traceFile);
+
+  JobTraceReader reader=new JobTraceReader(path,conf);
+
+  try {
+
+    LoggedJob job;
+
+    while ((job=reader.getNext()) != null) {
+
+      cachedTrace.add(job);
+
+    }
+
+  }
+
+  finally {
+
+    reader.close();
+
+  }
+
+}
+
+Location: TestConcurrentRead.java
+
+Content: 
+
+void readAndCompare() throws IOException {
+
+  JobTraceReader reader=new JobTraceReader(path,conf);
+
+  try {
+
+    for (Iterator<LoggedJob> it=cachedTrace.iterator(); it.hasNext(); ) {
+
+      LoggedJob jobExpected=it.next();
+
+      LoggedJob jobRead=reader.getNext();
+
+      assertNotNull(jobRead);
+
+      try {
+
+        jobRead.deepCompare(jobExpected,null);
+
+      }
+
+ catch (      DeepInequalityException e) {
+
+        fail(e.toString());
+
+      }
+
+    }
+
+    assertNull(reader.getNext());
+
+  }
+
+  finally {
+
+    reader.close();
+
+  }
+
+}
+
+Location: TestConcurrentRead.java
+
+Content: 
+
+@Test public void testConcurrentRead() throws InterruptedException {
+
+  int nThr=conf.getInt("test.rumen.concurrent-read.threads",4);
+
+  int repeat=conf.getInt("test.rumen.concurrent-read.repeat",10);
+
+  CountDownLatch startSignal=new CountDownLatch(1);
+
+  CountDownLatch doneSignal=new CountDownLatch(nThr);
+
+  Map<String,Throwable> errors=Collections.synchronizedMap(new TreeMap<String,Throwable>());
+
+  for (int i=0; i < nThr; ++i) {
+
+    new TestThread(i,repeat,startSignal,doneSignal,errors).start();
+
+  }
+
+  startSignal.countDown();
+
+  doneSignal.await();
+
+  if (!errors.isEmpty()) {
+
+    StringBuilder sb=new StringBuilder();
+
+    for (    Map.Entry<String,Throwable> e : errors.entrySet()) {
+
+      sb.append(String.format("%s:\n%s\n",e.getKey(),e.getValue().toString()));
+
+    }
+
+    fail(sb.toString());
+
+  }
+
+}
+

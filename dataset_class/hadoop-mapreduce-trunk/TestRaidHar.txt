@@ -1,0 +1,228 @@
+Location: TestRaidHar.java
+
+Content: 
+
+/** 
+
+ * Create parity file, delete original file and then validate that parity file is automatically deleted.
+
+ */
+
+private void doTestHar(int iter,long targetReplication,long metaReplication,long stripeLength,long blockSize,int numBlock) throws Exception {
+
+  LOG.info("doTestHar started---------------------------:" + " iter " + iter + " blockSize="+ blockSize+ " stripeLength="+ stripeLength);
+
+  mySetup(targetReplication,metaReplication,stripeLength);
+
+  Path dir=new Path("/user/test/raidtest/subdir/");
+
+  Path file1=new Path(dir + "/file" + iter);
+
+  RaidNode cnode=null;
+
+  try {
+
+    Path destPath=new Path("/destraid/user/test/raidtest/subdir");
+
+    fileSys.delete(dir,true);
+
+    fileSys.delete(destPath,true);
+
+    for (int i=0; i < 10; i++) {
+
+      Path file=new Path(dir + "/file" + i);
+
+      TestRaidNode.createOldFile(fileSys,file,1,numBlock,blockSize);
+
+    }
+
+    LOG.info("doTestHar created test files for iteration " + iter);
+
+    Configuration localConf=new Configuration(conf);
+
+    localConf.set(RaidNode.RAID_LOCATION_KEY,"/destraid");
+
+    cnode=RaidNode.createRaidNode(null,localConf);
+
+    FileStatus[] listPaths=null;
+
+    int maxFilesFound=0;
+
+    while (true) {
+
+      try {
+
+        listPaths=fileSys.listStatus(destPath);
+
+        int count=0;
+
+        Path harPath=null;
+
+        int filesFound=0;
+
+        if (listPaths != null) {
+
+          for (          FileStatus s : listPaths) {
+
+            LOG.info("doTestHar found path " + s.getPath());
+
+            if (!s.isDir())             filesFound++;
+
+            if (filesFound > maxFilesFound)             maxFilesFound=filesFound;
+
+            if (s.getPath().toString().endsWith(".har")) {
+
+              assertEquals(10,maxFilesFound);
+
+              harPath=s.getPath();
+
+              count++;
+
+            }
+
+          }
+
+        }
+
+        if (count == 1 && listPaths.length == 1) {
+
+          Path partfile=new Path(harPath,"part-0");
+
+          assertEquals(fileSys.getFileStatus(partfile).getReplication(),targetReplication);
+
+          break;
+
+        }
+
+      }
+
+ catch (      FileNotFoundException e) {
+
+      }
+
+      LOG.info("doTestHar waiting for files to be raided and parity files to be har'ed and deleted. Found " + (listPaths == null ? "none" : listPaths.length));
+
+      Thread.sleep(1000);
+
+    }
+
+    fileSys.delete(dir,true);
+
+    int count=1;
+
+    while (count > 0) {
+
+      count=0;
+
+      try {
+
+        listPaths=fileSys.listStatus(destPath);
+
+        if (listPaths != null) {
+
+          for (          FileStatus s : listPaths) {
+
+            LOG.info("doTestHar found path " + s.getPath());
+
+            if (s.getPath().toString().endsWith(".har")) {
+
+              count++;
+
+            }
+
+          }
+
+        }
+
+      }
+
+ catch (      FileNotFoundException e) {
+
+      }
+
+      LOG.info("doTestHar waiting for har file to be deleted. Found " + (listPaths == null ? "none" : listPaths.length) + " files");
+
+      Thread.sleep(1000);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.info("doTestHar Exception " + e + StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+ finally {
+
+    if (cnode != null) {
+
+      cnode.stop();
+
+      cnode.join();
+
+    }
+
+  }
+
+  LOG.info("doTestHar completed:" + " blockSize=" + blockSize + " stripeLength="+ stripeLength);
+
+}
+
+Location: TestRaidHar.java
+
+Content: 
+
+/** 
+
+ * Test that parity files that do not have an associated master file get deleted.
+
+ */
+
+public void testRaidHar() throws Exception {
+
+  LOG.info("Test testRaidHar  started.");
+
+  long blockSizes[]={1024L};
+
+  long stripeLengths[]={5};
+
+  long targetReplication=1;
+
+  long metaReplication=1;
+
+  int numBlock=9;
+
+  int iter=0;
+
+  createClusters(true);
+
+  try {
+
+    for (    long blockSize : blockSizes) {
+
+      for (      long stripeLength : stripeLengths) {
+
+        doTestHar(iter,targetReplication,metaReplication,stripeLength,blockSize,numBlock);
+
+        iter++;
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    stopClusters();
+
+  }
+
+  LOG.info("Test testRaidHar completed.");
+
+}
+

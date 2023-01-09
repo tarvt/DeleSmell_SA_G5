@@ -1,0 +1,142 @@
+Location: PDFVTTestCase.java
+
+Content: 
+
+private void checkPDF(ByteArrayOutputStream out) throws IOException {
+
+  Map<String,StringBuilder> objs=PDFLinearizationTestCase.readObjs(new ByteArrayInputStream(out.toByteArray()));
+
+  String dpart=getObj(objs.values(),"/DParts");
+
+  int v=getValue("/DParts",dpart);
+
+  String dpm=objs.get(v + " 0 obj").toString();
+
+  Assert.assertTrue(dpm.contains("/DPM << /CIP4_Root << /CIP4_Production << /CIP4_Part << /CIP4_ProductType (frontpages) >>"));
+
+}
+
+Location: PDFVTTestCase.java
+
+Content: 
+
+private void foToOutput(ByteArrayOutputStream out,String mimeFopIf) throws IOException, SAXException, TransformerException {
+
+  FopFactory fopFactory=getFopFactory();
+
+  FOUserAgent userAgent=fopFactory.newFOUserAgent();
+
+  if (mimeFopIf.equals(MimeConstants.MIME_FOP_IF)) {
+
+    IFSerializer serializer=new IFSerializer(new IFContext(userAgent));
+
+    IFDocumentHandler targetHandler=userAgent.getRendererFactory().createDocumentHandler(userAgent,MimeConstants.MIME_PDF);
+
+    serializer.mimicDocumentHandler(targetHandler);
+
+    userAgent.setDocumentHandlerOverride(serializer);
+
+  }
+
+  Fop fop=fopFactory.newFop(mimeFopIf,userAgent,out);
+
+  Transformer transformer=TransformerFactory.newInstance().newTransformer();
+
+  Source src=new StreamSource(PDFVTTestCase.class.getResource("PDFVT.fo").openStream());
+
+  Result res=new SAXResult(fop.getDefaultHandler());
+
+  transformer.transform(src,res);
+
+}
+
+Location: PDFVTTestCase.java
+
+Content: 
+
+private FopFactory getFopFactory() throws IOException, SAXException {
+
+  return FopFactory.newInstance(new File(".").toURI(),PDFVTTestCase.class.getResource("PDFVT.xconf").openStream());
+
+}
+
+Location: PDFVTTestCase.java
+
+Content: 
+
+private int getValue(String name,String firstObj) throws IOException {
+
+  String[] split=firstObj.split(" ");
+
+  for (int i=0; i < split.length; i++) {
+
+    if (split[i].equals(name)) {
+
+      return Integer.valueOf(split[i + 1].replace("[[",""));
+
+    }
+
+  }
+
+  throw new IOException(name + " not found " + firstObj);
+
+}
+
+Location: PDFVTTestCase.java
+
+Content: 
+
+private void iFToPDF(InputStream is) throws IOException, SAXException, TransformerException, IFException {
+
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+
+  FOUserAgent userAgent=getFopFactory().newFOUserAgent();
+
+  Transformer transformer=TransformerFactory.newInstance().newTransformer();
+
+  Source src=new StreamSource(is);
+
+  IFDocumentHandler documentHandler=userAgent.getRendererFactory().createDocumentHandler(userAgent,MimeConstants.MIME_PDF);
+
+  documentHandler.setResult(new StreamResult(out));
+
+  IFUtil.setupFonts(documentHandler);
+
+  IFParser parser=new IFParser();
+
+  Result res=new SAXResult(parser.getContentHandler(documentHandler,userAgent));
+
+  transformer.transform(src,res);
+
+  checkPDF(out);
+
+}
+
+Location: PDFVTTestCase.java
+
+Content: 
+
+@Test public void textFO() throws IOException, SAXException, TransformerException, IFException {
+
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+
+  foToOutput(out,MimeConstants.MIME_PDF);
+
+  checkPDF(out);
+
+}
+
+Location: PDFVTTestCase.java
+
+Content: 
+
+@Test public void textIF() throws IOException, SAXException, TransformerException, IFException {
+
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+
+  foToOutput(out,MimeConstants.MIME_FOP_IF);
+
+  iFToPDF(new ByteArrayInputStream(out.toByteArray()));
+
+}
+

@@ -1,0 +1,176 @@
+Location: ArcSegmentCreator.java
+
+Content: 
+
+public ArcSegmentCreator(){
+
+}
+
+Location: ArcSegmentCreator.java
+
+Content: 
+
+/** 
+
+ * Constructor that sets the job configuration.
+
+ * @param conf a populated {@link Configuration}
+
+ */
+
+public ArcSegmentCreator(Configuration conf){
+
+  setConf(conf);
+
+}
+
+Location: ArcSegmentCreator.java
+
+Content: 
+
+public void close(){
+
+}
+
+Location: ArcSegmentCreator.java
+
+Content: 
+
+/** 
+
+ * Creates the arc files to segments job.
+
+ * @param arcFiles The path to the directory holding the arc files
+
+ * @param segmentsOutDir The output directory for writing the segments
+
+ * @throws IOException If an IO error occurs while running the job.
+
+ * @throws InterruptedException if this {@link Job} is interrupted
+
+ * @throws ClassNotFoundException if there is an error locating aclass during runtime
+
+ */
+
+public void createSegments(Path arcFiles,Path segmentsOutDir) throws IOException, InterruptedException, ClassNotFoundException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("ArcSegmentCreator: starting at " + sdf.format(start));
+
+    LOG.info("ArcSegmentCreator: arc files dir: " + arcFiles);
+
+  }
+
+  Job job=NutchJob.getInstance(getConf());
+
+  Configuration conf=job.getConfiguration();
+
+  job.setJobName("ArcSegmentCreator " + arcFiles);
+
+  String segName=generateSegmentName();
+
+  conf.set(Nutch.SEGMENT_NAME_KEY,segName);
+
+  FileInputFormat.addInputPath(job,arcFiles);
+
+  job.setInputFormatClass(ArcInputFormat.class);
+
+  job.setJarByClass(ArcSegmentCreator.class);
+
+  job.setMapperClass(ArcSegmentCreator.ArcSegmentCreatorMapper.class);
+
+  FileOutputFormat.setOutputPath(job,new Path(segmentsOutDir,segName));
+
+  job.setOutputFormatClass(FetcherOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(NutchWritable.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="ArcSegmentCreator job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("ArcSegmentCreator: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+
+Location: ArcSegmentCreator.java
+
+Content: 
+
+/** 
+
+ * Generates a random name for the segments.
+
+ * @return The generated segment name.
+
+ */
+
+public static synchronized String generateSegmentName(){
+
+  try {
+
+    Thread.sleep(1000);
+
+  }
+
+ catch (  Throwable t) {
+
+  }
+
+  return sdf.format(new Date(System.currentTimeMillis()));
+
+}
+
+Location: ArcSegmentCreator.java
+
+Content: 
+
+/** 
+
+ * Logs any error that occurs during conversion.
+
+ * @param url The url we are parsing.
+
+ * @param t The error that occured.
+
+ */
+
+private static void logError(Text url,Throwable t){
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("Conversion of " + url + " failed with: "+ StringUtils.stringifyException(t));
+
+  }
+
+}
+

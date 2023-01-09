@@ -1,0 +1,166 @@
+Location: TestJvmReuse.java
+
+Content: 
+
+public RunningJob launchJob(JobConf conf,Path inDir,Path outDir) throws IOException {
+
+  FileSystem inFs=inDir.getFileSystem(conf);
+
+  FileSystem outFs=outDir.getFileSystem(conf);
+
+  outFs.delete(outDir,true);
+
+  if (!inFs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+  for (int i=0; i < numMappers; i++) {
+
+    DataOutputStream file=inFs.create(new Path(inDir,"part-" + i));
+
+    file.writeBytes("input");
+
+    file.close();
+
+  }
+
+  conf.setMapperClass(MapperClass.class);
+
+  conf.setNumReduceTasks(0);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  conf.setNumTasksToExecutePerJvm(-1);
+
+  return new JobClient(conf).submitJob(conf);
+
+}
+
+Location: TestJvmReuse.java
+
+Content: 
+
+/** 
+
+ * Runs job with jvm reuse and verifies that the logs for all attempts can be read properly.
+
+ * @throws IOException
+
+ */
+
+@Test public void testTaskLogs() throws IOException {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    Configuration conf=new Configuration();
+
+    final int taskTrackers=1;
+
+    conf.setInt("mapred.tasktracker.map.tasks.maximum",1);
+
+    mr=new MiniMRCluster(taskTrackers,"file:///",1);
+
+    final Path inDir=new Path(rootDir,"input");
+
+    final Path outDir=new Path(rootDir,"output");
+
+    JobConf jobConf=mr.createJobConf();
+
+    jobConf.setOutputCommitter(TestTaskFail.CommitterWithLogs.class);
+
+    RunningJob rJob=launchJob(jobConf,inDir,outDir);
+
+    rJob.waitForCompletion();
+
+    validateJob(rJob,mr);
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestJvmReuse.java
+
+Content: 
+
+private void validateAttempt(TaskInProgress tip,TaskAttemptID attemptId,TaskStatus ts,boolean isCleanup) throws IOException {
+
+  assertEquals(isCleanup,tip.isCleanupAttempt(attemptId));
+
+  String log=MapReduceTestUtil.readTaskLog(TaskLog.LogName.STDERR,attemptId,false);
+
+  assertTrue(log.equals(attemptId.toString()));
+
+  assertTrue(ts != null);
+
+  if (!isCleanup) {
+
+    assertEquals(TaskStatus.State.SUCCEEDED,ts.getRunState());
+
+  }
+
+ else {
+
+    assertEquals(TaskStatus.State.FAILED,ts.getRunState());
+
+    log=MapReduceTestUtil.readTaskLog(TaskLog.LogName.STDERR,attemptId,true);
+
+    assertTrue(log.equals(TestTaskFail.cleanupLog));
+
+  }
+
+}
+
+Location: TestJvmReuse.java
+
+Content: 
+
+private void validateJob(RunningJob job,MiniMRCluster mr) throws IOException {
+
+  assertEquals(JobStatus.SUCCEEDED,job.getJobState());
+
+  long uses=job.getCounters().findCounter("jvm","use").getValue();
+
+  assertTrue("maps = " + numMappers + ", jvms = "+ uses,numMappers < uses);
+
+  JobID jobId=job.getID();
+
+  for (int i=0; i < numMappers; i++) {
+
+    TaskAttemptID attemptId=new TaskAttemptID(new TaskID(jobId,TaskType.MAP,i),0);
+
+    TaskInProgress tip=mr.getJobTrackerRunner().getJobTracker().getTip(attemptId.getTaskID());
+
+    TaskStatus ts=mr.getJobTrackerRunner().getJobTracker().getTaskStatus(attemptId);
+
+    validateAttempt(tip,attemptId,ts,i == taskWithCleanup);
+
+    if (i == taskWithCleanup) {
+
+      attemptId=new TaskAttemptID(new TaskID(jobId,TaskType.MAP,i),1);
+
+      ts=mr.getJobTrackerRunner().getJobTracker().getTaskStatus(attemptId);
+
+      validateAttempt(tip,attemptId,ts,false);
+
+    }
+
+  }
+
+}
+

@@ -1,0 +1,850 @@
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Add a block spacer for space before and space after a block. This adds an empty Block area that acts as a block space.
+
+ * @param adjust the adjustment value
+
+ * @param minoptmax the min/opt/max value of the spacing
+
+ */
+
+public void addBlockSpacing(double adjust,MinOptMax minoptmax){
+
+  int sp=TraitSetter.getEffectiveSpace(adjust,minoptmax);
+
+  if (sp != 0) {
+
+    Block spacer=new Block();
+
+    spacer.setChangeBarList(getChangeBarList());
+
+    spacer.setBPD(sp);
+
+    parentLayoutManager.addChildArea(spacer);
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Add the childArea to the passed area. Called by child LayoutManager when it has filled one of its areas. The LM should already have an Area in which to put the child. See if the area will fit in the current area. If so, add it. Otherwise initiate breaking.
+
+ * @param childArea the area to add: will be some block-stacked Area.
+
+ * @param parentArea the area in which to add the childArea
+
+ */
+
+protected void addChildToArea(Area childArea,BlockParent parentArea){
+
+  parentArea.addBlock((Block)childArea);
+
+  flush();
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Adds a break element to the content list between individual child elements.
+
+ * @param contentList the content list
+
+ * @param parentLC the parent layout context
+
+ * @param childLC the currently active child layout context
+
+ */
+
+protected void addInBetweenBreak(List<ListElement> contentList,LayoutContext parentLC,LayoutContext childLC){
+
+  if (mustKeepTogether() || parentLC.isKeepWithNextPending() || childLC.isKeepWithPreviousPending()) {
+
+    Keep keep=getKeepTogether();
+
+    keep=keep.compare(parentLC.getKeepWithNextPending());
+
+    parentLC.clearKeepWithNextPending();
+
+    keep=keep.compare(childLC.getKeepWithPreviousPending());
+
+    childLC.clearKeepWithPreviousPending();
+
+    contentList.add(new BreakElement(new Position(this),keep.getPenalty(),keep.getContext(),parentLC));
+
+    return;
+
+  }
+
+  ListElement last=ListUtil.getLast(contentList);
+
+  if (last.isGlue()) {
+
+    log.warn("glue-type break possibility not handled properly, yet");
+
+  }
+
+ else   if (!ElementListUtils.endsWithNonInfinitePenalty(contentList)) {
+
+    contentList.add(new BreakElement(new Position(this),0,Constants.EN_AUTO,parentLC));
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates Knuth elements for after border padding and adds them to the return list.
+
+ * @param returnList return list to add the additional elements to
+
+ * @param isLast true if this is the last time a layout manager instance needs to generateborder and padding
+
+ */
+
+protected void addKnuthElementsForBorderPaddingAfter(List returnList,boolean isLast){
+
+  CommonBorderPaddingBackground borderAndPadding=getBorderPaddingBackground();
+
+  if (borderAndPadding != null) {
+
+    if (borderAndPadding.getPaddingAfter(false,this) > 0) {
+
+      returnList.add(new PaddingElement(getAuxiliaryPosition(),borderAndPadding.getPaddingLengthProperty(CommonBorderPaddingBackground.AFTER),RelSide.AFTER,false,isLast,this));
+
+    }
+
+    if (borderAndPadding.getBorderAfterWidth(false) > 0) {
+
+      returnList.add(new BorderElement(getAuxiliaryPosition(),borderAndPadding.getBorderInfo(CommonBorderPaddingBackground.AFTER).getWidth(),RelSide.AFTER,false,isLast,this));
+
+    }
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates Knuth elements for before border padding and adds them to the return list.
+
+ * @param returnList return list to add the additional elements to
+
+ * @param isFirst true if this is the first time a layout manager instance needs to generateborder and padding
+
+ */
+
+protected void addKnuthElementsForBorderPaddingBefore(List returnList,boolean isFirst){
+
+  CommonBorderPaddingBackground borderAndPadding=getBorderPaddingBackground();
+
+  if (borderAndPadding != null) {
+
+    if (borderAndPadding.getBorderBeforeWidth(false) > 0) {
+
+      returnList.add(new BorderElement(getAuxiliaryPosition(),borderAndPadding.getBorderInfo(CommonBorderPaddingBackground.BEFORE).getWidth(),RelSide.BEFORE,isFirst,false,this));
+
+    }
+
+    if (borderAndPadding.getPaddingBefore(false,this) > 0) {
+
+      returnList.add(new PaddingElement(getAuxiliaryPosition(),borderAndPadding.getPaddingLengthProperty(CommonBorderPaddingBackground.BEFORE),RelSide.BEFORE,isFirst,false,this));
+
+    }
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates Knuth elements for break-after and adds them to the return list.
+
+ * @param returnList return list to add the additional elements to
+
+ * @param context the layout context
+
+ * @return true if an element has been added due to a break-after.
+
+ */
+
+protected boolean addKnuthElementsForBreakAfter(List returnList,LayoutContext context){
+
+  int breakAfter=-1;
+
+  if (fobj instanceof BreakPropertySet) {
+
+    breakAfter=((BreakPropertySet)fobj).getBreakAfter();
+
+  }
+
+  if (breakAfter == EN_PAGE || breakAfter == EN_COLUMN || breakAfter == EN_EVEN_PAGE || breakAfter == EN_ODD_PAGE) {
+
+    returnList.add(new BreakElement(getAuxiliaryPosition(),0,-KnuthElement.INFINITE,breakAfter,context));
+
+    return true;
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates Knuth elements for break-before and adds them to the return list.
+
+ * @param returnList return list to add the additional elements to
+
+ * @param context the layout context
+
+ * @return true if an element has been added due to a break-before.
+
+ */
+
+protected boolean addKnuthElementsForBreakBefore(List returnList,LayoutContext context){
+
+  int breakBefore=getBreakBefore();
+
+  if (breakBefore == EN_PAGE || breakBefore == EN_COLUMN || breakBefore == EN_EVEN_PAGE || breakBefore == EN_ODD_PAGE) {
+
+    returnList.add(new BreakElement(getAuxiliaryPosition(),0,-KnuthElement.INFINITE,breakBefore,context));
+
+    return true;
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates Knuth elements for space-after and adds them to the return list.
+
+ * @param returnList return list to add the additional elements to
+
+ * @param alignment vertical alignment
+
+ */
+
+protected void addKnuthElementsForSpaceAfter(List returnList,int alignment){
+
+  SpaceProperty spaceAfter=getSpaceAfterProperty();
+
+  if (spaceAfter != null && !(spaceAfter.getMinimum(this).getLength().getValue(this) == 0 && spaceAfter.getMaximum(this).getLength().getValue(this) == 0)) {
+
+    returnList.add(new SpaceElement(getAuxiliaryPosition(),spaceAfter,RelSide.AFTER,false,true,this));
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates Knuth elements for space-before and adds them to the return list.
+
+ * @param returnList return list to add the additional elements to
+
+ * @param alignment vertical alignment
+
+ */
+
+protected void addKnuthElementsForSpaceBefore(List returnList,int alignment){
+
+  SpaceProperty spaceBefore=getSpaceBeforeProperty();
+
+  if (spaceBefore != null && !(spaceBefore.getMinimum(this).getLength().getValue(this) == 0 && spaceBefore.getMaximum(this).getLength().getValue(this) == 0)) {
+
+    returnList.add(new SpaceElement(getAuxiliaryPosition(),spaceBefore,RelSide.BEFORE,true,false,this));
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Adds elements the LM's last/closing marks to the specified list, and updates the layout context accordingly.
+
+ * @param elements  the element list
+
+ * @param context   the layout context
+
+ * @param alignment the vertical alignment
+
+ */
+
+protected void addLastVisibleMarks(List<ListElement> elements,LayoutContext context,int alignment){
+
+  addKnuthElementsForBorderPaddingAfter(elements,true);
+
+  addKnuthElementsForSpaceAfter(elements,alignment);
+
+  context.clearPendingMarks();
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Adds the unresolved elements for border and padding to a layout context so break possibilities can be properly constructed.
+
+ * @param context the layout context
+
+ */
+
+protected void addPendingMarks(LayoutContext context){
+
+  CommonBorderPaddingBackground borderAndPadding=getBorderPaddingBackground();
+
+  if (borderAndPadding != null) {
+
+    if (borderAndPadding.getBorderBeforeWidth(false) > 0) {
+
+      context.addPendingBeforeMark(new BorderElement(getAuxiliaryPosition(),borderAndPadding.getBorderInfo(CommonBorderPaddingBackground.BEFORE).getWidth(),RelSide.BEFORE,false,false,this));
+
+    }
+
+    if (borderAndPadding.getPaddingBefore(false,this) > 0) {
+
+      context.addPendingBeforeMark(new PaddingElement(getAuxiliaryPosition(),borderAndPadding.getPaddingLengthProperty(CommonBorderPaddingBackground.BEFORE),RelSide.BEFORE,false,false,this));
+
+    }
+
+    if (borderAndPadding.getBorderAfterWidth(false) > 0) {
+
+      context.addPendingAfterMark(new BorderElement(getAuxiliaryPosition(),borderAndPadding.getBorderInfo(CommonBorderPaddingBackground.AFTER).getWidth(),RelSide.AFTER,false,false,this));
+
+    }
+
+    if (borderAndPadding.getPaddingAfter(false,this) > 0) {
+
+      context.addPendingAfterMark(new PaddingElement(getAuxiliaryPosition(),borderAndPadding.getPaddingLengthProperty(CommonBorderPaddingBackground.AFTER),RelSide.AFTER,false,false,this));
+
+    }
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * @param node the fo this LM deals with
+
+ */
+
+public BlockStackingLayoutManager(FObj node){
+
+  super(node);
+
+  setGeneratesBlockArea(true);
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Check whether there is a break-before condition. If so, and the specified  {@code context} allows it, add the necessary elementsto the given  {@code elements} list.
+
+ * @param context   the layout context
+
+ * @param elements  the element list
+
+ * @return {@code false} if there is a break-before condition, and it has not been served;{@code true} otherwise
+
+ */
+
+protected boolean breakBeforeServed(LayoutContext context,List<ListElement> elements){
+
+  if (!breakBeforeServed) {
+
+    breakBeforeServed=true;
+
+    if (!context.suppressBreakBefore()) {
+
+      if (addKnuthElementsForBreakBefore(elements,context)) {
+
+        return false;
+
+      }
+
+    }
+
+  }
+
+  return breakBeforeServed;
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * @return the border, padding and background info structure 
+
+ */
+
+private CommonBorderPaddingBackground getBorderPaddingBackground(){
+
+  if (fobj instanceof org.apache.fop.fo.flow.Block) {
+
+    return ((org.apache.fop.fo.flow.Block)fobj).getCommonBorderPaddingBackground();
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.BlockContainer) {
+
+    return ((org.apache.fop.fo.flow.BlockContainer)fobj).getCommonBorderPaddingBackground();
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.ListBlock) {
+
+    return ((org.apache.fop.fo.flow.ListBlock)fobj).getCommonBorderPaddingBackground();
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.ListItem) {
+
+    return ((org.apache.fop.fo.flow.ListItem)fobj).getCommonBorderPaddingBackground();
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.table.Table) {
+
+    return ((org.apache.fop.fo.flow.table.Table)fobj).getCommonBorderPaddingBackground();
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves and returns the keep-together strength from the parent element.
+
+ * @return the keep-together strength
+
+ */
+
+protected Keep getParentKeepTogether(){
+
+  Keep keep=Keep.KEEP_AUTO;
+
+  if (getParent() instanceof BlockLevelLayoutManager) {
+
+    keep=((BlockLevelLayoutManager)getParent()).getKeepTogether();
+
+  }
+
+ else   if (getParent() instanceof InlineLayoutManager) {
+
+    if (((InlineLayoutManager)getParent()).mustKeepTogether()) {
+
+      keep=Keep.KEEP_ALWAYS;
+
+    }
+
+  }
+
+  return keep;
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * @return the space-after property 
+
+ */
+
+protected SpaceProperty getSpaceAfterProperty(){
+
+  if (fobj instanceof org.apache.fop.fo.flow.Block) {
+
+    return ((org.apache.fop.fo.flow.Block)fobj).getCommonMarginBlock().spaceAfter;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.BlockContainer) {
+
+    return ((org.apache.fop.fo.flow.BlockContainer)fobj).getCommonMarginBlock().spaceAfter;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.ListBlock) {
+
+    return ((org.apache.fop.fo.flow.ListBlock)fobj).getCommonMarginBlock().spaceAfter;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.ListItem) {
+
+    return ((org.apache.fop.fo.flow.ListItem)fobj).getCommonMarginBlock().spaceAfter;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.table.Table) {
+
+    return ((org.apache.fop.fo.flow.table.Table)fobj).getCommonMarginBlock().spaceAfter;
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * @return the space-before property 
+
+ */
+
+protected SpaceProperty getSpaceBeforeProperty(){
+
+  if (fobj instanceof org.apache.fop.fo.flow.Block) {
+
+    return ((org.apache.fop.fo.flow.Block)fobj).getCommonMarginBlock().spaceBefore;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.BlockContainer) {
+
+    return ((org.apache.fop.fo.flow.BlockContainer)fobj).getCommonMarginBlock().spaceBefore;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.ListBlock) {
+
+    return ((org.apache.fop.fo.flow.ListBlock)fobj).getCommonMarginBlock().spaceBefore;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.ListItem) {
+
+    return ((org.apache.fop.fo.flow.ListItem)fobj).getCommonMarginBlock().spaceBefore;
+
+  }
+
+ else   if (fobj instanceof org.apache.fop.fo.flow.table.Table) {
+
+    return ((org.apache.fop.fo.flow.table.Table)fobj).getCommonMarginBlock().spaceBefore;
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+public boolean isRestartAtLM(){
+
+  return isRestartAtLM;
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+private KnuthGlue makeSpaceAdjustmentGlue(int width,Adjustment adjustmentClass,boolean isAuxiliary){
+
+  return new KnuthGlue(width,0,0,adjustmentClass,new NonLeafPosition(this,null),isAuxiliary);
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+private KnuthBox makeZeroWidthBox(){
+
+  return new KnuthBox(0,new NonLeafPosition(this,null),false);
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * @param len length in millipoints to span with bp units
+
+ * @return the minimum integer n such that n * bpUnit &gt;= len
+
+ */
+
+protected int neededUnits(int len){
+
+  return (int)Math.ceil((float)len / bpUnit);
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Set the current area being filled.
+
+ * @param parentArea the current area to be filled
+
+ */
+
+protected void setCurrentArea(BlockParent parentArea){
+
+  this.parentArea=parentArea;
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Determines and sets the content area IPD based on available reference area IPD, start- and end-indent properties. end-indent is adjusted based on overconstrained geometry rules, if necessary.
+
+ * @return the resulting content area IPD
+
+ */
+
+protected int updateContentAreaIPDwithOverconstrainedAdjust(){
+
+  int ipd=referenceIPD - (startIndent + endIndent);
+
+  if (ipd < 0) {
+
+    log.debug("Adjusting end-indent based on overconstrained geometry rules for " + fobj);
+
+    BlockLevelEventProducer eventProducer=BlockLevelEventProducer.Provider.get(getFObj().getUserAgent().getEventBroadcaster());
+
+    eventProducer.overconstrainedAdjustEndIndent(this,getFObj().getName(),ipd,getFObj().getLocator());
+
+    endIndent+=ipd;
+
+    ipd=0;
+
+  }
+
+  setContentAreaIPD(ipd);
+
+  return ipd;
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Sets the content area IPD by directly supplying the value. end-indent is adjusted based on overconstrained geometry rules, if necessary.
+
+ * @param contentIPD the IPD of the content
+
+ * @return the resulting content area IPD
+
+ */
+
+protected int updateContentAreaIPDwithOverconstrainedAdjust(int contentIPD){
+
+  int ipd=referenceIPD - (contentIPD + (startIndent + endIndent));
+
+  if (ipd < 0) {
+
+    log.debug("Adjusting end-indent based on overconstrained geometry rules for " + fobj);
+
+    BlockLevelEventProducer eventProducer=BlockLevelEventProducer.Provider.get(getFObj().getUserAgent().getEventBroadcaster());
+
+    eventProducer.overconstrainedAdjustEndIndent(this,getFObj().getName(),ipd,getFObj().getLocator());
+
+    endIndent+=ipd;
+
+  }
+
+  setContentAreaIPD(contentIPD);
+
+  return contentIPD;
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * "wrap" the Position inside each element moving the elements from SourceList to targetList
+
+ * @param sourceList source list
+
+ * @param targetList target list receiving the wrapped position elements
+
+ */
+
+protected void wrapPositionElements(List sourceList,List targetList){
+
+  wrapPositionElements(sourceList,targetList,false);
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * "wrap" the Position inside each element moving the elements from SourceList to targetList
+
+ * @param sourceList source list
+
+ * @param targetList target list receiving the wrapped position elements
+
+ * @param force if true, every Position is wrapped regardless of its LM of origin
+
+ */
+
+protected void wrapPositionElements(List sourceList,List targetList,boolean force){
+
+  ListIterator listIter=sourceList.listIterator();
+
+  Object tempElement;
+
+  while (listIter.hasNext()) {
+
+    tempElement=listIter.next();
+
+    if (tempElement instanceof ListElement) {
+
+      wrapPositionElement((ListElement)tempElement,targetList,force);
+
+    }
+
+ else     if (tempElement instanceof List) {
+
+      wrapPositionElements((List)tempElement,targetList,force);
+
+    }
+
+  }
+
+}
+
+Location: BlockStackingLayoutManager.java
+
+Content: 
+
+/** 
+
+ * "wrap" the Position inside the given element and add it to the target list.
+
+ * @param el the list element
+
+ * @param targetList target list receiving the wrapped position elements
+
+ * @param force if true, every Position is wrapped regardless of its LM of origin
+
+ */
+
+protected void wrapPositionElement(ListElement el,List targetList,boolean force){
+
+  if (force || el.getLayoutManager() != this) {
+
+    el.setPosition(notifyPos(new NonLeafPosition(this,el.getPosition())));
+
+  }
+
+  targetList.add(el);
+
+}
+

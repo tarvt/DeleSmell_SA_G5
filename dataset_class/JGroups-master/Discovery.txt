@@ -1,0 +1,696 @@
+Location: Discovery.java
+
+Content: 
+
+protected boolean addDiscoveryResponseToCaches(Address mbr,String logical_name,PhysicalAddress physical_addr){
+
+  if (mbr == null)   return false;
+
+  if (logical_name != null)   NameCache.add(mbr,logical_name);
+
+  if (physical_addr != null)   return (Boolean)down(new Event(Event.ADD_PHYSICAL_ADDRESS,new Tuple<>(mbr,physical_addr)));
+
+  return false;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public void addResponse(Responses rsp){
+
+synchronized (ping_responses) {
+
+    ping_responses.put(System.nanoTime(),rsp);
+
+  }
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected static String addressAsString(Address address){
+
+  if (address == null)   return "";
+
+  if (address instanceof UUID)   return ((UUID)address).toStringLong();
+
+  return address.toString();
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+@ManagedOperation(description="Reads logical-physical address mappings and logical name mappings from a " + "file (or URL) and adds them to the local caches") public void addToCache(String filename) throws Exception {
+
+  InputStream in=ConfiguratorFactory.getConfigStream(filename);
+
+  List<PingData> list=read(in);
+
+  if (list != null)   for (  PingData data : list)   addDiscoveryResponseToCaches(data.getAddress(),data.getLogicalName(),data.getPhysicalAddr());
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public boolean breakOnCoordResponse(){
+
+  return break_on_coord_rsp;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public <T extends Discovery>T breakOnCoordResponse(boolean flag){
+
+  break_on_coord_rsp=flag;
+
+  return (T)this;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected void clearRequestFutures(){
+
+  discovery_req_futures.forEach(f -> f.cancel(true));
+
+  discovery_req_futures.clear();
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected static PingData deserialize(final byte[] data) throws Exception {
+
+  return Util.streamableFromByteBuffer(PingData::new,data);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public <T extends Discovery>T discoveryRspExpiryTime(long t){
+
+  this.discovery_rsp_expiry_time=t;
+
+  return (T)this;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+/** 
+
+ * Disseminates cache information (UUID/IP adddress/port/name) to the given members
+
+ * @param current_mbrs The current members. Guaranteed to be non-null. This is a copy and can be modified.
+
+ * @param left_mbrs The members which left. These are excluded from dissemination. Can be null if no members left
+
+ * @param new_mbrs The new members that we need to disseminate the information to. Will be all members if null.
+
+ */
+
+protected void disseminateDiscoveryInformation(List current_mbrs,List<Address> left_mbrs,List<Address> new_mbrs){
+
+  if (new_mbrs == null || new_mbrs.isEmpty())   return;
+
+  if (local_addr != null)   current_mbrs.remove(local_addr);
+
+  if (left_mbrs != null)   current_mbrs.removeAll(left_mbrs);
+
+  Set<Address> info=new HashSet<>(current_mbrs);
+
+  for (  Address addr : info) {
+
+    PhysicalAddress phys_addr=(PhysicalAddress)down_prot.down(new Event(Event.GET_PHYSICAL_ADDRESS,addr));
+
+    if (phys_addr == null)     continue;
+
+    boolean is_coordinator=isCoord(addr);
+
+    for (    Address target : new_mbrs)     sendDiscoveryResponse(addr,phys_addr,NameCache.get(addr),target,is_coordinator);
+
+  }
+
+  Set<Address> targets=new HashSet<>(current_mbrs);
+
+  targets.removeAll(new_mbrs);
+
+  if (!targets.isEmpty()) {
+
+    for (    Address addr : new_mbrs) {
+
+      PhysicalAddress phys_addr=(PhysicalAddress)down_prot.down(new Event(Event.GET_PHYSICAL_ADDRESS,addr));
+
+      if (phys_addr == null)       continue;
+
+      boolean is_coordinator=isCoord(addr);
+
+      for (      Address target : targets)       sendDiscoveryResponse(addr,phys_addr,NameCache.get(addr),target,is_coordinator);
+
+    }
+
+  }
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+@ManagedOperation(description="Reads data from local caches and dumps them to a file") public void dumpCache(String output_filename) throws Exception {
+
+  Map<Address,PhysicalAddress> cache_contents=(Map<Address,PhysicalAddress>)down_prot.down(new Event(Event.GET_LOGICAL_PHYSICAL_MAPPINGS,false));
+
+  List<PingData> list=new ArrayList<>(cache_contents.size());
+
+  for (  Map.Entry<Address,PhysicalAddress> entry : cache_contents.entrySet()) {
+
+    Address addr=entry.getKey();
+
+    PhysicalAddress phys_addr=entry.getValue();
+
+    PingData data=new PingData(addr,true,NameCache.get(addr),phys_addr).coord(addr.equals(local_addr));
+
+    list.add(data);
+
+  }
+
+  OutputStream out=new FileOutputStream(output_filename);
+
+  write(list,out);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+@ManagedOperation(description="Runs the discovery protocol to find initial members") public String findInitialMembersAsString(){
+
+  Responses rsps=findMembers(null,false,false,0);
+
+  if (!rsps.isDone())   rsps.waitFor(300);
+
+  if (rsps.isEmpty())   return "<empty>";
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  PingData rsp : rsps)   sb.append(rsp).append("\n");
+
+  return sb.toString();
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public Responses findMembers(final List<Address> members,final boolean initial_discovery,boolean async,long timeout){
+
+  num_discovery_requests++;
+
+  int num_expected=members != null ? members.size() : 0;
+
+  int capacity=members != null ? members.size() : 16;
+
+  Responses rsps=new Responses(num_expected,initial_discovery && break_on_coord_rsp,capacity);
+
+  addResponse(rsps);
+
+  if (async || async_discovery || (num_discovery_runs > 1) && initial_discovery) {
+
+    final Runnable find_method=() -> invokeFindMembers(members,initial_discovery,rsps,async);
+
+    timer.execute(find_method);
+
+    if (num_discovery_runs > 1 && initial_discovery) {
+
+      int num_reqs_to_send=num_discovery_runs - 1;
+
+      long last_send=timeout - (timeout / num_discovery_runs);
+
+      long interval=last_send / num_reqs_to_send;
+
+      for (long i=0, delay=interval; i < num_reqs_to_send; i++, delay+=interval) {
+
+        Future<?> future=timer.schedule(find_method,delay,TimeUnit.MILLISECONDS);
+
+        this.discovery_req_futures.add(future);
+
+        num_discovery_requests++;
+
+      }
+
+    }
+
+  }
+
+ else   invokeFindMembers(members,initial_discovery,rsps,async);
+
+  weedOutCompletedDiscoveryResponses();
+
+  return rsps;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+@ManagedAttribute(description="The address of the current coordinator") public String getCurrentCoord(){
+
+  return current_coord != null ? current_coord.toString() : "n/a";
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public int getNumberOfDiscoveryRequestsSent(){
+
+  return num_discovery_requests;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public void handleConnect(){
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public void handleDisconnect(){
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected void handleDiscoveryResponse(PingData data,Address sender){
+
+  Address logical_addr=data.getAddress() != null ? data.getAddress() : sender;
+
+  addDiscoveryResponseToCaches(logical_addr,data.getLogicalName(),data.getPhysicalAddr());
+
+  boolean overwrite=Objects.equals(logical_addr,sender);
+
+  addResponse(data,overwrite);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+/** 
+
+ * Calls  {@link #findMembers(List,boolean,Responses)} 
+
+ */
+
+protected void invokeFindMembers(List<Address> members,boolean initial_discovery,Responses rsps,boolean async){
+
+  findMembers(members,initial_discovery,rsps);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected boolean isCoord(Address member){
+
+  return member.equals(current_coord);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public static Buffer marshal(PingData data){
+
+  return Util.streamableToBuffer(data);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected PingData readPingData(byte[] buffer,int offset,int length){
+
+  try {
+
+    return buffer != null ? Util.streamableFromBuffer(PingData::new,buffer,offset,length) : null;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading PingData from message: %s",local_addr,ex);
+
+    return null;
+
+  }
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected List<PingData> read(InputStream in){
+
+  List<PingData> retval=null;
+
+  try {
+
+    while (true) {
+
+      try {
+
+        String name_str=Util.readToken(in);
+
+        String uuid_str=Util.readToken(in);
+
+        String addr_str=Util.readToken(in);
+
+        String coord_str=Util.readToken(in);
+
+        if (name_str == null || uuid_str == null || addr_str == null || coord_str == null)         break;
+
+        UUID uuid=null;
+
+        try {
+
+          long tmp=Long.valueOf(uuid_str);
+
+          uuid=new UUID(0,tmp);
+
+        }
+
+ catch (        Throwable t) {
+
+          uuid=UUID.fromString(uuid_str);
+
+        }
+
+        PhysicalAddress phys_addr=new IpAddress(addr_str);
+
+        boolean is_coordinator=coord_str.trim().equals("T") || coord_str.trim().equals("t");
+
+        if (retval == null)         retval=new ArrayList<>();
+
+        retval.add(new PingData(uuid,true,name_str,phys_addr).coord(is_coordinator));
+
+      }
+
+ catch (      Throwable t) {
+
+        log.error(Util.getMessage("FailedReadingLineOfInputStream"),t);
+
+      }
+
+    }
+
+    return retval;
+
+  }
+
+  finally {
+
+    Util.close(in);
+
+  }
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public boolean returnEntireCache(){
+
+  return return_entire_cache;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public <T extends Discovery>T returnEntireCache(boolean flag){
+
+  return_entire_cache=flag;
+
+  return (T)this;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+@ManagedOperation(description="Sends information about my cache to everyone but myself") public void sendCacheInformation(){
+
+  List<Address> current_members=new ArrayList<>(view.getMembers());
+
+  disseminateDiscoveryInformation(current_members,null,current_members);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected void sendDiscoveryResponse(Address logical_addr,PhysicalAddress physical_addr,String logical_name,final Address sender,boolean coord){
+
+  final PingData data=new PingData(logical_addr,is_server,logical_name,physical_addr).coord(coord);
+
+  final Message rsp_msg=new Message(sender).setFlag(Message.Flag.INTERNAL,Message.Flag.OOB,Message.Flag.DONT_BUNDLE).putHeader(this.id,new PingHeader(PingHeader.GET_MBRS_RSP)).setBuffer(marshal(data));
+
+  if (stagger_timeout > 0) {
+
+    int view_size=view != null ? view.size() : 10;
+
+    int rank=Util.getRank(view,local_addr);
+
+    long sleep_time=rank == 0 ? Util.random(stagger_timeout) : stagger_timeout * rank / view_size - (stagger_timeout / view_size);
+
+    timer.schedule(() -> {
+
+      log.trace("%s: received GET_MBRS_REQ from %s, sending staggered response %s",local_addr,sender,data);
+
+      down_prot.down(rsp_msg);
+
+    }
+
+,sleep_time,TimeUnit.MILLISECONDS,sends_can_block);
+
+    return;
+
+  }
+
+  log.trace("%s: received GET_MBRS_REQ from %s, sending response %s",local_addr,sender,data);
+
+  down_prot.down(rsp_msg);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+/** 
+
+ * Creates a byte[] representation of the PingData, but DISCARDING the view it contains.
+
+ * @param data the PingData instance to serialize.
+
+ * @return
+
+ */
+
+protected byte[] serializeWithoutView(PingData data){
+
+  final PingData clone=new PingData(data.getAddress(),data.isServer(),data.getLogicalName(),data.getPhysicalAddr()).coord(data.isCoord());
+
+  try {
+
+    return Util.streamableToByteBuffer(clone);
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("ErrorSerializingPingData"),e);
+
+    return null;
+
+  }
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public long staggerTimeout(){
+
+  return stagger_timeout;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public <T extends Discovery>T staggerTimeout(long timeout){
+
+  stagger_timeout=timeout;
+
+  return (T)this;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected synchronized void startCacheDissemination(List<Address> curr_mbrs,List<Address> left_mbrs,List<Address> new_mbrs){
+
+  timer.execute(new DiscoveryCacheDisseminationTask(curr_mbrs,left_mbrs,new_mbrs),sends_can_block);
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public boolean useDiskCache(){
+
+  return use_disk_cache;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+public <T extends Discovery>T useDiskCache(boolean flag){
+
+  use_disk_cache=flag;
+
+  return (T)this;
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+/** 
+
+ * Removes responses which are done or whose timeout has expired (in the latter case, an expired response is marked as done) 
+
+ */
+
+@ManagedOperation(description="Removes expired or completed responses") public void weedOutCompletedDiscoveryResponses(){
+
+synchronized (ping_responses) {
+
+    for (Iterator<Map.Entry<Long,Responses>> it=ping_responses.entrySet().iterator(); it.hasNext(); ) {
+
+      Map.Entry<Long,Responses> entry=it.next();
+
+      long timestamp=entry.getKey();
+
+      Responses rsps=entry.getValue();
+
+      if (rsps.isDone() || TimeUnit.MILLISECONDS.convert(System.nanoTime() - timestamp,TimeUnit.NANOSECONDS) > discovery_rsp_expiry_time) {
+
+        it.remove();
+
+        rsps.done();
+
+        clearRequestFutures();
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Discovery.java
+
+Content: 
+
+protected void write(List<PingData> list,OutputStream out) throws Exception {
+
+  try {
+
+    for (    PingData data : list) {
+
+      String logical_name=data.getLogicalName();
+
+      Address addr=data.getAddress();
+
+      PhysicalAddress phys_addr=data.getPhysicalAddr();
+
+      if (logical_name == null || addr == null || phys_addr == null)       continue;
+
+      out.write(logical_name.getBytes());
+
+      out.write(WHITESPACE);
+
+      out.write(addressAsString(addr).getBytes());
+
+      out.write(WHITESPACE);
+
+      out.write(phys_addr.toString().getBytes());
+
+      out.write(WHITESPACE);
+
+      out.write(data.isCoord() ? String.format("T%n").getBytes() : String.format("F%n").getBytes());
+
+    }
+
+  }
+
+  finally {
+
+    Util.close(out);
+
+  }
+
+}
+

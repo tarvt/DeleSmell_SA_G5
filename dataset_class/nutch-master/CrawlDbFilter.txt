@@ -1,0 +1,76 @@
+Location: CrawlDbFilter.java
+
+Content: 
+
+@Override public void map(Text key,CrawlDatum value,Context context) throws IOException, InterruptedException {
+
+  String url=key.toString();
+
+  if (url404Purging && CrawlDatum.STATUS_DB_GONE == value.getStatus()) {
+
+    context.getCounter("CrawlDB filter","Gone records removed").increment(1);
+
+    return;
+
+  }
+
+  if (purgeOrphans && CrawlDatum.STATUS_DB_ORPHAN == value.getStatus()) {
+
+    context.getCounter("CrawlDB filter","Orphan records removed").increment(1);
+
+    return;
+
+  }
+
+  if (url != null && urlNormalizers) {
+
+    try {
+
+      url=normalizers.normalize(url,scope);
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.warn("Skipping " + url + ":"+ e);
+
+      url=null;
+
+    }
+
+  }
+
+  if (url != null && urlFiltering) {
+
+    try {
+
+      url=filters.filter(url);
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.warn("Skipping " + url + ":"+ e);
+
+      url=null;
+
+    }
+
+  }
+
+  if (url == null) {
+
+    context.getCounter("CrawlDB filter","URLs filtered").increment(1);
+
+  }
+
+ else {
+
+    newKey.set(url);
+
+    context.write(newKey,value);
+
+  }
+
+}
+

@@ -1,0 +1,294 @@
+Location: ClassConfigurator.java
+
+Content: 
+
+public static void addProtocol(short id,Class protocol){
+
+  if (id < MIN_CUSTOM_PROTOCOL_ID)   throw new IllegalArgumentException("protocol ID (" + id + ") needs to be greater than or equal to "+ MIN_CUSTOM_PROTOCOL_ID);
+
+  if (protocol_ids.containsKey(protocol))   alreadyInProtocolsMap(id,protocol.getName());
+
+  protocol_ids.put(protocol,id);
+
+  protocol_names.putIfAbsent(id,protocol);
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+/** 
+
+ * Method to register a user-defined header with jg-magic-map at runtime
+
+ * @param magic The magic number. Needs to be > 1024
+
+ * @param clazz The class. Usually a subclass of Header
+
+ * @throws IllegalArgumentException If the magic number is already taken, or the magic number is <= 1024
+
+ */
+
+public static void add(short magic,Class clazz){
+
+  if (magic < MIN_CUSTOM_MAGIC_NUMBER)   throw new IllegalArgumentException("magic ID (" + magic + ") must be >= "+ MIN_CUSTOM_MAGIC_NUMBER);
+
+  if (magicMapUser.containsKey(magic) || classMap.containsKey(clazz))   alreadyInMagicMap(magic,clazz.getName());
+
+  Object inst=null;
+
+  try {
+
+    inst=clazz.getDeclaredConstructor().newInstance();
+
+  }
+
+ catch (  Exception e) {
+
+    throw new IllegalStateException("failed creating instance " + clazz,e);
+
+  }
+
+  Object val=clazz;
+
+  if (Header.class.isAssignableFrom(clazz)) {
+
+    checkSameId((Header)inst,magic);
+
+    val=((Header)inst).create();
+
+  }
+
+  if (Constructable.class.isAssignableFrom(clazz)) {
+
+    val=((Constructable)inst).create();
+
+    inst=((Supplier<?>)val).get();
+
+    if (!inst.getClass().equals(clazz))     throw new IllegalStateException(String.format("%s.create() returned the wrong class: %s\n",clazz.getSimpleName(),inst.getClass().getSimpleName()));
+
+  }
+
+  magicMapUser.put(magic,val);
+
+  classMap.put(clazz,magic);
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+protected static void alreadyInMagicMap(short magic,String classname){
+
+  throw new IllegalArgumentException("key " + magic + " ("+ classname+ ')'+ " is already in magic map; make sure that all keys are unique");
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+protected static void alreadyInProtocolsMap(short prot_id,String classname){
+
+  throw new IllegalArgumentException("ID " + prot_id + " ("+ classname+ ')'+ " is already in protocol-ids map; make sure that all protocol IDs are unique");
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+protected static void checkSameId(Header hdr,short magic){
+
+  short tmp_id=hdr.getMagicId();
+
+  if (tmp_id != magic)   throw new IllegalStateException(String.format("mismatch between %s.getId() (%d) and the defined ID (%d)",hdr.getClass().getSimpleName(),magic,tmp_id));
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+public ClassConfigurator(){
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+public static <T extends Object>T create(short id) throws ClassNotFoundException {
+
+  if (id >= MIN_CUSTOM_MAGIC_NUMBER) {
+
+    Object val=magicMapUser.get(id);
+
+    if (val == null)     throw new ClassNotFoundException("Class for magic number " + id + " cannot be found");
+
+    if (val instanceof Supplier) {
+
+      return ((Supplier<T>)val).get();
+
+    }
+
+    try {
+
+      return ((Class<T>)val).getDeclaredConstructor().newInstance();
+
+    }
+
+ catch (    ReflectiveOperationException e) {
+
+      throw new IllegalStateException(e);
+
+    }
+
+  }
+
+  Supplier<?> supplier=magicMap[id];
+
+  if (supplier == null)   throw new ClassNotFoundException("Class for magic number " + id + " cannot be found");
+
+  return (T)supplier.get();
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+/** 
+
+ * Returns the magic number for the class.
+
+ * @param clazz a class object that we want the magic number for
+
+ * @return the magic number for a class, -1 if no mapping is available
+
+ */
+
+public static short getMagicNumber(Class clazz){
+
+  Short i=classMap.get(clazz);
+
+  if (i == null)   return -1;
+
+ else   return i;
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+public static short getProtocolId(Class protocol){
+
+  Short retval=protocol_ids.get(protocol);
+
+  return retval != null ? retval : 0;
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+public static Class getProtocol(short id){
+
+  return protocol_names.get(id);
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+/** 
+
+ * Loads and returns the class from the class name
+
+ * @param clazzname a fully classified class name to be loaded
+
+ * @return a Class object that represents a class that implements java.io.Externalizable
+
+ */
+
+public static Class get(String clazzname,ClassLoader loader) throws ClassNotFoundException {
+
+  return Util.loadClass(clazzname,loader != null ? loader : ClassConfigurator.class.getClassLoader());
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+protected static Triple<Short,String,Boolean> parseClassData(Node protocol){
+
+  protocol.normalize();
+
+  NamedNodeMap attrs=protocol.getAttributes();
+
+  boolean external=false;
+
+  String magicnumber=attrs.getNamedItem("id").getNodeValue();
+
+  String clazzname=attrs.getNamedItem("name").getNodeValue();
+
+  Node tmp=attrs.getNamedItem("external");
+
+  if (tmp != null)   external=Boolean.parseBoolean(tmp.getNodeValue());
+
+  return new Triple<>(Short.valueOf(magicnumber),clazzname,external);
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+public static String printClassMap(){
+
+  StringBuilder sb=new StringBuilder();
+
+  Map.Entry entry;
+
+  for (Iterator it=classMap.entrySet().iterator(); it.hasNext(); ) {
+
+    entry=(Map.Entry)it.next();
+
+    sb.append(entry.getKey()).append(": ").append(entry.getValue()).append('\n');
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: ClassConfigurator.java
+
+Content: 
+
+/** 
+
+ * try to read the magic number configuration file as a Resource form the classpath using getResourceAsStream if this fails this method tries to read the configuration file from mMagicNumberFile using a FileInputStream (not in classpath but somewhere else in the disk)
+
+ * @return an array of ClassMap objects that where parsed from the file (if found) or an empty array if file not found or had en exception
+
+ */
+
+protected static List<Triple<Short,String,Boolean>> readMappings(String name) throws Exception {
+
+  InputStream stream;
+
+  stream=Util.getResourceAsStream(name,ClassConfigurator.class);
+
+  if (stream == null)   stream=new FileInputStream(name);
+
+  return parse(stream);
+
+}
+

@@ -1,0 +1,326 @@
+Location: MimeUtil.java
+
+Content: 
+
+/** 
+
+ * A facade interface to trying all the possible mime type resolution strategies available within Tika. First, the mime type provided in <code>typeName</code> is cleaned, with  {@link #cleanMimeType(String)}. Then the cleaned mime type is looked up in the underlying Tika  {@link MimeTypes}registry, by its cleaned name. If the  {@link MimeType} is found, then thatmime type is used, otherwise URL resolution is used to try and determine the mime type. However, if <code>mime.type.magic</code> is enabled in {@link NutchConfiguration}, then mime type magic resolution is used to try and obtain a better-than-the-default approximation of the  {@link MimeType}.
+
+ * @param typeName The original mime type, returned from a  {@link ProtocolOutput}.
+
+ * @param url The given @see url, that Nutch was trying to crawl.
+
+ * @param data The byte data, returned from the crawl, if any.
+
+ * @return The correctly, automatically guessed {@link MimeType} name.
+
+ */
+
+public String autoResolveContentType(String typeName,String url,byte[] data){
+
+  String retType=null;
+
+  MimeType type=null;
+
+  String cleanedMimeType=null;
+
+  cleanedMimeType=MimeUtil.cleanMimeType(typeName);
+
+  if (cleanedMimeType != null) {
+
+    try {
+
+      type=mimeTypes.forName(cleanedMimeType);
+
+      cleanedMimeType=type.getName();
+
+    }
+
+ catch (    MimeTypeException mte) {
+
+      cleanedMimeType=null;
+
+    }
+
+  }
+
+  if (type == null || type.getName().equals(MimeTypes.OCTET_STREAM)) {
+
+    try {
+
+      retType=tika.detect(url) != null ? tika.detect(url) : null;
+
+    }
+
+ catch (    Exception e) {
+
+      String message="Problem loading default Tika configuration";
+
+      LOG.error(message,e);
+
+      throw new RuntimeException(e);
+
+    }
+
+  }
+
+ else {
+
+    retType=type.getName();
+
+  }
+
+  if (this.mimeMagic) {
+
+    String magicType=null;
+
+    Metadata tikaMeta=new Metadata();
+
+    tikaMeta.add(Metadata.RESOURCE_NAME_KEY,url);
+
+    tikaMeta.add(Metadata.CONTENT_TYPE,(cleanedMimeType != null ? cleanedMimeType : typeName));
+
+    try {
+
+      try (InputStream stream=TikaInputStream.get(data)){
+
+        magicType=mimeTypes.detect(stream,tikaMeta).toString();
+
+      }
+
+     }
+
+ catch (    IOException ignore) {
+
+    }
+
+    if (magicType != null && !magicType.equals(MimeTypes.OCTET_STREAM) && retType != null && !retType.equals(magicType)) {
+
+      retType=magicType;
+
+    }
+
+    if (retType == null) {
+
+      try {
+
+        retType=MimeTypes.OCTET_STREAM;
+
+      }
+
+ catch (      Exception ignore) {
+
+      }
+
+    }
+
+  }
+
+  return retType;
+
+}
+
+Location: MimeUtil.java
+
+Content: 
+
+/** 
+
+ * Cleans a  {@link MimeType} name by removing out the actual {@link MimeType}, from a string of the form: <pre> &lt;primary type&gt;/&lt;sub type&gt; ; &lt; optional params </pre>
+
+ * @param origType The original mime type string to be cleaned.
+
+ * @return The primary type, and subtype, concatenated, e.g., the actual mimetype.
+
+ */
+
+public static String cleanMimeType(String origType){
+
+  if (origType == null)   return null;
+
+  String[] tokenizedMimeType=origType.split(SEPARATOR);
+
+  if (tokenizedMimeType.length > 1) {
+
+    return tokenizedMimeType[0];
+
+  }
+
+ else {
+
+    return origType;
+
+  }
+
+}
+
+Location: MimeUtil.java
+
+Content: 
+
+/** 
+
+ * A facade interface to Tika's underlying  {@link MimeTypes#forName(String)}method.
+
+ * @param name The name of a valid  {@link MimeType} in the Tika mime registry.
+
+ * @return The object representation of the {@link MimeType}, if it exists, or null otherwise.
+
+ */
+
+public String forName(String name){
+
+  try {
+
+    return this.mimeTypes.forName(name).toString();
+
+  }
+
+ catch (  MimeTypeException e) {
+
+    LOG.error("Exception getting mime type by name: [" + name + "]: Message: "+ e.getMessage());
+
+    return null;
+
+  }
+
+}
+
+Location: MimeUtil.java
+
+Content: 
+
+/** 
+
+ * Facade interface to Tika's underlying  {@link MimeTypes#getMimeType(File)}method.
+
+ * @param f The  {@link File} to sense the {@link MimeType} for.
+
+ * @return The {@link MimeType} of the given {@link File}, or null if it cannot be determined.
+
+ */
+
+public String getMimeType(File f){
+
+  try {
+
+    return tika.detect(f);
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.error("Exception getting mime type for file: [" + f.getPath() + "]: Message: "+ e.getMessage());
+
+    return null;
+
+  }
+
+}
+
+Location: MimeUtil.java
+
+Content: 
+
+/** 
+
+ * Facade interface to Tika's underlying  {@link MimeTypes#getMimeType(String)}method.
+
+ * @param url A string representation of the document URL to sense the {@link org.apache.tika.mime.MimeType MimeType} for.
+
+ * @return An appropriate {@link MimeType}, identified from the given Document url in string form.
+
+ */
+
+public String getMimeType(String url){
+
+  return tika.detect(url);
+
+}
+
+Location: MimeUtil.java
+
+Content: 
+
+public MimeUtil(Configuration conf){
+
+  ObjectCache objectCache=ObjectCache.get(conf);
+
+  tika=(Tika)objectCache.getObject(Tika.class.getName());
+
+  if (tika == null) {
+
+    tika=new Tika();
+
+    objectCache.setObject(Tika.class.getName(),tika);
+
+  }
+
+  MimeTypes mimeTypez=(MimeTypes)objectCache.getObject(MimeTypes.class.getName());
+
+  if (mimeTypez == null) {
+
+    try {
+
+      String customMimeTypeFile=conf.get("mime.types.file");
+
+      if (customMimeTypeFile != null && customMimeTypeFile.equals("") == false) {
+
+        try {
+
+          LOG.info("Using custom mime.types.file: {}",customMimeTypeFile);
+
+          mimeTypez=MimeTypesFactory.create(conf.getConfResourceAsInputStream(customMimeTypeFile));
+
+        }
+
+ catch (        Exception e) {
+
+          LOG.error("Can't load mime.types.file : " + customMimeTypeFile + " using Tika's default");
+
+        }
+
+      }
+
+      if (mimeTypez == null)       mimeTypez=MimeTypes.getDefaultMimeTypes();
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.error("Exception in MimeUtil " + e.getMessage());
+
+      throw new RuntimeException(e);
+
+    }
+
+    objectCache.setObject(MimeTypes.class.getName(),mimeTypez);
+
+  }
+
+  this.mimeTypes=mimeTypez;
+
+  this.mimeMagic=conf.getBoolean("mime.type.magic",true);
+
+}
+
+Location: MimeUtil.java
+
+Content: 
+
+public static void setPoolSize(int poolSize){
+
+  try {
+
+    MimeTypesReader.setPoolSize(poolSize);
+
+  }
+
+ catch (  TikaException e) {
+
+    LOG.error("Failed to set pool size",e);
+
+  }
+
+}
+

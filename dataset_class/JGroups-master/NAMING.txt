@@ -1,0 +1,160 @@
+Location: NAMING.java
+
+Content: 
+
+/** 
+
+ * Typically received by the coord, which sends its cache contents to the sender (new joiner). However, we don't send one large message, but rather N messages (1 per cluster member). The reason is that we don't know where in the stack NAMING will be running and therefore cannot assume fragmentation of large messages.
+
+ */
+
+protected void handleCacheRequest(Address sender){
+
+  int view_size=view != null ? view.size() : 0;
+
+  if (view_size == 0)   return;
+
+  for (  Address addr : view.getMembersRaw()) {
+
+    if (Objects.equals(addr,sender))     continue;
+
+    String logical_name=NameCache.get(addr);
+
+    if (logical_name == null)     continue;
+
+    Header hdr=new Header(Type.CACHE_RSP,addr,logical_name);
+
+    Message msg=new Message(sender).putHeader(id,hdr);
+
+    if (log.isTraceEnabled())     log.trace("%s: sending %s to %s",local_addr,hdr,sender);
+
+    try {
+
+      down_prot.down(msg);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("failed sending CACHE_RSP",t);
+
+    }
+
+  }
+
+}
+
+Location: NAMING.java
+
+Content: 
+
+protected void handleCacheResponse(Message msg){
+
+  Header hdr=msg.getHeader(id);
+
+  if (hdr != null && hdr.addr != null && hdr.name != null) {
+
+    if (log.isTraceEnabled())     log.trace("%s: received %s from %s",local_addr,hdr,msg.src());
+
+    NameCache.add(hdr.addr,hdr.name);
+
+  }
+
+}
+
+Location: NAMING.java
+
+Content: 
+
+protected void handleEvent(Event evt){
+
+switch (evt.getType()) {
+
+case Event.VIEW_CHANGE:
+
+    View old_view=view, new_view=evt.getArg();
+
+  this.view=new_view;
+
+if (old_view == null) {
+
+  Util.sleepRandom(0,stagger_timeout);
+
+  multicastOwnMapping();
+
+  Address coord=new_view.getCoord();
+
+  if (Objects.equals(local_addr,coord))   return;
+
+  Message msg=new Message(coord).setFlag(Message.Flag.OOB).putHeader(id,new Header(Type.CACHE_REQ));
+
+  down_prot.down(msg);
+
+  return;
+
+}
+
+if (new_view instanceof MergeView) {
+
+Util.sleepRandom(0,stagger_timeout);
+
+multicastOwnMapping();
+
+}
+
+break;
+
+case Event.SET_LOCAL_ADDRESS:
+
+local_addr=evt.getArg();
+
+break;
+
+}
+
+}
+
+Location: NAMING.java
+
+Content: 
+
+protected Object handleMessage(Message msg,Header hdr){
+
+switch (hdr.type) {
+
+case CACHE_REQ:
+
+    handleCacheRequest(msg.src());
+
+  break;
+
+case CACHE_RSP:
+
+handleCacheResponse(msg);
+
+break;
+
+}
+
+return null;
+
+}
+
+Location: NAMING.java
+
+Content: 
+
+protected void multicastOwnMapping(){
+
+  String logical_name=NameCache.get(local_addr);
+
+  if (logical_name != null) {
+
+    Message msg=new Message(null).setFlag(Message.Flag.OOB).setTransientFlag(Message.TransientFlag.DONT_LOOPBACK).putHeader(id,new Header(Type.CACHE_RSP,local_addr,logical_name));
+
+    down_prot.down(msg);
+
+  }
+
+}
+

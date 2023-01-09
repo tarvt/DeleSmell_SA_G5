@@ -1,0 +1,176 @@
+Location: TestLostTracker.java
+
+Content: 
+
+public void testLostTracker() throws IOException {
+
+  FakeObjectUtilities.establishFirstContact(jobTracker,trackers[0]);
+
+  TaskAttemptID[] tid=new TaskAttemptID[2];
+
+  JobConf conf=new JobConf();
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(1);
+
+  FakeJobInProgress job=new FakeJobInProgress(conf,jobTracker);
+
+  job.initTasks();
+
+  tid[0]=job.findMapTask(trackers[0]);
+
+  job.finishTask(tid[0]);
+
+  clock.advance(8 * 1000);
+
+  jobTracker.checkExpiredTrackers();
+
+  FakeObjectUtilities.establishFirstContact(jobTracker,trackers[1]);
+
+  tid[1]=job.findMapTask(trackers[1]);
+
+  assertNotNull("Map Task from Lost Tracker did not get reassigned",tid[1]);
+
+  assertEquals("Task ID of reassigned map task does not match",tid[0].getTaskID().toString(),tid[1].getTaskID().toString());
+
+  job.finishTask(tid[1]);
+
+}
+
+Location: TestLostTracker.java
+
+Content: 
+
+/** 
+
+ * Test whether the tracker gets lost after its blacklisted.
+
+ */
+
+public void testLostTrackerAfterBlacklisting() throws Exception {
+
+  FakeObjectUtilities.establishFirstContact(jobTracker,trackers[0]);
+
+  clock.advance(600);
+
+  TaskAttemptID[] tid=new TaskAttemptID[2];
+
+  JobConf conf=new JobConf();
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(0);
+
+  conf.set(MRJobConfig.MAX_TASK_FAILURES_PER_TRACKER,"1");
+
+  conf.set(MRJobConfig.SETUP_CLEANUP_NEEDED,"false");
+
+  FakeJobInProgress job=new FakeJobInProgress(conf,jobTracker);
+
+  job.initTasks();
+
+  job.setClusterSize(4);
+
+  assertEquals("Active tracker count mismatch",1,jobTracker.taskTrackers().size());
+
+  tid[0]=job.findMapTask(trackers[0]);
+
+  job.failTask(tid[0]);
+
+  FakeObjectUtilities.establishFirstContact(jobTracker,trackers[1]);
+
+  assertEquals("Active tracker count mismatch",2,jobTracker.taskTrackers().size());
+
+  tid[1]=job.findMapTask(trackers[1]);
+
+  job.finishTask(tid[1]);
+
+  assertEquals("Job not successful",JobStatus.SUCCEEDED,job.getStatus().getRunState());
+
+  assertTrue("Tracker 0 not blacklisted",jobTracker.getBlacklistedTrackers()[0].getTaskTrackerName().equals(trackers[0]));
+
+  assertEquals("Active tracker count mismatch",2,jobTracker.taskTrackers().size());
+
+  assertEquals("Blacklisted tracker count mismatch",1,jobTracker.getClusterStatus(false).getBlacklistedTrackers());
+
+  clock.advance(500);
+
+  jobTracker.checkExpiredTrackers();
+
+  assertFalse("Tracker 0 not lost",jobTracker.getClusterStatus(false).getActiveTrackerNames().contains(trackers[0]));
+
+  assertEquals("Active tracker count mismatch",1,jobTracker.taskTrackers().size());
+
+  assertEquals("Blacklisted tracker count mismatch",0,jobTracker.getClusterStatus(false).getBlacklistedTrackers());
+
+}
+
+Location: TestLostTracker.java
+
+Content: 
+
+/** 
+
+ * Test whether the tracker gets blacklisted after its lost.
+
+ */
+
+public void testLostTrackerBeforeBlacklisting() throws Exception {
+
+  FakeObjectUtilities.establishFirstContact(jobTracker,trackers[0]);
+
+  TaskAttemptID[] tid=new TaskAttemptID[3];
+
+  JobConf conf=new JobConf();
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(1);
+
+  conf.set(MRJobConfig.MAX_TASK_FAILURES_PER_TRACKER,"1");
+
+  conf.set(MRJobConfig.SETUP_CLEANUP_NEEDED,"false");
+
+  FakeJobInProgress job=new FakeJobInProgress(conf,jobTracker);
+
+  job.initTasks();
+
+  job.setClusterSize(4);
+
+  tid[0]=job.findMapTask(trackers[0]);
+
+  job.finishTask(tid[0]);
+
+  assertEquals("Active tracker count mismatch",1,jobTracker.getClusterStatus(false).getTaskTrackers());
+
+  clock.advance(1100);
+
+  jobTracker.checkExpiredTrackers();
+
+  assertFalse("Tracker 0 not lost",jobTracker.getClusterStatus(false).getActiveTrackerNames().contains(trackers[0]));
+
+  assertEquals("Active tracker count mismatch",0,jobTracker.getClusterStatus(false).getTaskTrackers());
+
+  FakeObjectUtilities.establishFirstContact(jobTracker,trackers[1]);
+
+  tid[1]=job.findMapTask(trackers[1]);
+
+  assertNotNull("Map Task from Lost Tracker did not get reassigned",tid[1]);
+
+  assertEquals("Task ID of reassigned map task does not match",tid[0].getTaskID().toString(),tid[1].getTaskID().toString());
+
+  job.finishTask(tid[1]);
+
+  tid[2]=job.findReduceTask(trackers[1]);
+
+  job.finishTask(tid[2]);
+
+  assertEquals("Job not successful",JobStatus.SUCCEEDED,job.getStatus().getRunState());
+
+  assertEquals("Active tracker count mismatch",1,jobTracker.getClusterStatus(false).getTaskTrackers());
+
+  assertEquals("Blacklisted tracker count mismatch",0,jobTracker.getClusterStatus(false).getBlacklistedTrackers());
+
+}
+

@@ -1,0 +1,622 @@
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * Analyze the results
+
+ * @throws IOException on error
+
+ */
+
+private static void analyzeResults() throws IOException {
+
+  final FileSystem fs=FileSystem.get(config);
+
+  Path reduceFile=new Path(new Path(baseDir,OUTPUT_DIR_NAME),"part-00000");
+
+  DataInputStream in;
+
+  in=new DataInputStream(fs.open(reduceFile));
+
+  BufferedReader lines;
+
+  lines=new BufferedReader(new InputStreamReader(in));
+
+  long totalTimeAL1=0l;
+
+  long totalTimeAL2=0l;
+
+  long totalTimeTPmS=0l;
+
+  long lateMaps=0l;
+
+  long numOfExceptions=0l;
+
+  long successfulFileOps=0l;
+
+  long mapStartTimeTPmS=0l;
+
+  long mapEndTimeTPmS=0l;
+
+  String resultTPSLine1=null;
+
+  String resultTPSLine2=null;
+
+  String resultALLine1=null;
+
+  String resultALLine2=null;
+
+  String line;
+
+  while ((line=lines.readLine()) != null) {
+
+    StringTokenizer tokens=new StringTokenizer(line," \t\n\r\f%;");
+
+    String attr=tokens.nextToken();
+
+    if (attr.endsWith(":totalTimeAL1")) {
+
+      totalTimeAL1=Long.parseLong(tokens.nextToken());
+
+    }
+
+ else     if (attr.endsWith(":totalTimeAL2")) {
+
+      totalTimeAL2=Long.parseLong(tokens.nextToken());
+
+    }
+
+ else     if (attr.endsWith(":totalTimeTPmS")) {
+
+      totalTimeTPmS=Long.parseLong(tokens.nextToken());
+
+    }
+
+ else     if (attr.endsWith(":latemaps")) {
+
+      lateMaps=Long.parseLong(tokens.nextToken());
+
+    }
+
+ else     if (attr.endsWith(":numOfExceptions")) {
+
+      numOfExceptions=Long.parseLong(tokens.nextToken());
+
+    }
+
+ else     if (attr.endsWith(":successfulFileOps")) {
+
+      successfulFileOps=Long.parseLong(tokens.nextToken());
+
+    }
+
+ else     if (attr.endsWith(":mapStartTimeTPmS")) {
+
+      mapStartTimeTPmS=Long.parseLong(tokens.nextToken());
+
+    }
+
+ else     if (attr.endsWith(":mapEndTimeTPmS")) {
+
+      mapEndTimeTPmS=Long.parseLong(tokens.nextToken());
+
+    }
+
+  }
+
+  double avgLatency1=(double)totalTimeAL1 / successfulFileOps;
+
+  double avgLatency2=(double)totalTimeAL2 / successfulFileOps;
+
+  double longestMapTimeTPmS=(double)(mapEndTimeTPmS - mapStartTimeTPmS);
+
+  double totalTimeTPS=(longestMapTimeTPmS == 0) ? (1000 * successfulFileOps) : (double)(1000 * successfulFileOps) / longestMapTimeTPmS;
+
+  double AverageExecutionTime=(totalTimeTPmS == 0) ? (double)successfulFileOps : (double)totalTimeTPmS / successfulFileOps;
+
+  if (operation.equals(OP_CREATE_WRITE)) {
+
+    resultTPSLine1="               TPS: Create/Write/Close: " + (int)(totalTimeTPS * 2);
+
+    resultTPSLine2="Avg exec time (ms): Create/Write/Close: " + AverageExecutionTime;
+
+    resultALLine1="            Avg Lat (ms): Create/Write: " + avgLatency1;
+
+    resultALLine2="                   Avg Lat (ms): Close: " + avgLatency2;
+
+  }
+
+ else   if (operation.equals(OP_OPEN_READ)) {
+
+    resultTPSLine1="                        TPS: Open/Read: " + (int)totalTimeTPS;
+
+    resultTPSLine2="         Avg Exec time (ms): Open/Read: " + AverageExecutionTime;
+
+    resultALLine1="                    Avg Lat (ms): Open: " + avgLatency1;
+
+    if (readFileAfterOpen) {
+
+      resultALLine2="                  Avg Lat (ms): Read: " + avgLatency2;
+
+    }
+
+  }
+
+ else   if (operation.equals(OP_RENAME)) {
+
+    resultTPSLine1="                           TPS: Rename: " + (int)totalTimeTPS;
+
+    resultTPSLine2="            Avg Exec time (ms): Rename: " + AverageExecutionTime;
+
+    resultALLine1="                  Avg Lat (ms): Rename: " + avgLatency1;
+
+  }
+
+ else   if (operation.equals(OP_DELETE)) {
+
+    resultTPSLine1="                           TPS: Delete: " + (int)totalTimeTPS;
+
+    resultTPSLine2="            Avg Exec time (ms): Delete: " + AverageExecutionTime;
+
+    resultALLine1="                  Avg Lat (ms): Delete: " + avgLatency1;
+
+  }
+
+  String resultLines[]={"-------------- NNBench -------------- : ","                               Version: " + NNBENCH_VERSION,"                           Date & time: " + sdf.format(new Date(System.currentTimeMillis())),"","                        Test Operation: " + operation,"                            Start time: " + sdf.format(new Date(startTime)),"                           Maps to run: " + numberOfMaps,"                        Reduces to run: " + numberOfReduces,"                    Block Size (bytes): " + blockSize,"                        Bytes to write: " + bytesToWrite,"                    Bytes per checksum: " + bytesPerChecksum,"                       Number of files: " + numberOfFiles,"                    Replication factor: " + replicationFactorPerFile,"            Successful file operations: " + successfulFileOps,"","        # maps that missed the barrier: " + lateMaps,"                          # exceptions: " + numOfExceptions,"",resultTPSLine1,resultTPSLine2,resultALLine1,resultALLine2,"","                 RAW DATA: AL Total #1: " + totalTimeAL1,"                 RAW DATA: AL Total #2: " + totalTimeAL2,"              RAW DATA: TPS Total (ms): " + totalTimeTPmS,"       RAW DATA: Longest Map Time (ms): " + longestMapTimeTPmS,"                   RAW DATA: Late maps: " + lateMaps,"             RAW DATA: # of exceptions: " + numOfExceptions,""};
+
+  PrintStream res=new PrintStream(new FileOutputStream(new File(DEFAULT_RES_FILE_NAME),true));
+
+  for (int i=0; i < resultLines.length; i++) {
+
+    LOG.info(resultLines[i]);
+
+    res.println(resultLines[i]);
+
+  }
+
+}
+
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * check for arguments and fail if the values are not specified
+
+ * @param index  positional number of an argument in the list of commandline's arguments
+
+ * @param length total number of arguments
+
+ */
+
+public static void checkArgs(final int index,final int length){
+
+  if (index == length) {
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+}
+
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * Clean up the files before a test run
+
+ * @throws IOException on error
+
+ */
+
+private static void cleanupBeforeTestrun() throws IOException {
+
+  FileSystem tempFS=FileSystem.get(config);
+
+  if (operation.equals(OP_CREATE_WRITE)) {
+
+    LOG.info("Deleting data directory");
+
+    tempFS.delete(new Path(baseDir,DATA_DIR_NAME),true);
+
+  }
+
+  tempFS.delete(new Path(baseDir,CONTROL_DIR_NAME),true);
+
+  tempFS.delete(new Path(baseDir,OUTPUT_DIR_NAME),true);
+
+}
+
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * Create control files before a test run. Number of files created is equal to the number of maps specified
+
+ * @throws IOException on error
+
+ */
+
+private static void createControlFiles() throws IOException {
+
+  FileSystem tempFS=FileSystem.get(config);
+
+  LOG.info("Creating " + numberOfMaps + " control files");
+
+  for (int i=0; i < numberOfMaps; i++) {
+
+    String strFileName="NNBench_Controlfile_" + i;
+
+    Path filePath=new Path(new Path(baseDir,CONTROL_DIR_NAME),strFileName);
+
+    SequenceFile.Writer writer=null;
+
+    try {
+
+      writer=SequenceFile.createWriter(tempFS,config,filePath,Text.class,LongWritable.class,CompressionType.NONE);
+
+      writer.append(new Text(strFileName),new LongWritable(0l));
+
+    }
+
+  finally {
+
+      if (writer != null) {
+
+        writer.close();
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * Display version
+
+ */
+
+private static void displayVersion(){
+
+  System.out.println(NNBENCH_VERSION);
+
+}
+
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * Parse input arguments
+
+ * @param args array of command line's parameters to be parsed
+
+ */
+
+public static void parseInputs(final String[] args){
+
+  if (args.length == 0) {
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  for (int i=0; i < args.length; i++) {
+
+    if (args[i].equals("-operation")) {
+
+      operation=args[++i];
+
+    }
+
+ else     if (args[i].equals("-maps")) {
+
+      checkArgs(i + 1,args.length);
+
+      numberOfMaps=Long.parseLong(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-reduces")) {
+
+      checkArgs(i + 1,args.length);
+
+      numberOfReduces=Long.parseLong(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-startTime")) {
+
+      checkArgs(i + 1,args.length);
+
+      startTime=Long.parseLong(args[++i]) * 1000;
+
+    }
+
+ else     if (args[i].equals("-blockSize")) {
+
+      checkArgs(i + 1,args.length);
+
+      blockSize=Long.parseLong(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-bytesToWrite")) {
+
+      checkArgs(i + 1,args.length);
+
+      bytesToWrite=Integer.parseInt(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-bytesPerChecksum")) {
+
+      checkArgs(i + 1,args.length);
+
+      bytesPerChecksum=Long.parseLong(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-numberOfFiles")) {
+
+      checkArgs(i + 1,args.length);
+
+      numberOfFiles=Long.parseLong(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-replicationFactorPerFile")) {
+
+      checkArgs(i + 1,args.length);
+
+      replicationFactorPerFile=Short.parseShort(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-baseDir")) {
+
+      checkArgs(i + 1,args.length);
+
+      baseDir=args[++i];
+
+    }
+
+ else     if (args[i].equals("-readFileAfterOpen")) {
+
+      checkArgs(i + 1,args.length);
+
+      readFileAfterOpen=Boolean.parseBoolean(args[++i]);
+
+    }
+
+ else     if (args[i].equals("-help")) {
+
+      displayUsage();
+
+      System.exit(-1);
+
+    }
+
+  }
+
+  LOG.info("Test Inputs: ");
+
+  LOG.info("           Test Operation: " + operation);
+
+  LOG.info("               Start time: " + sdf.format(new Date(startTime)));
+
+  LOG.info("           Number of maps: " + numberOfMaps);
+
+  LOG.info("        Number of reduces: " + numberOfReduces);
+
+  LOG.info("               Block Size: " + blockSize);
+
+  LOG.info("           Bytes to write: " + bytesToWrite);
+
+  LOG.info("       Bytes per checksum: " + bytesPerChecksum);
+
+  LOG.info("          Number of files: " + numberOfFiles);
+
+  LOG.info("       Replication factor: " + replicationFactorPerFile);
+
+  LOG.info("                 Base dir: " + baseDir);
+
+  LOG.info("     Read file after open: " + readFileAfterOpen);
+
+  config.set("test.nnbench.operation",operation);
+
+  config.setLong("test.nnbench.maps",numberOfMaps);
+
+  config.setLong("test.nnbench.reduces",numberOfReduces);
+
+  config.setLong("test.nnbench.starttime",startTime);
+
+  config.setLong("test.nnbench.blocksize",blockSize);
+
+  config.setInt("test.nnbench.bytestowrite",bytesToWrite);
+
+  config.setLong("test.nnbench.bytesperchecksum",bytesPerChecksum);
+
+  config.setLong("test.nnbench.numberoffiles",numberOfFiles);
+
+  config.setInt("test.nnbench.replicationfactor",(int)replicationFactorPerFile);
+
+  config.set("test.nnbench.basedir",baseDir);
+
+  config.setBoolean("test.nnbench.readFileAfterOpen",readFileAfterOpen);
+
+  config.set("test.nnbench.datadir.name",DATA_DIR_NAME);
+
+  config.set("test.nnbench.outputdir.name",OUTPUT_DIR_NAME);
+
+  config.set("test.nnbench.controldir.name",CONTROL_DIR_NAME);
+
+}
+
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * Run the test
+
+ * @throws IOException on error
+
+ */
+
+public static void runTests() throws IOException {
+
+  config.setLong("io.bytes.per.checksum",bytesPerChecksum);
+
+  JobConf job=new JobConf(config,NNBench.class);
+
+  job.setJobName("NNBench-" + operation);
+
+  FileInputFormat.setInputPaths(job,new Path(baseDir,CONTROL_DIR_NAME));
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setMaxMapAttempts(1);
+
+  job.setSpeculativeExecution(false);
+
+  job.setMapperClass(NNBenchMapper.class);
+
+  job.setReducerClass(NNBenchReducer.class);
+
+  FileOutputFormat.setOutputPath(job,new Path(baseDir,OUTPUT_DIR_NAME));
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setNumReduceTasks((int)numberOfReduces);
+
+  JobClient.runJob(job);
+
+}
+
+Location: NNBench.java
+
+Content: 
+
+/** 
+
+ * Validate the inputs
+
+ */
+
+public static void validateInputs(){
+
+  if (!operation.equals(OP_CREATE_WRITE) && !operation.equals(OP_OPEN_READ) && !operation.equals(OP_RENAME)&& !operation.equals(OP_DELETE)) {
+
+    System.err.println("Error: Unknown operation: " + operation);
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (numberOfMaps < 0) {
+
+    System.err.println("Error: Number of maps must be a positive number");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (numberOfReduces <= 0) {
+
+    System.err.println("Error: Number of reduces must be a positive number");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (blockSize <= 0) {
+
+    System.err.println("Error: Block size must be a positive number");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (bytesToWrite < 0) {
+
+    System.err.println("Error: Bytes to write must be a positive number");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (bytesPerChecksum < 0) {
+
+    System.err.println("Error: Bytes per checksum must be a positive number");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (numberOfFiles < 0) {
+
+    System.err.println("Error: Number of files must be a positive number");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (replicationFactorPerFile < 0) {
+
+    System.err.println("Error: Replication factor must be a positive number");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+  if (blockSize % bytesPerChecksum != 0) {
+
+    System.err.println("Error: Block Size in bytes must be a multiple of " + "bytes per checksum: ");
+
+    displayUsage();
+
+    System.exit(-1);
+
+  }
+
+}
+

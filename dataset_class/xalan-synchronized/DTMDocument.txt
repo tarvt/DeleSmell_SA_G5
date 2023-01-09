@@ -1,0 +1,588 @@
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * Link an attribute to a node, if the node already has one or more attributes assigned, then just link this one to the attribute list. The first attribute is attached to the Parent Node (pnode) through the m_attribute array, subsequent attributes are linked through the m_prevsib, m_nextsib arrays.
+
+ * @param o
+
+ * @param extendedType
+
+ * @param pnode
+
+ */
+
+protected int addAttributeToNode(Object o,int extendedType,int pnode){
+
+  int attrib=DTM.NULL;
+
+  int lastattrib=DTM.NULL;
+
+  try {
+
+    attrib=allocateNodeObject(o);
+
+    m_attribute.setElementAt(DTM.NULL,attrib);
+
+    m_exptype.setElementAt(extendedType,attrib);
+
+    m_nextsib.setElementAt(DTM.NULL,attrib);
+
+    m_prevsib.setElementAt(DTM.NULL,attrib);
+
+    m_parent.setElementAt(pnode,attrib);
+
+    m_firstch.setElementAt(DTM.NULL,attrib);
+
+    if (m_attribute.elementAt(pnode) != DTM.NULL) {
+
+      lastattrib=m_attribute.elementAt(pnode);
+
+      m_nextsib.setElementAt(lastattrib,attrib);
+
+      m_prevsib.setElementAt(attrib,lastattrib);
+
+    }
+
+    m_attribute.setElementAt(attrib,pnode);
+
+  }
+
+ catch (  Exception e) {
+
+    error("Error in addAttributeToNode: " + e.getMessage());
+
+  }
+
+  return attrib;
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * @param o
+
+ * @param level
+
+ * @param extendedType
+
+ * @param parent
+
+ * @param prevsib
+
+ */
+
+protected int addElementWithData(Object o,int level,int extendedType,int parent,int prevsib){
+
+  int elementIdx=addElement(level,extendedType,parent,prevsib);
+
+  int data=allocateNodeObject(o);
+
+  m_firstch.setElementAt(data,elementIdx);
+
+  m_exptype.setElementAt(m_TextNode_TypeID,data);
+
+  m_parent.setElementAt(elementIdx,data);
+
+  m_prevsib.setElementAt(DTM.NULL,data);
+
+  m_nextsib.setElementAt(DTM.NULL,data);
+
+  m_attribute.setElementAt(DTM.NULL,data);
+
+  m_firstch.setElementAt(DTM.NULL,data);
+
+  return elementIdx;
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * @param level
+
+ * @param extendedType
+
+ * @param parent
+
+ * @param prevsib
+
+ */
+
+protected int addElement(int level,int extendedType,int parent,int prevsib){
+
+  int node=DTM.NULL;
+
+  try {
+
+    node=allocateNodeObject(S_ELEMENT_NODE);
+
+    m_exptype.setElementAt(extendedType,node);
+
+    m_nextsib.setElementAt(DTM.NULL,node);
+
+    m_prevsib.setElementAt(prevsib,node);
+
+    m_parent.setElementAt(parent,node);
+
+    m_firstch.setElementAt(DTM.NULL,node);
+
+    m_attribute.setElementAt(DTM.NULL,node);
+
+    if (prevsib != DTM.NULL) {
+
+      if (m_nextsib.elementAt(prevsib) != DTM.NULL)       m_nextsib.setElementAt(m_nextsib.elementAt(prevsib),node);
+
+      m_nextsib.setElementAt(node,prevsib);
+
+    }
+
+    if ((parent != DTM.NULL) && (m_prevsib.elementAt(node) == DTM.NULL)) {
+
+      m_firstch.setElementAt(node,parent);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    error("Error in addElement: " + e.getMessage());
+
+  }
+
+  return node;
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * A common routine that allocates an Object from the Object Array. One of the common bugs in this code was to allocate an Object and not incerment m_size, using this method will assure that function.
+
+ * @param o
+
+ */
+
+private int allocateNodeObject(Object o){
+
+  m_size++;
+
+  return m_ObjectArray.append(o);
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * Allow two nodes to share the same set of attributes. There may be some problems because the parent of any attribute will be the original node they were assigned to. Need to see how the attribute walker works, then we should be able to fake it out.
+
+ * @param toNode
+
+ * @param fromNode
+
+ */
+
+protected void cloneAttributeFromNode(int toNode,int fromNode){
+
+  try {
+
+    if (m_attribute.elementAt(toNode) != DTM.NULL) {
+
+      error("Cloneing Attributes, where from Node already had addtibures assigned");
+
+    }
+
+    m_attribute.setElementAt(m_attribute.elementAt(fromNode),toNode);
+
+  }
+
+ catch (  Exception e) {
+
+    error("Cloning attributes");
+
+  }
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * Retrieve the text content of a DOM subtree, appending it into a user-supplied FastStringBuffer object. Note that attributes are not considered part of the content of an element. <p> There are open questions regarding whitespace stripping. Currently we make no special effort in that regard, since the standard DOM doesn't yet provide DTD-based information to distinguish whitespace-in-element-context from genuine #PCDATA. Note that we should probably also consider xml:space if/when we address this. DOM Level 3 may solve the problem for us. <p> %REVIEW% Note that as a DOM-level operation, it can be argued that this routine _shouldn't_ perform any processing beyond what the DOM already does, and that whitespace stripping and so on belong at the DTM level. If you want a stripped DOM view, wrap DTM2DOM around DOM2DTM.
+
+ * @param node  Node whose subtree is to be walked, gathering the contents ofall Text or CDATASection nodes.
+
+ * @param ch
+
+ * @param depth
+
+ * @throws org.xml.sax.SAXException
+
+ */
+
+protected static void dispatchNodeData(Node node,ContentHandler ch,int depth) throws org.xml.sax.SAXException {
+
+switch (node.getNodeType()) {
+
+case Node.DOCUMENT_FRAGMENT_NODE:
+
+case Node.DOCUMENT_NODE:
+
+case Node.ELEMENT_NODE:
+
+{
+
+      for (Node child=node.getFirstChild(); null != child; child=child.getNextSibling()) {
+
+        dispatchNodeData(child,ch,depth + 1);
+
+      }
+
+    }
+
+  break;
+
+case Node.PROCESSING_INSTRUCTION_NODE:
+
+case Node.COMMENT_NODE:
+
+if (0 != depth) break;
+
+case Node.TEXT_NODE:
+
+case Node.CDATA_SECTION_NODE:
+
+case Node.ATTRIBUTE_NODE:
+
+String str=node.getNodeValue();
+
+if (ch instanceof CharacterNodeHandler) {
+
+((CharacterNodeHandler)ch).characters(node);
+
+}
+
+ else {
+
+ch.characters(str.toCharArray(),0,str.length());
+
+}
+
+break;
+
+default :
+
+break;
+
+}
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * @param parm1
+
+ * @param parm2
+
+ * @throws org.xml.sax.SAXException
+
+ */
+
+public void dispatchToEvents(int parm1,ContentHandler parm2) throws org.xml.sax.SAXException {
+
+  if (DEBUG) {
+
+    System.out.println("dispathcToEvents(" + parm1 + ","+ parm2+ ")");
+
+  }
+
+  return;
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * @param mgr
+
+ * @param ident
+
+ */
+
+public DTMDocument(DTMManager mgr,int ident){
+
+  super(mgr,null,ident,null,mgr.getXMLStringFactory(),true);
+
+  m_attribute=new SuballocatedIntVector(DEFAULT_BLOCKSIZE);
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ */
+
+public void dumpDTM(){
+
+  try {
+
+    File f=new File("DTMDump.txt");
+
+    System.err.println("Dumping... " + f.getAbsolutePath());
+
+    PrintStream ps=new PrintStream(new FileOutputStream(f));
+
+    while (nextNode()) {
+
+    }
+
+    int nRecords=m_size;
+
+    ps.println("Total nodes: " + nRecords);
+
+    for (int i=0; i < nRecords; i++) {
+
+      ps.println("=========== " + i + " ===========");
+
+      ps.println("NodeName: " + getNodeName(makeNodeHandle(i)));
+
+      ps.println("NodeNameX: " + getNodeNameX(makeNodeHandle(i)));
+
+      ps.println("LocalName: " + getLocalName(makeNodeHandle(i)));
+
+      ps.println("NamespaceURI: " + getNamespaceURI(makeNodeHandle(i)));
+
+      ps.println("Prefix: " + getPrefix(makeNodeHandle(i)));
+
+      int exTypeID=getExpandedTypeID(makeNodeHandle(i));
+
+      ps.println("Expanded Type ID: " + Integer.toHexString(exTypeID));
+
+      int type=getNodeType(makeNodeHandle(i));
+
+      String typestring;
+
+switch (type) {
+
+case DTM.ATTRIBUTE_NODE:
+
+        typestring="ATTRIBUTE_NODE";
+
+      break;
+
+case DTM.CDATA_SECTION_NODE:
+
+    typestring="CDATA_SECTION_NODE";
+
+  break;
+
+case DTM.COMMENT_NODE:
+
+typestring="COMMENT_NODE";
+
+break;
+
+case DTM.DOCUMENT_FRAGMENT_NODE:
+
+typestring="DOCUMENT_FRAGMENT_NODE";
+
+break;
+
+case DTM.DOCUMENT_NODE:
+
+typestring="DOCUMENT_NODE";
+
+break;
+
+case DTM.DOCUMENT_TYPE_NODE:
+
+typestring="DOCUMENT_NODE";
+
+break;
+
+case DTM.ELEMENT_NODE:
+
+typestring="ELEMENT_NODE";
+
+break;
+
+case DTM.ENTITY_NODE:
+
+typestring="ENTITY_NODE";
+
+break;
+
+case DTM.ENTITY_REFERENCE_NODE:
+
+typestring="ENTITY_REFERENCE_NODE";
+
+break;
+
+case DTM.NAMESPACE_NODE:
+
+typestring="NAMESPACE_NODE";
+
+break;
+
+case DTM.NOTATION_NODE:
+
+typestring="NOTATION_NODE";
+
+break;
+
+case DTM.NULL:
+
+typestring="NULL";
+
+break;
+
+case DTM.PROCESSING_INSTRUCTION_NODE:
+
+typestring="PROCESSING_INSTRUCTION_NODE";
+
+break;
+
+case DTM.TEXT_NODE:
+
+typestring="TEXT_NODE";
+
+break;
+
+default :
+
+typestring="Unknown!";
+
+break;
+
+}
+
+ps.println("Type: " + typestring);
+
+int firstChild=_firstch(i);
+
+if (DTM.NULL == firstChild) ps.println("First child: DTM.NULL");
+
+ else if (NOTPROCESSED == firstChild) ps.println("First child: NOTPROCESSED");
+
+ else ps.println("First child: " + firstChild);
+
+int prevSibling=_prevsib(i);
+
+if (DTM.NULL == prevSibling) ps.println("Prev sibling: DTM.NULL");
+
+ else if (NOTPROCESSED == prevSibling) ps.println("Prev sibling: NOTPROCESSED");
+
+ else ps.println("Prev sibling: " + prevSibling);
+
+int nextSibling=_nextsib(i);
+
+if (DTM.NULL == nextSibling) ps.println("Next sibling: DTM.NULL");
+
+ else if (NOTPROCESSED == nextSibling) ps.println("Next sibling: NOTPROCESSED");
+
+ else ps.println("Next sibling: " + nextSibling);
+
+int parent=_parent(i);
+
+if (DTM.NULL == parent) ps.println("Parent: DTM.NULL");
+
+ else if (NOTPROCESSED == parent) ps.println("Parent: NOTPROCESSED");
+
+ else ps.println("Parent: " + parent);
+
+int level=_level(i);
+
+ps.println("Level: " + level);
+
+ps.println("Node Value: " + getNodeValue(i));
+
+ps.println("String Value: " + getStringValue(i));
+
+ps.println("First Attribute Node: " + m_attribute.elementAt(i));
+
+}
+
+}
+
+ catch (IOException ioe) {
+
+ioe.printStackTrace(System.err);
+
+throw new RuntimeException(ioe.getMessage());
+
+}
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * @param parm1
+
+ */
+
+protected void ensureSize(int parm1){
+
+  if (DEBUG)   System.out.println("ensureSize(" + parm1 + ")");
+
+}
+
+Location: DTMDocument.java
+
+Content: 
+
+/** 
+
+ * Retrieve the text content of a DOM subtree, appending it into a user-supplied FastStringBuffer object. Note that attributes are not considered part of the content of an element. <p> There are open questions regarding whitespace stripping. Currently we make no special effort in that regard, since the standard DOM doesn't yet provide DTD-based information to distinguish whitespace-in-element-context from genuine #PCDATA. Note that we should probably also consider xml:space if/when we address this. DOM Level 3 may solve the problem for us. <p> %REVIEW% Actually, since this method operates on the DOM side of the fence rather than the DTM side, it SHOULDN'T do any special handling. The DOM does what the DOM does; if you want DTM-level abstractions, use DTM-level methods.
+
+ * @param nodeIdx Index of node whose subtree is to be walked, gathering thecontents of all Text or CDATASection nodes.
+
+ * @param buf     FastStringBuffer into which the contents of the text nodes areto be concatenated.
+
+ */
+
+protected void getNodeData(int nodeIdx,FastStringBuffer buf){
+
+  for (int child=_firstch(nodeIdx); child != DTM.NULL; child=_nextsib(child)) {
+
+    Object o=m_ObjectArray.getAt(child);
+
+    if (o == S_ELEMENT_NODE)     getNodeData(child,buf);
+
+ else     if (o != null)     buf.append(o.toString());
+
+  }
+
+}
+

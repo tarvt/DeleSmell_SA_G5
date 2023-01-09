@@ -1,0 +1,212 @@
+Location: Cluster.java
+
+Content: 
+
+public Cluster(Configuration conf) throws IOException {
+
+  this.conf=conf;
+
+  this.ugi=UserGroupInformation.getCurrentUser();
+
+  client=createClient(conf);
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+public Cluster(InetSocketAddress jobTrackAddr,Configuration conf) throws IOException {
+
+  this.conf=conf;
+
+  this.ugi=UserGroupInformation.getCurrentUser();
+
+  client=createRPCProxy(jobTrackAddr,conf);
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+private ClientProtocol createClient(Configuration conf) throws IOException {
+
+  ClientProtocol client;
+
+  String tracker=conf.get("mapreduce.jobtracker.address","local");
+
+  if ("local".equals(tracker)) {
+
+    conf.setInt("mapreduce.job.maps",1);
+
+    client=new LocalJobRunner(conf);
+
+  }
+
+ else {
+
+    client=createRPCProxy(JobTracker.getAddress(conf),conf);
+
+  }
+
+  return client;
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+private ClientProtocol createRPCProxy(InetSocketAddress addr,Configuration conf) throws IOException {
+
+  return (ClientProtocol)RPC.getProxy(ClientProtocol.class,ClientProtocol.versionID,addr,ugi,conf,NetUtils.getSocketFactory(conf,ClientProtocol.class));
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+/** 
+
+ * Get all active trackers in the cluster.
+
+ * @return array of {@link TaskTrackerInfo}
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+public TaskTrackerInfo[] getActiveTaskTrackers() throws IOException, InterruptedException {
+
+  return client.getActiveTrackers();
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+/** 
+
+ * Get blacklisted trackers.
+
+ * @return array of {@link TaskTrackerInfo}
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+public TaskTrackerInfo[] getBlackListedTaskTrackers() throws IOException, InterruptedException {
+
+  return client.getBlacklistedTrackers();
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+/** 
+
+ * Get current cluster status.
+
+ * @return object of {@link ClusterMetrics}
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+public ClusterMetrics getClusterStatus() throws IOException, InterruptedException {
+
+  return client.getClusterMetrics();
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+/** 
+
+ * Get the job history file path for a given job id. The job history file at  this path may or may not be existing depending on the job completion state. The file is present only for the completed jobs.
+
+ * @param jobId the JobID of the job submitted by the current user.
+
+ * @return the file path of the job history file
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+public String getJobHistoryUrl(JobID jobId) throws IOException, InterruptedException {
+
+  if (jobHistoryDir == null) {
+
+    jobHistoryDir=new Path(client.getJobHistoryDir());
+
+  }
+
+  return JobHistory.getJobHistoryFile(jobHistoryDir,jobId,ugi.getShortUserName()).toString();
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+private Job[] getJobs(JobStatus[] stats) throws IOException {
+
+  List<Job> jobs=new ArrayList<Job>();
+
+  for (  JobStatus stat : stats) {
+
+    jobs.add(new Job(this,stat,new JobConf(stat.getJobFile())));
+
+  }
+
+  return jobs.toArray(new Job[0]);
+
+}
+
+Location: Cluster.java
+
+Content: 
+
+/** 
+
+ * Get job corresponding to jobid.
+
+ * @param jobId
+
+ * @return object of {@link Job}
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+public Job getJob(JobID jobId) throws IOException, InterruptedException {
+
+  JobStatus status=client.getJobStatus(jobId);
+
+  if (status != null) {
+
+    return new Job(this,status,new JobConf(status.getJobFile()));
+
+  }
+
+  return null;
+
+}
+

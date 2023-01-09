@@ -1,0 +1,214 @@
+Location: TextCache.java
+
+Content: 
+
+public void addInit(CachedObject object){
+
+  writeLock.lock();
+
+  try {
+
+    cache.put(object);
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+private void clearRowImage(CachedObject row){
+
+  try {
+
+    int length=row.getStorageSize();
+
+    int count=length - textFileSettings.bytesForLineEnd.length;
+
+    rowOut.reset();
+
+    HsqlByteArrayOutputStream out=rowOut.getOutputStream();
+
+    for (; count > 0; count-=textFileSettings.bytesForSpace.length) {
+
+      out.write(textFileSettings.bytesForSpace);
+
+    }
+
+    out.write(textFileSettings.bytesForLineEnd);
+
+    dataFile.seek(row.getPos());
+
+    dataFile.write(out.getBuffer(),0,out.size());
+
+  }
+
+ catch (  Throwable t) {
+
+    throw Error.runtimeError(ErrorCode.U_S0500,t.getMessage());
+
+  }
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+public String getHeader(){
+
+  return header;
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+public TextFileReader getTextFileReader(){
+
+  return TextFileReader8.newTextFileReader(dataFile,textFileSettings,rowIn,cacheReadonly);
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+public TextFileSettings getTextFileSettings(){
+
+  return textFileSettings;
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+public boolean isIgnoreFirstLine(){
+
+  return textFileSettings.ignoreFirst;
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+/** 
+
+ * Closes the source file and deletes it if it is not read-only.
+
+ */
+
+void purge(){
+
+  writeLock.lock();
+
+  try {
+
+    uncommittedCache.clear();
+
+    if (cacheReadonly) {
+
+      release();
+
+    }
+
+ else {
+
+      if (dataFile != null) {
+
+        dataFile.close();
+
+        dataFile=null;
+
+      }
+
+      FileUtil.getFileUtil().delete(dataFileName);
+
+    }
+
+  }
+
+ catch (  Throwable t) {
+
+    throw Error.error(t,ErrorCode.FILE_IO_ERROR,ErrorCode.M_TextCache_purging_file_error,new Object[]{dataFileName,t.toString()});
+
+  }
+
+ finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+public void setHeaderInitialise(String header){
+
+  this.header=header;
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+public void setHeader(String header){
+
+  if (textFileSettings.ignoreFirst && fileFreePosition == 0) {
+
+    try {
+
+      writeHeader(header);
+
+      this.header=header;
+
+    }
+
+ catch (    HsqlException e) {
+
+      throw new HsqlException(e,Error.getMessage(ErrorCode.GENERAL_IO_ERROR),ErrorCode.GENERAL_IO_ERROR);
+
+    }
+
+    return;
+
+  }
+
+  throw Error.error(ErrorCode.TEXT_TABLE_HEADER);
+
+}
+
+Location: TextCache.java
+
+Content: 
+
+/** 
+
+ * The source string for a cached table is evaluated and the parameters are used to open the source file.<p> Settings are used in this order: (1) settings specified in the source string for the table (2) global database settings in *.properties file (3) program defaults
+
+ */
+
+TextCache(Table table,String name){
+
+  super(table.database,name);
+
+  this.table=table;
+
+  uncommittedCache=new LongKeyHashMap();
+
+}
+

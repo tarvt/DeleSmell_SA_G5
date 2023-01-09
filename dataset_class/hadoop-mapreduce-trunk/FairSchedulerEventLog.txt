@@ -1,0 +1,108 @@
+Location: FairSchedulerEventLog.java
+
+Content: 
+
+boolean init(Configuration conf,String jobtrackerHostname){
+
+  try {
+
+    logDir=conf.get("mapred.fairscheduler.eventlog.location",new File(System.getProperty("hadoop.log.dir")).getAbsolutePath() + File.separator + "fairscheduler");
+
+    Path logDirPath=new Path(logDir);
+
+    FileSystem fs=logDirPath.getFileSystem(conf);
+
+    if (!fs.exists(logDirPath)) {
+
+      if (!fs.mkdirs(logDirPath)) {
+
+        throw new IOException("Mkdirs failed to create " + logDirPath.toString());
+
+      }
+
+    }
+
+    String username=System.getProperty("user.name");
+
+    logFile=String.format("%s%shadoop-%s-fairscheduler-%s.log",logDir,File.separator,username,jobtrackerHostname);
+
+    logDisabled=false;
+
+    PatternLayout layout=new PatternLayout("%d{ISO8601}\t%m%n");
+
+    appender=new DailyRollingFileAppender(layout,logFile,"'.'yyyy-MM-dd");
+
+    appender.activateOptions();
+
+    LOG.info("Initialized fair scheduler event log, logging to " + logFile);
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.error("Failed to initialize fair scheduler event log. Disabling it.",e);
+
+    logDisabled=true;
+
+  }
+
+  return !(logDisabled);
+
+}
+
+Location: FairSchedulerEventLog.java
+
+Content: 
+
+boolean isEnabled(){
+
+  return !logDisabled;
+
+}
+
+Location: FairSchedulerEventLog.java
+
+Content: 
+
+/** 
+
+ * Log an event, writing a line in the log file of the form <pre> DATE    EVENT_TYPE   PARAM_1   PARAM_2   ... </pre>
+
+ */
+
+synchronized void log(String eventType,Object... params){
+
+  try {
+
+    if (logDisabled)     return;
+
+    StringBuffer buffer=new StringBuffer();
+
+    buffer.append(eventType);
+
+    for (    Object param : params) {
+
+      buffer.append("\t");
+
+      buffer.append(param);
+
+    }
+
+    String message=buffer.toString();
+
+    Logger logger=Logger.getLogger(getClass());
+
+    appender.append(new LoggingEvent("",logger,Level.INFO,message,null));
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.error("Failed to append to fair scheduler event log",e);
+
+    logDisabled=true;
+
+  }
+
+}
+

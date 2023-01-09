@@ -1,0 +1,598 @@
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Obtain bidirectional level of character at specified position, which must be a non-negative integer less than the length of this FO.
+
+ * @param position an offset position into FO's characters
+
+ * @return a resolved bidi level or -1 if default
+
+ * @throws IndexOutOfBoundsException if position is not non-negative integeror is greater than or equal to length
+
+ */
+
+public int bidiLevelAt(int position) throws IndexOutOfBoundsException {
+
+  if ((position < 0) || (position >= length())) {
+
+    throw new IndexOutOfBoundsException();
+
+  }
+
+ else   if (bidiLevels != null) {
+
+    return bidiLevels[position];
+
+  }
+
+ else {
+
+    return -1;
+
+  }
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * This method is run as part of the ancestor Block's flushText(), to create xref pointers to the previous FOText objects within the same Block
+
+ * @param ancestorBlock the ancestor fo:block
+
+ */
+
+protected void createBlockPointers(Block ancestorBlock){
+
+  this.ancestorBlock=ancestorBlock;
+
+  if (ancestorBlock.lastFOTextProcessed != null) {
+
+    if (ancestorBlock.lastFOTextProcessed.ancestorBlock == this.ancestorBlock) {
+
+      prevFOTextThisBlock=ancestorBlock.lastFOTextProcessed;
+
+      prevFOTextThisBlock.nextFOTextThisBlock=this;
+
+    }
+
+ else {
+
+      prevFOTextThisBlock=null;
+
+    }
+
+  }
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Creates a new FO text node.
+
+ * @param parent FONode that is the parent of this object
+
+ */
+
+public FOText(FONode parent){
+
+  super(parent);
+
+  PageSequence pageSequence=getRoot().getLastPageSequence();
+
+  if (pageSequence != null && pageSequence.hasChangeBars()) {
+
+    nodeChangeBarList=getRoot().getLastPageSequence().getClonedChangeBarList();
+
+  }
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Obtain bidirectional level of each character represented by this FOText.
+
+ * @return a (possibly empty) array of bidi levels or nullin case no bidi levels have been assigned
+
+ */
+
+public int[] getBidiLevels(){
+
+  return bidiLevels;
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Obtain bidirectional level of each character over interval [start,end).
+
+ * @param start the starting index of interval
+
+ * @param end the ending index of interval
+
+ * @return a (possibly empty) array of bidi levels or nullin case no bidi levels have been assigned
+
+ */
+
+public int[] getBidiLevels(int start,int end){
+
+  if (this.bidiLevels != null) {
+
+    assert start <= end;
+
+    int n=end - start;
+
+    int[] bidiLevels=new int[n];
+
+    System.arraycopy(this.bidiLevels,start + 0,bidiLevels,0,n);
+
+    return bidiLevels;
+
+  }
+
+ else {
+
+    return null;
+
+  }
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Return the array of characters for this instance.
+
+ * @return  a char sequence containing the text
+
+ */
+
+public CharSequence getCharSequence(){
+
+  if (this.charBuffer == null) {
+
+    return null;
+
+  }
+
+  this.charBuffer.rewind();
+
+  return this.charBuffer.asReadOnlyBuffer().subSequence(0,this.charBuffer.limit());
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * @return the country trait 
+
+ */
+
+public String getCountry(){
+
+  return country;
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Finds a character within the current Block that is relative in location to a character in the current FOText. Treats all FOText objects within a block as one unit, allowing text in adjoining FOText objects to be returned if the parameters are outside of the current object.
+
+ * @param i index into the CharBuffer
+
+ * @param offset signed integer with relative position within theblock of the character to return. To return the character immediately preceding i, pass -1. To return the character immediately after i, pass 1.
+
+ * @return the character in the offset position within the block; \u0000 ifthe offset points to an area outside of the block.
+
+ */
+
+private char getRelativeCharInBlock(int i,int offset){
+
+  int charIndex=i + offset;
+
+  if (charIndex >= 0 && charIndex < this.length()) {
+
+    return this.charAt(i + offset);
+
+  }
+
+  if (offset > 0) {
+
+    return CharUtilities.NULL_CHAR;
+
+  }
+
+  boolean foundChar=false;
+
+  char charToReturn=CharUtilities.NULL_CHAR;
+
+  FOText nodeToTest=this;
+
+  int remainingOffset=offset + i;
+
+  while (!foundChar) {
+
+    if (nodeToTest.prevFOTextThisBlock == null) {
+
+      break;
+
+    }
+
+    nodeToTest=nodeToTest.prevFOTextThisBlock;
+
+    int diff=nodeToTest.length() + remainingOffset - 1;
+
+    if (diff >= 0) {
+
+      charToReturn=nodeToTest.charAt(diff);
+
+      foundChar=true;
+
+    }
+
+ else {
+
+      remainingOffset+=diff;
+
+    }
+
+  }
+
+  return charToReturn;
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Determines whether a particular location in an FOText object's text is the start of a new "word". The use of "word" here is specifically for the text-transform property, but may be useful for other things as well, such as word-spacing. The definition of "word" is somewhat ambiguous and appears to be definable by the user agent.
+
+ * @param i index into charBuffer
+
+ * @return True if the character at this location is the start of a newword.
+
+ */
+
+private boolean isStartOfWord(int i){
+
+  char prevChar=getRelativeCharInBlock(i,-1);
+
+switch (isWordChar(prevChar)) {
+
+case IS_WORD_CHAR_TRUE:
+
+    return false;
+
+case IS_WORD_CHAR_FALSE:
+
+  return true;
+
+case IS_WORD_CHAR_MAYBE:
+
+char prevPrevChar=getRelativeCharInBlock(i,-2);
+
+switch (isWordChar(prevPrevChar)) {
+
+case IS_WORD_CHAR_TRUE:
+
+return false;
+
+case IS_WORD_CHAR_FALSE:
+
+return true;
+
+case IS_WORD_CHAR_MAYBE:
+
+return true;
+
+default :
+
+return false;
+
+}
+
+default :
+
+return false;
+
+}
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Determines whether the input char should be considered part of a "word". This is used primarily to determine whether the character immediately following starts a new word, but may have other uses. We have not found a definition of "word" in the standard (1.0), so the logic used here is based on the programmer's best guess.
+
+ * @param inputChar the character to be tested.
+
+ * @return int IS_WORD_CHAR_TRUE, IS_WORD_CHAR_FALSE, or IS_WORD_CHAR_MAYBE,depending on whether the character should be considered part of a word or not.
+
+ */
+
+private static int isWordChar(char inputChar){
+
+switch (Character.getType(inputChar)) {
+
+case Character.COMBINING_SPACING_MARK:
+
+    return IS_WORD_CHAR_TRUE;
+
+case Character.CONNECTOR_PUNCTUATION:
+
+  return IS_WORD_CHAR_TRUE;
+
+case Character.CONTROL:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.CURRENCY_SYMBOL:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.DASH_PUNCTUATION:
+
+if (inputChar == '-') {
+
+return IS_WORD_CHAR_TRUE;
+
+}
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.DECIMAL_DIGIT_NUMBER:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.ENCLOSING_MARK:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.END_PUNCTUATION:
+
+if (inputChar == '\u2019') {
+
+return IS_WORD_CHAR_MAYBE;
+
+}
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.FORMAT:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.LETTER_NUMBER:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.LINE_SEPARATOR:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.LOWERCASE_LETTER:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.MATH_SYMBOL:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.MODIFIER_LETTER:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.MODIFIER_SYMBOL:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.NON_SPACING_MARK:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.OTHER_LETTER:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.OTHER_NUMBER:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.OTHER_PUNCTUATION:
+
+if (inputChar == '\'') {
+
+return IS_WORD_CHAR_MAYBE;
+
+}
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.OTHER_SYMBOL:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.PARAGRAPH_SEPARATOR:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.PRIVATE_USE:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.SPACE_SEPARATOR:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.START_PUNCTUATION:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.SURROGATE:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.TITLECASE_LETTER:
+
+return IS_WORD_CHAR_TRUE;
+
+case Character.UNASSIGNED:
+
+return IS_WORD_CHAR_FALSE;
+
+case Character.UPPERCASE_LETTER:
+
+return IS_WORD_CHAR_TRUE;
+
+default :
+
+return IS_WORD_CHAR_FALSE;
+
+}
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Resets the backing <code>java.nio.CharBuffer</code>
+
+ */
+
+public void resetBuffer(){
+
+  if (charBuffer != null) {
+
+    charBuffer.rewind();
+
+  }
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Set bidirectional level over interval [start,end).
+
+ * @param level the resolved level
+
+ * @param start the starting index of interval
+
+ * @param end the ending index of interval
+
+ */
+
+public void setBidiLevel(int level,int start,int end){
+
+  if (start < end) {
+
+    if (bidiLevels == null) {
+
+      bidiLevels=new int[length()];
+
+    }
+
+    for (int i=start, n=end; i < n; i++) {
+
+      bidiLevels[i]=level;
+
+    }
+
+    if (parent != null) {
+
+      ((FObj)parent).setBidiLevel(level);
+
+    }
+
+  }
+
+ else {
+
+    assert start < end;
+
+  }
+
+}
+
+Location: FOText.java
+
+Content: 
+
+/** 
+
+ * Check if this text node will create an area. This means either there is non-whitespace or it is preserved whitespace. Maybe this just needs to check length &gt; 0, since char iterators handle whitespace.
+
+ * @return true if this will create an area in the output
+
+ */
+
+public boolean willCreateArea(){
+
+  if (whiteSpaceCollapse == Constants.EN_FALSE && charBuffer.limit() > 0) {
+
+    return true;
+
+  }
+
+  char ch;
+
+  charBuffer.rewind();
+
+  while (charBuffer.hasRemaining()) {
+
+    ch=charBuffer.get();
+
+    if (!((ch == CharUtilities.SPACE) || (ch == CharUtilities.LINEFEED_CHAR) || (ch == CharUtilities.CARRIAGE_RETURN)|| (ch == CharUtilities.TAB))) {
+
+      charBuffer.rewind();
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+

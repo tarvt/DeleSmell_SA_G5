@@ -1,0 +1,206 @@
+Location: TestDistributedCacheUnModifiedFile.java
+
+Content: 
+
+@Test public void testDistributedCache() throws Exception {
+
+  Configuration conf=new Configuration(cluster.getConf());
+
+  JTProtocol wovenClient=cluster.getJTClient().getProxy();
+
+  int count=0;
+
+  boolean continueLoop=true;
+
+  int countLoop=0;
+
+  int taskTrackerCounter=0;
+
+  ArrayList<String> taskTrackerCollection=new ArrayList<String>();
+
+  do {
+
+    SleepJob job=new SleepJob();
+
+    job.setConf(conf);
+
+    Job slpJob=job.createJob(5,1,1000,1000,100,100);
+
+    DistributedCache.createSymlink(conf);
+
+    URI uri=URI.create(uriPath);
+
+    DistributedCache.addCacheFile(uri,conf);
+
+    JobConf jconf=new JobConf(conf);
+
+    FinishTaskControlAction.configureControlActionForJob(conf);
+
+    slpJob.submit();
+
+    RunningJob rJob=cluster.getJTClient().getClient().getJob(org.apache.hadoop.mapred.JobID.downgrade(slpJob.getJobID()));
+
+    countLoop++;
+
+    TTClient tClient=null;
+
+    JobInfo jInfo=wovenClient.getJobInfo(rJob.getID());
+
+    LOG.info("jInfo is :" + jInfo);
+
+    Assert.assertNotNull("jobInfo is null",jInfo);
+
+    count=0;
+
+    while (jInfo.getStatus().getRunState() != JobStatus.RUNNING) {
+
+      UtilsForTests.waitFor(10000);
+
+      count++;
+
+      jInfo=wovenClient.getJobInfo(rJob.getID());
+
+      if (count > 10) {
+
+        Assert.fail("job has not reached running state for more than" + "100 seconds. Failing at this point");
+
+      }
+
+    }
+
+    LOG.info("job id is :" + rJob.getID().toString());
+
+    TaskInfo[] taskInfos=cluster.getJTClient().getProxy().getTaskInfo(rJob.getID());
+
+    boolean distCacheFileIsFound;
+
+    for (    TaskInfo taskInfo : taskInfos) {
+
+      distCacheFileIsFound=false;
+
+      String[] taskTrackers=taskInfo.getTaskTrackers();
+
+      for (      String taskTracker : taskTrackers) {
+
+        taskTracker=UtilsForTests.getFQDNofTT(taskTracker);
+
+        LOG.info("taskTracker is :" + taskTracker);
+
+        if (countLoop > 1) {
+
+          if (taskTracker != null) {
+
+            continueLoop=taskTrackerCollection.contains(taskTracker);
+
+          }
+
+          if (!continueLoop) {
+
+            break;
+
+          }
+
+        }
+
+        if (taskTracker != null)         taskTrackerCollection.add(taskTracker);
+
+        if (countLoop > 2) {
+
+          continueLoop=false;
+
+        }
+
+        tClient=cluster.getTTClient(taskTracker);
+
+        if (tClient == null) {
+
+          continue;
+
+        }
+
+        String[] localDirs=tClient.getMapredLocalDirs();
+
+        int distributedFileCount=0;
+
+        for (        String localDir : localDirs) {
+
+          localDir=localDir + Path.SEPARATOR + TaskTracker.getPublicDistributedCacheDir();
+
+          LOG.info("localDir is : " + localDir);
+
+          FileStatus[] fileStatuses=tClient.listStatus(localDir,true,true);
+
+          for (          FileStatus fileStatus : fileStatuses) {
+
+            Path path=fileStatus.getPath();
+
+            LOG.info("path is :" + path.toString());
+
+            distCacheFileIsFound=(path.toString()).endsWith(distributedFileName);
+
+            if (distCacheFileIsFound) {
+
+              LOG.info("PATH found is :" + path.toString());
+
+              distributedFileCount++;
+
+              String filename=path.getName();
+
+              FsPermission fsPerm=fileStatus.getPermission();
+
+              Assert.assertTrue("File Permission is not 777",fsPerm.equals(new FsPermission("777")));
+
+            }
+
+          }
+
+        }
+
+        if (distributedFileCount > 1) {
+
+          Assert.fail("The distributed cache file is more than one");
+
+        }
+
+ else         if (distributedFileCount < 1)         Assert.fail("The distributed cache file is less than one");
+
+        if (!distCacheFileIsFound) {
+
+          Assert.assertEquals("The distributed cache file does not exist",distCacheFileIsFound,false);
+
+        }
+
+      }
+
+    }
+
+    for (    TaskInfo taskInfoRemaining : taskInfos) {
+
+      FinishTaskControlAction action=new FinishTaskControlAction(TaskID.downgrade(taskInfoRemaining.getTaskID()));
+
+      Collection<TTClient> tts=cluster.getTTClients();
+
+      for (      TTClient cli : tts) {
+
+        cli.getProxy().sendAction(action);
+
+      }
+
+    }
+
+    rJob.killJob();
+
+  }
+
+ while (continueLoop);
+
+}
+
+Location: TestDistributedCacheUnModifiedFile.java
+
+Content: 
+
+public TestDistributedCacheUnModifiedFile() throws Exception {
+
+}
+

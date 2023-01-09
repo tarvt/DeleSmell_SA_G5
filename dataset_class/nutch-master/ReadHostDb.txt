@@ -1,0 +1,122 @@
+Location: ReadHostDb.java
+
+Content: 
+
+private void getHostDbRecord(Path hostDb,String host) throws Exception {
+
+  Configuration conf=getConf();
+
+  SequenceFile.Reader[] readers=SegmentReaderUtil.getReaders(hostDb,conf);
+
+  Class<?> keyClass=readers[0].getKeyClass();
+
+  Class<?> valueClass=readers[0].getValueClass();
+
+  if (!keyClass.getName().equals("org.apache.hadoop.io.Text"))   throw new IOException("Incompatible key (" + keyClass.getName() + ")");
+
+  Text key=(Text)keyClass.getConstructor().newInstance();
+
+  HostDatum value=(HostDatum)valueClass.getConstructor().newInstance();
+
+  for (int i=0; i < readers.length; i++) {
+
+    while (readers[i].next(key,value)) {
+
+      if (host.equals(key.toString())) {
+
+        System.out.println(value.toString());
+
+      }
+
+    }
+
+    readers[i].close();
+
+  }
+
+}
+
+Location: ReadHostDb.java
+
+Content: 
+
+private void readHostDb(Path hostDb,Path output,boolean dumpHomepages,boolean dumpHostnames,String expr) throws Exception {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("ReadHostDb: starting at " + sdf.format(start));
+
+  Configuration conf=getConf();
+
+  conf.setBoolean(HOSTDB_DUMP_HOMEPAGES,dumpHomepages);
+
+  conf.setBoolean(HOSTDB_DUMP_HOSTNAMES,dumpHostnames);
+
+  if (expr != null) {
+
+    conf.set(HOSTDB_FILTER_EXPRESSION,expr);
+
+  }
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  conf.set("mapreduce.output.textoutputformat.separator","\t");
+
+  Job job=Job.getInstance(conf);
+
+  job.setJobName("ReadHostDb");
+
+  job.setJarByClass(ReadHostDb.class);
+
+  FileInputFormat.addInputPath(job,new Path(hostDb,"current"));
+
+  FileOutputFormat.setOutputPath(job,output);
+
+  job.setMapperClass(ReadHostDbMapper.class);
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setOutputFormatClass(TextOutputFormat.class);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(Text.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setNumReduceTasks(0);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="ReadHostDb job did not succeed, job status: " + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("ReadHostDb job failed: {}",e.getMessage());
+
+    throw e;
+
+  }
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("ReadHostDb: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+

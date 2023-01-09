@@ -1,0 +1,216 @@
+Location: LineDocRecordReader.java
+
+Content: 
+
+/** 
+
+ * Constructor
+
+ * @param job
+
+ * @param split  
+
+ * @throws IOException
+
+ */
+
+public LineDocRecordReader(Configuration job,FileSplit split) throws IOException {
+
+  long start=split.getStart();
+
+  long end=start + split.getLength();
+
+  final Path file=split.getPath();
+
+  FileSystem fs=file.getFileSystem(job);
+
+  FSDataInputStream fileIn=fs.open(split.getPath());
+
+  InputStream in=fileIn;
+
+  boolean skipFirstLine=false;
+
+  if (start != 0) {
+
+    skipFirstLine=true;
+
+    --start;
+
+    fileIn.seek(start);
+
+  }
+
+  this.in=new BufferedInputStream(in);
+
+  if (skipFirstLine) {
+
+    start+=LineDocRecordReader.readData(this.in,null,EOL);
+
+  }
+
+  this.start=start;
+
+  this.pos=start;
+
+  this.end=end;
+
+}
+
+Location: LineDocRecordReader.java
+
+Content: 
+
+public synchronized boolean next(DocumentID key,LineDocTextAndOp value) throws IOException {
+
+  if (pos >= end) {
+
+    return false;
+
+  }
+
+  if (!readInto(key.getText(),SPACE)) {
+
+    return false;
+
+  }
+
+  Text opText=new Text();
+
+  if (!readInto(opText,SPACE)) {
+
+    return false;
+
+  }
+
+  String opStr=opText.toString();
+
+  DocumentAndOp.Op op;
+
+  if (opStr.equals("i") || opStr.equals("ins") || opStr.equals("insert")) {
+
+    op=DocumentAndOp.Op.INSERT;
+
+  }
+
+ else   if (opStr.equals("d") || opStr.equals("del") || opStr.equals("delete")) {
+
+    op=DocumentAndOp.Op.DELETE;
+
+  }
+
+ else   if (opStr.equals("u") || opStr.equals("upd") || opStr.equals("update")) {
+
+    op=DocumentAndOp.Op.UPDATE;
+
+  }
+
+ else {
+
+    op=DocumentAndOp.Op.INSERT;
+
+  }
+
+  value.setOp(op);
+
+  if (op == DocumentAndOp.Op.DELETE) {
+
+    return true;
+
+  }
+
+ else {
+
+    return readInto(value.getText(),EOL);
+
+  }
+
+}
+
+Location: LineDocRecordReader.java
+
+Content: 
+
+private static long readData(InputStream in,OutputStream out,char delimiter) throws IOException {
+
+  long bytes=0;
+
+  while (true) {
+
+    int b=in.read();
+
+    if (b == -1) {
+
+      break;
+
+    }
+
+    bytes+=1;
+
+    byte c=(byte)b;
+
+    if (c == EOL || c == delimiter) {
+
+      break;
+
+    }
+
+    if (c == '\r') {
+
+      in.mark(1);
+
+      byte nextC=(byte)in.read();
+
+      if (nextC != EOL || c == delimiter) {
+
+        in.reset();
+
+      }
+
+ else {
+
+        bytes+=1;
+
+      }
+
+      break;
+
+    }
+
+    if (out != null) {
+
+      out.write(c);
+
+    }
+
+  }
+
+  return bytes;
+
+}
+
+Location: LineDocRecordReader.java
+
+Content: 
+
+private boolean readInto(Text text,char delimiter) throws IOException {
+
+  buffer.reset();
+
+  long bytesRead=readData(in,buffer,delimiter);
+
+  if (bytesRead == 0) {
+
+    return false;
+
+  }
+
+  pos+=bytesRead;
+
+  bridge.target=text;
+
+  buffer.writeTo(bridge);
+
+  return true;
+
+}
+

@@ -1,0 +1,412 @@
+Location: DOM2SAX.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param handler the ContentHandler to send SAX events to
+
+ */
+
+public DOM2SAX(ContentHandler handler){
+
+  this.contentHandler=handler;
+
+  if (handler instanceof LexicalHandler) {
+
+    this.lexicalHandler=(LexicalHandler)handler;
+
+  }
+
+}
+
+Location: DOM2SAX.java
+
+Content: 
+
+private void endPrefixMapping(String prefix) throws SAXException {
+
+  final Stack uriStack=(Stack)prefixes.get(prefix);
+
+  if (uriStack != null) {
+
+    contentHandler.endPrefixMapping(prefix);
+
+    uriStack.pop();
+
+  }
+
+}
+
+Location: DOM2SAX.java
+
+Content: 
+
+/** 
+
+ * If the DOM was created using a DOM 1.0 API, the local name may be null. If so, get the local name from the qualified name before generating the SAX event.
+
+ */
+
+private static String getLocalName(Node node){
+
+  final String localName=node.getLocalName();
+
+  if (localName == null) {
+
+    final String qname=node.getNodeName();
+
+    final int col=qname.lastIndexOf(':');
+
+    return (col > 0) ? qname.substring(col + 1) : qname;
+
+  }
+
+  return localName;
+
+}
+
+Location: DOM2SAX.java
+
+Content: 
+
+/** 
+
+ * Begin the scope of namespace prefix. Forward the event to the SAX handler only if the prefix is unknown or it is mapped to a different URI.
+
+ */
+
+private boolean startPrefixMapping(String prefix,String uri) throws SAXException {
+
+  boolean pushed=true;
+
+  Stack uriStack=(Stack)prefixes.get(prefix);
+
+  if (uriStack != null) {
+
+    if (uriStack.isEmpty()) {
+
+      contentHandler.startPrefixMapping(prefix,uri);
+
+      uriStack.push(uri);
+
+    }
+
+ else {
+
+      final String lastUri=(String)uriStack.peek();
+
+      if (!lastUri.equals(uri)) {
+
+        contentHandler.startPrefixMapping(prefix,uri);
+
+        uriStack.push(uri);
+
+      }
+
+ else {
+
+        pushed=false;
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    contentHandler.startPrefixMapping(prefix,uri);
+
+    uriStack=new Stack();
+
+    prefixes.put(prefix,uriStack);
+
+    uriStack.push(uri);
+
+  }
+
+  return pushed;
+
+}
+
+Location: DOM2SAX.java
+
+Content: 
+
+/** 
+
+ * Writes the given document using the given ContentHandler.
+
+ * @param doc DOM document
+
+ * @param fragment if false no startDocument() and endDocument() calls are issued.
+
+ * @throws SAXException In case of a problem while writing XML
+
+ */
+
+public void writeDocument(Document doc,boolean fragment) throws SAXException {
+
+  if (!fragment) {
+
+    contentHandler.startDocument();
+
+  }
+
+  for (Node n=doc.getFirstChild(); n != null; n=n.getNextSibling()) {
+
+    writeNode(n);
+
+  }
+
+  if (!fragment) {
+
+    contentHandler.endDocument();
+
+  }
+
+}
+
+Location: DOM2SAX.java
+
+Content: 
+
+/** 
+
+ * Writes the given fragment using the given ContentHandler.
+
+ * @param node DOM node
+
+ * @throws SAXException In case of a problem while writing XML
+
+ */
+
+public void writeFragment(Node node) throws SAXException {
+
+  writeNode(node);
+
+}
+
+Location: DOM2SAX.java
+
+Content: 
+
+/** 
+
+ * Writes a node using the given writer.
+
+ * @param node node to serialize
+
+ * @throws SAXException In case of a problem while writing XML
+
+ */
+
+private void writeNode(Node node) throws SAXException {
+
+  if (node == null) {
+
+    return;
+
+  }
+
+switch (node.getNodeType()) {
+
+case Node.ATTRIBUTE_NODE:
+
+case Node.DOCUMENT_FRAGMENT_NODE:
+
+case Node.DOCUMENT_TYPE_NODE:
+
+case Node.ENTITY_NODE:
+
+case Node.ENTITY_REFERENCE_NODE:
+
+case Node.NOTATION_NODE:
+
+    break;
+
+case Node.CDATA_SECTION_NODE:
+
+  final String cdata=node.getNodeValue();
+
+if (lexicalHandler != null) {
+
+  lexicalHandler.startCDATA();
+
+  contentHandler.characters(cdata.toCharArray(),0,cdata.length());
+
+  lexicalHandler.endCDATA();
+
+}
+
+ else {
+
+  contentHandler.characters(cdata.toCharArray(),0,cdata.length());
+
+}
+
+break;
+
+case Node.COMMENT_NODE:
+
+if (lexicalHandler != null) {
+
+final String value=node.getNodeValue();
+
+lexicalHandler.comment(value.toCharArray(),0,value.length());
+
+}
+
+break;
+
+case Node.DOCUMENT_NODE:
+
+contentHandler.startDocument();
+
+Node next=node.getFirstChild();
+
+while (next != null) {
+
+writeNode(next);
+
+next=next.getNextSibling();
+
+}
+
+contentHandler.endDocument();
+
+break;
+
+case Node.ELEMENT_NODE:
+
+String prefix;
+
+List pushedPrefixes=new java.util.ArrayList();
+
+final AttributesImpl attrs=new AttributesImpl();
+
+final NamedNodeMap map=node.getAttributes();
+
+final int length=map.getLength();
+
+for (int i=0; i < length; i++) {
+
+final Node attr=map.item(i);
+
+final String qnameAttr=attr.getNodeName();
+
+if (qnameAttr.startsWith(XMLNS_PREFIX)) {
+
+final String uriAttr=attr.getNodeValue();
+
+final int colon=qnameAttr.lastIndexOf(':');
+
+prefix=(colon > 0) ? qnameAttr.substring(colon + 1) : EMPTYSTRING;
+
+if (startPrefixMapping(prefix,uriAttr)) {
+
+pushedPrefixes.add(prefix);
+
+}
+
+}
+
+}
+
+for (int i=0; i < length; i++) {
+
+final Node attr=map.item(i);
+
+final String qnameAttr=attr.getNodeName();
+
+if (!qnameAttr.startsWith(XMLNS_PREFIX)) {
+
+final String uriAttr=attr.getNamespaceURI();
+
+if (uriAttr != null) {
+
+final int colon=qnameAttr.lastIndexOf(':');
+
+prefix=(colon > 0) ? qnameAttr.substring(0,colon) : EMPTYSTRING;
+
+if (startPrefixMapping(prefix,uriAttr)) {
+
+pushedPrefixes.add(prefix);
+
+}
+
+}
+
+attrs.addAttribute(attr.getNamespaceURI(),getLocalName(attr),qnameAttr,XMLUtil.CDATA,attr.getNodeValue());
+
+}
+
+}
+
+final String qname=node.getNodeName();
+
+final String uri=node.getNamespaceURI();
+
+final String localName=getLocalName(node);
+
+if (uri != null) {
+
+final int colon=qname.lastIndexOf(':');
+
+prefix=(colon > 0) ? qname.substring(0,colon) : EMPTYSTRING;
+
+if (startPrefixMapping(prefix,uri)) {
+
+pushedPrefixes.add(prefix);
+
+}
+
+}
+
+contentHandler.startElement(uri,localName,qname,attrs);
+
+next=node.getFirstChild();
+
+while (next != null) {
+
+writeNode(next);
+
+next=next.getNextSibling();
+
+}
+
+contentHandler.endElement(uri,localName,qname);
+
+final int nPushedPrefixes=pushedPrefixes.size();
+
+for (Object pushedPrefixe : pushedPrefixes) {
+
+endPrefixMapping((String)pushedPrefixe);
+
+}
+
+break;
+
+case Node.PROCESSING_INSTRUCTION_NODE:
+
+contentHandler.processingInstruction(node.getNodeName(),node.getNodeValue());
+
+break;
+
+case Node.TEXT_NODE:
+
+final String data=node.getNodeValue();
+
+contentHandler.characters(data.toCharArray(),0,data.length());
+
+break;
+
+default :
+
+}
+
+}
+

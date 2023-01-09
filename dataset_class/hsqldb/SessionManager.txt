@@ -1,0 +1,456 @@
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Closes all Sessions registered with this SessionManager.
+
+ */
+
+public void closeAllSessions(){
+
+  Session[] sessions=getAllSessions();
+
+  for (int i=0; i < sessions.length; i++) {
+
+    sessions[i].close();
+
+  }
+
+  readLock.lock();
+
+  try {
+
+    sessionMap.clear();
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+public Session[] getAllSessions(){
+
+  readLock.lock();
+
+  try {
+
+    Session[] sessions=new Session[sessionMap.size()];
+
+    Iterator it=sessionMap.values().iterator();
+
+    for (int i=0; it.hasNext(); i++) {
+
+      sessions[i]=(Session)it.next();
+
+    }
+
+    return sessions;
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves the Session with the specified Session identifier or null if no such Session is registered with this SessionManager.
+
+ */
+
+Session getSession(long id){
+
+  readLock.lock();
+
+  try {
+
+    return (Session)sessionMap.get(id);
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+public Session getSysLobSession(){
+
+  return sysLobSession;
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves the common SYS Session.
+
+ */
+
+public Session getSysSession(){
+
+  sysSession.currentSchema=sysSession.database.schemaManager.getDefaultSchemaHsqlName();
+
+  sysSession.isProcessingScript=false;
+
+  sysSession.isProcessingLog=false;
+
+  sysSession.setUser(sysSession.database.getUserManager().getSysUser());
+
+  return sysSession;
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves a new SYS Session.
+
+ */
+
+public Session getSysSessionForScript(Database db){
+
+  Session session=new Session(db,db.getUserManager().getSysUser(),false,false,0,null,0);
+
+  session.setCurrentSchemaHsqlName(db.schemaManager.defaultSchemaHsqlName);
+
+  session.isProcessingScript=true;
+
+  return session;
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves a list of the Sessions in this container that are visible to the specified Session, given the access rights of the Session User.
+
+ */
+
+public Session[] getVisibleSessions(Session session){
+
+  readLock.lock();
+
+  try {
+
+    return session.isAdmin() ? getAllSessions() : new Session[]{session};
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+public boolean isUserActive(String userName){
+
+  readLock.lock();
+
+  try {
+
+    Iterator it=sessionMap.values().iterator();
+
+    for (int i=0; it.hasNext(); i++) {
+
+      Session session=(Session)it.next();
+
+      if (!session.isClosed() && userName.equals(session.getUser().getName().getNameString())) {
+
+        return true;
+
+      }
+
+    }
+
+    return false;
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+public Session newSessionForLog(Database db){
+
+  writeLock.lock();
+
+  try {
+
+    boolean autoCommit=db.databaseProperties.isVersion18();
+
+    Session s=new Session(db,db.getUserManager().getSysUser(),autoCommit,false,sessionIdCount,null,0);
+
+    s.isProcessingLog=true;
+
+    sessionMap.put(sessionIdCount,s);
+
+    sessionIdCount++;
+
+    return s;
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Binds the specified Session object into this SessionManager's active Session registry. This method is typically called internally as the final step, when a successful connection has been made.
+
+ * @param db the database to which the new Session is initially connected
+
+ * @param user the Session User
+
+ * @param readonly the ReadOnly attribute for the new Session
+
+ * @param timeZoneSeconds the session time zone second interval
+
+ * @return Session
+
+ */
+
+public Session newSession(Database db,User user,boolean readonly,boolean autoCommit,String zoneString,int timeZoneSeconds){
+
+  writeLock.lock();
+
+  try {
+
+    Session s=new Session(db,user,autoCommit,readonly,sessionIdCount,zoneString,timeZoneSeconds);
+
+    sessionMap.put(sessionIdCount,s);
+
+    sessionIdCount++;
+
+    return s;
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Retrieves a transient transaction session.
+
+ */
+
+public Session newSysSession(){
+
+  writeLock.lock();
+
+  try {
+
+    Session session=new Session(sysSession.database,sysSession.getUser(),false,false,sessionIdCount,null,0);
+
+    session.currentSchema=sysSession.database.schemaManager.getDefaultSchemaHsqlName();
+
+    sessionMap.put(sessionIdCount,session);
+
+    sessionIdCount++;
+
+    return session;
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+public Session newSysSession(HsqlName schema,User user){
+
+  readLock.lock();
+
+  try {
+
+    Session session=new Session(sysSession.database,user,false,false,0,null,0);
+
+    session.currentSchema=schema;
+
+    return session;
+
+  }
+
+  finally {
+
+    readLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+public void removeSchemaReference(Schema schema){
+
+  writeLock.lock();
+
+  try {
+
+    Iterator it=sessionMap.values().iterator();
+
+    for (int i=0; it.hasNext(); i++) {
+
+      Session session=(Session)it.next();
+
+      if (session.getCurrentSchemaHsqlName() == schema.getName()) {
+
+        session.resetSchema();
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Removes the session from management and disconnects.
+
+ */
+
+void removeSession(Session session){
+
+  sessionMap.remove(session.getId());
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+public void resetLoggedSchemas(){
+
+  writeLock.lock();
+
+  try {
+
+    Iterator it=sessionMap.values().iterator();
+
+    for (int i=0; it.hasNext(); i++) {
+
+      Session session=(Session)it.next();
+
+      session.loggedSchema=null;
+
+    }
+
+    this.sysLobSession.loggedSchema=null;
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: SessionManager.java
+
+Content: 
+
+/** 
+
+ * Constructs an new SessionManager handling the specified Database. Creates a SYS User.
+
+ */
+
+public SessionManager(Database db){
+
+  User sysUser=db.getUserManager().getSysUser();
+
+  sysSession=new Session(db,sysUser,false,false,sessionIdCount++,null,0);
+
+  sysLobSession=new Session(db,sysUser,true,false,sessionIdCount++,null,0);
+
+}
+

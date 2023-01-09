@@ -1,0 +1,348 @@
+Location: CollectionManager.java
+
+Content: 
+
+/** 
+
+ * Used for testing
+
+ */
+
+protected CollectionManager(){
+
+  super(NutchConfiguration.create());
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+public CollectionManager(Configuration conf){
+
+  super(conf);
+
+  init();
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+/** 
+
+ * Create a new subcollection.
+
+ * @param id Id of SubCollection to create
+
+ * @param name Name of SubCollection to create
+
+ * @return Created SubCollection or null if allready existed
+
+ */
+
+public Subcollection createSubCollection(final String id,final String name){
+
+  Subcollection subCol=null;
+
+  if (!collectionMap.containsKey(id)) {
+
+    subCol=new Subcollection(id,name,getConf());
+
+    collectionMap.put(id,subCol);
+
+  }
+
+  return subCol;
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+/** 
+
+ * Delete named subcollection
+
+ * @param id Id of SubCollection to delete
+
+ * @throws IOException If there is an error retrieving and deletingthe subcollection from the collection.
+
+ */
+
+public void deleteSubCollection(final String id) throws IOException {
+
+  final Subcollection subCol=getSubColection(id);
+
+  if (subCol != null) {
+
+    collectionMap.remove(id);
+
+  }
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+/** 
+
+ * Returns all collections
+
+ * @return All collections CollectionManager knows about
+
+ */
+
+public Collection getAll(){
+
+  return collectionMap.values();
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+public static CollectionManager getCollectionManager(Configuration conf){
+
+  String key="collectionmanager";
+
+  ObjectCache objectCache=ObjectCache.get(conf);
+
+  CollectionManager impl=(CollectionManager)objectCache.getObject(key);
+
+  if (impl == null) {
+
+    try {
+
+      if (LOG.isInfoEnabled()) {
+
+        LOG.info("Instantiating CollectionManager");
+
+      }
+
+      impl=new CollectionManager(conf);
+
+      objectCache.setObject(key,impl);
+
+    }
+
+ catch (    Exception e) {
+
+      throw new RuntimeException("Couldn't create CollectionManager",e);
+
+    }
+
+  }
+
+  return impl;
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+/** 
+
+ * Get the named subcollection
+
+ * @param id the id of a subcollection ot retrieve
+
+ * @return Named SubCollection (or null if not existing)
+
+ */
+
+public Subcollection getSubColection(final String id){
+
+  return (Subcollection)collectionMap.get(id);
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+/** 
+
+ * Return names of collections url is part of
+
+ * @param url The url to test against Collections
+
+ * @return A {@link List} of {@link Subcollection}'s
+
+ */
+
+public List<Subcollection> getSubCollections(final String url){
+
+  List<Subcollection> collections=new ArrayList<Subcollection>();
+
+  final Iterator iterator=collectionMap.values().iterator();
+
+  while (iterator.hasNext()) {
+
+    final Subcollection subCol=(Subcollection)iterator.next();
+
+    if (subCol.filter(url) != null) {
+
+      collections.add(subCol);
+
+    }
+
+  }
+
+  if (LOG.isTraceEnabled()) {
+
+    LOG.trace("subcollections:" + Arrays.toString(collections.toArray()));
+
+  }
+
+  return collections;
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+protected void init(){
+
+  try {
+
+    if (LOG.isInfoEnabled()) {
+
+      LOG.info("initializing CollectionManager");
+
+    }
+
+    configfile=getConf().getResource(getConf().get("subcollections.config",DEFAULT_FILE_NAME));
+
+    InputStream input=getConf().getConfResourceAsInputStream(getConf().get("subcollections.config",DEFAULT_FILE_NAME));
+
+    parse(input);
+
+  }
+
+ catch (  Exception e) {
+
+    if (LOG.isWarnEnabled()) {
+
+      LOG.warn("Error occured:" + e);
+
+    }
+
+  }
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+protected void parse(InputStream input){
+
+  Element collections=DomUtil.getDom(input);
+
+  if (collections != null) {
+
+    NodeList nodeList=collections.getElementsByTagName(Subcollection.TAG_COLLECTION);
+
+    if (LOG.isInfoEnabled()) {
+
+      LOG.info("file has " + nodeList.getLength() + " elements");
+
+    }
+
+    for (int i=0; i < nodeList.getLength(); i++) {
+
+      Element scElem=(Element)nodeList.item(i);
+
+      Subcollection subCol=new Subcollection(getConf());
+
+      subCol.initialize(scElem);
+
+      collectionMap.put(subCol.name,subCol);
+
+    }
+
+  }
+
+ else   if (LOG.isInfoEnabled()) {
+
+    LOG.info("Cannot find collections");
+
+  }
+
+}
+
+Location: CollectionManager.java
+
+Content: 
+
+/** 
+
+ * Save collections into file
+
+ * @throws IOException If there is a fatal error flushing or closing the  {@link FileOutputStream} associated with the save process.
+
+ */
+
+public void save() throws IOException {
+
+  try {
+
+    final FileOutputStream fos=new FileOutputStream(new File(configfile.getFile()));
+
+    final Document doc=new DocumentImpl();
+
+    final Element collections=doc.createElement(Subcollection.TAG_COLLECTIONS);
+
+    final Iterator iterator=collectionMap.values().iterator();
+
+    while (iterator.hasNext()) {
+
+      final Subcollection subCol=(Subcollection)iterator.next();
+
+      final Element collection=doc.createElement(Subcollection.TAG_COLLECTION);
+
+      collections.appendChild(collection);
+
+      final Element name=doc.createElement(Subcollection.TAG_NAME);
+
+      name.setNodeValue(subCol.getName());
+
+      collection.appendChild(name);
+
+      final Element whiteList=doc.createElement(Subcollection.TAG_WHITELIST);
+
+      whiteList.setNodeValue(subCol.getWhiteListString());
+
+      collection.appendChild(whiteList);
+
+      final Element blackList=doc.createElement(Subcollection.TAG_BLACKLIST);
+
+      blackList.setNodeValue(subCol.getBlackListString());
+
+      collection.appendChild(blackList);
+
+    }
+
+    DomUtil.saveDom(fos,collections);
+
+    fos.flush();
+
+    fos.close();
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+    throw new IOException(e.toString());
+
+  }
+
+}
+

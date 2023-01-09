@@ -1,0 +1,554 @@
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public void addNotifier(Notification n){
+
+  if (n != null) {
+
+    notifs.add(n);
+
+  }
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+@Override public boolean containsKey(Object key){
+
+  return map.containsKey(key);
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+@Override public boolean containsValue(Object value){
+
+  return map.containsValue(value);
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+@Override public Set<Entry<K,V>> entrySet(){
+
+  return new AbstractSet<Entry<K,V>>(){
+
+    @Override public void clear(){
+
+      ReplicatedHashMap.this.clear();
+
+    }
+
+    @Override public Iterator<Entry<K,V>> iterator(){
+
+      final Iterator<Entry<K,V>> it=map.entrySet().iterator();
+
+      return new Iterator<Entry<K,V>>(){
+
+        Entry<K,V> cur=null;
+
+        public boolean hasNext(){
+
+          return it.hasNext();
+
+        }
+
+        public Entry<K,V> next(){
+
+          cur=it.next();
+
+          return cur;
+
+        }
+
+        public void remove(){
+
+          if (cur == null) {
+
+            throw new IllegalStateException();
+
+          }
+
+          ReplicatedHashMap.this.remove(cur.getKey());
+
+          cur=null;
+
+        }
+
+      }
+
+;
+
+    }
+
+    public int size(){
+
+      return map.size();
+
+    }
+
+  }
+
+;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+@Override public V get(Object key){
+
+  return map.get(key);
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public boolean isBlockingUpdates(){
+
+  return call_options.mode() == ResponseMode.GET_ALL;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * Copies all of the mappings from the specified map to this one. These mappings replace any mappings that this map had for any of the keys currently in the specified map.
+
+ * @param m mappings to be stored in this map
+
+ */
+
+public void putAll(Map<? extends K,? extends V> m){
+
+  try {
+
+    MethodCall call=new MethodCall(PUT_ALL,m);
+
+    disp.callRemoteMethods(null,call,call_options);
+
+  }
+
+ catch (  Throwable t) {
+
+    throw new RuntimeException("putAll() failed",t);
+
+  }
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * @return the previous value associated with the specified key, or <tt>null</tt> if there was no mapping for the key
+
+ * @throws NullPointerException if the specified key or value is null
+
+ */
+
+public V putIfAbsent(K key,V value){
+
+  V prev_val=get(key);
+
+  try {
+
+    MethodCall call=new MethodCall(PUT_IF_ABSENT,key,value);
+
+    disp.callRemoteMethods(null,call,call_options);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException("putIfAbsent(" + key + ", "+ value+ ") failed",e);
+
+  }
+
+  return prev_val;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public void removeNotifier(Notification n){
+
+  if (n != null) {
+
+    notifs.remove(n);
+
+  }
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * @throws NullPointerException if the specified key is null
+
+ */
+
+public boolean remove(Object key,Object value){
+
+  Object val=get(key);
+
+  boolean removed=val != null && value != null && val.equals(value);
+
+  try {
+
+    MethodCall call=new MethodCall(REMOVE_IF_EQUALS,key,value);
+
+    disp.callRemoteMethods(null,call,call_options);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException("remove(" + key + ", "+ value+ ") failed",e);
+
+  }
+
+  return removed;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * @return the previous value associated with the specified key, or<tt>null</tt> if there was no mapping for the key
+
+ * @throws NullPointerException if the specified key or value is null
+
+ */
+
+public V replace(K key,V value){
+
+  V retval=get(key);
+
+  try {
+
+    MethodCall call=new MethodCall(REPLACE_IF_EXISTS,key,value);
+
+    disp.callRemoteMethods(null,call,call_options);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException("replace(" + key + ", "+ value+ ") failed",e);
+
+  }
+
+  return retval;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * @throws NullPointerException if any of the arguments are null
+
+ */
+
+public boolean replace(K key,V oldValue,V newValue){
+
+  Object val=get(key);
+
+  boolean replaced=val != null && oldValue != null && val.equals(oldValue);
+
+  try {
+
+    MethodCall call=new MethodCall(REPLACE_IF_EQUALS,key,oldValue,newValue);
+
+    disp.callRemoteMethods(null,call,call_options);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException("replace(" + key + ", "+ oldValue+ ", "+ newValue+ ") failed",e);
+
+  }
+
+  return replaced;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * Constructs a new ReplicatedHashMap using provided map instance.
+
+ */
+
+public ReplicatedHashMap(ConcurrentMap<K,V> map,JChannel channel){
+
+  if (channel == null) {
+
+    throw new IllegalArgumentException("Cannot create ReplicatedHashMap with null channel");
+
+  }
+
+  if (map == null) {
+
+    throw new IllegalArgumentException("Cannot create ReplicatedHashMap with null map");
+
+  }
+
+  this.map=map;
+
+  this.cluster_name=channel.getClusterName();
+
+  this.channel=channel;
+
+  init();
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * Constructs a new ReplicatedHashMap with channel. Call  {@link #start(long)} to start this map.
+
+ */
+
+public ReplicatedHashMap(JChannel channel){
+
+  this.channel=channel;
+
+  this.map=new ConcurrentHashMap<>();
+
+  init();
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+void sendViewChangeNotifications(View view,List<Address> new_mbrs,List<Address> old_mbrs){
+
+  if ((notifs.isEmpty()) || (old_mbrs == null) || (new_mbrs == null)) {
+
+    return;
+
+  }
+
+  List<Address> joined=new_mbrs.stream().filter(mbr -> !old_mbrs.contains(mbr)).collect(Collectors.toList());
+
+  List<Address> left=old_mbrs.stream().filter(mbr -> !new_mbrs.contains(mbr)).collect(Collectors.toList());
+
+  notifs.forEach(notif -> notif.viewChange(view,joined,left));
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * Whether updates across the cluster should be asynchronous (default) or synchronous)
+
+ * @param blocking_updates
+
+ */
+
+public void setBlockingUpdates(boolean blocking_updates){
+
+  call_options.mode(blocking_updates ? ResponseMode.GET_ALL : ResponseMode.GET_NONE);
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * Fetches the state
+
+ * @param state_timeout
+
+ */
+
+public final void start(long state_timeout) throws Exception {
+
+  channel.getState(null,state_timeout);
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * Creates a synchronized facade for a ReplicatedMap. All methods which change state are invoked through a monitor. This is similar to {@link java.util.Collections#synchronizedMap(Map)}, but also includes the replication methods (starting with an underscore).
+
+ * @param map
+
+ * @return
+
+ */
+
+public static <K,V>ReplicatedMap<K,V> synchronizedMap(ReplicatedMap<K,V> map){
+
+  return new SynchronizedReplicatedMap<>(map);
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public void _clear(){
+
+  map.clear();
+
+  notifs.forEach(Notification::contentsCleared);
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+/** 
+
+ * @see java.util.Map#putAll(java.util.Map)
+
+ */
+
+public void _putAll(Map<? extends K,? extends V> map){
+
+  if (map == null) {
+
+    return;
+
+  }
+
+  for (  Entry<? extends K,? extends V> entry : map.entrySet()) {
+
+    this.map.put(entry.getKey(),entry.getValue());
+
+  }
+
+  if (!map.isEmpty()) {
+
+    for (    Notification notif : notifs)     notif.contentsSet(map);
+
+  }
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public V _putIfAbsent(K key,V value){
+
+  V retval=map.putIfAbsent(key,value);
+
+  for (  Notification notif : notifs)   notif.entrySet(key,value);
+
+  return retval;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public V _put(K key,V value){
+
+  V retval=map.put(key,value);
+
+  for (  Notification notif : notifs)   notif.entrySet(key,value);
+
+  return retval;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public boolean _remove(K key,V value){
+
+  boolean removed=map.remove(key,value);
+
+  if (removed) {
+
+    for (    Notification notif : notifs)     notif.entryRemoved(key);
+
+  }
+
+  return removed;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public V _replace(K key,V value){
+
+  V retval=map.replace(key,value);
+
+  for (  Notification notif : notifs)   notif.entrySet(key,value);
+
+  return retval;
+
+}
+
+Location: ReplicatedHashMap.java
+
+Content: 
+
+public boolean _replace(K key,V oldValue,V newValue){
+
+  boolean replaced=map.replace(key,oldValue,newValue);
+
+  if (replaced) {
+
+    for (    Notification notif : notifs)     notif.entrySet(key,newValue);
+
+  }
+
+  return replaced;
+
+}
+

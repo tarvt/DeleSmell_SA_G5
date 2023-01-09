@@ -1,0 +1,682 @@
+Location: Gridmix.java
+
+Content: 
+
+protected JobFactory createJobFactory(JobSubmitter submitter,String traceIn,Path scratchDir,Configuration conf,CountDownLatch startFlag,UserResolver resolver) throws IOException {
+
+  return GridmixJobSubmissionPolicy.getPolicy(conf,GridmixJobSubmissionPolicy.STRESS).createJobFactory(submitter,createJobStoryProducer(traceIn,conf),scratchDir,conf,startFlag,resolver);
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+protected JobMonitor createJobMonitor(Statistics stats) throws IOException {
+
+  return new JobMonitor(stats);
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+/** 
+
+ * Create an appropriate  {@code JobStoryProducer} object for thegiven trace.
+
+ * @param traceIn the path to the trace file. The special path&quot;-&quot; denotes the standard input stream.
+
+ * @param conf the configuration to be used.
+
+ * @throws IOException if there was an error.
+
+ */
+
+protected JobStoryProducer createJobStoryProducer(String traceIn,Configuration conf) throws IOException {
+
+  if ("-".equals(traceIn)) {
+
+    return new ZombieJobProducer(System.in,null);
+
+  }
+
+  return new ZombieJobProducer(new Path(traceIn),null,conf);
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+protected JobSubmitter createJobSubmitter(JobMonitor monitor,int threads,int queueDepth,FilePool pool,UserResolver resolver,Statistics statistics) throws IOException {
+
+  return new JobSubmitter(monitor,threads,queueDepth,pool,statistics);
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+public UserResolver getCurrentUserResolver(){
+
+  return userResolver;
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+private <T>String getEnumValues(Enum<? extends T>[] e){
+
+  StringBuilder sb=new StringBuilder();
+
+  String sep="";
+
+  for (  Enum<? extends T> v : e) {
+
+    sb.append(sep);
+
+    sb.append(v.name());
+
+    sep="|";
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+static Path getGridmixInputDataPath(Path ioPath){
+
+  return new Path(ioPath,"input");
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+private String getJobTypes(){
+
+  return getEnumValues(JobCreator.values());
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+private String getSubmissionPolicies(){
+
+  return getEnumValues(GridmixJobSubmissionPolicy.values());
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+void launchGridmixJob(GridmixJob job) throws IOException, InterruptedException {
+
+  submitter.add(job);
+
+  TimeUnit.SECONDS.sleep(10);
+
+  try {
+
+    job.getJob().waitForCompletion(false);
+
+  }
+
+ catch (  ClassNotFoundException e) {
+
+    throw new IOException("Internal error",e);
+
+  }
+
+  if (!job.getJob().isSuccessful()) {
+
+    throw new IOException(job.getJob().getJobName() + " job failed!");
+
+  }
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+protected void printUsage(PrintStream out){
+
+  ToolRunner.printGenericCommandUsage(out);
+
+  out.println("Usage: gridmix [-generate <MiB>] [-users URI] [-Dname=value ...] <iopath> <trace>");
+
+  out.println("  e.g. gridmix -generate 100m foo -");
+
+  out.println("Options:");
+
+  out.println("   -generate <MiB> : Generate input data of size MiB under " + "<iopath>/input/ and generate\n\t\t     distributed cache data under " + "<iopath>/distributedCache/.");
+
+  out.println("   -users <usersResourceURI> : URI that contains the users list.");
+
+  out.println("Configuration parameters:");
+
+  out.println("   General parameters:");
+
+  out.printf("       %-48s : Output directory\n",GRIDMIX_OUT_DIR);
+
+  out.printf("       %-48s : Submitting threads\n",GRIDMIX_SUB_THR);
+
+  out.printf("       %-48s : Queued job desc\n",GRIDMIX_QUE_DEP);
+
+  out.printf("       %-48s : User resolution class\n",GRIDMIX_USR_RSV);
+
+  out.printf("       %-48s : Job types (%s)\n",JobCreator.GRIDMIX_JOB_TYPE,getJobTypes());
+
+  out.println("   Parameters related to job submission:");
+
+  out.printf("       %-48s : Default queue\n",GridmixJob.GRIDMIX_DEFAULT_QUEUE);
+
+  out.printf("       %-48s : Enable/disable using queues in trace\n",GridmixJob.GRIDMIX_USE_QUEUE_IN_TRACE);
+
+  out.printf("       %-48s : Job submission policy (%s)\n",GridmixJobSubmissionPolicy.JOB_SUBMISSION_POLICY,getSubmissionPolicies());
+
+  out.println("   Parameters specific for LOADJOB:");
+
+  out.printf("       %-48s : Key fraction of rec\n",AvgRecordFactory.GRIDMIX_KEY_FRC);
+
+  out.println("   Parameters specific for SLEEPJOB:");
+
+  out.printf("       %-48s : Whether to ignore reduce tasks\n",SleepJob.SLEEPJOB_MAPTASK_ONLY);
+
+  out.printf("       %-48s : Number of fake locations for map tasks\n",JobCreator.SLEEPJOB_RANDOM_LOCATIONS);
+
+  out.printf("       %-48s : Maximum map task runtime in mili-sec\n",SleepJob.GRIDMIX_SLEEP_MAX_MAP_TIME);
+
+  out.printf("       %-48s : Maximum reduce task runtime in mili-sec (merge+reduce)\n",SleepJob.GRIDMIX_SLEEP_MAX_REDUCE_TIME);
+
+  out.println("   Parameters specific for STRESS submission throttling policy:");
+
+  out.printf("       %-48s : jobs vs task-tracker ratio\n",StressJobFactory.CONF_MAX_JOB_TRACKER_RATIO);
+
+  out.printf("       %-48s : maps vs map-slot ratio\n",StressJobFactory.CONF_OVERLOAD_MAPTASK_MAPSLOT_RATIO);
+
+  out.printf("       %-48s : reduces vs reduce-slot ratio\n",StressJobFactory.CONF_OVERLOAD_REDUCETASK_REDUCESLOT_RATIO);
+
+  out.printf("       %-48s : map-slot share per job\n",StressJobFactory.CONF_MAX_MAPSLOT_SHARE_PER_JOB);
+
+  out.printf("       %-48s : reduce-slot share per job\n",StressJobFactory.CONF_MAX_REDUCESLOT_SHARE_PER_JOB);
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+private int runJob(Configuration conf,String[] argv) throws IOException, InterruptedException {
+
+  if (argv.length < 2) {
+
+    printUsage(System.err);
+
+    return 1;
+
+  }
+
+  boolean generate=false;
+
+  long genbytes=-1L;
+
+  String traceIn=null;
+
+  Path ioPath=null;
+
+  URI userRsrc=null;
+
+  userResolver=ReflectionUtils.newInstance(conf.getClass(GRIDMIX_USR_RSV,SubmitterUserResolver.class,UserResolver.class),conf);
+
+  try {
+
+    for (int i=0; i < argv.length - 2; ++i) {
+
+      if ("-generate".equals(argv[i])) {
+
+        genbytes=StringUtils.TraditionalBinaryPrefix.string2long(argv[++i]);
+
+        generate=true;
+
+      }
+
+ else       if ("-users".equals(argv[i])) {
+
+        userRsrc=new URI(argv[++i]);
+
+      }
+
+ else {
+
+        printUsage(System.err);
+
+        return 1;
+
+      }
+
+    }
+
+    if (userResolver.needsTargetUsersList()) {
+
+      if (userRsrc != null) {
+
+        if (!userResolver.setTargetUsers(userRsrc,conf)) {
+
+          LOG.warn("Ignoring the user resource '" + userRsrc + "'.");
+
+        }
+
+      }
+
+ else {
+
+        System.err.println("\n\n" + userResolver.getClass() + " needs target user list. Use -users option."+ "\n\n");
+
+        printUsage(System.err);
+
+        return 1;
+
+      }
+
+    }
+
+ else     if (userRsrc != null) {
+
+      LOG.warn("Ignoring the user resource '" + userRsrc + "'.");
+
+    }
+
+    ioPath=new Path(argv[argv.length - 2]);
+
+    traceIn=argv[argv.length - 1];
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+    printUsage(System.err);
+
+    return 1;
+
+  }
+
+  return start(conf,traceIn,ioPath,genbytes,userResolver,generate);
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+/** 
+
+ * Setup gridmix for emulation of distributed cache load. This includes generation of distributed cache files, if needed.
+
+ * @param conf gridmix configuration
+
+ * @param traceIn trace file path(if it is '-', then trace comes from thestream stdin)
+
+ * @param ioPath &lt;ioPath&gt;/input/ is the dir where input data (a) existsor (b) is generated. &lt;ioPath&gt;/distributedCache/ is the folder where distributed cache data (a) exists or (b) is to be generated by gridmix.
+
+ * @param generate true if -generate option was specified
+
+ * @return exit code
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+private int setupDistCacheEmulation(Configuration conf,String traceIn,Path ioPath,boolean generate) throws IOException, InterruptedException {
+
+  distCacheEmulator.init(traceIn,factory.jobCreator,generate);
+
+  int exitCode=0;
+
+  if (distCacheEmulator.shouldGenerateDistCacheData() || distCacheEmulator.shouldEmulateDistCacheLoad()) {
+
+    JobStoryProducer jsp=createJobStoryProducer(traceIn,conf);
+
+    exitCode=distCacheEmulator.setupGenerateDistCacheData(jsp);
+
+    if (exitCode == 0) {
+
+      writeDistCacheData(conf);
+
+    }
+
+  }
+
+  return exitCode;
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+/** 
+
+ * Create gridmix output directory. Setup things for emulation of various loads, if needed.
+
+ * @param conf gridmix configuration
+
+ * @param traceIn trace file path(if it is '-', then trace comes from thestream stdin)
+
+ * @param scratchDir gridmix output directory
+
+ * @param ioPath Working directory for gridmix.
+
+ * @param generate true if -generate option was specified
+
+ * @return exit code
+
+ * @throws IOException
+
+ * @throws InterruptedException 
+
+ */
+
+private int setupEmulation(Configuration conf,String traceIn,Path scratchDir,Path ioPath,boolean generate) throws IOException, InterruptedException {
+
+  final FileSystem scratchFs=scratchDir.getFileSystem(conf);
+
+  FileSystem.mkdirs(scratchFs,scratchDir,new FsPermission((short)0777));
+
+  return setupDistCacheEmulation(conf,traceIn,ioPath,generate);
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+/** 
+
+ * Create each component in the pipeline and start it.
+
+ * @param conf Configuration data, no keys specific to this context
+
+ * @param traceIn Either a Path to the trace data or &quot;-&quot; forstdin
+
+ * @param ioPath &lt;ioPath&gt;/input/ is the dir from which input data isread and &lt;ioPath&gt;/distributedCache/ is the gridmix distributed cache directory.
+
+ * @param scratchDir Path into which job output is written
+
+ * @param startFlag Semaphore for starting job trace pipeline
+
+ */
+
+private void startThreads(Configuration conf,String traceIn,Path ioPath,Path scratchDir,CountDownLatch startFlag,UserResolver userResolver) throws IOException {
+
+  try {
+
+    Path inputDir=getGridmixInputDataPath(ioPath);
+
+    GridmixJobSubmissionPolicy policy=GridmixJobSubmissionPolicy.getPolicy(conf,GridmixJobSubmissionPolicy.STRESS);
+
+    LOG.info(" Submission policy is " + policy.name());
+
+    statistics=new Statistics(conf,policy.getPollingInterval(),startFlag);
+
+    monitor=createJobMonitor(statistics);
+
+    int noOfSubmitterThreads=(policy == GridmixJobSubmissionPolicy.SERIAL) ? 1 : Runtime.getRuntime().availableProcessors() + 1;
+
+    int numThreads=conf.getInt(GRIDMIX_SUB_THR,noOfSubmitterThreads);
+
+    int queueDep=conf.getInt(GRIDMIX_QUE_DEP,5);
+
+    submitter=createJobSubmitter(monitor,numThreads,queueDep,new FilePool(conf,inputDir),userResolver,statistics);
+
+    distCacheEmulator=new DistributedCacheEmulator(conf,ioPath);
+
+    factory=createJobFactory(submitter,traceIn,scratchDir,conf,startFlag,userResolver);
+
+    factory.jobCreator.setDistCacheEmulator(distCacheEmulator);
+
+    if (policy == GridmixJobSubmissionPolicy.SERIAL) {
+
+      statistics.addJobStatsListeners(factory);
+
+    }
+
+ else {
+
+      statistics.addClusterStatsObservers(factory);
+
+    }
+
+    monitor.start();
+
+    submitter.start();
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.error(" Exception at start ",e);
+
+    throw new IOException(e);
+
+  }
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+/** 
+
+ * @param conf gridmix configuration
+
+ * @param traceIn trace file path(if it is '-', then trace comes from thestream stdin)
+
+ * @param ioPath Working directory for gridmix. GenerateData jobwill generate data in the directory &lt;ioPath&gt;/input/ and distributed cache data is generated in the directory &lt;ioPath&gt;/distributedCache/, if -generate option is specified.
+
+ * @param genbytes size of input data to be generated under the directory&lt;ioPath&gt;/input/
+
+ * @param userResolver gridmix user resolver
+
+ * @param generate true if -generate option was specified
+
+ * @return exit code
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+int start(Configuration conf,String traceIn,Path ioPath,long genbytes,UserResolver userResolver,boolean generate) throws IOException, InterruptedException {
+
+  InputStream trace=null;
+
+  ioPath=ioPath.makeQualified(ioPath.getFileSystem(conf));
+
+  try {
+
+    Path scratchDir=new Path(ioPath,conf.get(GRIDMIX_OUT_DIR,"gridmix"));
+
+    Runtime.getRuntime().addShutdownHook(sdh);
+
+    CountDownLatch startFlag=new CountDownLatch(1);
+
+    try {
+
+      startThreads(conf,traceIn,ioPath,scratchDir,startFlag,userResolver);
+
+      Path inputDir=getGridmixInputDataPath(ioPath);
+
+      if (genbytes > 0) {
+
+        writeInputData(genbytes,inputDir);
+
+      }
+
+      GenerateData.publishDataStatistics(inputDir,genbytes,conf);
+
+      submitter.refreshFilePool();
+
+      int exitCode=setupEmulation(conf,traceIn,scratchDir,ioPath,generate);
+
+      if (exitCode != 0) {
+
+        return exitCode;
+
+      }
+
+      factory.start();
+
+      statistics.start();
+
+    }
+
+ catch (    Throwable e) {
+
+      LOG.error("Startup failed",e);
+
+      if (factory != null)       factory.abort();
+
+    }
+
+ finally {
+
+      startFlag.countDown();
+
+    }
+
+    if (factory != null) {
+
+      factory.join(Long.MAX_VALUE);
+
+      final Throwable badTraceException=factory.error();
+
+      if (null != badTraceException) {
+
+        LOG.error("Error in trace",badTraceException);
+
+        throw new IOException("Error in trace",badTraceException);
+
+      }
+
+      submitter.shutdown();
+
+      submitter.join(Long.MAX_VALUE);
+
+      monitor.shutdown();
+
+      monitor.join(Long.MAX_VALUE);
+
+      statistics.shutdown();
+
+      statistics.join(Long.MAX_VALUE);
+
+    }
+
+  }
+
+  finally {
+
+    IOUtils.cleanup(LOG,trace);
+
+  }
+
+  return 0;
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+/** 
+
+ * Write random bytes in the distributed cache files that will be used by all simulated jobs of current gridmix run, if files are to be generated. Do this as part of the MapReduce job  {@link GenerateDistCacheData#JOB_NAME}
+
+ * @see org.apache.hadoop.mapred.gridmix.GenerateDistCacheData
+
+ */
+
+protected void writeDistCacheData(Configuration conf) throws IOException, InterruptedException {
+
+  int fileCount=conf.getInt(GenerateDistCacheData.GRIDMIX_DISTCACHE_FILE_COUNT,-1);
+
+  if (fileCount > 0) {
+
+    final GridmixJob genDistCacheData=new GenerateDistCacheData(conf);
+
+    LOG.info("Generating distributed cache data of size " + conf.getLong(GenerateDistCacheData.GRIDMIX_DISTCACHE_BYTE_COUNT,-1));
+
+    launchGridmixJob(genDistCacheData);
+
+  }
+
+}
+
+Location: Gridmix.java
+
+Content: 
+
+/** 
+
+ * Write random bytes at the path &lt;inputDir&gt;.
+
+ * @see org.apache.hadoop.mapred.gridmix.GenerateData
+
+ */
+
+protected void writeInputData(long genbytes,Path inputDir) throws IOException, InterruptedException {
+
+  final Configuration conf=getConf();
+
+  CompressionEmulationUtil.setupDataGeneratorConfig(conf);
+
+  final GenerateData genData=new GenerateData(conf,inputDir,genbytes);
+
+  LOG.info("Generating " + StringUtils.humanReadableInt(genbytes) + " of test data...");
+
+  launchGridmixJob(genData);
+
+  FsShell shell=new FsShell(conf);
+
+  try {
+
+    LOG.info("Changing the permissions for inputPath " + inputDir.toString());
+
+    shell.run(new String[]{"-chmod","-R","777",inputDir.toString()});
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.error("Couldnt change the file permissions ",e);
+
+    throw new IOException(e);
+
+  }
+
+  LOG.info("Input data generation successful.");
+
+}
+

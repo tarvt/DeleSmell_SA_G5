@@ -1,0 +1,472 @@
+Location: ExpressionColumn.java
+
+Content: 
+
+static void checkColumnsResolved(HsqlList set){
+
+  if (set != null && !set.isEmpty()) {
+
+    Expression e=(Expression)set.get(0);
+
+    if (e instanceof ExpressionColumn) {
+
+      StringBuffer sb=new StringBuffer();
+
+      ExpressionColumn c=(ExpressionColumn)e;
+
+      if (c.schema != null) {
+
+        sb.append(c.schema + '.');
+
+      }
+
+      if (c.tableName != null) {
+
+        sb.append(c.tableName + '.');
+
+      }
+
+      sb.append(c.getColumnName());
+
+      throw Error.error(ErrorCode.X_42501,sb.toString());
+
+    }
+
+ else {
+
+      OrderedHashSet newSet=new OrderedHashSet();
+
+      e.collectAllExpressions(newSet,Expression.columnExpressionSet,Expression.emptyExpressionSet);
+
+      checkColumnsResolved(newSet);
+
+      throw Error.error(ErrorCode.X_42501);
+
+    }
+
+  }
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+ExpressionColumn(){
+
+  super(OpTypes.ASTERISK);
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+ExpressionColumn(ColumnSchema column){
+
+  super(OpTypes.COLUMN);
+
+  this.column=column;
+
+  this.dataType=column.getDataType();
+
+  columnName=column.getName().name;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+/** 
+
+ * Creates a temporary OpTypes.SIMPLE_COLUMN expression
+
+ */
+
+ExpressionColumn(Expression e,int colIndex,int rangePosition){
+
+  super(OpTypes.SIMPLE_COLUMN);
+
+  this.dataType=e.dataType;
+
+  this.columnIndex=colIndex;
+
+  this.alias=e.getSimpleName();
+
+  this.rangePosition=rangePosition;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+ExpressionColumn(Expression[] nodes,String name){
+
+  super(OpTypes.COALESCE);
+
+  this.nodes=nodes;
+
+  this.columnName=name;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+ExpressionColumn(int type){
+
+  super(type);
+
+  if (type == OpTypes.DYNAMIC_PARAM) {
+
+    isParam=true;
+
+  }
+
+ else   if (type == OpTypes.ROWNUM) {
+
+    columnName=rownumName.name;
+
+    dataType=Type.SQL_INTEGER;
+
+  }
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+/** 
+
+ * For diagnostics vars
+
+ */
+
+ExpressionColumn(int type,int columnIndex){
+
+  super(type);
+
+  this.column=(ColumnSchema)diagnosticsList.get(columnIndex);
+
+  this.columnIndex=columnIndex;
+
+  this.dataType=column.dataType;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+/** 
+
+ * Creates a OpTypes.SEQUENCE expression
+
+ */
+
+ExpressionColumn(NumberSequence sequence,int opType){
+
+  super(opType);
+
+  this.sequence=sequence;
+
+  dataType=sequence.getDataType();
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+ExpressionColumn(RangeVariable rangeVar,int index){
+
+  super(OpTypes.COLUMN);
+
+  columnIndex=index;
+
+  setAutoAttributesAsColumn(rangeVar,columnIndex);
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+/** 
+
+ * Creates an OpCodes.ASTERISK expression
+
+ */
+
+ExpressionColumn(String schema,String table){
+
+  super(OpTypes.MULTICOLUMN);
+
+  this.schema=schema;
+
+  tableName=table;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+/** 
+
+ * Creates a OpTypes.COLUMN expression
+
+ */
+
+ExpressionColumn(String schema,String table,String column){
+
+  super(OpTypes.COLUMN);
+
+  this.schema=schema;
+
+  this.tableName=table;
+
+  this.columnName=column;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+private Object getDiagnosticsVariable(Session session){
+
+  return session.sessionContext.diagnosticsVariables[columnIndex];
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+private boolean resolveColumnReference(RangeVariable rangeVar,boolean outer){
+
+  if (tableName == null) {
+
+    Expression e=rangeVar.getColumnExpression(columnName);
+
+    if (e != null) {
+
+      opType=e.opType;
+
+      nodes=e.nodes;
+
+      dataType=e.dataType;
+
+      return true;
+
+    }
+
+  }
+
+  int colIndex=rangeVar.findColumn(schema,tableName,columnName);
+
+  if (colIndex == -1) {
+
+    return false;
+
+  }
+
+switch (rangeVar.rangeType) {
+
+case RangeVariable.PARAMETER_RANGE:
+
+case RangeVariable.VARIALBE_RANGE:
+
+{
+
+      if (tableName != null) {
+
+        return false;
+
+      }
+
+      ColumnSchema column=rangeVar.getColumn(colIndex);
+
+      if (column.getParameterMode() == SchemaObject.ParameterModes.PARAM_OUT) {
+
+        return false;
+
+      }
+
+ else {
+
+        opType=rangeVar.rangeType == RangeVariable.VARIALBE_RANGE ? OpTypes.VARIABLE : OpTypes.PARAMETER;
+
+      }
+
+      break;
+
+    }
+
+case RangeVariable.TRANSITION_RANGE:
+
+{
+
+    if (tableName == null) {
+
+      return false;
+
+    }
+
+    if (schema != null) {
+
+      return false;
+
+    }
+
+    opType=OpTypes.TRANSITION_VARIABLE;
+
+    break;
+
+  }
+
+default :
+
+{
+
+  break;
+
+}
+
+}
+
+setAttributesAsColumn(rangeVar,colIndex);
+
+return true;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+private boolean resolveCorrelated(RangeGroup rangeGroup,RangeGroup[] rangeGroups){
+
+  for (int idx=rangeGroups.length - 1; idx >= 0; idx--) {
+
+    RangeVariable[] rangeVarArray=rangeGroups[idx].getRangeVariables();
+
+    for (int i=0; i < rangeVarArray.length; i++) {
+
+      RangeVariable rangeVar=rangeVarArray[i];
+
+      if (rangeVar == null) {
+
+        continue;
+
+      }
+
+      if (resolveColumnReference(rangeVar,true)) {
+
+        if (opType == OpTypes.COLUMN) {
+
+          rangeGroup.setCorrelated();
+
+          for (int idxx=rangeGroups.length - 1; idxx > idx; idxx--) {
+
+            rangeGroups[idxx].setCorrelated();
+
+          }
+
+        }
+
+        return true;
+
+      }
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+boolean resolvesDuplicateColumnReference(RangeVariable rangeVar){
+
+  if (tableName == null) {
+
+    Expression e=rangeVar.getColumnExpression(columnName);
+
+    if (e != null) {
+
+      return false;
+
+    }
+
+  }
+
+switch (rangeVar.rangeType) {
+
+case RangeVariable.PARAMETER_RANGE:
+
+case RangeVariable.VARIALBE_RANGE:
+
+case RangeVariable.TRANSITION_RANGE:
+
+    return false;
+
+default :
+
+  int colIndex=rangeVar.findColumn(schema,tableName,columnName);
+
+return colIndex != -1;
+
+}
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+void setAttributesAsColumn(RangeVariable range,int i){
+
+  columnIndex=i;
+
+  column=range.getColumn(i);
+
+  dataType=column.getDataType();
+
+  rangeVariable=range;
+
+  rangeVariable.addColumn(columnIndex);
+
+}
+
+Location: ExpressionColumn.java
+
+Content: 
+
+void setAutoAttributesAsColumn(RangeVariable range,int i){
+
+  columnIndex=i;
+
+  column=range.getColumn(i);
+
+  dataType=column.getDataType();
+
+  columnName=range.getColumnAlias(i).name;
+
+  tableName=range.getTableAlias().name;
+
+  rangeVariable=range;
+
+  rangeVariable.addColumn(columnIndex);
+
+}
+

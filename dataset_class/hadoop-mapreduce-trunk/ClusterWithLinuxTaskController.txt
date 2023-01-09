@@ -1,0 +1,484 @@
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Assert that the job is actually run by the specified user by verifying the permissions of the output part-files.
+
+ * @param outDir
+
+ * @throws IOException
+
+ */
+
+protected void assertOwnerShip(Path outDir) throws IOException {
+
+  FileSystem fs=outDir.getFileSystem(clusterConf);
+
+  assertOwnerShip(outDir,fs);
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Assert that the job is actually run by the specified user by verifying the permissions of the output part-files.
+
+ * @param outDir
+
+ * @param fs
+
+ * @throws IOException
+
+ */
+
+protected void assertOwnerShip(Path outDir,FileSystem fs) throws IOException {
+
+  for (  FileStatus status : fs.listStatus(outDir,new Utils.OutputFileUtils.OutputFilesFilter())) {
+
+    String owner=status.getOwner();
+
+    String group=status.getGroup();
+
+    LOG.info("Ownership of the file is " + status.getPath() + " is "+ owner+ ","+ group);
+
+    assertTrue("Output part-file's owner is not correct. Expected : " + jobOwner.getUserName() + " Found : "+ owner,owner.equals(jobOwner.getUserName()));
+
+    assertTrue("Output part-file's group is not correct. Expected : " + jobOwner.getGroupNames()[0] + " Found : "+ group,group.equals(jobOwner.getGroupNames()[0]));
+
+  }
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+private void changePermission(FileSystem fs) throws IOException {
+
+  fs.setOwner(homeDirectory,jobOwner.getUserName(),jobOwner.getGroupNames()[0]);
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Validates permissions of given dir and its contents fully(i.e. recursively)
+
+ */
+
+private static void checkPermissionsOnDir(File dir,String user,String groupOwner,String expectedDirPermissions,String expectedFilePermissions) throws IOException {
+
+  TestTaskTrackerLocalization.checkFilePermissions(dir.toString(),expectedDirPermissions,user,groupOwner);
+
+  File[] files=dir.listFiles();
+
+  for (  File file : files) {
+
+    if (file.isDirectory()) {
+
+      checkPermissionsOnDir(file,user,groupOwner,expectedDirPermissions,expectedFilePermissions);
+
+    }
+
+ else {
+
+      TestTaskTrackerLocalization.checkFilePermissions(file.toString(),expectedFilePermissions,user,groupOwner);
+
+    }
+
+  }
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Validates permissions of private distcache dir and its contents fully
+
+ */
+
+public static void checkPermissionsOnPrivateDistCache(String[] localDirs,String user,String taskTrackerUser,String groupOwner) throws IOException {
+
+  String expectedDirPerms=taskTrackerUser.equals(user) ? "drwxrws---" : "dr-xrws---";
+
+  String expectedFilePerms=taskTrackerUser.equals(user) ? "-rwxrwx---" : "-r-xrwx---";
+
+  for (  String localDir : localDirs) {
+
+    File distCacheDir=new File(localDir,TaskTracker.getPrivateDistributedCacheDir(user));
+
+    if (distCacheDir.exists()) {
+
+      checkPermissionsOnDir(distCacheDir,user,groupOwner,expectedDirPerms,expectedFilePerms);
+
+    }
+
+  }
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Validates permissions and ownership of public distcache dir and its  contents fully in all local dirs
+
+ */
+
+public static void checkPermissionsOnPublicDistCache(FileSystem localFS,String[] localDirs,String owner,String group) throws IOException {
+
+  for (  String localDir : localDirs) {
+
+    File distCacheDir=new File(localDir,TaskTracker.getPublicDistributedCacheDir());
+
+    if (distCacheDir.exists()) {
+
+      checkPublicFilePermissions(localFS,distCacheDir,owner,group);
+
+    }
+
+  }
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Check that files expected to be localized in distributed cache for a user are present.
+
+ * @param localDirs List of mapred local directories.
+
+ * @param user User against which localization is happening
+
+ * @param expectedFileNames List of files expected to be localized
+
+ * @throws IOException
+
+ */
+
+public static void checkPresenceOfPrivateDistCacheFiles(String[] localDirs,String user,String[] expectedFileNames) throws IOException {
+
+  FileGatherer gatherer=new FileGatherer();
+
+  for (  String localDir : localDirs) {
+
+    File distCacheDir=new File(localDir,TaskTracker.getPrivateDistributedCacheDir(user));
+
+    findExpectedFiles(expectedFileNames,distCacheDir,gatherer);
+
+  }
+
+  assertEquals("Files expected in private distributed cache were not found",expectedFileNames.length,gatherer.getCount());
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Checks that files expected to be localized in the public distributed cache are present
+
+ * @param localDirs List of mapred local directories
+
+ * @param expectedFileNames List of expected file names.
+
+ * @throws IOException
+
+ */
+
+public static void checkPresenceOfPublicDistCacheFiles(String[] localDirs,String[] expectedFileNames) throws IOException {
+
+  FileGatherer gatherer=new FileGatherer();
+
+  for (  String localDir : localDirs) {
+
+    File distCacheDir=new File(localDir,TaskTracker.getPublicDistributedCacheDir());
+
+    findExpectedFiles(expectedFileNames,distCacheDir,gatherer);
+
+  }
+
+  assertEquals("Files expected in public distributed cache were not found",expectedFileNames.length,gatherer.getCount());
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Validates permissions and ownership on the public distributed cache files
+
+ */
+
+private static void checkPublicFilePermissions(FileSystem localFS,File dir,String owner,String group) throws IOException {
+
+  Path dirPath=new Path(dir.getAbsolutePath());
+
+  TestTrackerDistributedCacheManager.checkPublicFilePermissions(localFS,new Path[]{dirPath});
+
+  TestTrackerDistributedCacheManager.checkPublicFileOwnership(localFS,new Path[]{dirPath},owner,group);
+
+  if (dir.isDirectory()) {
+
+    File[] files=dir.listFiles();
+
+    for (    File file : files) {
+
+      checkPublicFilePermissions(localFS,file,owner,group);
+
+    }
+
+  }
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+private void createHomeAndStagingDirectory(JobConf conf) throws IOException {
+
+  FileSystem fs=dfsCluster.getFileSystem();
+
+  String path="/user/" + jobOwner.getUserName();
+
+  homeDirectory=new Path(path);
+
+  LOG.info("Creating Home directory : " + homeDirectory);
+
+  fs.mkdirs(homeDirectory);
+
+  changePermission(fs);
+
+  Path stagingArea=new Path(conf.get(JTConfig.JT_STAGING_AREA_ROOT));
+
+  LOG.info("Creating Staging root directory : " + stagingArea);
+
+  fs.mkdirs(stagingArea);
+
+  fs.setPermission(stagingArea,new FsPermission((short)0777));
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Create taskcontroller.cfg.
+
+ * @param path Path to the taskcontroller binary.
+
+ * @param conf TaskTracker's configuration
+
+ * @return the created conf file
+
+ * @throws IOException
+
+ */
+
+static File createTaskControllerConf(String path,Configuration conf) throws IOException {
+
+  File confDirectory=new File(path,"../conf");
+
+  if (!confDirectory.exists()) {
+
+    confDirectory.mkdirs();
+
+  }
+
+  File configurationFile=new File(confDirectory,"taskcontroller.cfg");
+
+  PrintWriter writer=new PrintWriter(new FileOutputStream(configurationFile));
+
+  writer.println(String.format(MRConfig.LOCAL_DIR + "=%s",conf.get(MRConfig.LOCAL_DIR)));
+
+  writer.println(String.format("hadoop.log.dir=%s",TaskLog.getBaseLogDir()));
+
+  writer.println(String.format(TTConfig.TT_GROUP + "=%s",conf.get(TTConfig.TT_GROUP)));
+
+  writer.flush();
+
+  writer.close();
+
+  return configurationFile;
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+private static void findExpectedFiles(String[] expectedFileNames,File rootDir,FileGatherer gatherer){
+
+  File[] files=rootDir.listFiles();
+
+  if (files == null) {
+
+    return;
+
+  }
+
+  for (  File file : files) {
+
+    if (file.isDirectory()) {
+
+      findExpectedFiles(expectedFileNames,file,gatherer);
+
+    }
+
+ else {
+
+      if (isFilePresent(expectedFileNames,file)) {
+
+        gatherer.addFileName(file.getName());
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+protected JobConf getClusterConf(){
+
+  return new JobConf(clusterConf);
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+static File getTaskControllerConfFile(String path){
+
+  File confDirectory=new File(path,"../conf");
+
+  return new File(confDirectory,"taskcontroller.cfg");
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+private static boolean isFilePresent(String[] expectedFileNames,File file){
+
+  boolean foundFileName=false;
+
+  for (  String name : expectedFileNames) {
+
+    if (name.equals(file.getName())) {
+
+      foundFileName=true;
+
+      break;
+
+    }
+
+  }
+
+  return foundFileName;
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+static boolean isTaskExecPathPassed(){
+
+  String path=System.getProperty(TASKCONTROLLER_PATH);
+
+  if (path == null || path.isEmpty() || path.equals("${" + TASKCONTROLLER_PATH + "}")) {
+
+    LOG.info("Invalid taskcontroller-path : " + path);
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+private static boolean isUserPassed(){
+
+  String ugi=System.getProperty(TASKCONTROLLER_UGI);
+
+  if (ugi != null && !(ugi.equals("${" + TASKCONTROLLER_UGI + "}")) && !ugi.isEmpty()) {
+
+    if (ugi.indexOf(",") > 1) {
+
+      return true;
+
+    }
+
+    LOG.info("Invalid taskcontroller-ugi : " + ugi);
+
+    return false;
+
+  }
+
+  LOG.info("Invalid taskcontroller-ugi : " + ugi);
+
+  return false;
+
+}
+
+Location: ClusterWithLinuxTaskController.java
+
+Content: 
+
+/** 
+
+ * Can we run the tests with LinuxTaskController?
+
+ * @return boolean
+
+ */
+
+protected static boolean shouldRun(){
+
+  if (!isTaskExecPathPassed() || !isUserPassed()) {
+
+    LOG.info("Not running test.");
+
+    return false;
+
+  }
+
+  return true;
+
+}
+

@@ -1,0 +1,110 @@
+Location: StatementPortal.java
+
+Content: 
+
+/** 
+
+ * Convenience wrapper for the 3-param constructor.
+
+ * @see #StatementPortal(String,OdbcPreparedStatement,Object[],Map)
+
+ */
+
+public StatementPortal(String handle,OdbcPreparedStatement odbcPs,Map containingMap) throws RecoverableOdbcFailure {
+
+  this(handle,odbcPs,new Object[0],containingMap);
+
+}
+
+Location: StatementPortal.java
+
+Content: 
+
+/** 
+
+ * Instantiates a proxy ODBC StatementPortal object for the Connection Session, and adds the new instance to the specified map.
+
+ * @param paramObjs Param values are either String or BinaryData instances
+
+ */
+
+public StatementPortal(String handle,OdbcPreparedStatement odbcPs,Object[] paramObjs,Map containingMap) throws RecoverableOdbcFailure {
+
+  this.handle=handle;
+
+  lcQuery=odbcPs.query.toLowerCase();
+
+  ackResult=odbcPs.ackResult;
+
+  session=odbcPs.session;
+
+  this.containingMap=containingMap;
+
+  Type[] paramTypes=Type.emptyArray;
+
+switch (ackResult.getType()) {
+
+case ResultConstants.PREPARE_ACK:
+
+    break;
+
+case ResultConstants.ERROR:
+
+  throw new RecoverableOdbcFailure(ackResult);
+
+default :
+
+throw new RecoverableOdbcFailure("Output Result from secondary Statement prep is of " + "unexpected type: " + ackResult.getType());
+
+}
+
+if (paramObjs.length < 1) {
+
+parameters=new Object[0];
+
+}
+
+ else {
+
+ResultMetaData pmd=odbcPs.ackResult.parameterMetaData;
+
+if (pmd == null) {
+
+throw new RecoverableOdbcFailure("No metadata for Result ack");
+
+}
+
+paramTypes=pmd.getParameterTypes();
+
+if (paramTypes.length != paramObjs.length) {
+
+throw new RecoverableOdbcFailure(null,"Client didn't specify all " + paramTypes.length + " parameters ("+ paramObjs.length+ ')',"08P01");
+
+}
+
+parameters=new Object[paramObjs.length];
+
+try {
+
+for (int i=0; i < parameters.length; i++) {
+
+  parameters[i]=(paramObjs[i] instanceof String) ? PgType.getPgType(paramTypes[i],true).getParameter((String)paramObjs[i],session) : paramObjs[i];
+
+}
+
+}
+
+ catch (java.sql.SQLException se) {
+
+throw new RecoverableOdbcFailure("Typing failure: " + se);
+
+}
+
+}
+
+bindResult=Result.newPreparedExecuteRequest(paramTypes,odbcPs.ackResult.getStatementID());
+
+containingMap.put(handle,this);
+
+}
+

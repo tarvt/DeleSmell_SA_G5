@@ -1,0 +1,188 @@
+Location: PDFTranscoder.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected BridgeContext createBridgeContext(){
+
+  return createBridgeContext("1.x");
+
+}
+
+Location: PDFTranscoder.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public BridgeContext createBridgeContext(String version){
+
+  FontInfo fontInfo=graphics.getFontInfo();
+
+  if (isTextStroked()) {
+
+    fontInfo=null;
+
+  }
+
+  BridgeContext ctx=new PDFBridgeContext(userAgent,fontInfo,getImageManager(),getImageSessionContext());
+
+  return ctx;
+
+}
+
+Location: PDFTranscoder.java
+
+Content: 
+
+/** 
+
+ * Constructs a new  {@link PDFTranscoder}.
+
+ */
+
+public PDFTranscoder(){
+
+  super();
+
+  this.handler=new FOPErrorHandler();
+
+}
+
+Location: PDFTranscoder.java
+
+Content: 
+
+/** 
+
+ * Transcodes the specified Document as an image in the specified output.
+
+ * @param document the document to transcode
+
+ * @param uri the uri of the document or null if any
+
+ * @param output the ouput where to transcode
+
+ * @exception TranscoderException if an error occured while transcoding
+
+ */
+
+protected void transcode(Document document,String uri,TranscoderOutput output) throws TranscoderException {
+
+  graphics=new PDFDocumentGraphics2D(isTextStroked());
+
+  graphics.getPDFDocument().getInfo().setProducer("Apache FOP Version " + Version.getVersion() + ": PDF Transcoder for Batik");
+
+  if (hints.containsKey(KEY_DEVICE_RESOLUTION)) {
+
+    graphics.setDeviceDPI(getDeviceResolution());
+
+  }
+
+  setupImageInfrastructure(uri);
+
+  try {
+
+    Configuration effCfg=getEffectiveConfiguration();
+
+    if (effCfg != null) {
+
+      PDFDocumentGraphics2DConfigurator configurator=new PDFDocumentGraphics2DConfigurator();
+
+      boolean useComplexScriptFeatures=false;
+
+      configurator.configure(graphics,effCfg,useComplexScriptFeatures);
+
+    }
+
+ else {
+
+      graphics.setupDefaultFontInfo();
+
+    }
+
+    ((FOPTranscoderUserAgent)userAgent).setFontFamilyResolver(new FOPFontFamilyResolverImpl(graphics.getFontInfo()));
+
+  }
+
+ catch (  Exception e) {
+
+    throw new TranscoderException("Error while setting up PDFDocumentGraphics2D",e);
+
+  }
+
+  super.transcode(document,uri,output);
+
+  if (getLogger().isTraceEnabled()) {
+
+    getLogger().trace("document size: " + width + " x "+ height);
+
+  }
+
+  UnitProcessor.Context uctx=UnitProcessor.createContext(ctx,document.getDocumentElement());
+
+  float widthInPt=UnitProcessor.userSpaceToSVG(width,SVGLength.SVG_LENGTHTYPE_PT,UnitProcessor.HORIZONTAL_LENGTH,uctx);
+
+  int w=(int)(widthInPt + 0.5);
+
+  float heightInPt=UnitProcessor.userSpaceToSVG(height,SVGLength.SVG_LENGTHTYPE_PT,UnitProcessor.HORIZONTAL_LENGTH,uctx);
+
+  int h=(int)(heightInPt + 0.5);
+
+  if (getLogger().isTraceEnabled()) {
+
+    getLogger().trace("document size: " + w + "pt x "+ h+ "pt");
+
+  }
+
+  try {
+
+    OutputStream out=output.getOutputStream();
+
+    if (!(out instanceof BufferedOutputStream)) {
+
+      out=new BufferedOutputStream(out);
+
+    }
+
+    graphics.setupDocument(out,w,h);
+
+    graphics.setSVGDimension(width,height);
+
+    if (hints.containsKey(ImageTranscoder.KEY_BACKGROUND_COLOR)) {
+
+      graphics.setBackgroundColor((Color)hints.get(ImageTranscoder.KEY_BACKGROUND_COLOR));
+
+    }
+
+    graphics.setGraphicContext(new org.apache.xmlgraphics.java2d.GraphicContext());
+
+    graphics.preparePainting();
+
+    graphics.transform(curTxf);
+
+    graphics.setRenderingHint(RenderingHintsKeyExt.KEY_TRANSCODING,RenderingHintsKeyExt.VALUE_TRANSCODING_VECTOR);
+
+    this.root.paint(graphics);
+
+    graphics.finish();
+
+  }
+
+ catch (  IOException ex) {
+
+    throw new TranscoderException(ex);
+
+  }
+
+}
+

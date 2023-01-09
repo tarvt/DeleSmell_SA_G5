@@ -1,0 +1,370 @@
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+/** 
+
+ * Run a map/reduce job to compute Pi. 
+
+ */
+
+private static void compute(int startDigit,int nDigits,int nMaps,String workingDir,Configuration conf,PrintStream out) throws IOException {
+
+  final String name=startDigit + "_" + nDigits;
+
+  out.println("Working Directory = " + workingDir);
+
+  out.println();
+
+  final FileSystem fs=FileSystem.get(conf);
+
+  final Path dir=fs.makeQualified(new Path(workingDir));
+
+  if (fs.exists(dir)) {
+
+    throw new IOException("Working directory " + dir + " already exists.  Please remove it first.");
+
+  }
+
+ else   if (!fs.mkdirs(dir)) {
+
+    throw new IOException("Cannot create working directory " + dir);
+
+  }
+
+  out.println("Start Digit      = " + startDigit);
+
+  out.println("Number of Digits = " + nDigits);
+
+  out.println("Number of Maps   = " + nMaps);
+
+  final Job job=createJob(name,conf);
+
+  final Path hexfile=new Path(dir,"pi_" + name + ".hex");
+
+  FileOutputFormat.setOutputPath(job,new Path(dir,"out"));
+
+  job.getConfiguration().set(WORKING_DIR_PROPERTY,dir.toString());
+
+  job.getConfiguration().set(HEX_FILE_PROPERTY,hexfile.toString());
+
+  job.getConfiguration().setInt(DIGIT_START_PROPERTY,startDigit);
+
+  job.getConfiguration().setInt(DIGIT_SIZE_PROPERTY,nDigits);
+
+  job.getConfiguration().setInt(DIGIT_PARTS_PROPERTY,nMaps);
+
+  out.println("\nStarting Job ...");
+
+  final long startTime=System.currentTimeMillis();
+
+  try {
+
+    if (!job.waitForCompletion(true)) {
+
+      out.println("Job failed.");
+
+      System.exit(1);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+ finally {
+
+    final double duration=(System.currentTimeMillis() - startTime) / 1000.0;
+
+    out.println("Duration is " + duration + " seconds.");
+
+  }
+
+  out.println("Output file: " + hexfile);
+
+}
+
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+/** 
+
+ * Create and setup a job 
+
+ */
+
+private static Job createJob(String name,Configuration conf) throws IOException {
+
+  final Job job=new Job(conf,NAME + "_" + name);
+
+  final Configuration jobconf=job.getConfiguration();
+
+  job.setJarByClass(BaileyBorweinPlouffe.class);
+
+  job.setMapperClass(BbpMapper.class);
+
+  job.setMapOutputKeyClass(LongWritable.class);
+
+  job.setMapOutputValueClass(BytesWritable.class);
+
+  job.setReducerClass(BbpReducer.class);
+
+  job.setOutputKeyClass(LongWritable.class);
+
+  job.setOutputValueClass(BytesWritable.class);
+
+  job.setNumReduceTasks(1);
+
+  job.setInputFormatClass(BbpInputFormat.class);
+
+  jobconf.setLong(MRJobConfig.TASK_TIMEOUT,0);
+
+  jobconf.setBoolean(MRJobConfig.MAP_SPECULATIVE,false);
+
+  jobconf.setBoolean(MRJobConfig.REDUCE_SPECULATIVE,false);
+
+  return job;
+
+}
+
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+/** 
+
+ * Compute the exact (d+1)th to (d+ {@link #BBP_HEX_DIGITS})th hex digits of pi.
+
+ */
+
+static long hexDigits(final long d){
+
+  if (d < 0) {
+
+    throw new IllegalArgumentException("d = " + d + " < 0");
+
+  }
+
+ else   if (d > IMPLEMENTATION_LIMIT) {
+
+    throw new IllegalArgumentException("d = " + d + " > IMPLEMENTATION_LIMIT = "+ IMPLEMENTATION_LIMIT);
+
+  }
+
+  final double s1=sum(1,d);
+
+  final double s4=sum(4,d);
+
+  final double s5=sum(5,d);
+
+  final double s6=sum(6,d);
+
+  double pi=s1 + s1;
+
+  if (pi >= 1)   pi--;
+
+  pi*=2;
+
+  if (pi >= 1)   pi--;
+
+  pi-=s4;
+
+  if (pi < 0)   pi++;
+
+  pi-=s4;
+
+  if (pi < 0)   pi++;
+
+  pi-=s5;
+
+  if (pi < 0)   pi++;
+
+  pi-=s6;
+
+  if (pi < 0)   pi++;
+
+  return (long)(pi * BBP_MULTIPLIER);
+
+}
+
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+/** 
+
+ * Partition input so that the workload of each part is approximately the same.
+
+ */
+
+static int[] partition(final int offset,final int size,final int nParts){
+
+  final int[] parts=new int[nParts];
+
+  final long total=workload(offset,size);
+
+  final int remainder=offset % 4;
+
+  parts[0]=offset;
+
+  for (int i=1; i < nParts; i++) {
+
+    final long target=offset + i * (total / nParts) + i * (total % nParts) / nParts;
+
+    int low=parts[i - 1];
+
+    int high=offset + size;
+
+    for (; high > low + 4; ) {
+
+      final int mid=(high + low - 2 * remainder) / 8 * 4 + remainder;
+
+      final long midvalue=workload(mid);
+
+      if (midvalue == target)       high=low=mid;
+
+ else       if (midvalue > target)       high=mid;
+
+ else       low=mid;
+
+    }
+
+    parts[i]=high == low ? high : workload(high) - target > target - workload(low) ? low : high;
+
+  }
+
+  return parts;
+
+}
+
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+/** 
+
+ * Print out elements in a nice format. 
+
+ */
+
+private static <T>void print(PrintStream out,Iterator<T> iterator,String prefix,String format,int elementsPerGroup,int groupsPerLine){
+
+  final StringBuilder sb=new StringBuilder("\n");
+
+  for (int i=0; i < prefix.length(); i++)   sb.append(" ");
+
+  final String spaces=sb.toString();
+
+  out.print("\n" + prefix);
+
+  for (int i=0; iterator.hasNext(); i++) {
+
+    if (i > 0 && i % elementsPerGroup == 0)     out.print((i / elementsPerGroup) % groupsPerLine == 0 ? spaces : " ");
+
+    out.print(String.format(format,iterator.next()));
+
+  }
+
+  out.println();
+
+}
+
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+/** 
+
+ * Approximate the fraction part of $16^d \sum_{k=0}^\infty \frac{16^{d-k}}{8k+j}$ for d > 0 and j = 1, 4, 5, 6.
+
+ */
+
+private static double sum(final long j,final long d){
+
+  long k=j == 1 ? 1 : 0;
+
+  double s=0;
+
+  if (k <= d) {
+
+    s=1.0 / ((d << 3) | j);
+
+    for (; k < d; k++) {
+
+      final long n=(k << 3) | j;
+
+      s+=mod((d - k) << 2,n) * 1.0 / n;
+
+      if (s >= 1)       s--;
+
+    }
+
+    k++;
+
+  }
+
+  if (k >= 1L << (ACCURACY_BIT - 7))   return s;
+
+  for (; ; k++) {
+
+    final long n=(k << 3) | j;
+
+    final long shift=(k - d) << 2;
+
+    if (ACCURACY_BIT <= shift || 1L << (ACCURACY_BIT - shift) < n) {
+
+      return s;
+
+    }
+
+    s+=1.0 / (n << shift);
+
+    if (s >= 1)     s--;
+
+  }
+
+}
+
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+/** 
+
+ * Estimate the workload for input size n (in some unit). 
+
+ */
+
+private static long workload(final long n){
+
+  if (n < 0) {
+
+    throw new IllegalArgumentException("n = " + n + " < 0");
+
+  }
+
+ else   if (n > MAX_N) {
+
+    throw new IllegalArgumentException("n = " + n + " > MAX_N = "+ MAX_N);
+
+  }
+
+  return (n & 1L) == 0L ? (n >> 1) * (n + 1) : n * ((n + 1) >> 1);
+
+}
+
+Location: BaileyBorweinPlouffe.java
+
+Content: 
+
+private static long workload(long offset,long size){
+
+  return workload(offset + size) - workload(offset);
+
+}
+

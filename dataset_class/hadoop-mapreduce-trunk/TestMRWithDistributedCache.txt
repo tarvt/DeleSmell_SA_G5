@@ -1,0 +1,136 @@
+Location: TestMRWithDistributedCache.java
+
+Content: 
+
+private Path createTempFile(String filename,String contents) throws IOException {
+
+  Path path=new Path(TEST_ROOT_DIR,filename);
+
+  FSDataOutputStream os=localFs.create(path);
+
+  os.writeBytes(contents);
+
+  os.close();
+
+  return path;
+
+}
+
+Location: TestMRWithDistributedCache.java
+
+Content: 
+
+private Path makeJar(Path p,int index) throws FileNotFoundException, IOException {
+
+  FileOutputStream fos=new FileOutputStream(new File(p.toString()));
+
+  JarOutputStream jos=new JarOutputStream(fos);
+
+  ZipEntry ze=new ZipEntry("distributed.jar.inside" + index);
+
+  jos.putNextEntry(ze);
+
+  jos.write(("inside the jar!" + index).getBytes());
+
+  jos.closeEntry();
+
+  jos.close();
+
+  return p;
+
+}
+
+Location: TestMRWithDistributedCache.java
+
+Content: 
+
+/** 
+
+ * Tests using the local job runner. 
+
+ */
+
+public void testLocalJobRunner() throws Exception {
+
+  Configuration c=new Configuration();
+
+  c.set(JTConfig.JT_IPC_ADDRESS,"local");
+
+  c.set("fs.default.name","file:///");
+
+  testWithConf(c);
+
+}
+
+Location: TestMRWithDistributedCache.java
+
+Content: 
+
+/** 
+
+ * Tests using a full MiniMRCluster. 
+
+ */
+
+public void testMiniMRJobRunner() throws Exception {
+
+  MiniMRCluster m=new MiniMRCluster(1,"file:///",1);
+
+  try {
+
+    testWithConf(m.createJobConf());
+
+  }
+
+  finally {
+
+    m.shutdown();
+
+  }
+
+}
+
+Location: TestMRWithDistributedCache.java
+
+Content: 
+
+private void testWithConf(Configuration conf) throws IOException, InterruptedException, ClassNotFoundException, URISyntaxException {
+
+  Path first=createTempFile("distributed.first","x");
+
+  Path second=makeJar(new Path(TEST_ROOT_DIR,"distributed.second.jar"),2);
+
+  Path third=makeJar(new Path(TEST_ROOT_DIR,"distributed.third.jar"),3);
+
+  Path fourth=makeJar(new Path(TEST_ROOT_DIR,"distributed.fourth.jar"),4);
+
+  Job job=Job.getInstance(conf);
+
+  job.setMapperClass(DistributedCacheChecker.class);
+
+  job.setOutputFormatClass(NullOutputFormat.class);
+
+  FileInputFormat.setInputPaths(job,first);
+
+  job.addCacheFile(new URI(first.toUri().toString() + "#distributed.first.symlink"));
+
+  job.addFileToClassPath(second);
+
+  job.addArchiveToClassPath(third);
+
+  job.addCacheArchive(fourth.toUri());
+
+  if (!"local".equals(conf.get(JTConfig.JT_IPC_ADDRESS))) {
+
+    job.createSymlink();
+
+  }
+
+  job.setMaxMapAttempts(1);
+
+  job.submit();
+
+  assertTrue(job.waitForCompletion(false));
+
+}
+

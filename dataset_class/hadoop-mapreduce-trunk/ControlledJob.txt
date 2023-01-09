@@ -1,0 +1,412 @@
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Add a job to this jobs' dependency list.  Dependent jobs can only be added while a Job  is waiting to run, not during or afterwards.
+
+ * @param dependingJob Job that this Job depends on.
+
+ * @return <tt>true</tt> if the Job was added.
+
+ */
+
+public synchronized boolean addDependingJob(ControlledJob dependingJob){
+
+  if (this.state == State.WAITING) {
+
+    if (this.dependingJobs == null) {
+
+      this.dependingJobs=new ArrayList<ControlledJob>();
+
+    }
+
+    return this.dependingJobs.add(dependingJob);
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Check the state of this running job. The state may  remain the same, become SUCCESS or FAILED.
+
+ */
+
+private void checkRunningState() throws IOException, InterruptedException {
+
+  try {
+
+    if (job.isComplete()) {
+
+      if (job.isSuccessful()) {
+
+        this.state=State.SUCCESS;
+
+      }
+
+ else {
+
+        this.state=State.FAILED;
+
+        this.message="Job failed!";
+
+      }
+
+    }
+
+  }
+
+ catch (  IOException ioe) {
+
+    this.state=State.FAILED;
+
+    this.message=StringUtils.stringifyException(ioe);
+
+    try {
+
+      if (job != null) {
+
+        job.killJob();
+
+      }
+
+    }
+
+ catch (    IOException e) {
+
+    }
+
+  }
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Check and update the state of this job. The state changes   depending on its current state and the states of the depending jobs.
+
+ */
+
+synchronized State checkState() throws IOException, InterruptedException {
+
+  if (this.state == State.RUNNING) {
+
+    checkRunningState();
+
+  }
+
+  if (this.state != State.WAITING) {
+
+    return this.state;
+
+  }
+
+  if (this.dependingJobs == null || this.dependingJobs.size() == 0) {
+
+    this.state=State.READY;
+
+    return this.state;
+
+  }
+
+  ControlledJob pred=null;
+
+  int n=this.dependingJobs.size();
+
+  for (int i=0; i < n; i++) {
+
+    pred=this.dependingJobs.get(i);
+
+    State s=pred.checkState();
+
+    if (s == State.WAITING || s == State.READY || s == State.RUNNING) {
+
+      break;
+
+    }
+
+    if (s == State.FAILED || s == State.DEPENDENT_FAILED) {
+
+      this.state=State.DEPENDENT_FAILED;
+
+      this.message="depending job " + i + " with jobID "+ pred.getJobID()+ " failed. "+ pred.getMessage();
+
+      break;
+
+    }
+
+    if (i == n - 1) {
+
+      this.state=State.READY;
+
+    }
+
+  }
+
+  return this.state;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Construct a job.
+
+ * @param conf mapred job configuration representing a job to be executed.
+
+ * @throws IOException
+
+ */
+
+public ControlledJob(Configuration conf) throws IOException {
+
+  this(new Job(conf),null);
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Construct a job.
+
+ * @param job a mapreduce job to be executed.
+
+ * @param dependingJobs an array of jobs the current job depends on
+
+ */
+
+public ControlledJob(Job job,List<ControlledJob> dependingJobs) throws IOException {
+
+  this.job=job;
+
+  this.dependingJobs=dependingJobs;
+
+  this.state=State.WAITING;
+
+  this.controlID="unassigned";
+
+  this.message="just initialized";
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * @return the depending jobs of this job
+
+ */
+
+public List<ControlledJob> getDependentJobs(){
+
+  return this.dependingJobs;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * @return the mapreduce job 
+
+ */
+
+public synchronized Job getJob(){
+
+  return this.job;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * @return the state of this job
+
+ */
+
+public synchronized State getJobState(){
+
+  return this.state;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * @return the mapred ID of this job as assigned by the mapred framework.
+
+ */
+
+public JobID getMapredJobID(){
+
+  return this.job.getJobID();
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * @return true if this job is in a complete state
+
+ */
+
+public synchronized boolean isCompleted(){
+
+  return this.state == State.FAILED || this.state == State.DEPENDENT_FAILED || this.state == State.SUCCESS;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * @return true if this job is in READY state
+
+ */
+
+public synchronized boolean isReady(){
+
+  return this.state == State.READY;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+public void killJob() throws IOException, InterruptedException {
+
+  job.killJob();
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Set the state for this job.
+
+ * @param state the new state for this job.
+
+ */
+
+protected synchronized void setJobState(State state){
+
+  this.state=state;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Set the mapreduce job
+
+ * @param job the mapreduce job for this job.
+
+ */
+
+public synchronized void setJob(Job job){
+
+  this.job=job;
+
+}
+
+Location: ControlledJob.java
+
+Content: 
+
+/** 
+
+ * Submit this job to mapred. The state becomes RUNNING if submission  is successful, FAILED otherwise.  
+
+ */
+
+protected synchronized void submit(){
+
+  try {
+
+    Configuration conf=job.getConfiguration();
+
+    if (conf.getBoolean(CREATE_DIR,false)) {
+
+      FileSystem fs=FileSystem.get(conf);
+
+      Path inputPaths[]=FileInputFormat.getInputPaths(job);
+
+      for (int i=0; i < inputPaths.length; i++) {
+
+        if (!fs.exists(inputPaths[i])) {
+
+          try {
+
+            fs.mkdirs(inputPaths[i]);
+
+          }
+
+ catch (          IOException e) {
+
+          }
+
+        }
+
+      }
+
+    }
+
+    job.submit();
+
+    this.state=State.RUNNING;
+
+  }
+
+ catch (  Exception ioe) {
+
+    this.state=State.FAILED;
+
+    this.message=StringUtils.stringifyException(ioe);
+
+  }
+
+}
+

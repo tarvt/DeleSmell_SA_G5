@@ -1,0 +1,164 @@
+Location: CondVar.java
+
+Content: 
+
+public CondVar(){
+
+  lock=new ReentrantLock();
+
+  cond=lock.newCondition();
+
+}
+
+Location: CondVar.java
+
+Content: 
+
+public CondVar(final Lock lock){
+
+  this.lock=lock;
+
+  cond=lock.newCondition();
+
+}
+
+Location: CondVar.java
+
+Content: 
+
+/** 
+
+ * Wakes up one (signal_all=false) or all (signal_all=true) blocked threads. Usually called when the condition changed to true.
+
+ * @param signal_all
+
+ */
+
+public void signal(boolean signal_all){
+
+  lock.lock();
+
+  try {
+
+    if (signal_all)     cond.signalAll();
+
+ else     cond.signal();
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: CondVar.java
+
+Content: 
+
+/** 
+
+ * Blocks until condition is true.
+
+ * @param condition The condition. Must be non-null
+
+ */
+
+public void waitFor(Condition condition){
+
+  boolean intr=false;
+
+  lock.lock();
+
+  try {
+
+    while (!condition.isMet()) {
+
+      try {
+
+        cond.await();
+
+      }
+
+ catch (      InterruptedException e) {
+
+        intr=true;
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+    if (intr)     Thread.currentThread().interrupt();
+
+  }
+
+}
+
+Location: CondVar.java
+
+Content: 
+
+/** 
+
+ * Blocks until condition is true or the time elapsed
+
+ * @param condition The condition
+
+ * @param timeout The timeout to wait. A value <= 0 causes immediate return
+
+ * @param unit TimeUnit
+
+ * @return The condition's status
+
+ */
+
+public boolean waitFor(Condition condition,long timeout,TimeUnit unit){
+
+  boolean intr=false;
+
+  final long timeout_ns=TimeUnit.NANOSECONDS.convert(timeout,unit);
+
+  lock.lock();
+
+  try {
+
+    for (long wait_time=timeout_ns, start=System.nanoTime(); wait_time > 0 && !condition.isMet(); ) {
+
+      try {
+
+        wait_time=cond.awaitNanos(wait_time);
+
+      }
+
+ catch (      InterruptedException e) {
+
+        wait_time=timeout_ns - (System.nanoTime() - start);
+
+        intr=true;
+
+      }
+
+    }
+
+    return condition.isMet();
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+    if (intr)     Thread.currentThread().interrupt();
+
+  }
+
+}
+

@@ -1,0 +1,88 @@
+Location: TestJobSysDirWithDFS.java
+
+Content: 
+
+public static TestResult launchWordCount(JobConf conf,Path inDir,Path outDir,String input,int numMaps,int numReduces,String sysDir) throws IOException {
+
+  FileSystem inFs=inDir.getFileSystem(conf);
+
+  FileSystem outFs=outDir.getFileSystem(conf);
+
+  outFs.delete(outDir,true);
+
+  if (!inFs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+{
+
+    DataOutputStream file=inFs.create(new Path(inDir,"part-0"));
+
+    file.writeBytes(input);
+
+    file.close();
+
+  }
+
+  conf.setJobName("wordcount");
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setOutputKeyClass(Text.class);
+
+  conf.setOutputValueClass(IntWritable.class);
+
+  conf.setMapperClass(WordCount.MapClass.class);
+
+  conf.setCombinerClass(WordCount.Reduce.class);
+
+  conf.setReducerClass(WordCount.Reduce.class);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  conf.setNumMapTasks(numMaps);
+
+  conf.setNumReduceTasks(numReduces);
+
+  conf.set(JTConfig.JT_SYSTEM_DIR,"/tmp/subru/mapred/system");
+
+  JobClient jobClient=new JobClient(conf);
+
+  RunningJob job=jobClient.runJob(conf);
+
+  assertFalse(FileSystem.get(conf).exists(new Path(conf.get(JTConfig.JT_SYSTEM_DIR))));
+
+  assertFalse(sysDir.contains("/tmp/subru/mapred/system"));
+
+  assertTrue(sysDir.contains("custom"));
+
+  return new TestResult(job,MapReduceTestUtil.readOutput(outDir,conf));
+
+}
+
+Location: TestJobSysDirWithDFS.java
+
+Content: 
+
+static void runWordCount(MiniMRCluster mr,JobConf jobConf,String sysDir) throws IOException {
+
+  LOG.info("runWordCount");
+
+  TestResult result;
+
+  final Path inDir=new Path("./wc/input");
+
+  final Path outDir=new Path("./wc/output");
+
+  result=launchWordCount(jobConf,inDir,outDir,"The quick brown fox\nhas many silly\n" + "red fox sox\n",3,1,sysDir);
+
+  assertEquals("The\t1\nbrown\t1\nfox\t2\nhas\t1\nmany\t1\n" + "quick\t1\nred\t1\nsilly\t1\nsox\t1\n",result.output);
+
+  assertTrue(result.job.isSuccessful());
+
+}
+

@@ -1,0 +1,804 @@
+Location: SchemaObjectSet.java
+
+Content: 
+
+static void addAllSQL(OrderedHashSet resolved,OrderedHashSet unresolved,HsqlArrayList list,Iterator it,OrderedHashSet newResolved){
+
+  while (it.hasNext()) {
+
+    SchemaObject object=(SchemaObject)it.next();
+
+    OrderedHashSet references=object.getReferences();
+
+    boolean isResolved=true;
+
+    for (int j=0; j < references.size(); j++) {
+
+      HsqlName name=(HsqlName)references.get(j);
+
+      if (SqlInvariants.isSchemaNameSystem(name)) {
+
+        continue;
+
+      }
+
+switch (name.type) {
+
+case SchemaObject.TABLE:
+
+        if (!resolved.contains(name)) {
+
+          isResolved=false;
+
+        }
+
+      break;
+
+case SchemaObject.COLUMN:
+
+{
+
+      if (object.getType() == SchemaObject.TABLE) {
+
+        int index=((Table)object).findColumn(name.name);
+
+        ColumnSchema column=((Table)object).getColumn(index);
+
+        if (!isChildObjectResolved(column,resolved)) {
+
+          isResolved=false;
+
+        }
+
+        break;
+
+      }
+
+      if (!resolved.contains(name.parent)) {
+
+        isResolved=false;
+
+      }
+
+      break;
+
+    }
+
+case SchemaObject.CONSTRAINT:
+
+{
+
+    if (name.parent == object.getName()) {
+
+      Constraint constraint=((Table)object).getConstraint(name.name);
+
+      if (constraint.getConstraintType() == SchemaObject.ConstraintTypes.CHECK) {
+
+        if (!isChildObjectResolved(constraint,resolved)) {
+
+          isResolved=false;
+
+        }
+
+      }
+
+    }
+
+    break;
+
+  }
+
+case SchemaObject.CHARSET:
+
+if (name.schema == null) {
+
+  continue;
+
+}
+
+case SchemaObject.TYPE:
+
+case SchemaObject.DOMAIN:
+
+case SchemaObject.FUNCTION:
+
+case SchemaObject.PROCEDURE:
+
+case SchemaObject.SPECIFIC_ROUTINE:
+
+if (!resolved.contains(name)) {
+
+isResolved=false;
+
+}
+
+break;
+
+default :
+
+}
+
+}
+
+if (!isResolved) {
+
+unresolved.add(object);
+
+continue;
+
+}
+
+HsqlName name;
+
+if (object.getType() == SchemaObject.FUNCTION || object.getType() == SchemaObject.PROCEDURE) {
+
+name=((Routine)object).getSpecificName();
+
+}
+
+ else {
+
+name=object.getName();
+
+}
+
+resolved.add(name);
+
+if (newResolved != null) {
+
+newResolved.add(object);
+
+}
+
+if (object.getType() == SchemaObject.TABLE) {
+
+list.addAll(((Table)object).getSQL(resolved,unresolved));
+
+}
+
+ else {
+
+switch (object.getType()) {
+
+case SchemaObject.FUNCTION:
+
+case SchemaObject.PROCEDURE:
+
+Routine routine=((Routine)object);
+
+if (routine.isRecursive) {
+
+list.add(((Routine)object).getSQLDeclaration());
+
+list.add(((Routine)object).getSQLAlter());
+
+}
+
+ else {
+
+list.add(object.getSQL());
+
+}
+
+break;
+
+default :
+
+list.add(object.getSQL());
+
+}
+
+}
+
+}
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+public void add(SchemaObject object,boolean replace){
+
+  HsqlName name=object.getName();
+
+  if (type == SchemaObject.SPECIFIC_ROUTINE) {
+
+    name=((Routine)object).getSpecificName();
+
+  }
+
+  if (!replace && map.containsKey(name.name)) {
+
+    int code=getAddErrorCode(name.type);
+
+    throw Error.error(code,name.name);
+
+  }
+
+  Object value=object;
+
+switch (name.type) {
+
+case SchemaObject.COLUMN:
+
+case SchemaObject.CONSTRAINT:
+
+case SchemaObject.INDEX:
+
+    value=name;
+
+  break;
+
+default :
+
+}
+
+map.put(name.name,value);
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+void checkAdd(HsqlName name){
+
+  if (map.containsKey(name.name)) {
+
+    int code=getAddErrorCode(name.type);
+
+    throw Error.error(code,name.name);
+
+  }
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+void checkExists(String name){
+
+  if (!map.containsKey(name)) {
+
+    int code=getGetErrorCode(type);
+
+    throw Error.error(code,name);
+
+  }
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+static int getAddErrorCode(int type){
+
+  int code;
+
+switch (type) {
+
+case SchemaObject.VIEW:
+
+case SchemaObject.TABLE:
+
+case SchemaObject.SEQUENCE:
+
+case SchemaObject.CHARSET:
+
+case SchemaObject.DOMAIN:
+
+case SchemaObject.TYPE:
+
+case SchemaObject.COLLATION:
+
+case SchemaObject.PROCEDURE:
+
+case SchemaObject.FUNCTION:
+
+case SchemaObject.SPECIFIC_ROUTINE:
+
+case SchemaObject.ASSERTION:
+
+case SchemaObject.TRIGGER:
+
+case SchemaObject.REFERENCE:
+
+case SchemaObject.COLUMN:
+
+case SchemaObject.CONSTRAINT:
+
+case SchemaObject.INDEX:
+
+    code=ErrorCode.X_42504;
+
+  break;
+
+default :
+
+throw Error.runtimeError(ErrorCode.U_S0500,"SchemaObjectSet");
+
+}
+
+return code;
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+static int getGetErrorCode(int type){
+
+  int code;
+
+switch (type) {
+
+case SchemaObject.VIEW:
+
+case SchemaObject.TABLE:
+
+case SchemaObject.SEQUENCE:
+
+case SchemaObject.CHARSET:
+
+case SchemaObject.DOMAIN:
+
+case SchemaObject.TYPE:
+
+case SchemaObject.COLLATION:
+
+case SchemaObject.PROCEDURE:
+
+case SchemaObject.FUNCTION:
+
+case SchemaObject.SPECIFIC_ROUTINE:
+
+case SchemaObject.ASSERTION:
+
+case SchemaObject.TRIGGER:
+
+case SchemaObject.REFERENCE:
+
+case SchemaObject.COLUMN:
+
+case SchemaObject.CONSTRAINT:
+
+case SchemaObject.INDEX:
+
+    code=ErrorCode.X_42501;
+
+  break;
+
+default :
+
+throw Error.runtimeError(ErrorCode.U_S0500,"SchemaObjectSet");
+
+}
+
+return code;
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+public static String getName(int type){
+
+switch (type) {
+
+case SchemaObject.VIEW:
+
+    return Tokens.T_VIEW;
+
+case SchemaObject.TABLE:
+
+  return Tokens.T_TABLE;
+
+case SchemaObject.SEQUENCE:
+
+return Tokens.T_SEQUENCE;
+
+case SchemaObject.CHARSET:
+
+return Tokens.T_CHARACTER + ' ' + Tokens.T_SET;
+
+case SchemaObject.DOMAIN:
+
+return Tokens.T_DOMAIN;
+
+case SchemaObject.TYPE:
+
+return Tokens.T_TYPE;
+
+case SchemaObject.COLLATION:
+
+return Tokens.T_COLLATION;
+
+case SchemaObject.PROCEDURE:
+
+return Tokens.T_PROCEDURE;
+
+case SchemaObject.FUNCTION:
+
+return Tokens.T_FUNCTION;
+
+case SchemaObject.SPECIFIC_ROUTINE:
+
+return Tokens.T_SPECIFIC + ' ' + Tokens.T_ROUTINE;
+
+case SchemaObject.ASSERTION:
+
+return Tokens.T_ASSERTION;
+
+case SchemaObject.TRIGGER:
+
+return Tokens.T_TRIGGER;
+
+case SchemaObject.REFERENCE:
+
+return Tokens.T_SYNONYM;
+
+case SchemaObject.COLUMN:
+
+return Tokens.T_COLUMN;
+
+case SchemaObject.PARAMETER:
+
+return Tokens.T_PARAMETER;
+
+case SchemaObject.CONSTRAINT:
+
+return Tokens.T_CONSTRAINT;
+
+case SchemaObject.INDEX:
+
+return Tokens.T_INDEX;
+
+default :
+
+throw Error.runtimeError(ErrorCode.U_S0500,"SchemaObjectSet");
+
+}
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+HsqlName getName(String name){
+
+switch (type) {
+
+case SchemaObject.VIEW:
+
+case SchemaObject.TABLE:
+
+case SchemaObject.SEQUENCE:
+
+case SchemaObject.CHARSET:
+
+case SchemaObject.DOMAIN:
+
+case SchemaObject.TYPE:
+
+case SchemaObject.COLLATION:
+
+case SchemaObject.PROCEDURE:
+
+case SchemaObject.SPECIFIC_ROUTINE:
+
+case SchemaObject.FUNCTION:
+
+case SchemaObject.ASSERTION:
+
+case SchemaObject.TRIGGER:
+
+case SchemaObject.REFERENCE:
+
+    SchemaObject object=((SchemaObject)map.get(name));
+
+  return object == null ? null : object.getName();
+
+case SchemaObject.COLUMN:
+
+case SchemaObject.CONSTRAINT:
+
+case SchemaObject.INDEX:
+
+{
+
+  return (HsqlName)map.get(name);
+
+}
+
+default :
+
+return (HsqlName)map.get(name);
+
+}
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+void getSQL(HsqlArrayList list,OrderedHashSet resolved,OrderedHashSet unresolved){
+
+  if (!(map instanceof HashMappedList)) {
+
+    return;
+
+  }
+
+  if (map.isEmpty()) {
+
+    return;
+
+  }
+
+  Iterator it=map.values().iterator();
+
+  if (type == SchemaObject.FUNCTION || type == SchemaObject.PROCEDURE) {
+
+    OrderedHashSet set=new OrderedHashSet();
+
+    while (it.hasNext()) {
+
+      RoutineSchema routineSchema=(RoutineSchema)it.next();
+
+      for (int i=0; i < routineSchema.routines.length; i++) {
+
+        Routine routine=routineSchema.routines[i];
+
+        if (routine.dataImpact == Routine.NO_SQL || routine.dataImpact == Routine.CONTAINS_SQL || routine.language == Routine.LANGUAGE_JAVA) {
+
+        }
+
+ else {
+
+          set.add(routine);
+
+        }
+
+      }
+
+    }
+
+    it=set.iterator();
+
+  }
+
+  addAllSQL(resolved,unresolved,list,it,null);
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+static boolean isChildObjectResolved(SchemaObject object,OrderedHashSet resolved){
+
+  OrderedHashSet refs=object.getReferences();
+
+  for (int i=0; i < refs.size(); i++) {
+
+    HsqlName name=(HsqlName)refs.get(i);
+
+    if (SqlInvariants.isSchemaNameSystem(name)) {
+
+      continue;
+
+    }
+
+    if (!resolved.contains(name)) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+void removeParent(HsqlName parent){
+
+  Iterator it=map.values().iterator();
+
+  while (it.hasNext()) {
+
+    if (type == SchemaObject.TRIGGER || type == SchemaObject.SPECIFIC_ROUTINE) {
+
+      SchemaObject object=(SchemaObject)it.next();
+
+      if (object.getName().parent == parent) {
+
+        it.remove();
+
+      }
+
+    }
+
+ else {
+
+      HsqlName name=(HsqlName)it.next();
+
+      if (name.parent == parent) {
+
+        it.remove();
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+void remove(String name){
+
+  map.remove(name);
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+void rename(HsqlName name,HsqlName newName){
+
+  if (map.containsKey(newName.name)) {
+
+    int code=getAddErrorCode(name.type);
+
+    throw Error.error(code,newName.name);
+
+  }
+
+switch (newName.type) {
+
+case SchemaObject.VIEW:
+
+case SchemaObject.TABLE:
+
+case SchemaObject.SEQUENCE:
+
+case SchemaObject.CHARSET:
+
+case SchemaObject.COLLATION:
+
+case SchemaObject.PROCEDURE:
+
+case SchemaObject.FUNCTION:
+
+case SchemaObject.DOMAIN:
+
+case SchemaObject.TYPE:
+
+case SchemaObject.ASSERTION:
+
+case SchemaObject.TRIGGER:
+
+case SchemaObject.ROUTINE:
+
+case SchemaObject.REFERENCE:
+
+{
+
+      int i=((HashMappedList)map).getIndex(name.name);
+
+      if (i == -1) {
+
+        int code=getGetErrorCode(name.type);
+
+        throw Error.error(code,name.name);
+
+      }
+
+      SchemaObject object=(SchemaObject)((HashMappedList)map).get(i);
+
+      object.getName().rename(newName);
+
+      ((HashMappedList)map).setKey(i,name.name);
+
+      break;
+
+    }
+
+case SchemaObject.COLUMN:
+
+case SchemaObject.CONSTRAINT:
+
+case SchemaObject.INDEX:
+
+{
+
+    map.remove(name.name);
+
+    name.rename(newName);
+
+    map.put(name.name,name);
+
+    break;
+
+  }
+
+default :
+
+}
+
+}
+
+Location: SchemaObjectSet.java
+
+Content: 
+
+SchemaObjectSet(int type){
+
+  this.type=type;
+
+switch (type) {
+
+case SchemaObject.VIEW:
+
+case SchemaObject.TABLE:
+
+case SchemaObject.SEQUENCE:
+
+case SchemaObject.CHARSET:
+
+case SchemaObject.DOMAIN:
+
+case SchemaObject.TYPE:
+
+case SchemaObject.COLLATION:
+
+case SchemaObject.PROCEDURE:
+
+case SchemaObject.FUNCTION:
+
+case SchemaObject.SPECIFIC_ROUTINE:
+
+case SchemaObject.ASSERTION:
+
+case SchemaObject.TRIGGER:
+
+case SchemaObject.REFERENCE:
+
+    map=new HashMappedList();
+
+  break;
+
+case SchemaObject.COLUMN:
+
+case SchemaObject.CONSTRAINT:
+
+case SchemaObject.INDEX:
+
+map=new HashMap();
+
+break;
+
+default :
+
+throw Error.runtimeError(ErrorCode.U_S0500,"SchemaObjectSet");
+
+}
+
+}
+

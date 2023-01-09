@@ -1,0 +1,188 @@
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+private Path getNewOutputDir(){
+
+  return new Path(TEST_ROOT_DIR,"output-" + outDirs++);
+
+}
+
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+/** 
+
+ * Test if a failed job with custom committer runs the abort code.
+
+ * @throws Exception
+
+ */
+
+public void testCustomAbort() throws Exception {
+
+  testSuccessfulJob(FileOutputCommitter.SUCCEEDED_FILE_NAME,MyOutputFormatWithCustomAbort.class,new String[]{ABORT_FAILED_FILE_NAME,ABORT_KILLED_FILE_NAME});
+
+  testFailedJob(ABORT_FAILED_FILE_NAME,MyOutputFormatWithCustomAbort.class,new String[]{FileOutputCommitter.SUCCEEDED_FILE_NAME,ABORT_KILLED_FILE_NAME});
+
+  testKilledJob(ABORT_KILLED_FILE_NAME,MyOutputFormatWithCustomAbort.class,new String[]{FileOutputCommitter.SUCCEEDED_FILE_NAME,ABORT_FAILED_FILE_NAME});
+
+}
+
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+/** 
+
+ * Test if a failed job with custom committer runs the deprecated {@link FileOutputCommitter#cleanupJob(JobContext)} code for api compatibility testing.
+
+ * @throws Exception 
+
+ */
+
+public void testCustomCleanup() throws Exception {
+
+  testSuccessfulJob(CUSTOM_CLEANUP_FILE_NAME,MyOutputFormatWithCustomCleanup.class,new String[]{});
+
+  testFailedJob(CUSTOM_CLEANUP_FILE_NAME,MyOutputFormatWithCustomCleanup.class,new String[]{FileOutputCommitter.SUCCEEDED_FILE_NAME});
+
+  testKilledJob(CUSTOM_CLEANUP_FILE_NAME,MyOutputFormatWithCustomCleanup.class,new String[]{FileOutputCommitter.SUCCEEDED_FILE_NAME});
+
+}
+
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+/** 
+
+ * Test default cleanup/abort behavior
+
+ * @throws Exception
+
+ */
+
+public void testDefaultCleanupAndAbort() throws Exception {
+
+  testSuccessfulJob(FileOutputCommitter.SUCCEEDED_FILE_NAME,TextOutputFormat.class,new String[]{});
+
+  testFailedJob(null,TextOutputFormat.class,new String[]{FileOutputCommitter.SUCCEEDED_FILE_NAME});
+
+  testKilledJob(null,TextOutputFormat.class,new String[]{FileOutputCommitter.SUCCEEDED_FILE_NAME});
+
+}
+
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+private void testFailedJob(String fileName,Class<? extends OutputFormat> output,String[] exclude) throws Exception {
+
+  Path outDir=getNewOutputDir();
+
+  Job job=MapReduceTestUtil.createFailJob(conf,outDir,inDir);
+
+  job.setOutputFormatClass(output);
+
+  assertFalse("Job did not fail!",job.waitForCompletion(true));
+
+  if (fileName != null) {
+
+    Path testFile=new Path(outDir,fileName);
+
+    assertTrue("File " + testFile + " missing for failed job "+ job.getJobID(),fs.exists(testFile));
+
+  }
+
+  for (  String ex : exclude) {
+
+    Path file=new Path(outDir,ex);
+
+    assertFalse("File " + file + " should not be present for failed job "+ job.getJobID(),fs.exists(file));
+
+  }
+
+}
+
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+public TestJobOutputCommitter() throws IOException {
+
+  super(CLUSTER_MR,LOCAL_FS,1,1);
+
+}
+
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+private void testKilledJob(String fileName,Class<? extends OutputFormat> output,String[] exclude) throws Exception {
+
+  Path outDir=getNewOutputDir();
+
+  Job job=MapReduceTestUtil.createKillJob(conf,outDir,inDir);
+
+  job.setOutputFormatClass(output);
+
+  job.submit();
+
+  while (job.setupProgress() != 1.0f) {
+
+    UtilsForTests.waitFor(100);
+
+  }
+
+  job.killJob();
+
+  assertFalse("Job did not get kill",job.waitForCompletion(true));
+
+  if (fileName != null) {
+
+    Path testFile=new Path(outDir,fileName);
+
+    assertTrue("File " + testFile + " missing for job "+ job.getJobID(),fs.exists(testFile));
+
+  }
+
+  for (  String ex : exclude) {
+
+    Path file=new Path(outDir,ex);
+
+    assertFalse("File " + file + " should not be present for killed job "+ job.getJobID(),fs.exists(file));
+
+  }
+
+}
+
+Location: TestJobOutputCommitter.java
+
+Content: 
+
+private void testSuccessfulJob(String filename,Class<? extends OutputFormat> output,String[] exclude) throws Exception {
+
+  Path outDir=getNewOutputDir();
+
+  Job job=MapReduceTestUtil.createJob(conf,inDir,outDir,1,0);
+
+  job.setOutputFormatClass(output);
+
+  assertTrue("Job failed!",job.waitForCompletion(true));
+
+  Path testFile=new Path(outDir,filename);
+
+  assertTrue("Done file missing for job " + job.getJobID(),fs.exists(testFile));
+
+  for (  String ex : exclude) {
+
+    Path file=new Path(outDir,ex);
+
+    assertFalse("File " + file + " should not be present for successful job "+ job.getJobID(),fs.exists(file));
+
+  }
+
+}
+

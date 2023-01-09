@@ -1,0 +1,970 @@
+Location: HarFileSystem.java
+
+Content: 
+
+private Path archivePath(Path p){
+
+  Path retPath=null;
+
+  Path tmp=p;
+
+  for (int i=0; i < p.depth(); i++) {
+
+    if (tmp.toString().endsWith(".har")) {
+
+      retPath=tmp;
+
+      break;
+
+    }
+
+    tmp=tmp.getParent();
+
+  }
+
+  return retPath;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * not implemented.
+
+ */
+
+public void completeLocalOutput(Path fsOutputFile,Path tmpLocalFile) throws IOException {
+
+  throw new IOException("Har: completeLocalOutput not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * not implemented.
+
+ */
+
+public void copyFromLocalFile(boolean delSrc,Path src,Path dst) throws IOException {
+
+  throw new IOException("Har: copyfromlocalfile not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * copies the file in the har filesystem to a local file.
+
+ */
+
+public void copyToLocalFile(boolean delSrc,Path src,Path dst) throws IOException {
+
+  FileUtil.copy(this,src,getLocal(getConf()),dst,false,getConf());
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+public FSDataOutputStream create(Path f,FsPermission permission,boolean overwrite,int bufferSize,short replication,long blockSize,Progressable progress) throws IOException {
+
+  throw new IOException("Har: create not allowed.");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+public FSDataOutputStream create(Path f,int bufferSize) throws IOException {
+
+  throw new IOException("Har: Create not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+private String decodeFileName(String fname) throws UnsupportedEncodingException {
+
+  int version=metadata.getVersion();
+
+  if (version == 2 || version == 3) {
+
+    return decodeString(fname);
+
+  }
+
+  return fname;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * decode the raw URI to get the underlying URI
+
+ * @param rawURI raw Har URI
+
+ * @return filtered URI of the underlying fileSystem
+
+ */
+
+private URI decodeHarURI(URI rawURI,Configuration conf) throws IOException {
+
+  String tmpAuth=rawURI.getAuthority();
+
+  if (tmpAuth == null) {
+
+    return FileSystem.getDefaultUri(conf);
+
+  }
+
+  String host=rawURI.getHost();
+
+  if (host == null) {
+
+    throw new IOException("URI: " + rawURI + " is an invalid Har URI since host==null."+ "  Expecting har://<scheme>-<host>/<path>.");
+
+  }
+
+  int i=host.indexOf('-');
+
+  if (i < 0) {
+
+    throw new IOException("URI: " + rawURI + " is an invalid Har URI since '-' not found."+ "  Expecting har://<scheme>-<host>/<path>.");
+
+  }
+
+  final String underLyingScheme=host.substring(0,i);
+
+  i++;
+
+  final String underLyingHost=i == host.length() ? null : host.substring(i);
+
+  int underLyingPort=rawURI.getPort();
+
+  String auth=(underLyingHost == null && underLyingPort == -1) ? null : (underLyingHost + ":" + underLyingPort);
+
+  URI tmp=null;
+
+  if (rawURI.getQuery() != null) {
+
+    throw new IOException("query component in Path not supported  " + rawURI);
+
+  }
+
+  try {
+
+    tmp=new URI(underLyingScheme,auth,rawURI.getPath(),rawURI.getQuery(),rawURI.getFragment());
+
+  }
+
+ catch (  URISyntaxException e) {
+
+  }
+
+  return tmp;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+private static String decodeString(String str) throws UnsupportedEncodingException {
+
+  return URLDecoder.decode(str,"UTF-8");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Not implemented.
+
+ */
+
+@Override public boolean delete(Path f,boolean recursive) throws IOException {
+
+  throw new IOException("Har: delete not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Get filestatuses of all the children of a given directory. This just reads through index file and reads line by line to get all statuses for children of a directory. Its a brute force way of getting all such filestatuses
+
+ * @param parent the parent path directory
+
+ * @param statuses the list to add the children filestatuses to
+
+ * @param children the string list of children for this parent
+
+ * @param archiveIndexStat the archive index filestatus
+
+ */
+
+private void fileStatusesInIndex(HarStatus parent,List<FileStatus> statuses,List<String> children) throws IOException {
+
+  String parentString=parent.getName();
+
+  if (!parentString.endsWith(Path.SEPARATOR)) {
+
+    parentString+=Path.SEPARATOR;
+
+  }
+
+  Path harPath=new Path(parentString);
+
+  int harlen=harPath.depth();
+
+  final Map<String,FileStatus> cache=new TreeMap<String,FileStatus>();
+
+  for (  HarStatus hstatus : metadata.archive.values()) {
+
+    String child=hstatus.getName();
+
+    if ((child.startsWith(parentString))) {
+
+      Path thisPath=new Path(child);
+
+      if (thisPath.depth() == harlen + 1) {
+
+        statuses.add(toFileStatus(hstatus,cache));
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Fix offset and length of block locations. Note that this method modifies the original array.
+
+ * @param locations block locations of har part file
+
+ * @param start the start of the desired range in the contained file
+
+ * @param len the length of the desired range
+
+ * @param fileOffsetInHar the offset of the desired file in the har part file
+
+ * @return block locations with fixed offset and length
+
+ */
+
+static BlockLocation[] fixBlockLocations(BlockLocation[] locations,long start,long len,long fileOffsetInHar){
+
+  long end=start + len;
+
+  for (  BlockLocation location : locations) {
+
+    long harBlockStart=location.getOffset() - fileOffsetInHar;
+
+    long harBlockEnd=harBlockStart + location.getLength();
+
+    if (start > harBlockStart) {
+
+      location.setOffset(start);
+
+      location.setLength(location.getLength() - (start - harBlockStart));
+
+    }
+
+ else {
+
+      location.setOffset(harBlockStart);
+
+    }
+
+    if (harBlockEnd > end) {
+
+      location.setLength(location.getLength() - (harBlockEnd - end));
+
+    }
+
+  }
+
+  return locations;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Get block locations from the underlying fs and fix their offsets and lengths.
+
+ * @param file the input filestatus to get block locations
+
+ * @param start the start of the desired range in the contained file
+
+ * @param len the length of the desired range
+
+ * @return block locations for this segment of file
+
+ * @throws IOException
+
+ */
+
+@Override public BlockLocation[] getFileBlockLocations(FileStatus file,long start,long len) throws IOException {
+
+  HarStatus hstatus=getFileHarStatus(file.getPath());
+
+  Path partPath=new Path(archivePath,hstatus.getPartName());
+
+  FileStatus partStatus=metadata.getPartFileStatus(partPath);
+
+  BlockLocation[] locations=fs.getFileBlockLocations(partStatus,hstatus.getStartIndex() + start,len);
+
+  return fixBlockLocations(locations,start,len,hstatus.getStartIndex());
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * @return null since no checksum algorithm is implemented.
+
+ */
+
+public FileChecksum getFileChecksum(Path f){
+
+  return null;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+private HarStatus getFileHarStatus(Path f) throws IOException {
+
+  Path p=makeQualified(f);
+
+  Path harPath=getPathInHar(p);
+
+  if (harPath == null) {
+
+    throw new IOException("Invalid file name: " + f + " in "+ uri);
+
+  }
+
+  HarStatus hstatus=metadata.archive.get(harPath);
+
+  if (hstatus == null) {
+
+    throw new FileNotFoundException("File: " + f + " does not exist in "+ uri);
+
+  }
+
+  return hstatus;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * return the filestatus of files in har archive. The permission returned are that of the archive index files. The permissions are not persisted  while creating a hadoop archive.
+
+ * @param f the path in har filesystem
+
+ * @return filestatus.
+
+ * @throws IOException
+
+ */
+
+@Override public FileStatus getFileStatus(Path f) throws IOException {
+
+  HarStatus hstatus=getFileHarStatus(f);
+
+  return toFileStatus(hstatus,null);
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Create a har specific auth  har-underlyingfs:port
+
+ * @param underLyingURI the uri of underlyingfilesystem
+
+ * @return har specific auth
+
+ */
+
+private String getHarAuth(URI underLyingUri){
+
+  String auth=underLyingUri.getScheme() + "-";
+
+  if (underLyingUri.getHost() != null) {
+
+    auth+=underLyingUri.getHost() + ":";
+
+    if (underLyingUri.getPort() != -1) {
+
+      auth+=underLyingUri.getPort();
+
+    }
+
+  }
+
+ else {
+
+    auth+=":";
+
+  }
+
+  return auth;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * the hash of the path p inside iniside the filesystem
+
+ * @param p the path in the harfilesystem
+
+ * @return the hash code of the path.
+
+ */
+
+public static int getHarHash(Path p){
+
+  return (p.toString().hashCode() & 0x7fffffff);
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+public int getHarVersion() throws IOException {
+
+  if (metadata != null) {
+
+    return metadata.getVersion();
+
+  }
+
+ else {
+
+    throw new IOException("Invalid meta data for the Har Filesystem");
+
+  }
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * return the top level archive path.
+
+ */
+
+public Path getHomeDirectory(){
+
+  return new Path(uri.toString());
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * this method returns the path  inside the har filesystem. this is relative path inside  the har filesystem.
+
+ * @param path the fully qualified path in the har filesystem.
+
+ * @return relative path in the filesystem.
+
+ */
+
+private Path getPathInHar(Path path){
+
+  Path harPath=new Path(path.toUri().getPath());
+
+  if (archivePath.compareTo(harPath) == 0)   return new Path(Path.SEPARATOR);
+
+  Path tmp=new Path(harPath.getName());
+
+  Path parent=harPath.getParent();
+
+  while (!(parent.compareTo(archivePath) == 0)) {
+
+    if (parent.toString().equals(Path.SEPARATOR)) {
+
+      tmp=null;
+
+      break;
+
+    }
+
+    tmp=new Path(parent.getName(),tmp);
+
+    parent=parent.getParent();
+
+  }
+
+  if (tmp != null)   tmp=new Path(Path.SEPARATOR,tmp);
+
+  return tmp;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Returns the uri of this filesystem. The uri is of the form  har://underlyingfsschema-host:port/pathintheunderlyingfs
+
+ */
+
+@Override public URI getUri(){
+
+  return this.uri;
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * return the top level archive.
+
+ */
+
+public Path getWorkingDirectory(){
+
+  return new Path(uri.toString());
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * public construction of harfilesystem
+
+ */
+
+public HarFileSystem(){
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Constructor to create a HarFileSystem with an underlying filesystem.
+
+ * @param fs
+
+ */
+
+public HarFileSystem(FileSystem fs){
+
+  super(fs);
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Initialize a Har filesystem per har archive. The  archive home directory is the top level directory in the filesystem that contains the HAR archive. Be careful with this method, you do not want to go  on creating new Filesystem instances per call to  path.getFileSystem(). the uri of Har is  har://underlyingfsscheme-host:port/archivepath. or  har:///archivepath. This assumes the underlying filesystem to be used in case not specified.
+
+ */
+
+public void initialize(URI name,Configuration conf) throws IOException {
+
+  URI underLyingURI=decodeHarURI(name,conf);
+
+  Path harPath=archivePath(new Path(name.getScheme(),name.getAuthority(),name.getPath()));
+
+  if (harPath == null) {
+
+    throw new IOException("Invalid path for the Har Filesystem. " + name.toString());
+
+  }
+
+  if (fs == null) {
+
+    fs=FileSystem.get(underLyingURI,conf);
+
+  }
+
+  uri=harPath.toUri();
+
+  archivePath=new Path(uri.getPath());
+
+  harAuth=getHarAuth(underLyingURI);
+
+  Path masterIndexPath=new Path(archivePath,"_masterindex");
+
+  Path archiveIndexPath=new Path(archivePath,"_index");
+
+  if (!fs.exists(masterIndexPath) || !fs.exists(archiveIndexPath)) {
+
+    throw new IOException("Invalid path for the Har Filesystem. " + "No index file in " + harPath);
+
+  }
+
+  metadata=harMetaCache.get(uri);
+
+  if (metadata != null) {
+
+    FileStatus mStat=fs.getFileStatus(masterIndexPath);
+
+    FileStatus aStat=fs.getFileStatus(archiveIndexPath);
+
+    if (mStat.getModificationTime() != metadata.getMasterIndexTimestamp() || aStat.getModificationTime() != metadata.getArchiveIndexTimestamp()) {
+
+      metadata=null;
+
+      harMetaCache.remove(uri);
+
+    }
+
+  }
+
+  if (metadata == null) {
+
+    metadata=new HarMetaData(fs,masterIndexPath,archiveIndexPath);
+
+    metadata.parseMetaData();
+
+    harMetaCache.put(uri,metadata);
+
+  }
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * liststatus returns the children of a directory  after looking up the index files.
+
+ */
+
+@Override public FileStatus[] listStatus(Path f) throws IOException {
+
+  List<FileStatus> statuses=new ArrayList<FileStatus>();
+
+  Path tmpPath=makeQualified(f);
+
+  Path harPath=getPathInHar(tmpPath);
+
+  HarStatus hstatus=metadata.archive.get(harPath);
+
+  if (hstatus == null) {
+
+    throw new FileNotFoundException("File " + f + " not found in "+ archivePath);
+
+  }
+
+  if (hstatus.isDir()) {
+
+    fileStatusesInIndex(hstatus,statuses,hstatus.children);
+
+  }
+
+ else {
+
+    statuses.add(toFileStatus(hstatus,null));
+
+  }
+
+  return statuses.toArray(new FileStatus[statuses.size()]);
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+@Override public Path makeQualified(Path path){
+
+  Path fsPath=path;
+
+  if (!path.isAbsolute()) {
+
+    fsPath=new Path(archivePath,path);
+
+  }
+
+  URI tmpURI=fsPath.toUri();
+
+  return new Path(uri.getScheme(),harAuth,tmpURI.getPath());
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+private Path makeRelative(String initial,Path p){
+
+  String scheme=this.uri.getScheme();
+
+  String authority=this.uri.getAuthority();
+
+  Path root=new Path(Path.SEPARATOR);
+
+  if (root.compareTo(p) == 0)   return new Path(scheme,authority,initial);
+
+  Path retPath=new Path(p.getName());
+
+  Path parent=p.getParent();
+
+  for (int i=0; i < p.depth() - 1; i++) {
+
+    retPath=new Path(parent.getName(),retPath);
+
+    parent=parent.getParent();
+
+  }
+
+  return new Path(new Path(scheme,authority,initial),retPath.toString());
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * not implemented.
+
+ */
+
+public boolean mkdirs(Path f,FsPermission permission) throws IOException {
+
+  throw new IOException("Har: mkdirs not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Returns a har input stream which fakes end of  file. It reads the index files to get the part  file name and the size and start of the file.
+
+ */
+
+@Override public FSDataInputStream open(Path f,int bufferSize) throws IOException {
+
+  HarStatus hstatus=getFileHarStatus(f);
+
+  if (hstatus.isDir()) {
+
+    throw new FileNotFoundException(f + " : not a file in " + archivePath);
+
+  }
+
+  return new HarFSDataInputStream(fs,new Path(archivePath,hstatus.getPartName()),hstatus.getStartIndex(),hstatus.getLength(),bufferSize);
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * not implemented.
+
+ */
+
+public void setOwner(Path p,String username,String groupname) throws IOException {
+
+  throw new IOException("Har: setowner not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Not implemented.
+
+ */
+
+public void setPermission(Path p,FsPermission permisssion) throws IOException {
+
+  throw new IOException("Har: setPermission not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Not implemented.
+
+ */
+
+@Override public boolean setReplication(Path src,short replication) throws IOException {
+
+  throw new IOException("Har: setreplication not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+public void setWorkingDirectory(Path newDir){
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * not implemented.
+
+ */
+
+public Path startLocalOutput(Path fsOutputFile,Path tmpLocalFile) throws IOException {
+
+  throw new IOException("Har: startLocalOutput not allowed");
+
+}
+
+Location: HarFileSystem.java
+
+Content: 
+
+/** 
+
+ * Combine the status stored in the index and the underlying status. 
+
+ * @param h status stored in the index
+
+ * @param cache caching the underlying file statuses
+
+ * @return the combined file status
+
+ * @throws IOException
+
+ */
+
+private FileStatus toFileStatus(HarStatus h,Map<String,FileStatus> cache) throws IOException {
+
+  FileStatus underlying=null;
+
+  if (cache != null) {
+
+    underlying=cache.get(h.partName);
+
+  }
+
+  if (underlying == null) {
+
+    final Path p=h.isDir ? archivePath : new Path(archivePath,h.partName);
+
+    underlying=fs.getFileStatus(p);
+
+    if (cache != null) {
+
+      cache.put(h.partName,underlying);
+
+    }
+
+  }
+
+  long modTime=0;
+
+  int version=metadata.getVersion();
+
+  if (version < 3) {
+
+    modTime=underlying.getModificationTime();
+
+  }
+
+ else   if (version == 3) {
+
+    modTime=h.getModificationTime();
+
+  }
+
+  return new FileStatus(h.isDir() ? 0L : h.getLength(),h.isDir(),underlying.getReplication(),underlying.getBlockSize(),modTime,underlying.getAccessTime(),underlying.getPermission(),underlying.getOwner(),underlying.getGroup(),makeRelative(this.uri.getPath(),new Path(h.name)));
+
+}
+

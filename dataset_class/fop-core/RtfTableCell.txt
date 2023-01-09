@@ -1,0 +1,318 @@
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * get cell width 
+
+ */
+
+int getCellWidth(){
+
+  return this.cellWidth;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * @return horizontal cell merging status
+
+ */
+
+public int getHMerge(){
+
+  return this.hMerge;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * @return vertical cell merging status
+
+ */
+
+public int getVMerge(){
+
+  return this.vMerge;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * true if the "par" control word must be written for given RtfParagraph (which is not the case for the last non-empty paragraph of the cell)
+
+ */
+
+boolean paragraphNeedsPar(RtfParagraph p){
+
+  boolean pFound=false;
+
+  boolean result=false;
+
+  for (  final Object o : getChildren()) {
+
+    if (!pFound) {
+
+      pFound=(o == p);
+
+    }
+
+ else {
+
+      if (o instanceof RtfParagraph) {
+
+        final RtfParagraph p2=(RtfParagraph)o;
+
+        if (!p2.isEmpty()) {
+
+          result=true;
+
+          break;
+
+        }
+
+      }
+
+ else       if (o instanceof RtfTable) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * Create an RTF element as a child of given container 
+
+ */
+
+RtfTableCell(RtfTableRow parent,Writer w,int cellWidth,int idNum) throws IOException {
+
+  super(parent,w);
+
+  id=idNum;
+
+  parentRow=parent;
+
+  this.cellWidth=cellWidth;
+
+  setCenter=false;
+
+  setRight=false;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * Create an RTF element as a child of given container 
+
+ */
+
+RtfTableCell(RtfTableRow parent,Writer w,int cellWidth,RtfAttributes attrs,int idNum) throws IOException {
+
+  super(parent,w,attrs);
+
+  id=idNum;
+
+  parentRow=parent;
+
+  this.cellWidth=cellWidth;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * Set horizontal cell merging status
+
+ * @param mergeStatus mergeStatus to set
+
+ */
+
+public void setHMerge(int mergeStatus){
+
+  this.hMerge=mergeStatus;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * The table cell decides whether or not a newly added paragraph break will be used to write the cell-end control word. For nested tables it is not necessary.
+
+ * @param parBreak the paragraph break element
+
+ */
+
+public void setLastParagraph(RtfParagraphBreak parBreak){
+
+  if (parBreak != null) {
+
+    lastBreak=parBreak;
+
+  }
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * @param mergeStatus vertical cell merging status to set
+
+ */
+
+public void setVMerge(int mergeStatus){
+
+  this.vMerge=mergeStatus;
+
+}
+
+Location: RtfTableCell.java
+
+Content: 
+
+/** 
+
+ * used by RtfTableRow to write the <celldef> cell definition control words
+
+ * @param offset sum of the widths of preceeding cells in same row
+
+ * @return offset + width of this cell
+
+ */
+
+int writeCellDef(int offset) throws IOException {
+
+  if (hMerge == MERGE_WITH_PREVIOUS) {
+
+    return offset;
+
+  }
+
+  newLine();
+
+  this.widthOffset=offset;
+
+  if (vMerge == MERGE_START) {
+
+    writeControlWord("clvmgf");
+
+  }
+
+ else   if (vMerge == MERGE_WITH_PREVIOUS) {
+
+    writeControlWord("clvmrg");
+
+  }
+
+  writeAttributes(attrib,ITableAttributes.CELL_COLOR);
+
+  writeAttributes(attrib,ITableAttributes.ATTRIB_CELL_PADDING);
+
+  writeAttributes(attrib,ITableAttributes.CELL_BORDER);
+
+  writeAttributes(attrib,IBorderAttributes.BORDERS);
+
+  int iCurrentWidth=this.cellWidth;
+
+  if (attrib.getValue("number-columns-spanned") != null) {
+
+    int nbMergedCells=(Integer)attrib.getValue("number-columns-spanned");
+
+    RtfTable tab=getRow().getTable();
+
+    ITableColumnsInfo tableColumnsInfo=tab.getITableColumnsInfo();
+
+    tableColumnsInfo.selectFirstColumn();
+
+    while ((this.id - 1) != tableColumnsInfo.getColumnIndex()) {
+
+      tableColumnsInfo.selectNextColumn();
+
+    }
+
+    int i=nbMergedCells - 1;
+
+    while (i > 0) {
+
+      tableColumnsInfo.selectNextColumn();
+
+      iCurrentWidth+=(int)tableColumnsInfo.getColumnWidth();
+
+      i--;
+
+    }
+
+    if (this.getRow().isHighestCell(this.id + nbMergedCells - 1)) {
+
+      writeAttributes(this.getRow().getTable().getBorderAttributes(),new String[]{ITableAttributes.CELL_BORDER_RIGHT});
+
+    }
+
+  }
+
+  final int xPos=offset + iCurrentWidth;
+
+  if (setCenter) {
+
+    writeControlWord("trqc");
+
+  }
+
+ else   if (setRight) {
+
+    writeControlWord("trqr");
+
+  }
+
+ else {
+
+    writeControlWord("trql");
+
+  }
+
+  writeAttributes(attrib,ITableAttributes.CELL_VERT_ALIGN);
+
+  writeControlWord("cellx" + xPos);
+
+  return xPos;
+
+}
+

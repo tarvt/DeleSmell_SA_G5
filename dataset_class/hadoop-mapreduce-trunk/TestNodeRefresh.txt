@@ -1,0 +1,596 @@
+Location: TestNodeRefresh.java
+
+Content: 
+
+private AdminOperationsProtocol getClient(Configuration conf,UserGroupInformation ugi) throws IOException {
+
+  return (AdminOperationsProtocol)RPC.getProxy(AdminOperationsProtocol.class,AdminOperationsProtocol.versionID,JobTracker.getAddress(conf),ugi,conf,NetUtils.getSocketFactory(conf,AdminOperationsProtocol.class));
+
+}
+
+Location: TestNodeRefresh.java
+
+Content: 
+
+private String getHostname(int i){
+
+  return "host" + i + ".com";
+
+}
+
+Location: TestNodeRefresh.java
+
+Content: 
+
+private void startCluster(int numHosts,int numTrackerPerHost,int numExcluded,UserGroupInformation clusterUgi,Configuration conf) throws IOException {
+
+  try {
+
+    owner=UserGroupInformation.getLoginUser();
+
+    user1=UserGroupInformation.createUserForTesting("user1",new String[]{"user1"});
+
+    user2=UserGroupInformation.createUserForTesting("user2",new String[]{"user2"});
+
+    user3=UserGroupInformation.createUserForTesting("user3",new String[]{"abc"});
+
+    user4=UserGroupInformation.createUserForTesting("user4",new String[]{"supergroup"});
+
+    user5=UserGroupInformation.createUserForTesting("user5",new String[]{"user5"});
+
+    conf.setBoolean("dfs.replication.considerLoad",false);
+
+    hosts=new String[numHosts];
+
+    for (int i=1; i <= numHosts; ++i) {
+
+      hosts[i - 1]=getHostname(i);
+
+    }
+
+    dfs=new MiniDFSCluster(conf,1,true,null,hosts);
+
+    dfs.waitActive();
+
+    dfs.startDataNodes(conf,numHosts,true,null,null,hosts,null);
+
+    dfs.waitActive();
+
+    FileSystem.mkdirs(dfs.getFileSystem(),new Path("/"),new FsPermission((short)0777));
+
+    namenode=(dfs.getFileSystem()).getUri().getHost() + ":" + (dfs.getFileSystem()).getUri().getPort();
+
+    trackerHosts=new String[numHosts * numTrackerPerHost];
+
+    for (int i=1; i <= (numHosts * numTrackerPerHost); ++i) {
+
+      trackerHosts[i - 1]=getHostname(i);
+
+    }
+
+    JobConf jtConf=new JobConf(conf);
+
+    mr=new MiniMRCluster(0,0,numHosts * numTrackerPerHost,namenode,1,null,trackerHosts,clusterUgi,jtConf,numExcluded * numTrackerPerHost);
+
+    jt=mr.getJobTrackerRunner().getJobTracker();
+
+    Set<String> hostsSeen=new HashSet<String>();
+
+    for (    TaskTrackerStatus status : jt.taskTrackers()) {
+
+      hostsSeen.add(status.getHost());
+
+    }
+
+    assertEquals("Not all hosts are up",numHosts - numExcluded,hostsSeen.size());
+
+  }
+
+ catch (  IOException ioe) {
+
+    hongshuai();
+
+    hosts=null;
+
+    trackerHosts=null;
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+      dfs=null;
+
+      namenode=null;
+
+    }
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+      mr=null;
+
+      jt=null;
+
+    }
+
+  }
+
+}
+
+Location: TestNodeRefresh.java
+
+Content: 
+
+/** 
+
+ * Check refreshNodes for decommissioning blacklisted nodes. 
+
+ */
+
+public void testBlacklistedNodeDecommissioning() throws Exception {
+
+  LOG.info("Testing blacklisted node decommissioning");
+
+  Configuration conf=new Configuration();
+
+  conf.set(JTConfig.JT_MAX_TRACKER_BLACKLISTS,"1");
+
+  startCluster(2,1,0,UserGroupInformation.getLoginUser(),conf);
+
+  assertEquals("Trackers not up",2,mr.getJobTrackerRunner().getJobTracker().getActiveTrackers().length);
+
+  assertEquals("Active tracker count mismatch",2,jt.getClusterStatus(false).getTaskTrackers());
+
+  assertEquals("Blacklisted tracker count mismatch",0,jt.getClusterStatus(false).getBlacklistedTrackers());
+
+  JobConf jConf=mr.createJobConf();
+
+  jConf.set(MRJobConfig.MAX_TASK_FAILURES_PER_TRACKER,"1");
+
+  jConf.setJobName("test-job-fail-once");
+
+  jConf.setMapperClass(FailOnceMapper.class);
+
+  jConf.setReducerClass(IdentityReducer.class);
+
+  jConf.setNumMapTasks(1);
+
+  jConf.setNumReduceTasks(0);
+
+  RunningJob job=UtilsForTests.runJob(jConf,new Path("in"),new Path("out"));
+
+  job.waitForCompletion();
+
+  assertEquals("Active tracker count mismatch",1,jt.getClusterStatus(false).getTaskTrackers());
+
+  assertEquals("Blacklisted tracker count mismatch",1,jt.getClusterStatus(false).getBlacklistedTrackers());
+
+  String hostToDecommission=JobInProgress.convertTrackerNameToHostName(jt.getBlacklistedTrackers()[0].getTaskTrackerName());
+
+  LOG.info("Decommissioning host " + hostToDecommission);
+
+  Set<String> decom=new HashSet<String>(1);
+
+  decom.add(hostToDecommission);
+
+  jt.decommissionNodes(decom);
+
+  assertEquals("Tracker is not lost upon host decommissioning",1,jt.getClusterStatus(false).getTaskTrackers());
+
+  assertEquals("Blacklisted tracker count incorrect in cluster status after " + "decommissioning",0,jt.getClusterStatus(false).getBlacklistedTrackers());
+
+  assertEquals("Tracker is not lost upon host decommissioning",1,jt.taskTrackers().size());
+
+  stopCluster();
+
+}
+
+Location: TestNodeRefresh.java
+
+Content: 
+
+/** 
+
+ * Check node refresh for decommissioning. Check if an allowed host is  disallowed upon refresh. Also check if only owner/cluster administrator is  allowed to fire this command.
+
+ */
+
+public void testMRRefreshDecommissioning() throws IOException {
+
+  Configuration conf=new Configuration();
+
+  File file=new File("hosts.exclude");
+
+  file.delete();
+
+  startCluster(2,1,0,UserGroupInformation.getLoginUser(),conf);
+
+  String hostToDecommission=getHostname(1);
+
+  conf=mr.createJobConf(new JobConf(conf));
+
+  FileOutputStream out=new FileOutputStream(file);
+
+  LOG.info("Writing excluded nodes to log file " + file.toString());
+
+  BufferedWriter writer=null;
+
+  try {
+
+    writer=new BufferedWriter(new OutputStreamWriter(out));
+
+    writer.write(hostToDecommission + "\n");
+
+  }
+
+  finally {
+
+    if (writer != null) {
+
+      writer.close();
+
+    }
+
+    out.close();
+
+  }
+
+  file.deleteOnExit();
+
+  AdminOperationsProtocol client=getClient(conf,owner);
+
+  try {
+
+    client.refreshNodes();
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertEquals("Tracker is not lost upon host decommissioning",1,jt.getClusterStatus(false).getTaskTrackers());
+
+  assertEquals("Excluded node count is incorrect",1,jt.getClusterStatus(false).getNumExcludedNodes());
+
+  for (  TaskTrackerStatus status : jt.taskTrackers()) {
+
+    assertFalse("Tracker from decommissioned host still exist",status.getHost().equals(hostToDecommission));
+
+  }
+
+  stopCluster();
+
+}
+
+Location: TestNodeRefresh.java
+
+Content: 
+
+/** 
+
+ * Check default value of HOSTS_EXCLUDE. Also check if only  owner is allowed to this command.
+
+ */
+
+public void testMRRefreshDefault() throws IOException {
+
+  Configuration conf=new Configuration();
+
+  conf.set(JTConfig.JT_HOSTS_EXCLUDE_FILENAME,"");
+
+  startCluster(2,1,0,UserGroupInformation.getLoginUser(),conf);
+
+  conf=mr.createJobConf(new JobConf(conf));
+
+  AdminOperationsProtocol client=getClient(conf,user1);
+
+  boolean success=false;
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertFalse("Invalid user performed privileged refresh operation",success);
+
+  success=false;
+
+  client=getClient(conf,owner);
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertTrue("Privileged user denied permission for refresh operation",success);
+
+  success=false;
+
+  client=getClient(conf,user4);
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertFalse("Invalid user performed privileged refresh operation",success);
+
+  assertEquals("Trackers are lost upon refresh with empty hosts.exclude",2,jt.getClusterStatus(false).getTaskTrackers());
+
+  assertEquals("Excluded node count is incorrect",0,jt.getClusterStatus(false).getNumExcludedNodes());
+
+  Set<String> hosts=new HashSet<String>();
+
+  for (  TaskTrackerStatus status : jt.taskTrackers()) {
+
+    hosts.add(status.getHost());
+
+  }
+
+  assertEquals("Host is excluded upon refresh with empty hosts.exclude",2,hosts.size());
+
+  stopCluster();
+
+}
+
+Location: TestNodeRefresh.java
+
+Content: 
+
+/** 
+
+ * Check node refresh for recommissioning. Check if an disallowed host is  allowed upon refresh.
+
+ */
+
+public void testMRRefreshRecommissioning() throws IOException {
+
+  String hostToInclude=getHostname(1);
+
+  Configuration conf=new Configuration();
+
+  File file=new File("hosts.exclude");
+
+  file.delete();
+
+  FileOutputStream out=new FileOutputStream(file);
+
+  LOG.info("Writing excluded nodes to log file " + file.toString());
+
+  BufferedWriter writer=null;
+
+  try {
+
+    writer=new BufferedWriter(new OutputStreamWriter(out));
+
+    writer.write(hostToInclude + "\n");
+
+  }
+
+  finally {
+
+    if (writer != null) {
+
+      writer.close();
+
+    }
+
+    out.close();
+
+  }
+
+  startCluster(2,1,1,UserGroupInformation.getLoginUser(),conf);
+
+  file.delete();
+
+  out=new FileOutputStream(file);
+
+  LOG.info("Clearing hosts.exclude file " + file.toString());
+
+  writer=null;
+
+  try {
+
+    writer=new BufferedWriter(new OutputStreamWriter(out));
+
+    writer.write("\n");
+
+  }
+
+  finally {
+
+    if (writer != null) {
+
+      writer.close();
+
+    }
+
+    out.close();
+
+  }
+
+  file.deleteOnExit();
+
+  conf=mr.createJobConf(new JobConf(conf));
+
+  AdminOperationsProtocol client=getClient(conf,owner);
+
+  try {
+
+    client.refreshNodes();
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  mr.startTaskTracker(hostToInclude,null,2,1);
+
+  while (jt.taskTrackers().size() < 2) {
+
+    UtilsForTests.waitFor(100);
+
+  }
+
+  assertEquals("Excluded node count is incorrect",0,jt.getClusterStatus(false).getNumExcludedNodes());
+
+  boolean seen=false;
+
+  for (  TaskTrackerStatus status : jt.taskTrackers()) {
+
+    if (status.getHost().equals(hostToInclude)) {
+
+      seen=true;
+
+      break;
+
+    }
+
+  }
+
+  assertTrue("Tracker from excluded host doesnt exist",seen);
+
+  stopCluster();
+
+}
+
+Location: TestNodeRefresh.java
+
+Content: 
+
+/** 
+
+ * Check refresh with a specific user/group set in the conf
+
+ */
+
+public void testMRSuperUsers() throws IOException {
+
+  Configuration conf=new Configuration();
+
+  conf.set(MRConfig.MR_SUPERGROUP,"supergroup");
+
+  conf.set(MRConfig.MR_ADMINS,"user5 abc");
+
+  startCluster(2,1,0,UserGroupInformation.createRemoteUser("user1"),conf);
+
+  conf=mr.createJobConf(new JobConf(conf));
+
+  AdminOperationsProtocol client=getClient(conf,user2);
+
+  boolean success=false;
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertFalse("Invalid user performed privileged refresh operation",success);
+
+  success=false;
+
+  client=getClient(conf,user1);
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertTrue("Privileged user denied permission for refresh operation",success);
+
+  success=false;
+
+  client=getClient(conf,user3);
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertTrue("Admin group member denied permission for refresh operation",success);
+
+  success=false;
+
+  client=getClient(conf,user5);
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertTrue("Admin user denied permission for refresh operation",success);
+
+  success=false;
+
+  client=getClient(conf,user4);
+
+  try {
+
+    client.refreshNodes();
+
+    success=true;
+
+  }
+
+ catch (  IOException ioe) {
+
+  }
+
+  assertTrue("Deprecated Super group member denied permission for refresh" + " operation",success);
+
+  stopCluster();
+
+}
+

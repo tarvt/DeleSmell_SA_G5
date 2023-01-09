@@ -1,0 +1,204 @@
+Location: JHLogAnalyzer.java
+
+Content: 
+
+/** 
+
+ * Result is combined from all reduce output files and is written to RESULT_FILE in the format column 1: 
+
+ */
+
+private static void analyzeResult(FileSystem fs,int testType,long execTime,Path resFileName) throws IOException {
+
+  LOG.info("Analizing results ...");
+
+  DataOutputStream out=null;
+
+  BufferedWriter writer=null;
+
+  try {
+
+    out=new DataOutputStream(fs.create(resFileName));
+
+    writer=new BufferedWriter(new OutputStreamWriter(out));
+
+    writer.write("SERIES\tPERIOD\tTYPE\tSLOT_HOUR\n");
+
+    FileStatus[] reduceFiles=fs.listStatus(OUTPUT_DIR);
+
+    assert reduceFiles.length == JHLAPartitioner.NUM_REDUCERS;
+
+    for (int i=0; i < JHLAPartitioner.NUM_REDUCERS; i++) {
+
+      DataInputStream in=null;
+
+      BufferedReader lines=null;
+
+      try {
+
+        in=fs.open(reduceFiles[i].getPath());
+
+        lines=new BufferedReader(new InputStreamReader(in));
+
+        String line;
+
+        while ((line=lines.readLine()) != null) {
+
+          StringTokenizer tokens=new StringTokenizer(line,"\t*");
+
+          String attr=tokens.nextToken();
+
+          String dateTime=tokens.nextToken();
+
+          String taskType=tokens.nextToken();
+
+          double val=Long.parseLong(tokens.nextToken()) / (double)DEFAULT_TIME_INTERVAL_MSEC;
+
+          writer.write(attr.substring(2));
+
+          writer.write("\t");
+
+          writer.write(dateTime);
+
+          writer.write("\t");
+
+          writer.write(taskType);
+
+          writer.write("\t");
+
+          writer.write(String.valueOf((float)val));
+
+          writer.newLine();
+
+        }
+
+      }
+
+  finally {
+
+        if (lines != null)         lines.close();
+
+        if (in != null)         in.close();
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    if (writer != null)     writer.close();
+
+    if (out != null)     out.close();
+
+  }
+
+  LOG.info("Analizing results ... done.");
+
+}
+
+Location: JHLogAnalyzer.java
+
+Content: 
+
+private static void cleanup(Configuration conf) throws IOException {
+
+  LOG.info("Cleaning up test files");
+
+  FileSystem fs=FileSystem.get(conf);
+
+  fs.delete(new Path(JHLA_ROOT_DIR),true);
+
+}
+
+Location: JHLogAnalyzer.java
+
+Content: 
+
+private static void createControlFile(FileSystem fs,Path jhLogDir) throws IOException {
+
+  LOG.info("creating control file: JH log dir = " + jhLogDir);
+
+  FileCreateDaemon.createControlFile(fs,jhLogDir);
+
+  LOG.info("created control file: JH log dir = " + jhLogDir);
+
+}
+
+Location: JHLogAnalyzer.java
+
+Content: 
+
+private static String getFileName(int fIdx){
+
+  return BASE_INPUT_FILE_NAME + Integer.toString(fIdx);
+
+}
+
+Location: JHLogAnalyzer.java
+
+Content: 
+
+/** 
+
+ * If keyVal is of the form KEY="VALUE", then this will return [KEY, VALUE]
+
+ */
+
+private static String[] getKeyValue(String t) throws IOException {
+
+  String[] keyVal=t.split("=\"*|\"");
+
+  return keyVal;
+
+}
+
+Location: JHLogAnalyzer.java
+
+Content: 
+
+private static Collection<String> getUserList(String users){
+
+  if (users == null)   return null;
+
+  StringTokenizer tokens=new StringTokenizer(users,",;");
+
+  Collection<String> userList=new ArrayList<String>(tokens.countTokens());
+
+  while (tokens.hasMoreTokens())   userList.add(tokens.nextToken());
+
+  return userList;
+
+}
+
+Location: JHLogAnalyzer.java
+
+Content: 
+
+private static void runJHLA(Class<? extends Mapper<Text,LongWritable,Text,Text>> mapperClass,Path outputDir,Configuration fsConfig) throws IOException {
+
+  JobConf job=new JobConf(fsConfig,JHLogAnalyzer.class);
+
+  job.setPartitionerClass(JHLAPartitioner.class);
+
+  FileInputFormat.setInputPaths(job,INPUT_DIR);
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setMapperClass(mapperClass);
+
+  job.setReducerClass(AccumulatingReducer.class);
+
+  FileOutputFormat.setOutputPath(job,outputDir);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setNumReduceTasks(JHLAPartitioner.NUM_REDUCERS);
+
+  JobClient.runJob(job);
+
+}
+

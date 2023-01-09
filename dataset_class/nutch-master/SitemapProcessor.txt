@@ -1,0 +1,154 @@
+Location: SitemapProcessor.java
+
+Content: 
+
+public void sitemap(Path crawldb,Path hostdb,Path sitemapUrlDir,boolean strict,boolean filter,boolean normalize,int threads) throws Exception {
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("SitemapProcessor: Starting at {}",sdf.format(start));
+
+  FileSystem fs=crawldb.getFileSystem(getConf());
+
+  Path old=new Path(crawldb,"old");
+
+  Path current=new Path(crawldb,"current");
+
+  Path tempCrawlDb=new Path(crawldb,"crawldb-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Path lock=new Path(crawldb,LOCK_NAME);
+
+  if (!fs.exists(current))   fs.mkdirs(current);
+
+  LockUtil.createLockFile(fs,lock,false);
+
+  Configuration conf=getConf();
+
+  conf.setBoolean(SITEMAP_STRICT_PARSING,strict);
+
+  conf.setBoolean(SITEMAP_URL_FILTERING,filter);
+
+  conf.setBoolean(SITEMAP_URL_NORMALIZING,normalize);
+
+  conf.setBoolean("mapreduce.fileoutputcommitter.marksuccessfuljobs",false);
+
+  Job job=Job.getInstance(conf,"SitemapProcessor_" + crawldb.toString());
+
+  job.setJarByClass(SitemapProcessor.class);
+
+  MultipleInputs.addInputPath(job,current,SequenceFileInputFormat.class);
+
+  if (sitemapUrlDir != null)   MultipleInputs.addInputPath(job,sitemapUrlDir,KeyValueTextInputFormat.class);
+
+  if (hostdb != null)   MultipleInputs.addInputPath(job,new Path(hostdb,CURRENT_NAME),SequenceFileInputFormat.class);
+
+  FileOutputFormat.setOutputPath(job,tempCrawlDb);
+
+  job.setOutputFormatClass(MapFileOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(CrawlDatum.class);
+
+  job.setMapperClass(MultithreadedMapper.class);
+
+  MultithreadedMapper.setMapperClass(job,SitemapMapper.class);
+
+  MultithreadedMapper.setNumberOfThreads(job,threads);
+
+  job.setReducerClass(SitemapReducer.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="SitemapProcessor_" + crawldb.toString() + " job did not succeed, job status: "+ job.getStatus().getState()+ ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      NutchJob.cleanupAfterFailure(tempCrawlDb,lock,fs);
+
+      throw new RuntimeException(message);
+
+    }
+
+    boolean preserveBackup=conf.getBoolean("db.preserve.backup",true);
+
+    if (!preserveBackup && fs.exists(old))     fs.delete(old,true);
+
+ else     FSUtils.replace(fs,old,current,true);
+
+    FSUtils.replace(fs,current,tempCrawlDb,true);
+
+    LockUtil.removeLockFile(fs,lock);
+
+    if (LOG.isInfoEnabled()) {
+
+      long filteredRecords=job.getCounters().findCounter("Sitemap","filtered_records").getValue();
+
+      long fromHostname=job.getCounters().findCounter("Sitemap","sitemaps_from_hostname").getValue();
+
+      long fromSeeds=job.getCounters().findCounter("Sitemap","sitemap_seeds").getValue();
+
+      long failedFetches=job.getCounters().findCounter("Sitemap","failed_fetches").getValue();
+
+      long newSitemapEntries=job.getCounters().findCounter("Sitemap","new_sitemap_entries").getValue();
+
+      LOG.info("SitemapProcessor: Total records rejected by filters: {}",filteredRecords);
+
+      LOG.info("SitemapProcessor: Total sitemaps from host name: {}",fromHostname);
+
+      LOG.info("SitemapProcessor: Total sitemaps from seed urls: {}",fromSeeds);
+
+      LOG.info("SitemapProcessor: Total failed sitemap fetches: {}",failedFetches);
+
+      LOG.info("SitemapProcessor: Total new sitemap entries added: {}",newSitemapEntries);
+
+      long end=System.currentTimeMillis();
+
+      LOG.info("SitemapProcessor: Finished at {}, elapsed: {}",sdf.format(end),TimingUtil.elapsedTime(start,end));
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("SitemapProcessor_" + crawldb.toString(),e);
+
+    NutchJob.cleanupAfterFailure(tempCrawlDb,lock,fs);
+
+    throw e;
+
+  }
+
+}
+
+Location: SitemapProcessor.java
+
+Content: 
+
+public static void usage(){
+
+  System.err.println("Usage:\n SitemapProcessor <crawldb> [-hostdb <hostdb>] [-sitemapUrls <url_dir>] " + "[-threads <threads>] [-force] [-noStrict] [-noFilter] [-noNormalize]\n");
+
+  System.err.println("\t<crawldb>\t\tpath to crawldb where the sitemap urls would be injected");
+
+  System.err.println("\t-hostdb <hostdb>\tpath of a hostdb. Sitemap(s) from these hosts would be downloaded");
+
+  System.err.println("\t-sitemapUrls <url_dir>\tpath to directory with sitemap urls or hostnames");
+
+  System.err.println("\t-threads <threads>\tNumber of threads created per mapper to fetch sitemap urls (default: 8)");
+
+  System.err.println("\t-force\t\t\tforce update even if CrawlDb appears to be locked (CAUTION advised)");
+
+  System.err.println("\t-noStrict\t\tBy default Sitemap parser rejects invalid urls. '-noStrict' disables that.");
+
+  System.err.println("\t-noFilter\t\tturn off URLFilters on urls (optional)");
+
+  System.err.println("\t-noNormalize\t\tturn off URLNormalizer on urls (optional)");
+
+}
+

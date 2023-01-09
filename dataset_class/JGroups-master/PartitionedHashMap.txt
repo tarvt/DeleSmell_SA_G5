@@ -1,0 +1,400 @@
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void addMembershipListener(MembershipListener l){
+
+  membership_listeners.add(l);
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public long getCachingTime(){
+
+  return caching_time;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public long getCallTimeout(){
+
+  return call_timeout;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public HashFunction getHashFunction(){
+
+  return hash_function;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public Cache<K,V> getL1Cache(){
+
+  return l1_cache;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public Cache<K,V> getL2Cache(){
+
+  return l2_cache;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+@ManagedAttribute public String getLocalAddressAsString(){
+
+  return local_addr != null ? local_addr.toString() : "null";
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+private Address getNode(K key){
+
+  return hash_function.hash(key,null);
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public String getProps(){
+
+  return props;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+@ManagedOperation public V get(K key){
+
+  if (l1_cache != null) {
+
+    V val=l1_cache.get(key);
+
+    if (val != null) {
+
+      if (log.isTraceEnabled())       log.trace("returned value " + val + " for "+ key+ " from L1 cache");
+
+      return val;
+
+    }
+
+  }
+
+  Cache.Value<V> val;
+
+  try {
+
+    Address dest_node=getNode(key);
+
+    if (dest_node.equals(local_addr)) {
+
+      val=l2_cache.getEntry(key);
+
+    }
+
+ else {
+
+      val=disp.callRemoteMethod(dest_node,new MethodCall(GET,key),new RequestOptions(ResponseMode.GET_FIRST,call_timeout));
+
+    }
+
+    if (val != null) {
+
+      V retval=val.getValue();
+
+      if (l1_cache != null && val.getTimeout() >= 0)       l1_cache.put(key,retval,val.getTimeout());
+
+      return retval;
+
+    }
+
+    return null;
+
+  }
+
+ catch (  Throwable t) {
+
+    if (log.isWarnEnabled())     log.warn("_get() failed",t);
+
+    return null;
+
+  }
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+@ManagedAttribute public boolean isL1CacheEnabled(){
+
+  return l1_cache != null;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public boolean isMigrateData(){
+
+  return migrate_data;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+private void migrateData(){
+
+  for (  Map.Entry<K,Cache.Value<V>> entry : l2_cache.entrySet()) {
+
+    K key=entry.getKey();
+
+    Address node=getNode(key);
+
+    if (!node.equals(local_addr)) {
+
+      Cache.Value<V> val=entry.getValue();
+
+      put(key,val.getValue(),val.getTimeout());
+
+      l2_cache.remove(key);
+
+      if (log.isTraceEnabled())       log.trace("migrated " + key + " from "+ local_addr+ " to "+ node);
+
+    }
+
+  }
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public PartitionedHashMap(String props,String cluster_name){
+
+  this.props=props;
+
+  this.cluster_name=cluster_name;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+@ManagedOperation public void put(K key,V val){
+
+  put(key,val,caching_time);
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+/** 
+
+ * Adds a key/value to the cache, replacing a previous item if there was one
+
+ * @param key The key
+
+ * @param val The value
+
+ * @param caching_time Time to live. -1 means never cache, 0 means cache forever. All other (positive) valuesare the number of milliseconds to cache the item
+
+ */
+
+@ManagedOperation public void put(K key,V val,long caching_time){
+
+  Address dest_node=getNode(key);
+
+  if (dest_node.equals(local_addr)) {
+
+    l2_cache.put(key,val,caching_time);
+
+  }
+
+ else {
+
+    sendPut(dest_node,key,val,caching_time,false);
+
+  }
+
+  if (l1_cache != null && caching_time >= 0)   l1_cache.put(key,val,caching_time);
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void removeMembershipListener(MembershipListener l){
+
+  membership_listeners.remove(l);
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+private void sendPut(Address dest,K key,V val,long caching_time,boolean synchronous){
+
+  try {
+
+    ResponseMode mode=synchronous ? ResponseMode.GET_ALL : ResponseMode.GET_NONE;
+
+    disp.callRemoteMethod(dest,new MethodCall(PUT,key,val,caching_time),new RequestOptions(mode,call_timeout));
+
+  }
+
+ catch (  Throwable t) {
+
+    if (log.isWarnEnabled())     log.warn("_put() failed",t);
+
+  }
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void setCachingTime(long caching_time){
+
+  this.caching_time=caching_time;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void setCallTimeout(long call_timeout){
+
+  this.call_timeout=call_timeout;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void setHashFunction(HashFunction<K> hash_function){
+
+  this.hash_function=hash_function;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void setL1Cache(Cache<K,V> cache){
+
+  if (l1_cache != null)   l1_cache.stop();
+
+  l1_cache=cache;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void setL2Cache(Cache<K,V> cache){
+
+  if (l2_cache != null)   l2_cache.stop();
+
+  l2_cache=cache;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void setMigrateData(boolean migrate_data){
+
+  this.migrate_data=migrate_data;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public void setProps(String props){
+
+  this.props=props;
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public Cache.Value<V> _get(K key){
+
+  if (log.isTraceEnabled())   log.trace("_get(" + key + ")");
+
+  return l2_cache.getEntry(key);
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public V _put(K key,V val,long caching_time){
+
+  if (log.isTraceEnabled())   log.trace("_put(" + key + ", "+ val+ ", "+ caching_time+ ")");
+
+  return l2_cache.put(key,val,caching_time);
+
+}
+
+Location: PartitionedHashMap.java
+
+Content: 
+
+public V _remove(K key){
+
+  if (log.isTraceEnabled())   log.trace("_remove(" + key + ")");
+
+  return l2_cache.remove(key);
+
+}
+

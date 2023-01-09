@@ -1,0 +1,292 @@
+Location: TestMapCollection.java
+
+Content: 
+
+private static void runTest(String name,int keylen,int vallen,int records,int ioSortMB,float spillPer) throws Exception {
+
+  Configuration conf=new Configuration();
+
+  conf.setInt(Job.COMPLETION_POLL_INTERVAL_KEY,100);
+
+  Job job=Job.getInstance(new Cluster(conf),conf);
+
+  conf=job.getConfiguration();
+
+  conf.setInt(MRJobConfig.IO_SORT_MB,ioSortMB);
+
+  conf.set(MRJobConfig.MAP_SORT_SPILL_PERCENT,Float.toString(spillPer));
+
+  conf.setClass("test.mapcollection.class",FixedRecordFactory.class,RecordFactory.class);
+
+  FixedRecordFactory.setLengths(conf,keylen,vallen);
+
+  conf.setInt("test.spillmap.records",records);
+
+  runTest(name,job);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+private static void runTest(String name,Job job) throws Exception {
+
+  job.setNumReduceTasks(1);
+
+  job.getConfiguration().setInt(MRJobConfig.IO_SORT_FACTOR,1000);
+
+  job.getConfiguration().set("fs.default.name","file:///");
+
+  job.getConfiguration().setInt("test.mapcollection.num.maps",1);
+
+  job.setInputFormatClass(FakeIF.class);
+
+  job.setOutputFormatClass(NullOutputFormat.class);
+
+  job.setMapperClass(Mapper.class);
+
+  job.setReducerClass(SpillReducer.class);
+
+  job.setMapOutputKeyClass(KeyWritable.class);
+
+  job.setMapOutputValueClass(ValWritable.class);
+
+  job.setSortComparatorClass(VariableComparator.class);
+
+  LOG.info("Running " + name);
+
+  assertTrue("Job failed!",job.waitForCompletion(false));
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testLargeRecConcurrent() throws Exception {
+
+  Configuration conf=new Configuration();
+
+  conf.setInt(Job.COMPLETION_POLL_INTERVAL_KEY,100);
+
+  Job job=Job.getInstance(new Cluster(conf),conf);
+
+  conf=job.getConfiguration();
+
+  conf.setInt(MRJobConfig.IO_SORT_MB,1);
+
+  conf.set(MRJobConfig.MAP_SORT_SPILL_PERCENT,Float.toString(.986328125f));
+
+  conf.setClass("test.mapcollection.class",StepFactory.class,RecordFactory.class);
+
+  StepFactory.setLengths(conf,4000,261120,96,1024,251);
+
+  conf.setInt("test.spillmap.records",255);
+
+  conf.setBoolean("test.disable.key.read",false);
+
+  conf.setBoolean("test.disable.val.read",false);
+
+  runTest("largeconcurrent",job);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testLargeRecords() throws Exception {
+
+  runTest("largerec",100,1024 * 1024,5,1,.8f);
+
+  runTest("largekeyzeroval",1024 * 1024,0,5,1,.8f);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testLowSpill() throws Exception {
+
+  runTest("lowspill",4000,96,20,1,0.00390625f);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testPostSpillMeta() throws Exception {
+
+  Configuration conf=new Configuration();
+
+  conf.setInt(Job.COMPLETION_POLL_INTERVAL_KEY,100);
+
+  Job job=Job.getInstance(new Cluster(conf),conf);
+
+  conf=job.getConfiguration();
+
+  conf.setInt(MRJobConfig.IO_SORT_MB,1);
+
+  conf.set(MRJobConfig.MAP_SORT_SPILL_PERCENT,Float.toString(.986328125f));
+
+  conf.setClass("test.mapcollection.class",StepFactory.class,RecordFactory.class);
+
+  StepFactory.setLengths(conf,4000,0,96,0,252);
+
+  conf.setInt("test.spillmap.records",1000);
+
+  conf.setBoolean("test.disable.key.read",true);
+
+  conf.setBoolean("test.disable.val.read",true);
+
+  runTest("postspillmeta",job);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testRandom() throws Exception {
+
+  Configuration conf=new Configuration();
+
+  conf.setInt(Job.COMPLETION_POLL_INTERVAL_KEY,100);
+
+  Job job=Job.getInstance(new Cluster(conf),conf);
+
+  conf=job.getConfiguration();
+
+  conf.setInt(MRJobConfig.IO_SORT_MB,1);
+
+  conf.setClass("test.mapcollection.class",RandomFactory.class,RecordFactory.class);
+
+  final Random r=new Random();
+
+  final long seed=r.nextLong();
+
+  LOG.info("SEED: " + seed);
+
+  r.setSeed(seed);
+
+  conf.set(MRJobConfig.MAP_SORT_SPILL_PERCENT,Float.toString(Math.max(0.1f,r.nextFloat())));
+
+  RandomFactory.setLengths(conf,r,1 << 14);
+
+  conf.setInt("test.spillmap.records",r.nextInt(500));
+
+  conf.setLong("test.randomfactory.seed",r.nextLong());
+
+  runTest("random",job);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testRandomCompress() throws Exception {
+
+  Configuration conf=new Configuration();
+
+  conf.setInt(Job.COMPLETION_POLL_INTERVAL_KEY,100);
+
+  Job job=Job.getInstance(new Cluster(conf),conf);
+
+  conf=job.getConfiguration();
+
+  conf.setInt(MRJobConfig.IO_SORT_MB,1);
+
+  conf.setBoolean(MRJobConfig.MAP_OUTPUT_COMPRESS,true);
+
+  conf.setClass("test.mapcollection.class",RandomFactory.class,RecordFactory.class);
+
+  final Random r=new Random();
+
+  final long seed=r.nextLong();
+
+  LOG.info("SEED: " + seed);
+
+  r.setSeed(seed);
+
+  conf.set(MRJobConfig.MAP_SORT_SPILL_PERCENT,Float.toString(Math.max(0.1f,r.nextFloat())));
+
+  RandomFactory.setLengths(conf,r,1 << 14);
+
+  conf.setInt("test.spillmap.records",r.nextInt(500));
+
+  conf.setLong("test.randomfactory.seed",r.nextLong());
+
+  runTest("randomCompress",job);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testSingleRecord() throws Exception {
+
+  runTest("singlerecord",100,100,1,1,1.0f);
+
+  runTest("zerokeyvalsingle",0,0,1,1,1.0f);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testSpillPer2B() throws Exception {
+
+  runTest("fullspill2B",1,1,10000,1,1.0f);
+
+  runTest("fullspill200B",100,100,10000,1,1.0f);
+
+  runTest("fullspillbuf",10 * 1024,20 * 1024,256,1,1.0f);
+
+  runTest("lt50perspill",100,100,10000,1,0.3f);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testSplitMetaSpill() throws Exception {
+
+  runTest("splitmetaspill",7,1,131072,1,0.8f);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testValLastByte() throws Exception {
+
+  runTest("vallastbyte",128,896,1344,1,0.5f);
+
+  runTest("keylastbyte",512,1024,896,1,0.5f);
+
+}
+
+Location: TestMapCollection.java
+
+Content: 
+
+@Test public void testZeroVal() throws Exception {
+
+  runTest("zeroval",1,0,10000,1,.8f);
+
+  runTest("zerokey",0,1,10000,1,.8f);
+
+  runTest("zerokeyval",0,0,10000,1,.8f);
+
+  runTest("zerokeyvalfull",0,0,10000,1,1.0f);
+
+}
+

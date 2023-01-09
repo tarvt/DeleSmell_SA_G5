@@ -1,0 +1,966 @@
+Location: TransactionManagerCommon.java
+
+Content: 
+
+public void abortAction(Session session){
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void adjustLobUsage(Session session){
+
+  int limit=session.rowActionList.size();
+
+  long lastActionTimestamp=session.actionTimestamp;
+
+  for (int i=0; i < limit; i++) {
+
+    RowAction action=(RowAction)session.rowActionList.get(i);
+
+    if (action.type == RowActionBase.ACTION_NONE) {
+
+      continue;
+
+    }
+
+    if (action.table.hasLobColumn) {
+
+      int type=action.getCommitTypeOn(lastActionTimestamp);
+
+      Row row=action.memoryRow;
+
+      if (row == null) {
+
+        row=(Row)action.store.get(action.getPos(),false);
+
+      }
+
+switch (type) {
+
+case RowActionBase.ACTION_INSERT:
+
+        session.sessionData.adjustLobUsageCount(action.table,row.getData(),1);
+
+      break;
+
+case RowActionBase.ACTION_DELETE:
+
+    session.sessionData.adjustLobUsageCount(action.table,row.getData(),-1);
+
+  break;
+
+case RowActionBase.ACTION_INSERT_DELETE:
+
+default :
+
+}
+
+}
+
+}
+
+int newLimit=session.rowActionList.size();
+
+if (newLimit > limit) {
+
+for (int i=limit; i < newLimit; i++) {
+
+RowAction lobAction=(RowAction)session.rowActionList.get(i);
+
+lobAction.commit(session);
+
+}
+
+}
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+boolean checkDeadlock(Session session,OrderedHashSet newWaits){
+
+  int size=session.waitingSessions.size();
+
+  for (int i=0; i < size; i++) {
+
+    Session current=(Session)session.waitingSessions.get(i);
+
+    if (newWaits.contains(current)) {
+
+      return false;
+
+    }
+
+    if (!checkDeadlock(current,newWaits)) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+boolean checkDeadlock(Session session,Session other){
+
+  int size=session.waitingSessions.size();
+
+  for (int i=0; i < size; i++) {
+
+    Session current=(Session)session.waitingSessions.get(i);
+
+    if (current == other) {
+
+      return false;
+
+    }
+
+    if (!checkDeadlock(current,other)) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void endActionTPL(Session session){
+
+  if (session.isolationLevel == SessionInterface.TX_REPEATABLE_READ || session.isolationLevel == SessionInterface.TX_SERIALIZABLE) {
+
+    return;
+
+  }
+
+  if (session.sessionContext.currentStatement == null) {
+
+    return;
+
+  }
+
+  if (session.sessionContext.depth > 0) {
+
+    return;
+
+  }
+
+  HsqlName[] readLocks=session.sessionContext.currentStatement.getTableNamesForRead();
+
+  if (readLocks.length == 0) {
+
+    return;
+
+  }
+
+  writeLock.lock();
+
+  try {
+
+    unlockReadTablesTPL(session,readLocks);
+
+    final int waitingCount=session.waitingSessions.size();
+
+    if (waitingCount == 0) {
+
+      return;
+
+    }
+
+    boolean canUnlock=false;
+
+    for (int i=0; i < readLocks.length; i++) {
+
+      if (tableWriteLocks.get(readLocks[i]) != session) {
+
+        canUnlock=true;
+
+        break;
+
+      }
+
+    }
+
+    if (!canUnlock) {
+
+      return;
+
+    }
+
+    canUnlock=false;
+
+    for (int i=0; i < waitingCount; i++) {
+
+      Session current=(Session)session.waitingSessions.get(i);
+
+      if (current.abortTransaction) {
+
+        canUnlock=true;
+
+        break;
+
+      }
+
+      Statement currentStatement=current.sessionContext.currentStatement;
+
+      if (currentStatement == null) {
+
+        canUnlock=true;
+
+        break;
+
+      }
+
+      if (ArrayUtil.containsAny(readLocks,currentStatement.getTableNamesForWrite())) {
+
+        canUnlock=true;
+
+        break;
+
+      }
+
+    }
+
+    if (!canUnlock) {
+
+      return;
+
+    }
+
+    resetLocks(session);
+
+    resetLatchesMidTransaction(session);
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void finaliseRows(Session session,Object[] list,int start,int limit){
+
+  for (int i=start; i < limit; i++) {
+
+    RowAction action=(RowAction)list[i];
+
+    action.store.postCommitAction(session,action);
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+long getFirstLiveTransactionTimestamp(){
+
+  if (liveTransactionTimestamps.isEmpty()) {
+
+    return Long.MAX_VALUE;
+
+  }
+
+  return liveTransactionTimestamps.get(0);
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void getTransactionAndPreSessions(Session session){
+
+  OrderedHashSet set=session.tempSet;
+
+  Session[] sessions=database.sessionManager.getAllSessions();
+
+  for (int i=0; i < sessions.length; i++) {
+
+    long timestamp=sessions[i].transactionTimestamp;
+
+    if (session == sessions[i]) {
+
+      continue;
+
+    }
+
+    if (sessions[i].isPreTransaction) {
+
+      set.add(sessions[i]);
+
+    }
+
+ else     if (sessions[i].isTransaction) {
+
+      set.add(sessions[i]);
+
+    }
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void getTransactionSessions(Session session){
+
+  OrderedHashSet set=session.tempSet;
+
+  Session[] sessions=database.sessionManager.getAllSessions();
+
+  for (int i=0; i < sessions.length; i++) {
+
+    long timestamp=sessions[i].transactionTimestamp;
+
+    if (session != sessions[i] && sessions[i].isTransaction) {
+
+      set.add(sessions[i]);
+
+    }
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+boolean hasLocks(Session session,Statement cs){
+
+  if (cs == null) {
+
+    return true;
+
+  }
+
+  HsqlName[] nameList=cs.getTableNamesForWrite();
+
+  for (int i=0; i < nameList.length; i++) {
+
+    HsqlName name=nameList[i];
+
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+
+      continue;
+
+    }
+
+    Session holder=(Session)tableWriteLocks.get(name);
+
+    if (holder != null && holder != session) {
+
+      return false;
+
+    }
+
+    Iterator it=tableReadLocks.get(name);
+
+    while (it.hasNext()) {
+
+      holder=(Session)it.next();
+
+      if (holder != session) {
+
+        return false;
+
+      }
+
+    }
+
+  }
+
+  nameList=cs.getTableNamesForRead();
+
+  for (int i=0; i < nameList.length; i++) {
+
+    HsqlName name=nameList[i];
+
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+
+      continue;
+
+    }
+
+    Session holder=(Session)tableWriteLocks.get(name);
+
+    if (holder != null && holder != session) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void lockTablesTPL(Session session,Statement cs){
+
+  if (cs == null || session.abortTransaction) {
+
+    return;
+
+  }
+
+  HsqlName[] nameList=cs.getTableNamesForWrite();
+
+  for (int i=0; i < nameList.length; i++) {
+
+    HsqlName name=nameList[i];
+
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+
+      continue;
+
+    }
+
+    tableWriteLocks.put(name,session);
+
+  }
+
+  nameList=cs.getTableNamesForRead();
+
+  if (txModel == TransactionManager.MVLOCKS && session.isReadOnly()) {
+
+    if (nameList.length > 0) {
+
+      nameList=catalogNameList;
+
+    }
+
+  }
+
+  for (int i=0; i < nameList.length; i++) {
+
+    HsqlName name=nameList[i];
+
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+
+      continue;
+
+    }
+
+    tableReadLocks.put(name,session);
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+/** 
+
+ * merge a transaction committed at a given timestamp.
+
+ */
+
+void mergeTransaction(Object[] list,int start,int limit,long timestamp){
+
+  for (int i=start; i < limit; i++) {
+
+    RowAction rowact=(RowAction)list[i];
+
+    rowact.mergeToTimestamp(timestamp);
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void persistCommit(Session session){
+
+  int limit=session.rowActionList.size();
+
+  boolean writeCommit=false;
+
+  for (int i=0; i < limit; i++) {
+
+    RowAction action=(RowAction)session.rowActionList.get(i);
+
+    if (action.type == RowActionBase.ACTION_NONE) {
+
+      continue;
+
+    }
+
+    int type=action.getCommitTypeOn(session.actionTimestamp);
+
+    Row row=action.memoryRow;
+
+    if (row == null) {
+
+      row=(Row)action.store.get(action.getPos(),false);
+
+    }
+
+    if (action.table.tableType != TableBase.TEMP_TABLE) {
+
+      writeCommit=true;
+
+    }
+
+    try {
+
+      action.store.commitRow(session,row,type,txModel);
+
+      if (txModel == TransactionManager.LOCKS || action.table.tableType == TableBase.TEMP_TABLE) {
+
+        action.setAsNoOp();
+
+        row.rowAction=null;
+
+      }
+
+    }
+
+ catch (    HsqlException e) {
+
+      database.logger.logWarningEvent("data commit failed",e);
+
+    }
+
+  }
+
+  try {
+
+    session.logSequences();
+
+    if (limit > 0 && writeCommit) {
+
+      database.logger.writeCommitStatement(session);
+
+    }
+
+  }
+
+ catch (  HsqlException e) {
+
+    database.logger.logWarningEvent("data commit logging failed",e);
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void prepareReset(Session session){
+
+  OrderedHashSet waitedSessions=session.waitedSessions;
+
+  for (int i=0; i < waitedSessions.size(); i++) {
+
+    Session current=(Session)waitedSessions.get(i);
+
+    current.waitingSessions.remove(session);
+
+  }
+
+  waitedSessions.clear();
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void resetLatchesMidTransaction(Session session){
+
+  session.tempSet.clear();
+
+  session.tempSet.addAll(session.waitingSessions);
+
+  session.waitingSessions.clear();
+
+  final int waitingCount=session.tempSet.size();
+
+  for (int i=0; i < waitingCount; i++) {
+
+    Session current=(Session)session.tempSet.get(i);
+
+    boolean testCode=false;
+
+    if (testCode) {
+
+      if (!current.abortTransaction && current.tempSet.isEmpty()) {
+
+        boolean hasLocks=hasLocks(current,current.sessionContext.currentStatement);
+
+        if (!hasLocks) {
+
+          System.out.println("tx graph");
+
+          hasLocks=hasLocks(current,current.sessionContext.currentStatement);
+
+        }
+
+      }
+
+    }
+
+    setWaitingSessionTPL(current);
+
+  }
+
+  session.tempSet.clear();
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void resetLatches(Session session){
+
+  final int waitingCount=session.waitingSessions.size();
+
+  for (int i=0; i < waitingCount; i++) {
+
+    Session current=(Session)session.waitingSessions.get(i);
+
+    boolean testCode=false;
+
+    if (testCode) {
+
+      if (!current.abortTransaction && current.tempSet.isEmpty()) {
+
+        boolean hasLocks=hasLocks(current,current.sessionContext.currentStatement);
+
+        if (!hasLocks) {
+
+          System.out.println("tx graph");
+
+          hasLocks=hasLocks(current,current.sessionContext.currentStatement);
+
+        }
+
+      }
+
+    }
+
+    setWaitingSessionTPL(current);
+
+  }
+
+  session.waitingSessions.clear();
+
+  session.latch.setCount(0);
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void resetLocks(Session session){
+
+  final int waitingCount=session.waitingSessions.size();
+
+  for (int i=0; i < waitingCount; i++) {
+
+    Session current=(Session)session.waitingSessions.get(i);
+
+    current.tempUnlocked=false;
+
+    long count=current.latch.getCount();
+
+    if (count == 1) {
+
+      boolean canProceed=setWaitedSessionsTPL(current,current.sessionContext.currentStatement);
+
+      if (canProceed) {
+
+        if (current.tempSet.isEmpty()) {
+
+          lockTablesTPL(current,current.sessionContext.currentStatement);
+
+          current.tempUnlocked=true;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  for (int i=0; i < waitingCount; i++) {
+
+    Session current=(Session)session.waitingSessions.get(i);
+
+    if (current.tempUnlocked) {
+
+    }
+
+ else     if (current.abortTransaction) {
+
+    }
+
+ else {
+
+      setWaitedSessionsTPL(current,current.sessionContext.currentStatement);
+
+    }
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+boolean setWaitedSessionsTPL(Session session,Statement cs){
+
+  session.tempSet.clear();
+
+  if (cs == null) {
+
+    return true;
+
+  }
+
+  if (session.abortTransaction) {
+
+    return false;
+
+  }
+
+  if (cs.isCatalogLock(txModel)) {
+
+    getTransactionSessions(session);
+
+  }
+
+  HsqlName[] nameList=cs.getTableNamesForWrite();
+
+  for (int i=0; i < nameList.length; i++) {
+
+    HsqlName name=nameList[i];
+
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+
+      continue;
+
+    }
+
+    Session holder=(Session)tableWriteLocks.get(name);
+
+    if (holder != null && holder != session) {
+
+      session.tempSet.add(holder);
+
+    }
+
+    Iterator it=tableReadLocks.get(name);
+
+    while (it.hasNext()) {
+
+      holder=(Session)it.next();
+
+      if (holder != session) {
+
+        session.tempSet.add(holder);
+
+      }
+
+    }
+
+  }
+
+  nameList=cs.getTableNamesForRead();
+
+  if (txModel == TransactionManager.MVLOCKS && session.isReadOnly()) {
+
+    if (nameList.length > 0) {
+
+      nameList=catalogNameList;
+
+    }
+
+  }
+
+  for (int i=0; i < nameList.length; i++) {
+
+    HsqlName name=nameList[i];
+
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+
+      continue;
+
+    }
+
+    Session holder=(Session)tableWriteLocks.get(name);
+
+    if (holder != null && holder != session) {
+
+      session.tempSet.add(holder);
+
+    }
+
+  }
+
+  if (session.tempSet.isEmpty()) {
+
+    return true;
+
+  }
+
+  if (checkDeadlock(session,session.tempSet)) {
+
+    return true;
+
+  }
+
+  session.tempSet.clear();
+
+  session.abortTransaction=true;
+
+  return false;
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void setWaitingSessionTPL(Session session){
+
+  int count=session.tempSet.size();
+
+  assert session.latch.getCount() <= count + 1;
+
+  for (int i=0; i < count; i++) {
+
+    Session current=(Session)session.tempSet.get(i);
+
+    current.waitingSessions.add(session);
+
+  }
+
+  session.tempSet.clear();
+
+  session.latch.setCount(count);
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+TransactionManagerCommon(Database database){
+
+  this.database=database;
+
+  catalogNameList=new HsqlName[]{database.getCatalogName()};
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void unlockReadTablesTPL(Session session,HsqlName[] locks){
+
+  for (int i=0; i < locks.length; i++) {
+
+    tableReadLocks.remove(locks[i],session);
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+void unlockTablesTPL(Session session){
+
+  Iterator it=tableWriteLocks.values().iterator();
+
+  while (it.hasNext()) {
+
+    Session s=(Session)it.next();
+
+    if (s == session) {
+
+      it.remove();
+
+    }
+
+  }
+
+  it=tableReadLocks.values().iterator();
+
+  while (it.hasNext()) {
+
+    Session s=(Session)it.next();
+
+    if (s == session) {
+
+      it.remove();
+
+    }
+
+  }
+
+}
+
+Location: TransactionManagerCommon.java
+
+Content: 
+
+Statement updateCurrentStatement(Session session,Statement cs){
+
+  if (cs.getCompileTimestamp() < database.schemaManager.getSchemaChangeTimestamp()) {
+
+    cs=session.statementManager.getStatement(session,cs);
+
+    session.sessionContext.currentStatement=cs;
+
+  }
+
+  return cs;
+
+}
+

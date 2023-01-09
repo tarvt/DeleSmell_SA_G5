@@ -1,0 +1,454 @@
+Location: TriggerSample.java
+
+Content: 
+
+private static void createTrigger(Statement stmt,String trn,int typ) throws SQLException {
+
+  stmt.execute(getTriggerDDL(trn,typ,tn,0,impl));
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+private static void doAssert(boolean b,String msg){
+
+  if (b) {
+
+  }
+
+ else {
+
+    throw Error.error(ErrorCode.GENERAL_ERROR,msg);
+
+  }
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+private static void doAuditStep(int typ,String tn,String ors,String nrs){
+
+  Connection conn;
+
+  PreparedStatement stmt;
+
+switch (typ) {
+
+case INSERT_AFTER_ROW:
+
+case UPDATE_AFTER_ROW:
+
+case DELETE_AFTER_ROW:
+
+{
+
+      try {
+
+        conn=getConnection();
+
+        stmt=conn.prepareStatement(audit_insert_stmt);
+
+        stmt.setString(1,getOperationSpec(typ));
+
+        stmt.setString(2,tn);
+
+        stmt.setString(3,ors);
+
+        stmt.setString(4,nrs);
+
+        stmt.executeUpdate();
+
+        conn.close();
+
+      }
+
+ catch (      SQLException se) {
+
+        se.printStackTrace();
+
+      }
+
+    }
+
+}
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+private static void doSomeWork() throws SQLException {
+
+  Connection conn=getConnection();
+
+  Statement stmt=conn.createStatement();
+
+  conn.setAutoCommit(false);
+
+  stmt.execute("INSERT INTO trig_test VALUES (1, 'hello')");
+
+  stmt.execute("INSERT INTO trig_test VALUES (2, 'now what?')");
+
+  stmt.execute("INSERT INTO trig_test VALUES (3, 'unchangable')");
+
+  stmt.execute("INSERT INTO trig_test VALUES (4, 'goodbye')");
+
+  conn.commit();
+
+  dumpTable("trig_test");
+
+  stmt.execute("UPDATE trig_test SET value = 'all done'");
+
+  conn.commit();
+
+  dumpTable("trig_test");
+
+  stmt.execute("DELETE FROM trig_test");
+
+  conn.rollback();
+
+  dumpTable("trig_test");
+
+  try {
+
+    stmt.execute("INSERT INTO trig_test VALUES(11, 'whatever')");
+
+  }
+
+ catch (  SQLException se) {
+
+    se.printStackTrace();
+
+  }
+
+  stmt.execute("INSERT INTO trig_test VALUES(10, 'whatever')");
+
+  conn.commit();
+
+  dumpTable("trig_test");
+
+  stmt.close();
+
+  conn.close();
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+private static void dumpTable(String tn) throws SQLException {
+
+  Connection conn=getConnection();
+
+  Statement stmt=conn.createStatement();
+
+  ResultSet rs=stmt.executeQuery("select * from " + tn);
+
+  ResultSetMetaData rsmd=rs.getMetaData();
+
+  int count=rsmd.getColumnCount();
+
+  out.println();
+
+  out.println("****************************************");
+
+  out.println("DUMP FOR TABLE: " + tn);
+
+  out.println("****************************************");
+
+  out.flush();
+
+  while (rs.next()) {
+
+    out.print("[");
+
+    for (int i=1; i <= count; i++) {
+
+      out.print(rs.getString(i));
+
+      if (i < count) {
+
+        out.print(" : ");
+
+      }
+
+    }
+
+    out.println("]");
+
+  }
+
+  out.println();
+
+  out.flush();
+
+  rs.close();
+
+  stmt.close();
+
+  conn.close();
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+private static Connection getConnection() throws SQLException {
+
+  try {
+
+    Class.forName(drv).newInstance();
+
+    return DriverManager.getConnection(url,usr,pwd);
+
+  }
+
+ catch (  SQLException se) {
+
+    throw se;
+
+  }
+
+catch (  Exception e) {
+
+    throw new SQLException(e.toString());
+
+  }
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+public static String getForEachSpec(int type){
+
+switch (type) {
+
+case INSERT_BEFORE_ROW:
+
+case INSERT_AFTER_ROW:
+
+case UPDATE_BEFORE_ROW:
+
+case UPDATE_AFTER_ROW:
+
+case DELETE_AFTER_ROW:
+
+case DELETE_BEFORE_ROW:
+
+{
+
+      return "FOR EACH ROW";
+
+    }
+
+default :
+
+{
+
+    return "FOR EACH STATEMENT";
+
+  }
+
+}
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+public static String getOperationSpec(int type){
+
+switch (type) {
+
+case INSERT_AFTER:
+
+case INSERT_AFTER_ROW:
+
+case INSERT_BEFORE_ROW:
+
+{
+
+      return "INSERT";
+
+    }
+
+case UPDATE_AFTER:
+
+case UPDATE_AFTER_ROW:
+
+case UPDATE_BEFORE_ROW:
+
+{
+
+    return "UPDATE";
+
+  }
+
+case DELETE_AFTER:
+
+case DELETE_AFTER_ROW:
+
+case DELETE_BEFORE_ROW:
+
+{
+
+  return "DELETE";
+
+}
+
+default :
+
+{
+
+return "";
+
+}
+
+}
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+public static String getQueueSpec(int qs){
+
+  return (qs < 0) ? "" : ("QUEUE " + qs);
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+public static String getTriggerDDL(String trn,int typ,String tab,int qs,String impl) throws SQLException {
+
+  StringBuffer sb=new StringBuffer();
+
+  sb.append("CREATE TRIGGER ");
+
+  sb.append(trn);
+
+  sb.append(' ');
+
+  sb.append(getWhenSpec(typ));
+
+  sb.append(' ');
+
+  sb.append(getOperationSpec(typ));
+
+  sb.append(" ON ");
+
+  sb.append(tab);
+
+  sb.append(' ');
+
+  sb.append(getForEachSpec(typ));
+
+  sb.append(' ');
+
+  sb.append(getQueueSpec(qs));
+
+  sb.append(" CALL \"");
+
+  sb.append(impl);
+
+  sb.append("\"");
+
+  return sb.toString();
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+public static String getTriggerDescriptor(String trn,int typ,String tab){
+
+  StringBuffer sb=new StringBuffer();
+
+  sb.append("TRIGGER : ");
+
+  sb.append(trn);
+
+  sb.append(' ');
+
+  sb.append(getWhenSpec(typ));
+
+  sb.append(' ');
+
+  sb.append(getOperationSpec(typ));
+
+  sb.append(" ON ");
+
+  sb.append(tab);
+
+  sb.append(' ');
+
+  sb.append(getForEachSpec(typ));
+
+  return sb.toString();
+
+}
+
+Location: TriggerSample.java
+
+Content: 
+
+public static String getWhenSpec(int type){
+
+switch (type) {
+
+case INSERT_BEFORE_ROW:
+
+case UPDATE_BEFORE_ROW:
+
+case DELETE_BEFORE_ROW:
+
+{
+
+      return "BEFORE";
+
+    }
+
+case INSERT_AFTER:
+
+case INSERT_AFTER_ROW:
+
+case UPDATE_AFTER:
+
+case UPDATE_AFTER_ROW:
+
+case DELETE_AFTER:
+
+case DELETE_AFTER_ROW:
+
+{
+
+    return "AFTER";
+
+  }
+
+default :
+
+{
+
+  return "";
+
+}
+
+}
+
+}
+

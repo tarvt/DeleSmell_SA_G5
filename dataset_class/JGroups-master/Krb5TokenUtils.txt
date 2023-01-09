@@ -1,0 +1,132 @@
+Location: Krb5TokenUtils.java
+
+Content: 
+
+public static byte[] decodeDataFromStream(DataInput in) throws Exception {
+
+  String str=Bits.readString(in);
+
+  log.debug(" : Read Encoded Data: \n%s",str);
+
+  return Base64.decode(str);
+
+}
+
+Location: Krb5TokenUtils.java
+
+Content: 
+
+public static void encodeDataToStream(byte[] data,DataOutput out) throws Exception {
+
+  String encodedToken=Base64.encodeBytes(data);
+
+  log.debug(" : Written Encoded Data: \n%s",encodedToken);
+
+  Bits.writeString(encodedToken,out);
+
+}
+
+Location: Krb5TokenUtils.java
+
+Content: 
+
+public static Subject generateSecuritySubject(String jassLoginConfig,String username,String password) throws LoginException {
+
+  LoginContext loginCtx=null;
+
+  try {
+
+    loginCtx=new LoginContext(jassLoginConfig,new Krb5TokenUtils.LoginCallbackHandler(username,password));
+
+    loginCtx.login();
+
+    log.debug(" : Krb5Token Kerberos login succeeded against user: %s",username);
+
+    return loginCtx.getSubject();
+
+  }
+
+ catch (  LoginException e) {
+
+    log.debug(" : Krb5Token Kerberos login failed against user: %s",username);
+
+    throw e;
+
+  }
+
+}
+
+Location: Krb5TokenUtils.java
+
+Content: 
+
+public static byte[] initiateSecurityContext(Subject subject,String servicePrincipalName) throws GSSException {
+
+  GSSManager manager=GSSManager.getInstance();
+
+  GSSName serverName=manager.createName(servicePrincipalName,GSSName.NT_HOSTBASED_SERVICE);
+
+  final GSSContext context=manager.createContext(serverName,krb5Oid,null,GSSContext.DEFAULT_LIFETIME);
+
+  return Subject.doAs(subject,(PrivilegedAction<byte[]>)() -> {
+
+    try {
+
+      byte[] token=new byte[0];
+
+      context.requestMutualAuth(false);
+
+      context.requestCredDeleg(false);
+
+      return context.initSecContext(token,0,token.length);
+
+    }
+
+ catch (    GSSException e) {
+
+      log.error(Util.getMessage("Krb5TokenKerberosContextProcessingException"),e);
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+
+Location: Krb5TokenUtils.java
+
+Content: 
+
+public static String validateSecurityContext(Subject subject,final byte[] serviceTicket) throws GSSException {
+
+  return Subject.doAs(subject,(PrivilegedAction<String>)() -> {
+
+    try {
+
+      GSSManager manager=GSSManager.getInstance();
+
+      GSSContext context=manager.createContext((GSSCredential)null);
+
+      context.acceptSecContext(serviceTicket,0,serviceTicket.length);
+
+      return context.getSrcName().toString();
+
+    }
+
+ catch (    Exception e) {
+
+      log.error(Util.getMessage("Krb5TokenKerberosContextProcessingException"),e);
+
+      return null;
+
+    }
+
+  }
+
+);
+
+}
+

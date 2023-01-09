@@ -1,0 +1,294 @@
+Location: TcpConnection.java
+
+Content: 
+
+protected void connect(Address dest,boolean send_local_addr) throws Exception {
+
+  SocketAddress destAddr=new InetSocketAddress(((IpAddress)dest).getIpAddress(),((IpAddress)dest).getPort());
+
+  try {
+
+    if (!server.defer_client_binding)     this.sock.bind(new InetSocketAddress(server.client_bind_addr,server.client_bind_port));
+
+    Util.connect(this.sock,destAddr,server.sock_conn_timeout);
+
+    if (this.sock.getLocalSocketAddress() != null && this.sock.getLocalSocketAddress().equals(destAddr))     throw new IllegalStateException("socket's bind and connect address are the same: " + destAddr);
+
+    this.out=new DataOutputStream(createBufferedOutputStream(sock.getOutputStream()));
+
+    this.in=new DataInputStream(createBufferedInputStream(sock.getInputStream()));
+
+    connected=sock.isConnected();
+
+    if (send_local_addr)     sendLocalAddress(server.localAddress());
+
+  }
+
+ catch (  Exception t) {
+
+    Util.close(this.sock);
+
+    connected=false;
+
+    throw t;
+
+  }
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+protected BufferedInputStream createBufferedInputStream(InputStream in){
+
+  int size=(server instanceof TcpServer) ? ((TcpServer)server).getBufferedInputStreamSize() : 0;
+
+  return size == 0 ? new BufferedInputStream(in) : new BufferedInputStream(in,size);
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+protected BufferedOutputStream createBufferedOutputStream(OutputStream out){
+
+  int size=(server instanceof TcpServer) ? ((TcpServer)server).getBufferedOutputStreamSize() : 0;
+
+  return size == 0 ? new BufferedOutputStream(out) : new BufferedOutputStream(out,size);
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+protected void doSend(byte[] data,int offset,int length) throws Exception {
+
+  out.writeInt(length);
+
+  out.write(data,offset,length);
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+protected String getSockAddress(){
+
+  StringBuilder sb=new StringBuilder();
+
+  if (sock != null) {
+
+    sb.append(sock.getLocalAddress().getHostAddress()).append(':').append(sock.getLocalPort());
+
+    sb.append(" - ").append(sock.getInetAddress().getHostAddress()).append(':').append(sock.getPort());
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+/** 
+
+ * Reads the peer's address. First a cookie has to be sent which has to match my own cookie, otherwise the connection will be refused
+
+ */
+
+protected Address readPeerAddress(Socket client_sock) throws Exception {
+
+  int timeout=client_sock.getSoTimeout();
+
+  client_sock.setSoTimeout(server.peerAddressReadTimeout());
+
+  try {
+
+    byte[] input_cookie=new byte[cookie.length];
+
+    in.readFully(input_cookie,0,input_cookie.length);
+
+    if (!Arrays.equals(cookie,input_cookie))     throw new SocketException(String.format("%s: BaseServer.TcpConnection.readPeerAddress(): cookie sent by " + "%s:%d does not match own cookie; terminating connection",server.localAddress(),client_sock.getInetAddress(),client_sock.getPort()));
+
+    short version=in.readShort();
+
+    if (!Version.isBinaryCompatible(version))     throw new IOException("packet from " + client_sock.getInetAddress() + ":"+ client_sock.getPort()+ " has different version ("+ Version.print(version)+ ") from ours ("+ Version.printVersion()+ "); discarding it");
+
+    in.readShort();
+
+    Address client_peer_addr=new IpAddress();
+
+    client_peer_addr.readFrom(in);
+
+    updateLastAccessed();
+
+    return client_peer_addr;
+
+  }
+
+  finally {
+
+    client_sock.setSoTimeout(timeout);
+
+  }
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+/** 
+
+ * Send the cookie first, then the our port number. If the cookie doesn't match the receiver's cookie, the receiver will reject the connection and close it.
+
+ */
+
+protected void sendLocalAddress(Address local_addr) throws Exception {
+
+  try {
+
+    out.write(cookie,0,cookie.length);
+
+    out.writeShort(Version.version);
+
+    out.writeShort(local_addr.serializedSize());
+
+    local_addr.writeTo(out);
+
+    out.flush();
+
+    updateLastAccessed();
+
+  }
+
+ catch (  Exception ex) {
+
+    server.socket_factory.close(this.sock);
+
+    connected=false;
+
+    throw ex;
+
+  }
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+protected void setSocketParameters(Socket client_sock) throws SocketException {
+
+  try {
+
+    client_sock.setSendBufferSize(server.send_buf_size);
+
+  }
+
+ catch (  IllegalArgumentException ex) {
+
+    server.log.error("%s: exception setting send buffer to %d bytes: %s",server.local_addr,server.send_buf_size,ex);
+
+  }
+
+  try {
+
+    client_sock.setReceiveBufferSize(server.recv_buf_size);
+
+  }
+
+ catch (  IllegalArgumentException ex) {
+
+    server.log.error("%s: exception setting receive buffer to %d bytes: %s",server.local_addr,server.recv_buf_size,ex);
+
+  }
+
+  client_sock.setKeepAlive(true);
+
+  client_sock.setTcpNoDelay(server.tcp_nodelay);
+
+  try {
+
+    if (server.linger > 0)     client_sock.setSoLinger(true,server.linger);
+
+ else     client_sock.setSoLinger(false,-1);
+
+  }
+
+ catch (  Throwable t) {
+
+    server.log().warn("%s: failed setting SO_LINGER option: %s",server.localAddress(),t);
+
+  }
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+/** 
+
+ * Creates a connection stub and binds it, use  {@link #connect(Address)} to connect 
+
+ */
+
+public TcpConnection(Address peer_addr,TcpBaseServer server) throws Exception {
+
+  this.server=server;
+
+  if (peer_addr == null)   throw new IllegalArgumentException("Invalid parameter peer_addr=" + peer_addr);
+
+  this.peer_addr=peer_addr;
+
+  this.sock=server.socketFactory().createSocket("jgroups.tcp.sock");
+
+  setSocketParameters(sock);
+
+  last_access=getTimestamp();
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+public TcpConnection(Socket s,TcpServer server) throws Exception {
+
+  this.sock=s;
+
+  this.server=server;
+
+  if (s == null)   throw new IllegalArgumentException("Invalid parameter s=" + s);
+
+  setSocketParameters(s);
+
+  this.out=new DataOutputStream(createBufferedOutputStream(s.getOutputStream()));
+
+  this.in=new DataInputStream(createBufferedInputStream(s.getInputStream()));
+
+  this.connected=sock.isConnected();
+
+  this.peer_addr=server.usePeerConnections() ? readPeerAddress(s) : new IpAddress((InetSocketAddress)s.getRemoteSocketAddress());
+
+  last_access=getTimestamp();
+
+}
+
+Location: TcpConnection.java
+
+Content: 
+
+protected void updateLastAccessed(){
+
+  if (server.connExpireTime() > 0)   last_access=getTimestamp();
+
+}
+

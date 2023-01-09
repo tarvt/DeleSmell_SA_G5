@@ -1,0 +1,196 @@
+Location: TestMiniMRDFSSort.java
+
+Content: 
+
+private static void runJvmReuseTest(JobConf job,boolean reuse) throws IOException {
+
+  job.setInt(JobContext.JVM_NUMTASKS_TORUN,reuse ? -1 : 1);
+
+  FileInputFormat.setInputPaths(job,SORT_INPUT_PATH);
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setOutputFormat(NullOutputFormat.class);
+
+  job.setMapperClass(ReuseDetector.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setNumMapTasks(24);
+
+  job.setNumReduceTasks(0);
+
+  RunningJob result=JobClient.runJob(job);
+
+  long uses=result.getCounters().findCounter("jvm","use").getValue();
+
+  int maps=job.getNumMapTasks();
+
+  if (reuse) {
+
+    assertTrue("maps = " + maps + ", uses = "+ uses,maps < uses);
+
+  }
+
+ else {
+
+    assertEquals("uses should be number of maps",job.getNumMapTasks(),uses);
+
+  }
+
+}
+
+Location: TestMiniMRDFSSort.java
+
+Content: 
+
+public static void runRandomWriter(JobConf job,Path sortInput) throws Exception {
+
+  job.setInt(RandomWriter.BYTES_PER_MAP,RW_BYTES_PER_MAP);
+
+  job.setInt(RandomWriter.MAPS_PER_HOST,RW_MAPS_PER_HOST);
+
+  String[] rwArgs={sortInput.toString()};
+
+  assertEquals(ToolRunner.run(job,new RandomWriter(),rwArgs),0);
+
+}
+
+Location: TestMiniMRDFSSort.java
+
+Content: 
+
+private static void runSortValidator(JobConf job,Path sortInput,Path sortOutput) throws Exception {
+
+  String[] svArgs={"-sortInput",sortInput.toString(),"-sortOutput",sortOutput.toString()};
+
+  assertEquals(ToolRunner.run(job,new SortValidator(),svArgs),0);
+
+}
+
+Location: TestMiniMRDFSSort.java
+
+Content: 
+
+private static void runSort(JobConf job,Path sortInput,Path sortOutput) throws Exception {
+
+  job.setInt(JobContext.JVM_NUMTASKS_TORUN,-1);
+
+  job.setInt(JobContext.IO_SORT_MB,1);
+
+  job.setNumMapTasks(12);
+
+  String[] sortArgs={sortInput.toString(),sortOutput.toString()};
+
+  Sort sort=new Sort();
+
+  assertEquals(ToolRunner.run(job,sort,sortArgs),0);
+
+  org.apache.hadoop.mapreduce.Counters counters=sort.getResult().getCounters();
+
+  long mapInput=counters.findCounter(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.COUNTER_GROUP,org.apache.hadoop.mapreduce.lib.input.FileInputFormat.BYTES_READ).getValue();
+
+  long hdfsRead=counters.findCounter(Task.FILESYSTEM_COUNTER_GROUP,"HDFS_BYTES_READ").getValue();
+
+  assertTrue("map input = " + mapInput + ", hdfs read = "+ hdfsRead,(hdfsRead < (mapInput * 1.1)) && (hdfsRead >= mapInput));
+
+}
+
+Location: TestMiniMRDFSSort.java
+
+Content: 
+
+public void testJvmReuse() throws Exception {
+
+  runJvmReuseTest(mrCluster.createJobConf(),true);
+
+}
+
+Location: TestMiniMRDFSSort.java
+
+Content: 
+
+public void testNoJvmReuse() throws Exception {
+
+  runJvmReuseTest(mrCluster.createJobConf(),false);
+
+}
+
+Location: TestMiniMRDFSSort.java
+
+Content: 
+
+public void testPartitioner() throws Exception {
+
+  JobConf conf=mrCluster.createJobConf();
+
+  conf.setPartitionerClass(BadPartitioner.class);
+
+  conf.setNumReduceTasks(3);
+
+  FileSystem fs=FileSystem.get(conf);
+
+  Path testdir=new Path("blah").makeQualified(fs.getUri(),fs.getWorkingDirectory());
+
+  Path inFile=new Path(testdir,"blah");
+
+  DataOutputStream f=fs.create(inFile);
+
+  f.writeBytes("blah blah blah\n");
+
+  f.close();
+
+  FileInputFormat.setInputPaths(conf,inFile);
+
+  FileOutputFormat.setOutputPath(conf,new Path(testdir,"out"));
+
+  conf.setMapperClass(IdentityMapper.class);
+
+  conf.setReducerClass(IdentityReducer.class);
+
+  conf.setOutputKeyClass(LongWritable.class);
+
+  conf.setOutputValueClass(Text.class);
+
+  conf.setMaxMapAttempts(1);
+
+  conf.setBoolean("test.testmapred.badpartition",true);
+
+  boolean pass=true;
+
+  try {
+
+    JobClient.runJob(conf);
+
+  }
+
+ catch (  IOException e) {
+
+    pass=false;
+
+  }
+
+  assertFalse("should fail for partition < 0",pass);
+
+  conf.setBoolean("test.testmapred.badpartition",false);
+
+  pass=true;
+
+  try {
+
+    JobClient.runJob(conf);
+
+  }
+
+ catch (  IOException e) {
+
+    pass=false;
+
+  }
+
+  assertFalse("should fail for partition >= numPartitions",pass);
+
+}
+

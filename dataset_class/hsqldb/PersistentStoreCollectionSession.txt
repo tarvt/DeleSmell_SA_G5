@@ -1,0 +1,416 @@
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void clearAllTables(){
+
+  hongshuai();
+
+  if (rowStoreMapSession.isEmpty()) {
+
+    return;
+
+  }
+
+  Iterator it=rowStoreMapSession.values().iterator();
+
+  while (it.hasNext()) {
+
+    PersistentStore store=(PersistentStore)it.next();
+
+    store.release();
+
+  }
+
+  rowStoreMapSession.clear();
+
+  clearTransactionTables();
+
+  clearStatementTables();
+
+  clearRoutineTables();
+
+  closeSessionDataCache();
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void clearResultTables(long actionTimestamp){
+
+  if (rowStoreMapSession.isEmpty()) {
+
+    return;
+
+  }
+
+  Iterator it=rowStoreMapSession.values().iterator();
+
+  while (it.hasNext()) {
+
+    PersistentStore store=(PersistentStore)it.next();
+
+    if (store.getTimestamp() == actionTimestamp) {
+
+      store.release();
+
+      it.remove();
+
+    }
+
+  }
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void clearRoutineTables(){
+
+  if (rowStoreMapRoutine.isEmpty()) {
+
+    return;
+
+  }
+
+  Iterator it=rowStoreMapRoutine.values().iterator();
+
+  while (it.hasNext()) {
+
+    PersistentStore store=(PersistentStore)it.next();
+
+    store.release();
+
+  }
+
+  rowStoreMapRoutine.clear();
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void clearSessionTables(){
+
+  if (rowStoreMapSession.isEmpty()) {
+
+    return;
+
+  }
+
+  Iterator it=rowStoreMapSession.values().iterator();
+
+  while (it.hasNext()) {
+
+    PersistentStore store=(PersistentStore)it.next();
+
+    store.release();
+
+  }
+
+  rowStoreMapSession.clear();
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void clearStatementTables(){
+
+  if (rowStoreMapStatement.isEmpty()) {
+
+    return;
+
+  }
+
+  Iterator it=rowStoreMapStatement.values().iterator();
+
+  while (it.hasNext()) {
+
+    PersistentStore store=(PersistentStore)it.next();
+
+    store.release();
+
+  }
+
+  rowStoreMapStatement.clear();
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void clearTransactionTables(){
+
+  if (rowStoreMapTransaction.isEmpty()) {
+
+    return;
+
+  }
+
+  Iterator it=rowStoreMapTransaction.values().iterator();
+
+  while (it.hasNext()) {
+
+    PersistentStore store=(PersistentStore)it.next();
+
+    store.release();
+
+  }
+
+  rowStoreMapTransaction.clear();
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+private void closeSessionDataCache(){
+
+  if (resultCache != null) {
+
+    try {
+
+      resultCache.release();
+
+      resultCache.deleteFile();
+
+    }
+
+ catch (    HsqlException e) {
+
+    }
+
+    resultCache=null;
+
+  }
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public PersistentStore findStore(TableBase table){
+
+  PersistentStore store=null;
+
+switch (table.persistenceScope) {
+
+case TableBase.SCOPE_ROUTINE:
+
+    store=(PersistentStore)rowStoreMapRoutine.get(table.getPersistenceId());
+
+  break;
+
+case TableBase.SCOPE_STATEMENT:
+
+store=(PersistentStore)rowStoreMapStatement.get(table.getPersistenceId());
+
+break;
+
+case TableBase.SCOPE_FULL:
+
+case TableBase.SCOPE_TRANSACTION:
+
+store=(PersistentStore)rowStoreMapTransaction.get(table.getPersistenceId());
+
+break;
+
+case TableBase.SCOPE_SESSION:
+
+store=(PersistentStore)rowStoreMapSession.get(table.getPersistenceId());
+
+break;
+
+}
+
+return store;
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public DataFileCacheSession getSessionDataCache(){
+
+  if (resultCache == null) {
+
+    String path=session.database.logger.getTempDirectoryPath();
+
+    if (path == null) {
+
+      return null;
+
+    }
+
+    try {
+
+      resultCache=new DataFileCacheSession(session.database,path + "/session_" + Long.toString(session.getId()));
+
+      resultCache.open(false);
+
+    }
+
+ catch (    Throwable t) {
+
+      return null;
+
+    }
+
+  }
+
+  return resultCache;
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public PersistentStore getViewStore(long persistenceId){
+
+  return (PersistentStore)rowStoreMapStatement.get(persistenceId);
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void moveData(Table oldTable,Table newTable,int colIndex,int adjust){
+
+  PersistentStore store=findStore(oldTable);
+
+  if (store == null) {
+
+    return;
+
+  }
+
+  PersistentStore newStore=getStore(newTable);
+
+  try {
+
+    newStore.moveData(session,store,colIndex,adjust);
+
+  }
+
+ catch (  HsqlException e) {
+
+    newStore.release();
+
+    removeStore(newTable);
+
+    throw e;
+
+  }
+
+  removeStore(oldTable);
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+public PersistentStoreCollectionSession(Session session){
+
+  this.session=session;
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void pop(boolean isRoutine){
+
+  Object[] array;
+
+  if (isRoutine) {
+
+    array=(Object[])rowStoreListStack.removeLast();
+
+    clearRoutineTables();
+
+    for (int i=0; i < array.length; i++) {
+
+      PersistentStore store=(PersistentStore)array[i];
+
+      rowStoreMapRoutine.put(store.getTable().getPersistenceId(),store);
+
+    }
+
+  }
+
+  array=(Object[])rowStoreListStack.removeLast();
+
+  clearStatementTables();
+
+  for (int i=0; i < array.length; i++) {
+
+    PersistentStore store=(PersistentStore)array[i];
+
+    rowStoreMapStatement.put(store.getTable().getPersistenceId(),store);
+
+  }
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void push(boolean isRoutine){
+
+  if (rowStoreListStack == null) {
+
+    rowStoreListStack=new HsqlDeque();
+
+  }
+
+  Object[] array=rowStoreMapStatement.toArray();
+
+  rowStoreListStack.add(array);
+
+  rowStoreMapStatement.clear();
+
+  if (isRoutine) {
+
+    array=rowStoreMapRoutine.toArray();
+
+    rowStoreListStack.add(array);
+
+    rowStoreMapRoutine.clear();
+
+  }
+
+}
+
+Location: PersistentStoreCollectionSession.java
+
+Content: 
+
+synchronized public void resetAccessorKeys(Session session,Table table,Index[] indexes){
+
+  PersistentStore store=findStore(table);
+
+  if (store == null) {
+
+    return;
+
+  }
+
+  store.resetAccessorKeys(session,indexes);
+
+}
+

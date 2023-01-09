@@ -1,0 +1,98 @@
+Location: TestMapredSystemDir.java
+
+Content: 
+
+public void testGarbledMapredSystemDir() throws Exception {
+
+  Configuration conf=new Configuration();
+
+  final MiniDFSCluster dfs=new MiniDFSCluster(conf,1,true,null);
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    conf.set("dfs.permissions.supergroup","supergroup");
+
+    FileSystem fs=DFS_UGI.doAs(new PrivilegedExceptionAction<FileSystem>(){
+
+      public FileSystem run() throws IOException {
+
+        return dfs.getFileSystem();
+
+      }
+
+    }
+
+);
+
+    Path mapredSysDir=new Path(conf.get(JTConfig.JT_SYSTEM_DIR));
+
+    Path parentDir=mapredSysDir.getParent();
+
+    fs.mkdirs(parentDir);
+
+    fs.setPermission(parentDir,new FsPermission(SYSTEM_DIR_PARENT_PERMISSION));
+
+    fs.mkdirs(mapredSysDir);
+
+    fs.setPermission(mapredSysDir,new FsPermission(SYSTEM_DIR_PERMISSION));
+
+    fs.setOwner(mapredSysDir,"mr","mrgroup");
+
+    Configuration mrConf=new Configuration(conf);
+
+    mr=new MiniMRCluster(0,0,0,dfs.getFileSystem().getUri().toString(),1,null,null,MR_UGI,new JobConf(mrConf));
+
+    JobTracker jobtracker=mr.getJobTrackerRunner().getJobTracker();
+
+    Path garbage=new Path(jobtracker.getSystemDir(),"garbage");
+
+    fs.mkdirs(garbage);
+
+    fs.setPermission(garbage,new FsPermission(SYSTEM_DIR_PERMISSION));
+
+    fs.setOwner(garbage,"test","test-group");
+
+    mr.stopJobTracker();
+
+    mr.getJobTrackerConf().setBoolean(JTConfig.JT_RESTART_ENABLED,false);
+
+    mr.startJobTracker(false);
+
+    for (int i=0; i < 5; ++i) {
+
+      LOG.info("Check #" + i);
+
+      if (!mr.getJobTrackerRunner().isActive()) {
+
+        return;
+
+      }
+
+      UtilsForTests.waitFor(2000);
+
+    }
+
+    assertFalse("JobTracker did not bail out (waited for 10 secs)",mr.getJobTrackerRunner().isActive());
+
+  }
+
+  finally {
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+

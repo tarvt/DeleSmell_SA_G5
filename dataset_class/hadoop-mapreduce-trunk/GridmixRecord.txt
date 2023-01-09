@@ -1,0 +1,244 @@
+Location: GridmixRecord.java
+
+Content: 
+
+int compareSeed(long jSeed,int jSize){
+
+  final int iSize=Math.max(0,getSize() - fixedBytes());
+
+  final int seedLen=Math.min(iSize,jSize) + FIXED_BYTES;
+
+  jSeed=maskSeed(jSeed,seedLen);
+
+  long iSeed=maskSeed(seed,seedLen);
+
+  final int cmplen=Math.min(iSize,jSize);
+
+  for (int i=0; i < cmplen; i+=Byte.SIZE) {
+
+    final int k=cmplen - i;
+
+    for (long j=Long.SIZE - Byte.SIZE; j >= Math.max(0,Long.SIZE / Byte.SIZE - k) * Byte.SIZE; j-=Byte.SIZE) {
+
+      final int xi=(int)((iSeed >>> j) & 0xFFL);
+
+      final int xj=(int)((jSeed >>> j) & 0xFFL);
+
+      if (xi != xj) {
+
+        return xi - xj;
+
+      }
+
+    }
+
+    iSeed=nextRand(iSeed);
+
+    jSeed=nextRand(jSeed);
+
+  }
+
+  return iSize - jSize;
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+GridmixRecord(){
+
+  this(1,0L);
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+GridmixRecord(int size,long seed){
+
+  this.seed=seed;
+
+  setSizeInternal(size);
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+private static long maskSeed(long sd,int sz){
+
+  if (sz <= FIXED_BYTES) {
+
+    sd=0L;
+
+  }
+
+ else   if (sz < Long.SIZE / Byte.SIZE + FIXED_BYTES) {
+
+    final int tmp=sz - FIXED_BYTES;
+
+    final long mask=(1L << (Byte.SIZE * tmp)) - 1;
+
+    sd&=mask << (Byte.SIZE * (Long.SIZE / Byte.SIZE - tmp));
+
+  }
+
+  return sd;
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+/** 
+
+ * Marsaglia, 2003. 
+
+ */
+
+long nextRand(long x){
+
+  x^=(x << 13);
+
+  x^=(x >>> 7);
+
+  return (x^=(x << 17));
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+void setCompressibility(boolean compressible,float ratio){
+
+  this.compressible=compressible;
+
+  this.compressionRatio=ratio;
+
+  if (compressible) {
+
+    rtg=CompressionEmulationUtil.getRandomTextDataGenerator(ratio,RandomTextDataGenerator.DEFAULT_SEED);
+
+  }
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+public final void setSeed(long seed){
+
+  this.seed=seed;
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+private void setSizeInternal(int size){
+
+  this.size=Math.max(1,size);
+
+  try {
+
+    seed=maskSeed(seed,this.size);
+
+    dob.reset();
+
+    dob.writeLong(seed);
+
+  }
+
+ catch (  IOException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+/** 
+
+ * Generate random text data that can be compressed. If the record is marked compressible (via  {@link FileOutputFormat#COMPRESS}), only then the  random data will be text data else  {@link GridmixRecord#writeRandom(DataOutput,int)} will be invoked.
+
+ */
+
+private void writeRandomText(DataOutput out,final int size) throws IOException {
+
+  long tmp=seed;
+
+  out.writeLong(tmp);
+
+  int i=size - (Long.SIZE / Byte.SIZE);
+
+  String randomWord=rtg.getRandomWord();
+
+  byte[] bytes=randomWord.getBytes("UTF-8");
+
+  long randomWordSize=bytes.length;
+
+  while (i >= randomWordSize) {
+
+    out.write(bytes);
+
+    i-=randomWordSize;
+
+    randomWord=rtg.getRandomWord();
+
+    bytes=randomWord.getBytes("UTF-8");
+
+    randomWordSize=bytes.length;
+
+  }
+
+  if (i > 0) {
+
+    out.write(bytes,0,i);
+
+  }
+
+}
+
+Location: GridmixRecord.java
+
+Content: 
+
+public void writeRandom(DataOutput out,final int size) throws IOException {
+
+  long tmp=seed;
+
+  out.writeLong(tmp);
+
+  int i=size - (Long.SIZE / Byte.SIZE);
+
+  while (i > Long.SIZE / Byte.SIZE - 1) {
+
+    tmp=nextRand(tmp);
+
+    out.writeLong(tmp);
+
+    i-=Long.SIZE / Byte.SIZE;
+
+  }
+
+  for (tmp=nextRand(tmp); i > 0; --i) {
+
+    out.writeByte((int)(tmp & 0xFF));
+
+    tmp>>>=Byte.SIZE;
+
+  }
+
+}
+

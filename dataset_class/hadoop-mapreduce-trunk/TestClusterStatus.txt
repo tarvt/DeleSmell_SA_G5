@@ -1,0 +1,116 @@
+Location: TestClusterStatus.java
+
+Content: 
+
+private void addMapTaskAttemptToList(List<TaskStatus> list,int mapSlotsPerTask,TaskStatus.State state){
+
+  TaskStatus ts=TaskStatus.createTaskStatus(true,new TaskAttemptID("jt",1,TaskType.MAP,0,0),0.0f,mapSlotsPerTask,state,"","",trackers[0],TaskStatus.Phase.MAP,null);
+
+  list.add(ts);
+
+}
+
+Location: TestClusterStatus.java
+
+Content: 
+
+private void addReduceTaskAttemptToList(List<TaskStatus> list,int reduceSlotsPerTask,TaskStatus.State state){
+
+  TaskStatus ts=TaskStatus.createTaskStatus(false,new TaskAttemptID("jt",1,TaskType.REDUCE,0,0),0.0f,reduceSlotsPerTask,state,"","",trackers[0],TaskStatus.Phase.REDUCE,null);
+
+  list.add(ts);
+
+}
+
+Location: TestClusterStatus.java
+
+Content: 
+
+private void sendHeartbeats(List<TaskStatus> list) throws IOException {
+
+  TaskTrackerStatus[] status=new TaskTrackerStatus[trackers.length];
+
+  status[0]=getTTStatus(trackers[0],list);
+
+  status[1]=getTTStatus(trackers[1],new ArrayList<TaskStatus>());
+
+  status[2]=getTTStatus(trackers[2],new ArrayList<TaskStatus>());
+
+  for (int i=0; i < trackers.length; i++) {
+
+    FakeObjectUtilities.sendHeartBeat(jobTracker,status[i],false,false,trackers[i],responseId);
+
+  }
+
+  responseId++;
+
+}
+
+Location: TestClusterStatus.java
+
+Content: 
+
+public void testClusterMetrics() throws IOException, InterruptedException {
+
+  assertEquals("tasktracker count doesn't match",trackers.length,cluster.getClusterStatus().getTaskTrackerCount());
+
+  List<TaskStatus> list=new ArrayList<TaskStatus>();
+
+  int mapSlotsPerTask=2;
+
+  addMapTaskAttemptToList(list,mapSlotsPerTask,TaskStatus.State.RUNNING);
+
+  int reduceSlotsPerTask=1;
+
+  addReduceTaskAttemptToList(list,reduceSlotsPerTask,TaskStatus.State.RUNNING);
+
+  sendHeartbeats(list);
+
+  ClusterMetrics metrics=cluster.getClusterStatus();
+
+  assertEquals("occupied map slots do not match",mapSlotsPerTask,metrics.getOccupiedMapSlots());
+
+  assertEquals("occupied reduce slots do not match",reduceSlotsPerTask,metrics.getOccupiedReduceSlots());
+
+  assertEquals("map slot capacities do not match",mapSlotsPerTracker * trackers.length,metrics.getMapSlotCapacity());
+
+  assertEquals("reduce slot capacities do not match",reduceSlotsPerTracker * trackers.length,metrics.getReduceSlotCapacity());
+
+  assertEquals("running map tasks do not match",1,metrics.getRunningMaps());
+
+  assertEquals("running reduce tasks do not match",1,metrics.getRunningReduces());
+
+  assertEquals("running map tasks do not match",1,jobTracker.getClusterStatus().getMapTasks());
+
+  assertEquals("running reduce tasks do not match",1,jobTracker.getClusterStatus().getReduceTasks());
+
+  assertEquals("map slot capacities do not match",mapSlotsPerTracker * trackers.length,jobTracker.getClusterStatus().getMaxMapTasks());
+
+  assertEquals("reduce slot capacities do not match",reduceSlotsPerTracker * trackers.length,jobTracker.getClusterStatus().getMaxReduceTasks());
+
+  list.clear();
+
+  addMapTaskAttemptToList(list,mapSlotsPerTask,TaskStatus.State.SUCCEEDED);
+
+  addReduceTaskAttemptToList(list,reduceSlotsPerTask,TaskStatus.State.RUNNING);
+
+  sendHeartbeats(list);
+
+  metrics=jobTracker.getClusterMetrics();
+
+  assertEquals(0,metrics.getOccupiedMapSlots());
+
+  assertEquals(reduceSlotsPerTask,metrics.getOccupiedReduceSlots());
+
+  list.clear();
+
+  addReduceTaskAttemptToList(list,reduceSlotsPerTask,TaskStatus.State.SUCCEEDED);
+
+  sendHeartbeats(list);
+
+  metrics=jobTracker.getClusterMetrics();
+
+  assertEquals(0,metrics.getOccupiedReduceSlots());
+
+}
+

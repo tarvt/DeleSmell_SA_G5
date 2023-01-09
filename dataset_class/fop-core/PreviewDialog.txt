@@ -1,0 +1,1060 @@
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Creates and initialize the AWT Viewer main window.
+
+ * @param foUserAgent the FO user agent
+
+ * @param renderable the target for the rendering
+
+ * @param asMainWindow true if the window shall act as the main application window.
+
+ * @return the newly initialized preview dialog
+
+ */
+
+public static PreviewDialog createPreviewDialog(FOUserAgent foUserAgent,Renderable renderable,boolean asMainWindow){
+
+  PreviewDialog frame=new PreviewDialog(foUserAgent,renderable);
+
+  if (asMainWindow) {
+
+    frame.addWindowListener(new WindowAdapter(){
+
+      public void windowClosed(      WindowEvent we){
+
+        System.exit(0);
+
+      }
+
+    }
+
+);
+
+  }
+
+  Dimension screenSize=Toolkit.getDefaultToolkit().getScreenSize();
+
+  Dimension frameSize=frame.getSize();
+
+  if (frameSize.height > screenSize.height) {
+
+    frameSize.height=screenSize.height;
+
+  }
+
+  if (frameSize.width > screenSize.width) {
+
+    frameSize.width=screenSize.width;
+
+  }
+
+  frame.setLocation((screenSize.width - frameSize.width) / 2,(screenSize.height - frameSize.height) / 2);
+
+  frame.setStatus(frame.translator.getString("Status.Build.FO.tree"));
+
+  frame.setVisible(true);
+
+  return frame;
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Shows the first page. 
+
+ */
+
+public void goToFirstPage(){
+
+  goToPage(0);
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Shows the last page.
+
+ */
+
+public void goToLastPage(){
+
+  goToPage(renderer.getNumberOfPages() - 1);
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Shows the next page.
+
+ */
+
+public void goToNextPage(){
+
+  int page=previewPanel.getPage();
+
+  if (page < renderer.getNumberOfPages() - 1) {
+
+    goToPage(page + 1);
+
+  }
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Changes the current visible page
+
+ * @param number the page number to go to
+
+ */
+
+public void goToPage(int number){
+
+  if (number != previewPanel.getPage()) {
+
+    previewPanel.setPage(number);
+
+    notifyPageRendered();
+
+  }
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Shows the previous page.
+
+ */
+
+public void goToPreviousPage(){
+
+  int page=previewPanel.getPage();
+
+  if (page > 0) {
+
+    goToPage(page - 1);
+
+  }
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Updates the message to be shown in the info bar in a thread safe way.
+
+ */
+
+public void notifyPageRendered(){
+
+  SwingUtilities.invokeLater(new ShowInfo());
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void notifyRendererStopped(){
+
+  reload();
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Creates a new PreviewDialog that uses the given renderer.
+
+ * @param foUserAgent the user agent
+
+ */
+
+public PreviewDialog(FOUserAgent foUserAgent){
+
+  this(foUserAgent,null);
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Creates a new PreviewDialog that uses the given renderer.
+
+ * @param foUserAgent the user agent
+
+ * @param renderable the Renderable instance that is used to reload/re-render a documentafter modifications.
+
+ */
+
+public PreviewDialog(FOUserAgent foUserAgent,Renderable renderable){
+
+  renderer=(AWTRenderer)foUserAgent.getRendererOverride();
+
+  this.foUserAgent=foUserAgent;
+
+  this.configuredTargetResolution=this.foUserAgent.getTargetResolution();
+
+  this.renderable=renderable;
+
+  translator=new Translator();
+
+  Command printAction=new Command(translator.getString("Menu.Print"),"Print"){
+
+    public void doit(){
+
+      startPrinterJob(true);
+
+    }
+
+  }
+
+;
+
+  Command firstPageAction=new Command(translator.getString("Menu.First.page"),"firstpg"){
+
+    public void doit(){
+
+      goToFirstPage();
+
+    }
+
+  }
+
+;
+
+  Command previousPageAction=new Command(translator.getString("Menu.Prev.page"),"prevpg"){
+
+    public void doit(){
+
+      goToPreviousPage();
+
+    }
+
+  }
+
+;
+
+  Command nextPageAction=new Command(translator.getString("Menu.Next.page"),"nextpg"){
+
+    public void doit(){
+
+      goToNextPage();
+
+    }
+
+  }
+
+;
+
+  Command lastPageAction=new Command(translator.getString("Menu.Last.page"),"lastpg"){
+
+    public void doit(){
+
+      goToLastPage();
+
+    }
+
+  }
+
+;
+
+  Command reloadAction=new Command(translator.getString("Menu.Reload"),"reload"){
+
+    public void doit(){
+
+      previewPanel.reload();
+
+    }
+
+  }
+
+;
+
+  Command debugAction=new Command(translator.getString("Menu.Debug"),"debug"){
+
+    public void doit(){
+
+      previewPanel.debug();
+
+    }
+
+  }
+
+;
+
+  Command aboutAction=new Command(translator.getString("Menu.About"),"fopLogo"){
+
+    public void doit(){
+
+      hongshuai();
+
+      PreviewDialogAboutBox dlg=new PreviewDialogAboutBox(this,translator);
+
+      Dimension dlgSize=dlg.getPreferredSize();
+
+      Dimension frmSize=getSize();
+
+      Point loc=getLocation();
+
+      dlg.setLocation((frmSize.width - dlgSize.width) / 2 + loc.x,(frmSize.height - dlgSize.height) / 2 + loc.y);
+
+      dlg.setVisible(true);
+
+    }
+
+  }
+
+;
+
+  setTitle("FOP: AWT-" + translator.getString("Title.Preview"));
+
+  setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+
+  Dimension screen=Toolkit.getDefaultToolkit().getScreenSize();
+
+  pack();
+
+  setSize(screen.width * 61 / 100,screen.height * 9 / 10);
+
+  previewPanel=new PreviewPanel(foUserAgent,renderable,renderer);
+
+  getContentPane().add(previewPanel,BorderLayout.CENTER);
+
+  previewPanel.addPageChangeListener(new PageChangeListener(){
+
+    public void pageChanged(    PageChangeEvent pce){
+
+      new ShowInfo().run();
+
+    }
+
+  }
+
+);
+
+  InputMap im=previewPanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+
+  ActionMap am=previewPanel.getActionMap();
+
+  im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,0),"nextPage");
+
+  im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP,0),"prevPage");
+
+  im.put(KeyStroke.getKeyStroke(KeyEvent.VK_HOME,0),"firstPage");
+
+  im.put(KeyStroke.getKeyStroke(KeyEvent.VK_END,0),"lastPage");
+
+  previewPanel.getActionMap().put("nextPage",nextPageAction);
+
+  previewPanel.getActionMap().put("prevPage",previousPageAction);
+
+  previewPanel.getActionMap().put("firstPage",firstPageAction);
+
+  previewPanel.getActionMap().put("lastPage",lastPageAction);
+
+  scale=new JComboBox();
+
+  scale.addItem(translator.getString("Menu.Fit.Window"));
+
+  scale.addItem(translator.getString("Menu.Fit.Width"));
+
+  scale.addItem("25%");
+
+  scale.addItem("50%");
+
+  scale.addItem("75%");
+
+  scale.addItem("100%");
+
+  scale.addItem("150%");
+
+  scale.addItem("200%");
+
+  scale.setMaximumSize(new Dimension(80,24));
+
+  scale.setPreferredSize(new Dimension(80,24));
+
+  scale.setSelectedItem("100%");
+
+  scale.setEditable(true);
+
+  scale.addActionListener(new ActionListener(){
+
+    public void actionPerformed(    ActionEvent e){
+
+      scaleActionPerformed(e);
+
+    }
+
+  }
+
+);
+
+  setJMenuBar(setupMenu());
+
+  JToolBar toolBar=new JToolBar();
+
+  toolBar.add(printAction);
+
+  toolBar.add(reloadAction);
+
+  toolBar.addSeparator();
+
+  toolBar.add(firstPageAction);
+
+  toolBar.add(previousPageAction);
+
+  toolBar.add(nextPageAction);
+
+  toolBar.add(lastPageAction);
+
+  toolBar.addSeparator(new Dimension(20,0));
+
+  toolBar.add(new JLabel(translator.getString("Menu.Zoom") + " "));
+
+  toolBar.add(scale);
+
+  toolBar.addSeparator();
+
+  toolBar.add(debugAction);
+
+  toolBar.addSeparator();
+
+  toolBar.add(aboutAction);
+
+  getContentPane().add(toolBar,BorderLayout.NORTH);
+
+  JPanel statusBar=new JPanel();
+
+  processStatus=new JLabel();
+
+  processStatus.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createEtchedBorder(),BorderFactory.createEmptyBorder(0,3,0,0)));
+
+  infoStatus=new JLabel();
+
+  infoStatus.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createEtchedBorder(),BorderFactory.createEmptyBorder(0,3,0,0)));
+
+  statusBar.setLayout(new GridBagLayout());
+
+  processStatus.setPreferredSize(new Dimension(200,21));
+
+  processStatus.setMinimumSize(new Dimension(200,21));
+
+  infoStatus.setPreferredSize(new Dimension(100,21));
+
+  infoStatus.setMinimumSize(new Dimension(100,21));
+
+  statusBar.add(processStatus,new GridBagConstraints(0,0,1,0,2.0,0.0,GridBagConstraints.CENTER,GridBagConstraints.HORIZONTAL,new Insets(0,0,0,3),0,0));
+
+  statusBar.add(infoStatus,new GridBagConstraints(1,0,1,0,1.0,0.0,GridBagConstraints.CENTER,GridBagConstraints.HORIZONTAL,new Insets(0,0,0,0),0,0));
+
+  getContentPane().add(statusBar,BorderLayout.SOUTH);
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+private void reload(){
+
+  setStatus(translator.getString("Status.Show"));
+
+  previewPanel.reload();
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Opens standard Swing error dialog box and reports given exception details.
+
+ * @param e the Exception
+
+ */
+
+public void reportException(Exception e){
+
+  String msg=translator.getString("Exception.Occured");
+
+  setStatus(msg);
+
+  JOptionPane.showMessageDialog(getContentPane(),"<html><b>" + msg + ":</b><br>"+ e.getClass().getName()+ "<br>"+ e.getMessage()+ "</html>",translator.getString("Exception.Error"),JOptionPane.ERROR_MESSAGE);
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+private void scaleActionPerformed(ActionEvent e){
+
+  int index=scale.getSelectedIndex();
+
+  if (index == 0) {
+
+    setScaleToFitWindow();
+
+  }
+
+ else   if (index == 1) {
+
+    setScaleToFitWidth();
+
+  }
+
+ else {
+
+    String item=(String)scale.getSelectedItem();
+
+    setScale(Double.parseDouble(item.substring(0,item.indexOf('%'))));
+
+  }
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Sets the scaling so the contents are spread over the whole width available.
+
+ */
+
+public void setScaleToFitWidth(){
+
+  try {
+
+    setScale(previewPanel.getScaleToFitWidth() * 100);
+
+  }
+
+ catch (  FOPException fopEx) {
+
+    fopEx.printStackTrace();
+
+  }
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Sets the scaling so the contents fit into the window.
+
+ */
+
+public void setScaleToFitWindow(){
+
+  try {
+
+    setScale(previewPanel.getScaleToFitWindow() * 100);
+
+  }
+
+ catch (  FOPException fopEx) {
+
+    fopEx.printStackTrace();
+
+  }
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Scales page image.
+
+ * @param scaleFactor the scale factor
+
+ */
+
+public void setScale(double scaleFactor){
+
+  scale.setSelectedItem(percentFormat.format(scaleFactor) + "%");
+
+  previewPanel.setScaleFactor(scaleFactor / 100d);
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Sets message to be shown in the status bar in a thread safe way.
+
+ * @param message the message
+
+ */
+
+public void setStatus(String message){
+
+  SwingUtilities.invokeLater(new ShowStatus(message));
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Creates a new menubar to be shown in this window.
+
+ * @return the newly created menubar
+
+ */
+
+private JMenuBar setupMenu(){
+
+  JMenuBar menuBar=new JMenuBar();
+
+  JMenu menu=new JMenu(translator.getString("Menu.File"));
+
+  menu.setMnemonic(KeyEvent.VK_F);
+
+  menu.add(new Command(translator.getString("Menu.Print"),KeyEvent.VK_P){
+
+    public void doit(){
+
+      startPrinterJob(true);
+
+    }
+
+  }
+
+);
+
+  if (renderable != null) {
+
+    menu.add(new Command(translator.getString("Menu.Reload"),KeyEvent.VK_R){
+
+      public void doit(){
+
+        reload();
+
+      }
+
+    }
+
+);
+
+  }
+
+  menu.addSeparator();
+
+  menu.add(new Command(translator.getString("Menu.Exit"),KeyEvent.VK_X){
+
+    public void doit(){
+
+      dispose();
+
+    }
+
+  }
+
+);
+
+  menuBar.add(menu);
+
+  menu=new JMenu(translator.getString("Menu.View"));
+
+  menu.setMnemonic(KeyEvent.VK_V);
+
+  menu.add(new Command(translator.getString("Menu.First.page"),KeyEvent.VK_F){
+
+    public void doit(){
+
+      goToFirstPage();
+
+    }
+
+  }
+
+);
+
+  menu.add(new Command(translator.getString("Menu.Prev.page"),KeyEvent.VK_P){
+
+    public void doit(){
+
+      goToPreviousPage();
+
+    }
+
+  }
+
+);
+
+  menu.add(new Command(translator.getString("Menu.Next.page"),KeyEvent.VK_N){
+
+    public void doit(){
+
+      goToNextPage();
+
+    }
+
+  }
+
+);
+
+  menu.add(new Command(translator.getString("Menu.Last.page"),KeyEvent.VK_L){
+
+    public void doit(){
+
+      goToLastPage();
+
+    }
+
+  }
+
+);
+
+  menu.add(new Command(translator.getString("Menu.Go.to.Page"),KeyEvent.VK_G){
+
+    public void doit(){
+
+      showGoToPageDialog();
+
+    }
+
+  }
+
+);
+
+  menu.addSeparator();
+
+  JMenu subMenu=new JMenu(translator.getString("Menu.Zoom"));
+
+  subMenu.setMnemonic(KeyEvent.VK_Z);
+
+  subMenu.add(new Command("25%",0){
+
+    public void doit(){
+
+      setScale(25.0);
+
+    }
+
+  }
+
+);
+
+  subMenu.add(new Command("50%",0){
+
+    public void doit(){
+
+      setScale(50.0);
+
+    }
+
+  }
+
+);
+
+  subMenu.add(new Command("75%",0){
+
+    public void doit(){
+
+      setScale(75.0);
+
+    }
+
+  }
+
+);
+
+  subMenu.add(new Command("100%",0){
+
+    public void doit(){
+
+      setScale(100.0);
+
+    }
+
+  }
+
+);
+
+  subMenu.add(new Command("150%",0){
+
+    public void doit(){
+
+      setScale(150.0);
+
+    }
+
+  }
+
+);
+
+  subMenu.add(new Command("200%",0){
+
+    public void doit(){
+
+      setScale(200.0);
+
+    }
+
+  }
+
+);
+
+  menu.add(subMenu);
+
+  menu.addSeparator();
+
+  menu.add(new Command(translator.getString("Menu.Default.zoom"),KeyEvent.VK_D){
+
+    public void doit(){
+
+      setScale(100.0);
+
+    }
+
+  }
+
+);
+
+  menu.add(new Command(translator.getString("Menu.Fit.Window"),KeyEvent.VK_F){
+
+    public void doit(){
+
+      setScaleToFitWindow();
+
+    }
+
+  }
+
+);
+
+  menu.add(new Command(translator.getString("Menu.Fit.Width"),KeyEvent.VK_W){
+
+    public void doit(){
+
+      setScaleToFitWidth();
+
+    }
+
+  }
+
+);
+
+  menu.addSeparator();
+
+  ButtonGroup group=new ButtonGroup();
+
+  JRadioButtonMenuItem single=new JRadioButtonMenuItem(new Command(translator.getString("Menu.Single"),KeyEvent.VK_S){
+
+    public void doit(){
+
+      previewPanel.setDisplayMode(PreviewPanel.SINGLE);
+
+    }
+
+  }
+
+);
+
+  JRadioButtonMenuItem cont=new JRadioButtonMenuItem(new Command(translator.getString("Menu.Continuous"),KeyEvent.VK_C){
+
+    public void doit(){
+
+      previewPanel.setDisplayMode(PreviewPanel.CONTINUOUS);
+
+    }
+
+  }
+
+);
+
+  JRadioButtonMenuItem facing=new JRadioButtonMenuItem(new Command(translator.getString("Menu.Facing"),0){
+
+    public void doit(){
+
+      previewPanel.setDisplayMode(PreviewPanel.CONT_FACING);
+
+    }
+
+  }
+
+);
+
+  single.setSelected(true);
+
+  group.add(single);
+
+  group.add(cont);
+
+  group.add(facing);
+
+  menu.add(single);
+
+  menu.add(cont);
+
+  menu.add(facing);
+
+  menuBar.add(menu);
+
+  menu=new JMenu(translator.getString("Menu.Help"));
+
+  menu.setMnemonic(KeyEvent.VK_H);
+
+  menu.add(new Command(translator.getString("Menu.About"),KeyEvent.VK_A){
+
+    public void doit(){
+
+      hongshuai();
+
+      PreviewDialogAboutBox dlg=new PreviewDialogAboutBox(this,translator);
+
+      Dimension dlgSize=dlg.getPreferredSize();
+
+      Dimension frmSize=getSize();
+
+      Point loc=getLocation();
+
+      dlg.setLocation((frmSize.width - dlgSize.width) / 2 + loc.x,(frmSize.height - dlgSize.height) / 2 + loc.y);
+
+      dlg.setVisible(true);
+
+    }
+
+  }
+
+);
+
+  menuBar.add(menu);
+
+  return menuBar;
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Shows "go to page" dialog and then goes to the selected page
+
+ */
+
+private void showGoToPageDialog(){
+
+  int currentPage=previewPanel.getPage();
+
+  GoToPageDialog d=new GoToPageDialog(this,translator.getString("Menu.Go.to.Page"),translator);
+
+  d.setLocation((int)getLocation().getX() + 50,(int)getLocation().getY() + 50);
+
+  d.setVisible(true);
+
+  currentPage=d.getPageNumber();
+
+  if (currentPage < 1 || currentPage > renderer.getNumberOfPages()) {
+
+    return;
+
+  }
+
+  currentPage--;
+
+  goToPage(currentPage);
+
+}
+
+Location: PreviewDialog.java
+
+Content: 
+
+/** 
+
+ * Prints the document.
+
+ * @param showDialog true if show dialog
+
+ */
+
+public void startPrinterJob(boolean showDialog){
+
+  float saveResolution=foUserAgent.getTargetResolution();
+
+  foUserAgent.setTargetResolution(this.configuredTargetResolution);
+
+  PrinterJob pj=PrinterJob.getPrinterJob();
+
+  pj.setPageable(renderer);
+
+  if (!showDialog || pj.printDialog()) {
+
+    try {
+
+      pj.print();
+
+    }
+
+ catch (    PrinterException e) {
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+  foUserAgent.setTargetResolution(saveResolution);
+
+}
+

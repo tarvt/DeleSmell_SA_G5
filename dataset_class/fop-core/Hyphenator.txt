@@ -1,0 +1,370 @@
+Location: Hyphenator.java
+
+Content: 
+
+/** 
+
+ * Returns a hyphenation tree. This method looks in the resources (getResourceStream) for the hyphenation patterns.
+
+ * @param key the language/country key
+
+ * @return the hyphenation tree or null if it wasn't found in the resources
+
+ */
+
+public static HyphenationTree getFopHyphenationTree(String key){
+
+  InputStream is=getResourceStream(key);
+
+  if (is == null) {
+
+    if (log.isDebugEnabled()) {
+
+      log.debug("Couldn't find precompiled hyphenation pattern " + key + " in resources");
+
+    }
+
+    return null;
+
+  }
+
+  return readHyphenationTree(is);
+
+}
+
+Location: Hyphenator.java
+
+Content: 
+
+private static InputStream getHyphenationTreeStream(String name,InternalResourceResolver resourceResolver) throws IOException {
+
+  try {
+
+    return new BufferedInputStream(resourceResolver.getResource(name));
+
+  }
+
+ catch (  URISyntaxException use) {
+
+    log.debug("An exception was thrown while attempting to load " + name,use);
+
+  }
+
+  return null;
+
+}
+
+Location: Hyphenator.java
+
+Content: 
+
+public static HyphenationTree getHyphenationTree(String lang,String country,InternalResourceResolver resourceResolver,Map hyphPatNames,FOUserAgent foUserAgent){
+
+  String llccKey=HyphenationTreeCache.constructLlccKey(lang,country);
+
+  HyphenationTreeCache cache=foUserAgent.getHyphenationTreeCache();
+
+  if (cache == null || cache.isMissing(llccKey)) {
+
+    return null;
+
+  }
+
+  HyphenationTree hTree;
+
+  hTree=cache.getHyphenationTree(lang,country);
+
+  if (hTree != null) {
+
+    return hTree;
+
+  }
+
+  String key=HyphenationTreeCache.constructUserKey(lang,country,hyphPatNames);
+
+  if (key == null) {
+
+    key=llccKey;
+
+  }
+
+  if (resourceResolver != null) {
+
+    hTree=getUserHyphenationTree(key,resourceResolver);
+
+  }
+
+  if (hTree == null) {
+
+    hTree=getFopHyphenationTree(key);
+
+  }
+
+  if (hTree == null && country != null && !country.equals("none")) {
+
+    return getHyphenationTree(lang,null,resourceResolver,hyphPatNames,foUserAgent);
+
+  }
+
+  if (hTree != null) {
+
+    cache.cache(llccKey,hTree);
+
+  }
+
+ else {
+
+    EventBroadcaster eventBroadcaster=foUserAgent.getEventBroadcaster();
+
+    if (eventBroadcaster == null) {
+
+      log.error("Couldn't find hyphenation pattern " + llccKey);
+
+    }
+
+ else {
+
+      ResourceEventProducer producer=ResourceEventProducer.Provider.get(eventBroadcaster);
+
+      String name=key.replace(HYPTYPE,"").replace(XMLTYPE,"");
+
+      producer.hyphenationNotFound(cache,name);
+
+    }
+
+    cache.noteMissing(llccKey);
+
+  }
+
+  return hTree;
+
+}
+
+Location: Hyphenator.java
+
+Content: 
+
+private static InputStream getResourceStream(String key){
+
+  InputStream is=null;
+
+  try {
+
+    java.lang.reflect.Method getCCL=Thread.class.getMethod("getContextClassLoader",new Class[0]);
+
+    if (getCCL != null) {
+
+      ClassLoader contextClassLoader=(ClassLoader)getCCL.invoke(Thread.currentThread(),new Object[0]);
+
+      is=contextClassLoader.getResourceAsStream("hyph/" + key + ".hyp");
+
+    }
+
+  }
+
+ catch (  NoSuchMethodException e) {
+
+  }
+
+catch (  IllegalAccessException e) {
+
+  }
+
+catch (  java.lang.reflect.InvocationTargetException e) {
+
+  }
+
+  if (is == null) {
+
+    is=Hyphenator.class.getResourceAsStream("/hyph/" + key + ".hyp");
+
+  }
+
+  return is;
+
+}
+
+Location: Hyphenator.java
+
+Content: 
+
+/** 
+
+ * Load tree from serialized file or xml file using configuration settings
+
+ * @param key language key for the requested hyphenation file
+
+ * @param resourceResolver resource resolver to find the hyphenation files
+
+ * @return the requested HypenationTree or null if it is not available
+
+ */
+
+public static HyphenationTree getUserHyphenationTree(String key,InternalResourceResolver resourceResolver){
+
+  HyphenationTree hTree=null;
+
+  String name=key + ".hyp";
+
+  if (key.endsWith(HYPTYPE)) {
+
+    name=key.replace(HYPTYPE,"");
+
+  }
+
+  if (!key.endsWith(XMLTYPE)) {
+
+    try {
+
+      InputStream in=getHyphenationTreeStream(name,resourceResolver);
+
+      try {
+
+        hTree=readHyphenationTree(in);
+
+      }
+
+  finally {
+
+        IOUtils.closeQuietly(in);
+
+      }
+
+      return hTree;
+
+    }
+
+ catch (    IOException ioe) {
+
+      if (log.isDebugEnabled()) {
+
+        log.debug("I/O problem while trying to load " + name,ioe);
+
+      }
+
+    }
+
+  }
+
+  name=key + ".xml";
+
+  if (key.endsWith(XMLTYPE)) {
+
+    name=key.replace(XMLTYPE,"");
+
+  }
+
+  hTree=new HyphenationTree();
+
+  try {
+
+    InputStream in=getHyphenationTreeStream(name,resourceResolver);
+
+    try {
+
+      InputSource src=new InputSource(in);
+
+      src.setSystemId(name);
+
+      hTree.loadPatterns(src);
+
+    }
+
+  finally {
+
+      IOUtils.closeQuietly(in);
+
+    }
+
+    if (statisticsDump) {
+
+      System.out.println("Stats: ");
+
+      hTree.printStats();
+
+    }
+
+    return hTree;
+
+  }
+
+ catch (  HyphenationException ex) {
+
+    log.error("Can't load user patterns from XML file " + name + ": "+ ex.getMessage());
+
+    return null;
+
+  }
+
+catch (  IOException ioe) {
+
+    if (log.isDebugEnabled()) {
+
+      log.debug("I/O problem while trying to load " + name,ioe);
+
+    }
+
+    return null;
+
+  }
+
+}
+
+Location: Hyphenator.java
+
+Content: 
+
+public static Hyphenation hyphenate(String lang,String country,InternalResourceResolver resourceResolver,Map hyphPatNames,String word,int leftMin,int rightMin,FOUserAgent foUserAgent){
+
+  HyphenationTree hTree=getHyphenationTree(lang,country,resourceResolver,hyphPatNames,foUserAgent);
+
+  if (hTree == null) {
+
+    return null;
+
+  }
+
+  return hTree.hyphenate(word,leftMin,rightMin);
+
+}
+
+Location: Hyphenator.java
+
+Content: 
+
+private Hyphenator(){
+
+}
+
+Location: Hyphenator.java
+
+Content: 
+
+private static HyphenationTree readHyphenationTree(InputStream in){
+
+  HyphenationTree hTree=null;
+
+  try {
+
+    ObjectInputStream ois=new ObjectInputStream(in);
+
+    hTree=(HyphenationTree)ois.readObject();
+
+  }
+
+ catch (  IOException ioe) {
+
+    log.error("I/O error while loading precompiled hyphenation pattern file",ioe);
+
+  }
+
+catch (  ClassNotFoundException cnfe) {
+
+    log.error("Error while reading hyphenation object from file",cnfe);
+
+  }
+
+  return hTree;
+
+}
+

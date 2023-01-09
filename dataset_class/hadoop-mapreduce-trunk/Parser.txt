@@ -1,0 +1,408 @@
+Location: Parser.java
+
+Content: 
+
+/** 
+
+ * Combine results 
+
+ */
+
+static <T extends Combinable<T>>Map<Parameter,T> combine(Map<Parameter,List<T>> m){
+
+  final Map<Parameter,T> combined=new TreeMap<Parameter,T>();
+
+  for (  Parameter p : Parameter.values()) {
+
+    final List<T> results=Util.combine(m.get(p));
+
+    Util.out.format("%-6s => ",p);
+
+    if (results == null)     Util.out.println("null");
+
+ else     if (results.size() != 1)     Util.out.println(results.toString().replace(", ",",\n           "));
+
+ else {
+
+      final T r=results.get(0);
+
+      combined.put(p,r);
+
+      Util.out.println(r);
+
+    }
+
+  }
+
+  return combined;
+
+}
+
+Location: Parser.java
+
+Content: 
+
+/** 
+
+ * Parse a line 
+
+ */
+
+private static void parseLine(final String line,Map<Parameter,List<TaskResult>> m){
+
+  final Map.Entry<String,TaskResult> e=DistSum.string2TaskResult(line);
+
+  if (e != null) {
+
+    final List<TaskResult> sums=m.get(Parameter.get(e.getKey()));
+
+    if (sums == null)     throw new IllegalArgumentException("sums == null, line=" + line + ", e="+ e);
+
+    sums.add(e.getValue());
+
+  }
+
+}
+
+Location: Parser.java
+
+Content: 
+
+public Parser(boolean isVerbose){
+
+  this.isVerbose=isVerbose;
+
+}
+
+Location: Parser.java
+
+Content: 
+
+/** 
+
+ * Parse a file or a directory tree 
+
+ */
+
+private void parse(File f,Map<Parameter,List<TaskResult>> sums) throws IOException {
+
+  if (f.isDirectory()) {
+
+    println("Process directory " + f);
+
+    for (    File child : f.listFiles())     parse(child,sums);
+
+  }
+
+ else   if (f.getName().endsWith(".txt")) {
+
+    println("Parse file " + f);
+
+    final Map<Parameter,List<TaskResult>> m=new TreeMap<Parameter,List<TaskResult>>();
+
+    for (    Parameter p : Parameter.values())     m.put(p,new ArrayList<TaskResult>());
+
+    final BufferedReader in=new BufferedReader(new FileReader(f));
+
+    try {
+
+      for (String line; (line=in.readLine()) != null; )       try {
+
+        parseLine(line,m);
+
+      }
+
+ catch (      RuntimeException e) {
+
+        Util.err.println("line = " + line);
+
+        throw e;
+
+      }
+
+    }
+
+  finally {
+
+      in.close();
+
+    }
+
+    for (    Parameter p : Parameter.values()) {
+
+      final List<TaskResult> combined=Util.combine(m.get(p));
+
+      if (!combined.isEmpty()) {
+
+        println(p + " (size=" + combined.size()+ "):");
+
+        for (        TaskResult r : combined)         println("  " + r);
+
+      }
+
+      sums.get(p).addAll(m.get(p));
+
+    }
+
+  }
+
+}
+
+Location: Parser.java
+
+Content: 
+
+/** 
+
+ * Given an expression and an optional comparator, build a tree of InputFormats using the comparator to sort keys.
+
+ */
+
+static Node parse(String expr,Configuration conf) throws IOException {
+
+  if (null == expr) {
+
+    throw new IOException("Expression is null");
+
+  }
+
+  Class<? extends WritableComparator> cmpcl=conf.getClass(CompositeInputFormat.JOIN_COMPARATOR,null,WritableComparator.class);
+
+  Lexer lex=new Lexer(expr);
+
+  Stack<Token> st=new Stack<Token>();
+
+  Token tok;
+
+  while ((tok=lex.next()) != null) {
+
+    if (TType.RPAREN.equals(tok.getType())) {
+
+      st.push(reduce(st,conf));
+
+    }
+
+ else {
+
+      st.push(tok);
+
+    }
+
+  }
+
+  if (st.size() == 1 && TType.CIF.equals(st.peek().getType())) {
+
+    Node ret=st.pop().getNode();
+
+    if (cmpcl != null) {
+
+      ret.setKeyComparator(cmpcl);
+
+    }
+
+    return ret;
+
+  }
+
+  throw new IOException("Missing ')'");
+
+}
+
+Location: Parser.java
+
+Content: 
+
+/** 
+
+ * Given an expression and an optional comparator, build a tree of InputFormats using the comparator to sort keys.
+
+ */
+
+static Node parse(String expr,JobConf job) throws IOException {
+
+  if (null == expr) {
+
+    throw new IOException("Expression is null");
+
+  }
+
+  Class<? extends WritableComparator> cmpcl=job.getClass("mapred.join.keycomparator",null,WritableComparator.class);
+
+  Lexer lex=new Lexer(expr);
+
+  Stack<Token> st=new Stack<Token>();
+
+  Token tok;
+
+  while ((tok=lex.next()) != null) {
+
+    if (TType.RPAREN.equals(tok.getType())) {
+
+      st.push(reduce(st,job));
+
+    }
+
+ else {
+
+      st.push(tok);
+
+    }
+
+  }
+
+  if (st.size() == 1 && TType.CIF.equals(st.peek().getType())) {
+
+    Node ret=st.pop().getNode();
+
+    if (cmpcl != null) {
+
+      ret.setKeyComparator(cmpcl);
+
+    }
+
+    return ret;
+
+  }
+
+  throw new IOException("Missing ')'");
+
+}
+
+Location: Parser.java
+
+Content: 
+
+/** 
+
+ * Parse input and re-write results. 
+
+ */
+
+Map<Parameter,List<TaskResult>> parse(String inputpath,String outputdir) throws IOException {
+
+  Util.out.print("\nParsing " + inputpath + " ... ");
+
+  Util.out.flush();
+
+  final Map<Parameter,List<TaskResult>> parsed=parse(inputpath);
+
+  Util.out.println("DONE");
+
+  if (outputdir != null) {
+
+    Util.out.print("\nWriting to " + outputdir + " ...");
+
+    Util.out.flush();
+
+    for (    Parameter p : Parameter.values()) {
+
+      final List<TaskResult> results=parsed.get(p);
+
+      Collections.sort(results);
+
+      final PrintWriter out=new PrintWriter(new FileWriter(new File(outputdir,p + ".txt")),true);
+
+      try {
+
+        for (int i=0; i < results.size(); i++)         out.println(DistSum.taskResult2string(p + "." + i,results.get(i)));
+
+      }
+
+  finally {
+
+        out.close();
+
+      }
+
+    }
+
+    Util.out.println("DONE");
+
+  }
+
+  return parsed;
+
+}
+
+Location: Parser.java
+
+Content: 
+
+private void println(String s){
+
+  if (isVerbose)   Util.out.println(s);
+
+}
+
+Location: Parser.java
+
+Content: 
+
+private static Token reduce(Stack<Token> st,Configuration conf) throws IOException {
+
+  LinkedList<Token> args=new LinkedList<Token>();
+
+  while (!st.isEmpty() && !TType.LPAREN.equals(st.peek().getType())) {
+
+    args.addFirst(st.pop());
+
+  }
+
+  if (st.isEmpty()) {
+
+    throw new IOException("Unmatched ')'");
+
+  }
+
+  st.pop();
+
+  if (st.isEmpty() || !TType.IDENT.equals(st.peek().getType())) {
+
+    throw new IOException("Identifier expected");
+
+  }
+
+  Node n=Node.forIdent(st.pop().getStr());
+
+  n.parse(args,conf);
+
+  return new NodeToken(n);
+
+}
+
+Location: Parser.java
+
+Content: 
+
+private static Token reduce(Stack<Token> st,JobConf job) throws IOException {
+
+  LinkedList<Token> args=new LinkedList<Token>();
+
+  while (!st.isEmpty() && !TType.LPAREN.equals(st.peek().getType())) {
+
+    args.addFirst(st.pop());
+
+  }
+
+  if (st.isEmpty()) {
+
+    throw new IOException("Unmatched ')'");
+
+  }
+
+  st.pop();
+
+  if (st.isEmpty() || !TType.IDENT.equals(st.peek().getType())) {
+
+    throw new IOException("Identifier expected");
+
+  }
+
+  Node n=Node.forIdent(st.pop().getStr());
+
+  n.parse(args,job);
+
+  return new NodeToken(n);
+
+}
+

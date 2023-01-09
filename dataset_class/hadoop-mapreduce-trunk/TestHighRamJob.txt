@@ -1,0 +1,166 @@
+Location: TestHighRamJob.java
+
+Content: 
+
+private static void testHighRamConfig(long jobMapMB,long jobReduceMB,long clusterMapMB,long clusterReduceMB,long simulatedClusterMapMB,long simulatedClusterReduceMB,long expectedMapMB,long expectedReduceMB,Configuration gConf) throws IOException {
+
+  Configuration simulatedJobConf=new Configuration(gConf);
+
+  simulatedJobConf.setLong(MRConfig.MAPMEMORY_MB,simulatedClusterMapMB);
+
+  simulatedJobConf.setLong(MRConfig.REDUCEMEMORY_MB,simulatedClusterReduceMB);
+
+  Configuration sourceConf=new Configuration();
+
+  sourceConf.setLong(MRJobConfig.MAP_MEMORY_MB,jobMapMB);
+
+  sourceConf.setLong(MRConfig.MAPMEMORY_MB,clusterMapMB);
+
+  sourceConf.setLong(MRJobConfig.REDUCE_MEMORY_MB,jobReduceMB);
+
+  sourceConf.setLong(MRConfig.REDUCEMEMORY_MB,clusterReduceMB);
+
+  MockJob story=new MockJob(sourceConf);
+
+  GridmixJob job=new DummyGridmixJob(simulatedJobConf,story);
+
+  Job simulatedJob=job.getJob();
+
+  Configuration simulatedConf=simulatedJob.getConfiguration();
+
+  assertEquals(expectedMapMB,simulatedConf.getLong(MRJobConfig.MAP_MEMORY_MB,JobConf.DISABLED_MEMORY_LIMIT));
+
+  assertEquals(expectedReduceMB,simulatedConf.getLong(MRJobConfig.REDUCE_MEMORY_MB,JobConf.DISABLED_MEMORY_LIMIT));
+
+}
+
+Location: TestHighRamJob.java
+
+Content: 
+
+/** 
+
+ * Tests high ram job properties configuration.
+
+ */
+
+@SuppressWarnings("deprecation") @Test public void testHighRamFeatureEmulation() throws IOException {
+
+  Configuration gridmixConf=new Configuration();
+
+  gridmixConf.setBoolean(GridmixJob.GRIDMIX_HIGHRAM_EMULATION_ENABLE,false);
+
+  testHighRamConfig(10,20,5,10,JobConf.DISABLED_MEMORY_LIMIT,JobConf.DISABLED_MEMORY_LIMIT,JobConf.DISABLED_MEMORY_LIMIT,JobConf.DISABLED_MEMORY_LIMIT,gridmixConf);
+
+  gridmixConf=new Configuration();
+
+  gridmixConf.setLong(JobConf.UPPER_LIMIT_ON_TASK_VMEM_PROPERTY,20 * 1024 * 1024);
+
+  testHighRamConfig(10,20,5,10,5,10,10,20,gridmixConf);
+
+  gridmixConf=new Configuration();
+
+  gridmixConf.setLong(JTConfig.JT_MAX_MAPMEMORY_MB,100);
+
+  gridmixConf.setLong(JTConfig.JT_MAX_REDUCEMEMORY_MB,300);
+
+  testHighRamConfig(10,45,5,15,50,100,100,300,gridmixConf);
+
+  gridmixConf=new Configuration();
+
+  gridmixConf.setLong(JobConf.UPPER_LIMIT_ON_TASK_VMEM_PROPERTY,70 * 1024 * 1024);
+
+  Boolean failed=null;
+
+  try {
+
+    testHighRamConfig(10,45,5,15,50,100,100,300,gridmixConf);
+
+    failed=false;
+
+  }
+
+ catch (  Exception e) {
+
+    failed=true;
+
+  }
+
+  assertNotNull(failed);
+
+  assertTrue("Exception expected for exceeding map memory limit " + "(deprecation)!",failed);
+
+  gridmixConf=new Configuration();
+
+  gridmixConf.setLong(JobConf.UPPER_LIMIT_ON_TASK_VMEM_PROPERTY,150 * 1024 * 1024);
+
+  failed=null;
+
+  try {
+
+    testHighRamConfig(10,45,5,15,50,100,100,300,gridmixConf);
+
+    failed=false;
+
+  }
+
+ catch (  Exception e) {
+
+    failed=true;
+
+  }
+
+  assertNotNull(failed);
+
+  assertTrue("Exception expected for exceeding reduce memory limit " + "(deprecation)!",failed);
+
+  gridmixConf=new Configuration();
+
+  gridmixConf.setLong(JTConfig.JT_MAX_MAPMEMORY_MB,70);
+
+  failed=null;
+
+  try {
+
+    testHighRamConfig(10,45,5,15,50,100,100,300,gridmixConf);
+
+    failed=false;
+
+  }
+
+ catch (  Exception e) {
+
+    failed=true;
+
+  }
+
+  assertNotNull(failed);
+
+  assertTrue("Exception expected for exceeding map memory limit!",failed);
+
+  gridmixConf=new Configuration();
+
+  gridmixConf.setLong(JTConfig.JT_MAX_REDUCEMEMORY_MB,200);
+
+  failed=null;
+
+  try {
+
+    testHighRamConfig(10,45,5,15,50,100,100,300,gridmixConf);
+
+    failed=false;
+
+  }
+
+ catch (  Exception e) {
+
+    failed=true;
+
+  }
+
+  assertNotNull(failed);
+
+  assertTrue("Exception expected for exceeding reduce memory limit!",failed);
+
+}
+

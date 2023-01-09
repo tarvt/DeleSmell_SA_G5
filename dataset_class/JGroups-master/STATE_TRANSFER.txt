@@ -1,0 +1,354 @@
+Location: STATE_TRANSFER.java
+
+Content: 
+
+@ManagedOperation(description="Closes BARRIER and suspends STABLE") public void closeBarrierAndSuspendStable(){
+
+  if (!isDigestNeeded())   return;
+
+  log.trace("%s: sending down CLOSE_BARRIER and SUSPEND_STABLE",local_addr);
+
+  down_prot.down(new Event(Event.CLOSE_BARRIER));
+
+  down_prot.down(new Event(Event.SUSPEND_STABLE));
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+protected void closeHoleFor(Address member){
+
+  down_prot.down(new Event(Event.CLOSE_HOLE,member));
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+/** 
+
+ * Return the first element of members which is not me. Otherwise return null.
+
+ */
+
+protected Address determineCoordinator(){
+
+synchronized (members) {
+
+    for (    Address member : members)     if (!local_addr.equals(member))     return member;
+
+  }
+
+  return null;
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+@ManagedAttribute public double getAverageStateSize(){
+
+  return avg_state_size;
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+@ManagedAttribute public long getNumberOfStateBytesSent(){
+
+  return num_bytes_sent.sum();
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+@ManagedAttribute public long getNumberOfStateRequests(){
+
+  return num_state_reqs.sum();
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+protected void getStateFromApplication(Address requester,Digest digest){
+
+  StateTransferInfo rsp=(StateTransferInfo)up_prot.up(new Event(Event.GET_APPLSTATE));
+
+  byte[] state=rsp.state;
+
+  if (stats) {
+
+    num_state_reqs.increment();
+
+    if (state != null)     num_bytes_sent.add(state.length);
+
+    avg_state_size=num_bytes_sent.doubleValue() / num_state_reqs.doubleValue();
+
+  }
+
+  Message state_rsp=new Message(requester,state).putHeader(this.id,new StateHeader(StateHeader.STATE_RSP,digest));
+
+  log.trace("%s: sending state to %s (size=%s)",local_addr,state_rsp.getDest(),Util.printBytes(state != null ? state.length : 0));
+
+  down_prot.down(state_rsp);
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+protected void handleException(Throwable exception){
+
+  if (isDigestNeeded())   openBarrierAndResumeStable();
+
+  up_prot.up(new Event(Event.GET_STATE_OK,new StateTransferResult(exception)));
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+protected void handleStateReq(Address requester){
+
+  if (requester == null)   return;
+
+  log.debug("%s: received state request from %s",local_addr,requester);
+
+  Digest digest=null;
+
+  if (isDigestNeeded()) {
+
+    try {
+
+      punchHoleFor(requester);
+
+      closeBarrierAndSuspendStable();
+
+      digest=(Digest)down_prot.down(Event.GET_DIGEST_EVT);
+
+    }
+
+ catch (    Throwable t) {
+
+      sendException(requester,t);
+
+      resumeStable();
+
+      closeHoleFor(requester);
+
+      return;
+
+    }
+
+ finally {
+
+      hongshuai();
+
+      if (!isDigestNeeded())       return;
+
+      log.trace("%s: sending down OPEN_BARRIER",local_addr);
+
+      down_prot.down(new Event(Event.OPEN_BARRIER));
+
+    }
+
+  }
+
+  try {
+
+    getStateFromApplication(requester,digest);
+
+  }
+
+ catch (  Throwable t) {
+
+    sendException(requester,t);
+
+  }
+
+ finally {
+
+    if (isDigestNeeded()) {
+
+      closeHoleFor(requester);
+
+      resumeStable();
+
+    }
+
+  }
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+/** 
+
+ * Set the digest and the send the state up to the application 
+
+ */
+
+protected void handleStateRsp(final Digest digest,Address sender,byte[] state){
+
+  try {
+
+    if (isDigestNeeded()) {
+
+      punchHoleFor(sender);
+
+      closeBarrierAndSuspendStable();
+
+      if (digest != null)       down_prot.down(new Event(Event.OVERWRITE_DIGEST,digest));
+
+    }
+
+    waiting_for_state_response=false;
+
+    stop=System.currentTimeMillis();
+
+    log.debug("%s: received state, size=%s, time=%d milliseconds",local_addr,(state == null ? "0" : Util.printBytes(state.length)),stop - start);
+
+    StateTransferResult result=new StateTransferResult(state);
+
+    up_prot.up(new Event(Event.GET_STATE_OK,result));
+
+    down_prot.down(new Event(Event.GET_VIEW_FROM_COORD));
+
+  }
+
+ catch (  Throwable t) {
+
+    handleException(t);
+
+  }
+
+ finally {
+
+    if (isDigestNeeded()) {
+
+      closeHoleFor(sender);
+
+      openBarrierAndResumeStable();
+
+    }
+
+  }
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+public void handle(Address state_requester){
+
+  handleStateReq(state_requester);
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+/** 
+
+ * When FLUSH is used we do not need to pass digests between members see JGroups/doc/design/PartialStateTransfer.txt see JGroups/doc/design/FLUSH.txt
+
+ * @return true if use of digests is required, false otherwise
+
+ */
+
+protected boolean isDigestNeeded(){
+
+  return !flushProtocolInStack;
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+public void openBarrier(){
+
+  if (!isDigestNeeded())   return;
+
+  log.trace("%s: sending down OPEN_BARRIER",local_addr);
+
+  down_prot.down(new Event(Event.OPEN_BARRIER));
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+@ManagedOperation(description="Opens BARRIER and resumes STABLE") public void openBarrierAndResumeStable(){
+
+  if (!isDigestNeeded())   return;
+
+  log.trace("%s: sending down OPEN_BARRIER and RESUME_STABLE",local_addr);
+
+  down_prot.down(new Event(Event.OPEN_BARRIER));
+
+  down_prot.down(new Event(Event.RESUME_STABLE));
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+protected void punchHoleFor(Address member){
+
+  down_prot.down(new Event(Event.PUNCH_HOLE,member));
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+public void resumeStable(){
+
+  log.trace("%s: sending down RESUME_STABLE",local_addr);
+
+  down_prot.down(new Event(Event.RESUME_STABLE));
+
+}
+
+Location: STATE_TRANSFER.java
+
+Content: 
+
+protected void sendException(Address requester,Throwable exception){
+
+  try {
+
+    Message ex_msg=new Message(requester).setBuffer(Util.exceptionToBuffer(exception)).putHeader(getId(),new StateHeader(StateHeader.STATE_EX));
+
+    down(ex_msg);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error("%s: failed sending exception %s to %s",local_addr,exception,requester);
+
+  }
+
+}
+

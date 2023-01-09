@@ -1,0 +1,288 @@
+Location: LeaderLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Return the allocated IPD for this area.
+
+ * @param refIPD the IPD of the reference area
+
+ * @return the allocated IPD
+
+ */
+
+protected MinOptMax getAllocationIPD(int refIPD){
+
+  return getLeaderAllocIPD(refIPD);
+
+}
+
+Location: LeaderLayoutManager.java
+
+Content: 
+
+private MinOptMax getLeaderAllocIPD(int ipd){
+
+  int borderPaddingWidth=0;
+
+  if (commonBorderPaddingBackground != null) {
+
+    borderPaddingWidth=commonBorderPaddingBackground.getIPPaddingAndBorder(false,this);
+
+  }
+
+  setContentAreaIPD(ipd - borderPaddingWidth);
+
+  int opt=fobj.getLeaderLength().getOptimum(this).getLength().getValue(this) - borderPaddingWidth;
+
+  int min=fobj.getLeaderLength().getMinimum(this).getLength().getValue(this) - borderPaddingWidth;
+
+  int max=fobj.getLeaderLength().getMaximum(this).getLength().getValue(this) - borderPaddingWidth;
+
+  return MinOptMax.getInstance(min,opt,max);
+
+}
+
+Location: LeaderLayoutManager.java
+
+Content: 
+
+private InlineArea getLeaderInlineArea(LayoutContext context){
+
+  InlineArea leaderArea=null;
+
+  int level=fobj.getBidiLevel();
+
+  if (fobj.getLeaderPattern() == EN_RULE) {
+
+    if (fobj.getRuleStyle() != EN_NONE) {
+
+      org.apache.fop.area.inline.Leader leader=new org.apache.fop.area.inline.Leader();
+
+      leader.setRuleStyle(fobj.getRuleStyle());
+
+      leader.setRuleThickness(fobj.getRuleThickness().getValue(this));
+
+      leaderArea=leader;
+
+    }
+
+ else {
+
+      leaderArea=new Space();
+
+      if (level >= 0) {
+
+        leaderArea.setBidiLevel(level);
+
+      }
+
+    }
+
+    leaderArea.setBPD(fobj.getRuleThickness().getValue(this));
+
+    leaderArea.addTrait(Trait.COLOR,fobj.getColor());
+
+    if (level >= 0) {
+
+      leaderArea.setBidiLevel(level);
+
+    }
+
+  }
+
+ else   if (fobj.getLeaderPattern() == EN_SPACE) {
+
+    leaderArea=new Space();
+
+    leaderArea.setBPD(fobj.getRuleThickness().getValue(this));
+
+    if (level >= 0) {
+
+      leaderArea.setBidiLevel(level);
+
+    }
+
+  }
+
+ else   if (fobj.getLeaderPattern() == EN_DOTS) {
+
+    TextArea t=new TextArea();
+
+    char dot='.';
+
+    int width=font.getCharWidth(dot);
+
+    int[] levels=(level < 0) ? null : new int[]{level};
+
+    t.addWord("" + dot,width,null,levels,null,0);
+
+    t.setIPD(width);
+
+    t.setBPD(width);
+
+    t.setBaselineOffset(width);
+
+    TraitSetter.addFontTraits(t,font);
+
+    t.addTrait(Trait.COLOR,fobj.getColor());
+
+    Space spacer=null;
+
+    int widthLeaderPattern=fobj.getLeaderPatternWidth().getValue(this);
+
+    if (widthLeaderPattern > width) {
+
+      spacer=new Space();
+
+      spacer.setIPD(widthLeaderPattern - width);
+
+      if (level >= 0) {
+
+        spacer.setBidiLevel(level);
+
+      }
+
+      width=widthLeaderPattern;
+
+    }
+
+    FilledArea fa=new FilledArea();
+
+    fa.setUnitWidth(width);
+
+    fa.addChildArea(t);
+
+    if (spacer != null) {
+
+      fa.addChildArea(spacer);
+
+    }
+
+    fa.setBPD(t.getBPD());
+
+    leaderArea=fa;
+
+  }
+
+ else   if (fobj.getLeaderPattern() == EN_USECONTENT) {
+
+    if (fobj.getChildNodes() == null) {
+
+      InlineLevelEventProducer eventProducer=InlineLevelEventProducer.Provider.get(getFObj().getUserAgent().getEventBroadcaster());
+
+      eventProducer.leaderWithoutContent(this,getFObj().getLocator());
+
+      return null;
+
+    }
+
+    fobjIter=null;
+
+    FilledArea fa=new FilledArea();
+
+    clm=new ContentLayoutManager(fa,this);
+
+    addChildLM(clm);
+
+    InlineLayoutManager lm;
+
+    lm=new InlineLayoutManager(fobj);
+
+    clm.addChildLM(lm);
+
+    lm.initialize();
+
+    LayoutContext childContext=LayoutContext.newInstance();
+
+    childContext.setAlignmentContext(context.getAlignmentContext());
+
+    contentList=clm.getNextKnuthElements(childContext,0);
+
+    int width=clm.getStackingSize();
+
+    if (width != 0) {
+
+      Space spacer=null;
+
+      if (fobj.getLeaderPatternWidth().getValue(this) > width) {
+
+        spacer=new Space();
+
+        spacer.setIPD(fobj.getLeaderPatternWidth().getValue(this) - width);
+
+        if (level >= 0) {
+
+          spacer.setBidiLevel(level);
+
+        }
+
+        width=fobj.getLeaderPatternWidth().getValue(this);
+
+      }
+
+      fa.setUnitWidth(width);
+
+      if (spacer != null) {
+
+        fa.addChildArea(spacer);
+
+      }
+
+      leaderArea=fa;
+
+    }
+
+ else {
+
+      leaderArea=new Space();
+
+      leaderArea.setBPD(fobj.getRuleThickness().getValue(this));
+
+      leaderArea.setBidiLevel(fobj.getBidiLevelRecursive());
+
+    }
+
+  }
+
+  assert leaderArea != null;
+
+  leaderArea.setChangeBarList(getChangeBarList());
+
+  TraitSetter.setProducerID(leaderArea,fobj.getId());
+
+  return leaderArea;
+
+}
+
+Location: LeaderLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Constructor
+
+ * @param node the formatting object that creates this area
+
+ */
+
+public LeaderLayoutManager(Leader node){
+
+  super(node);
+
+  fobj=node;
+
+}
+
+Location: LeaderLayoutManager.java
+
+Content: 
+
+private void setContentAreaIPD(int contentAreaIPD){
+
+  this.contentAreaIPD=contentAreaIPD;
+
+}
+

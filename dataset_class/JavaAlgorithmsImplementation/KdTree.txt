@@ -1,0 +1,512 @@
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Creates node from list of XYZPoints.
+
+ * @param list of XYZPoints.
+
+ * @param k of the tree.
+
+ * @param depth depth of the node.
+
+ * @return node created.
+
+ */
+
+private static KdNode createNode(List<XYZPoint> list,int k,int depth){
+
+  if (list == null || list.size() == 0)   return null;
+
+  int axis=depth % k;
+
+  if (axis == X_AXIS)   Collections.sort(list,X_COMPARATOR);
+
+ else   if (axis == Y_AXIS)   Collections.sort(list,Y_COMPARATOR);
+
+ else   Collections.sort(list,Z_COMPARATOR);
+
+  KdNode node=null;
+
+  List<XYZPoint> less=new ArrayList<XYZPoint>(list.size());
+
+  List<XYZPoint> more=new ArrayList<XYZPoint>(list.size());
+
+  if (list.size() > 0) {
+
+    int medianIndex=list.size() / 2;
+
+    node=new KdNode(list.get(medianIndex),k,depth);
+
+    for (int i=0; i < list.size(); i++) {
+
+      if (i == medianIndex)       continue;
+
+      XYZPoint p=list.get(i);
+
+      if (KdNode.compareTo(depth,k,p,node.id) <= 0) {
+
+        less.add(p);
+
+      }
+
+ else {
+
+        more.add(p);
+
+      }
+
+    }
+
+    if ((medianIndex - 1 >= 0) && less.size() > 0) {
+
+      node.lesser=createNode(less,k,depth + 1);
+
+      node.lesser.parent=node;
+
+    }
+
+    if ((medianIndex <= list.size() - 1) && more.size() > 0) {
+
+      node.greater=createNode(more,k,depth + 1);
+
+      node.greater.parent=node;
+
+    }
+
+  }
+
+  return node;
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Locates T in the tree.
+
+ * @param tree to search.
+
+ * @param value to search for.
+
+ * @return KdNode or NULL if not found
+
+ */
+
+private static final <T extends KdTree.XYZPoint>KdNode getNode(KdTree<T> tree,T value){
+
+  if (tree == null || tree.root == null || value == null)   return null;
+
+  KdNode node=tree.root;
+
+  while (true) {
+
+    if (node.id.equals(value)) {
+
+      return node;
+
+    }
+
+ else     if (KdNode.compareTo(node.depth,node.k,value,node.id) <= 0) {
+
+      if (node.lesser == null) {
+
+        return null;
+
+      }
+
+      node=node.lesser;
+
+    }
+
+ else {
+
+      if (node.greater == null) {
+
+        return null;
+
+      }
+
+      node=node.greater;
+
+    }
+
+  }
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Gets the (sub) tree rooted at root.
+
+ * @param root of tree to get nodes for.
+
+ * @return points in (sub) tree, not including root.
+
+ */
+
+private static final List<XYZPoint> getTree(KdNode root){
+
+  List<XYZPoint> list=new ArrayList<XYZPoint>();
+
+  if (root == null)   return list;
+
+  if (root.lesser != null) {
+
+    list.add(root.lesser.id);
+
+    list.addAll(getTree(root.lesser));
+
+  }
+
+  if (root.greater != null) {
+
+    list.add(root.greater.id);
+
+    list.addAll(getTree(root.greater));
+
+  }
+
+  return list;
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Searches all entries from the first to the last entry.
+
+ * @return Iterator allowing to iterate through a collection containing all found entries.
+
+ */
+
+public Iterator<T> iterator(){
+
+  final Deque<T> results=new ArrayDeque<T>();
+
+  search(root,results);
+
+  return results.iterator();
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Default constructor.
+
+ */
+
+public KdTree(){
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Constructor for creating a more balanced tree. It uses the "median of points" algorithm.
+
+ * @param list of XYZPoints.
+
+ */
+
+public KdTree(List<XYZPoint> list){
+
+  super();
+
+  root=createNode(list,k,0);
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Constructor for creating a more balanced tree. It uses the "median of points" algorithm.
+
+ * @param list of XYZPoints.
+
+ * @param k of the tree.
+
+ */
+
+public KdTree(List<XYZPoint> list,int k){
+
+  super();
+
+  root=createNode(list,k,0);
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Searches the K nearest neighbor.
+
+ * @param K Number of neighbors to retrieve. Can return more than K, if last nodes are equal distances.
+
+ * @param value to find neighbors of.
+
+ * @return Collection of T neighbors.
+
+ */
+
+@SuppressWarnings("unchecked") public Collection<T> nearestNeighbourSearch(int K,T value){
+
+  if (value == null || root == null)   return Collections.EMPTY_LIST;
+
+  TreeSet<KdNode> results=new TreeSet<KdNode>(new EuclideanComparator(value));
+
+  KdNode prev=null;
+
+  KdNode node=root;
+
+  while (node != null) {
+
+    if (KdNode.compareTo(node.depth,node.k,value,node.id) <= 0) {
+
+      prev=node;
+
+      node=node.lesser;
+
+    }
+
+ else {
+
+      prev=node;
+
+      node=node.greater;
+
+    }
+
+  }
+
+  KdNode leaf=prev;
+
+  if (leaf != null) {
+
+    Set<KdNode> examined=new HashSet<KdNode>();
+
+    node=leaf;
+
+    while (node != null) {
+
+      searchNode(value,node,K,results,examined);
+
+      node=node.parent;
+
+    }
+
+  }
+
+  Collection<T> collection=new ArrayList<T>(K);
+
+  for (  KdNode kdNode : results)   collection.add((T)kdNode.id);
+
+  return collection;
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Searches all entries from the last to the first entry.
+
+ * @return Iterator allowing to iterate through a collection containing all found entries.
+
+ */
+
+public Iterator<T> reverse_iterator(){
+
+  final Deque<T> results=new ArrayDeque<T>();
+
+  search(root,results);
+
+  return results.descendingIterator();
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+private static final <T extends KdTree.XYZPoint>void searchNode(T value,KdNode node,int K,TreeSet<KdNode> results,Set<KdNode> examined){
+
+  examined.add(node);
+
+  KdNode lastNode=null;
+
+  Double lastDistance=Double.MAX_VALUE;
+
+  if (results.size() > 0) {
+
+    lastNode=results.last();
+
+    lastDistance=lastNode.id.euclideanDistance(value);
+
+  }
+
+  Double nodeDistance=node.id.euclideanDistance(value);
+
+  if (nodeDistance.compareTo(lastDistance) < 0) {
+
+    if (results.size() == K && lastNode != null)     results.remove(lastNode);
+
+    results.add(node);
+
+  }
+
+ else   if (nodeDistance.equals(lastDistance)) {
+
+    results.add(node);
+
+  }
+
+ else   if (results.size() < K) {
+
+    results.add(node);
+
+  }
+
+  lastNode=results.last();
+
+  lastDistance=lastNode.id.euclideanDistance(value);
+
+  int axis=node.depth % node.k;
+
+  KdNode lesser=node.lesser;
+
+  KdNode greater=node.greater;
+
+  if (lesser != null && !examined.contains(lesser)) {
+
+    examined.add(lesser);
+
+    double nodePoint=Double.MIN_VALUE;
+
+    double valuePlusDistance=Double.MIN_VALUE;
+
+    if (axis == X_AXIS) {
+
+      nodePoint=node.id.x;
+
+      valuePlusDistance=value.x - lastDistance;
+
+    }
+
+ else     if (axis == Y_AXIS) {
+
+      nodePoint=node.id.y;
+
+      valuePlusDistance=value.y - lastDistance;
+
+    }
+
+ else {
+
+      nodePoint=node.id.z;
+
+      valuePlusDistance=value.z - lastDistance;
+
+    }
+
+    boolean lineIntersectsCube=((valuePlusDistance <= nodePoint) ? true : false);
+
+    if (lineIntersectsCube)     searchNode(value,lesser,K,results,examined);
+
+  }
+
+  if (greater != null && !examined.contains(greater)) {
+
+    examined.add(greater);
+
+    double nodePoint=Double.MIN_VALUE;
+
+    double valuePlusDistance=Double.MIN_VALUE;
+
+    if (axis == X_AXIS) {
+
+      nodePoint=node.id.x;
+
+      valuePlusDistance=value.x + lastDistance;
+
+    }
+
+ else     if (axis == Y_AXIS) {
+
+      nodePoint=node.id.y;
+
+      valuePlusDistance=value.y + lastDistance;
+
+    }
+
+ else {
+
+      nodePoint=node.id.z;
+
+      valuePlusDistance=value.z + lastDistance;
+
+    }
+
+    boolean lineIntersectsCube=((valuePlusDistance >= nodePoint) ? true : false);
+
+    if (lineIntersectsCube)     searchNode(value,greater,K,results,examined);
+
+  }
+
+}
+
+Location: KdTree.java
+
+Content: 
+
+/** 
+
+ * Adds, in a specified queue, a given node and its related nodes (lesser, greater).
+
+ * @param node Node to check. May be null.
+
+ * @param results Queue containing all found entries. Must not be null.
+
+ */
+
+@SuppressWarnings("unchecked") private static <T extends XYZPoint>void search(final KdNode node,final Deque<T> results){
+
+  if (node != null) {
+
+    results.add((T)node.id);
+
+    search(node.greater,results);
+
+    search(node.lesser,results);
+
+  }
+
+}
+

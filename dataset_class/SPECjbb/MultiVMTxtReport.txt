@@ -1,0 +1,224 @@
+Location: MultiVMTxtReport.java
+
+Content: 
+
+public void checkInstanceTiming(){
+
+  int count=0;
+
+  int instancesChecked=0;
+
+  instanceChecksPassed=true;
+
+  long last_rampup_millis=0;
+
+  long first_start_millis=Long.MAX_VALUE;
+
+  long first_rampdown_millis=Long.MAX_VALUE;
+
+  long last_end_millis=0;
+
+  long tmpRampdown=0;
+
+  long tmpEnd=0;
+
+  long tmpStart=0;
+
+  long tmpRampup=0;
+
+  count=metrics[0].getWarehousesTested();
+
+  instancesChecked++;
+
+  for (int n=1; n < instances; n++) {
+
+    if (count != metrics[n].getWarehousesTested())     break;
+
+    instancesChecked++;
+
+  }
+
+  if (instancesChecked != instances) {
+
+    System.out.println("INVALID: Instances do not have identical test counts");
+
+    instanceChecksPassed=false;
+
+  }
+
+ else {
+
+    for (int i=1; i <= count && instanceChecksPassed; i++) {
+
+      last_rampup_millis=0;
+
+      first_start_millis=Long.MAX_VALUE;
+
+      first_rampdown_millis=Long.MAX_VALUE;
+
+      last_end_millis=0;
+
+      for (int j=0; j < instances; j++) {
+
+        tmpStart=metrics[j].start_millis_at_wh(i);
+
+        if (tmpStart < first_start_millis)         first_start_millis=tmpStart;
+
+        tmpRampup=metrics[j].rampup_millis_at_wh(i);
+
+        if (tmpRampup > last_rampup_millis)         last_rampup_millis=tmpRampup;
+
+        tmpRampdown=metrics[j].rampdown_millis_at_wh(i);
+
+        if (tmpRampdown < first_rampdown_millis)         first_rampdown_millis=tmpRampdown;
+
+        tmpEnd=metrics[j].end_millis_at_wh(i);
+
+        if (tmpEnd > last_end_millis)         last_end_millis=tmpEnd;
+
+      }
+
+      if ((first_rampdown_millis > last_end_millis) && (first_start_millis > last_rampup_millis)) {
+
+        instanceChecksPassed=true;
+
+      }
+
+ else {
+
+        instanceChecksPassed=false;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: MultiVMTxtReport.java
+
+Content: 
+
+public MultiVMTxtReport(String newsletter,String output_directory,boolean SPECInternalUse){
+
+  this(newsletter,output_directory,SPECInternalUse,"SPECjbb.");
+
+}
+
+Location: MultiVMTxtReport.java
+
+Content: 
+
+public MultiVMTxtReport(String newsletter,String output_directory,boolean SPECInternalUse,String prefix){
+
+  this.issue=newsletter;
+
+  this.SPECInternalUse=SPECInternalUse;
+
+  this.output_directory=output_directory;
+
+  this.prefix=prefix;
+
+  String suffix=".raw";
+
+  File dir=new File(output_directory);
+
+  if (!dir.exists()) {
+
+    System.out.println("Error: file " + output_directory + " doesn't exist.");
+
+    System.exit(1);
+
+  }
+
+  if (!dir.isDirectory()) {
+
+    System.out.println("Error: file " + output_directory + " is not a directory.");
+
+    System.exit(1);
+
+  }
+
+  FilenameFilter filter=new JBBReportFilenameFilter(prefix,suffix);
+
+  File[] resultFiles=dir.listFiles(filter);
+
+  instances=resultFiles.length;
+
+  results=new ReportProps[resultFiles.length];
+
+  metrics=new TextMetrics[resultFiles.length];
+
+  metric=new String[resultFiles.length];
+
+  double sum=0;
+
+  boolean isMetricsDouble=true;
+
+  for (int i=0; i < resultFiles.length; i++) {
+
+    results[i]=new ReportProps();
+
+    try {
+
+      results[i].load(resultFiles[i].getPath());
+
+    }
+
+ catch (    IOException e) {
+
+      JBButil.getLog().log(Level.WARNING,"Error reading results file " + resultFiles[i] + ": "+ e,e);
+
+      System.exit(1);
+
+    }
+
+    metrics[i]=new TextMetrics(results[i],SPECInternalUse);
+
+    metric[i]=metrics[i].metric();
+
+    try {
+
+      sum+=Double.parseDouble(metric[i]);
+
+    }
+
+ catch (    NumberFormatException e) {
+
+      isMetricsDouble=false;
+
+      metric1="n/a";
+
+      metric2="n/a";
+
+    }
+
+  }
+
+  checkInstanceTiming();
+
+  if (isMetricsDouble) {
+
+    metric1=Metrics.format(sum);
+
+    metric2=Metrics.format(sum / metrics.length);
+
+  }
+
+  this.hardware=get("config.hw.vendor") + " " + get("config.hw.model");
+
+  for (int i=0; i < metrics.length; i++) {
+
+    if (!metrics[i].valid)     validRun=false;
+
+  }
+
+  this.software=get("config.sw.vendor") + " " + get("config.sw.JVM");
+
+  this.memory=results[0].get("config.hw.memory");
+
+  this.memoryDescription=results[0].get("config.hw.memory_description");
+
+}
+

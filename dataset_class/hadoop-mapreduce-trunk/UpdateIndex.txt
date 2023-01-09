@@ -1,0 +1,108 @@
+Location: UpdateIndex.java
+
+Content: 
+
+private static Shard[] createShards(String indexPath,int numShards,Configuration conf) throws IOException {
+
+  String parent=Shard.normalizePath(indexPath) + Path.SEPARATOR;
+
+  long versionNumber=-1;
+
+  long generation=-1;
+
+  FileSystem fs=FileSystem.get(conf);
+
+  Path path=new Path(indexPath);
+
+  if (fs.exists(path)) {
+
+    FileStatus[] fileStatus=fs.listStatus(path);
+
+    String[] shardNames=new String[fileStatus.length];
+
+    int count=0;
+
+    for (int i=0; i < fileStatus.length; i++) {
+
+      if (fileStatus[i].isDirectory()) {
+
+        shardNames[count]=fileStatus[i].getPath().getName();
+
+        count++;
+
+      }
+
+    }
+
+    Arrays.sort(shardNames,0,count);
+
+    Shard[] shards=new Shard[count >= numShards ? count : numShards];
+
+    for (int i=0; i < count; i++) {
+
+      shards[i]=new Shard(versionNumber,parent + shardNames[i],generation);
+
+    }
+
+    int number=count;
+
+    for (int i=count; i < numShards; i++) {
+
+      String shardPath;
+
+      while (true) {
+
+        shardPath=parent + NUMBER_FORMAT.format(number++);
+
+        if (!fs.exists(new Path(shardPath))) {
+
+          break;
+
+        }
+
+      }
+
+      shards[i]=new Shard(versionNumber,shardPath,generation);
+
+    }
+
+    return shards;
+
+  }
+
+ else {
+
+    Shard[] shards=new Shard[numShards];
+
+    for (int i=0; i < shards.length; i++) {
+
+      shards[i]=new Shard(versionNumber,parent + NUMBER_FORMAT.format(i),generation);
+
+    }
+
+    return shards;
+
+  }
+
+}
+
+Location: UpdateIndex.java
+
+Content: 
+
+private static String getIndexPath(Configuration conf){
+
+  return conf.get("sea.index.path");
+
+}
+
+Location: UpdateIndex.java
+
+Content: 
+
+private static int getNumShards(Configuration conf){
+
+  return conf.getInt("sea.num.shards",1);
+
+}
+

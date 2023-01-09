@@ -1,0 +1,272 @@
+Location: PageSequenceMaster.java
+
+Content: 
+
+/** 
+
+ * Adds a new suqsequence specifier to the page sequence master.
+
+ * @param pageMasterReference the subsequence to add
+
+ */
+
+protected void addSubsequenceSpecifier(SubSequenceSpecifier pageMasterReference){
+
+  subSequenceSpecifiers.add(pageMasterReference);
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+public SimplePageMaster getLastSimplePageMaster(boolean isOddPage,boolean isFirstPage,boolean isBlank,String flowName){
+
+  if (currentSubSequence == null) {
+
+    currentSubSequence=getNextSubSequence();
+
+    if (currentSubSequence == null) {
+
+      blockLevelEventProducer.missingSubsequencesInPageSequenceMaster(this,masterName,getLocator());
+
+    }
+
+    if (currentSubSequence.isInfinite() && !currentSubSequence.canProcess(flowName)) {
+
+      throw new PageProductionException("The current sub-sequence will not terminate whilst processing the main flow");
+
+    }
+
+  }
+
+  SimplePageMaster pageMaster=currentSubSequence.getLastPageMaster(isOddPage,isFirstPage,isBlank,blockLevelEventProducer);
+
+  return pageMaster;
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+public LayoutMasterSet getLayoutMasterSet(){
+
+  return layoutMasterSet;
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+/** 
+
+ * Returns the next simple-page-master.
+
+ * @param isOddPage True if the next page number is odd
+
+ * @param isFirstPage True if the next page is the first
+
+ * @param isLastPage True if the next page is the last
+
+ * @param isBlankPage True if the next page is blank
+
+ * @param mainFlowName the name of the main flow of the page sequence
+
+ * @return the requested page master
+
+ * @throws PageProductionException if there's a problem determining the next page master
+
+ */
+
+public SimplePageMaster getNextSimplePageMaster(boolean isOddPage,boolean isFirstPage,boolean isLastPage,boolean isBlankPage,String mainFlowName) throws PageProductionException {
+
+  if (currentSubSequence == null) {
+
+    currentSubSequence=getNextSubSequence();
+
+    if (currentSubSequence == null) {
+
+      blockLevelEventProducer.missingSubsequencesInPageSequenceMaster(this,masterName,getLocator());
+
+    }
+
+    if (currentSubSequence.isInfinite() && !currentSubSequence.canProcess(mainFlowName)) {
+
+      throw new PageProductionException("The current sub-sequence will not terminate whilst processing then main flow");
+
+    }
+
+  }
+
+  SimplePageMaster pageMaster=currentSubSequence.getNextPageMaster(isOddPage,isFirstPage,isLastPage,isBlankPage);
+
+  boolean canRecover=true;
+
+  while (pageMaster == null) {
+
+    SubSequenceSpecifier nextSubSequence=getNextSubSequence();
+
+    if (nextSubSequence == null) {
+
+      blockLevelEventProducer.pageSequenceMasterExhausted(this,masterName,canRecover & currentSubSequence.isReusable(),getLocator());
+
+      currentSubSequence.reset();
+
+      if (!currentSubSequence.canProcess(mainFlowName)) {
+
+        throw new PageProductionException("The last simple-page-master does not reference the main flow");
+
+      }
+
+      canRecover=false;
+
+    }
+
+ else {
+
+      currentSubSequence=nextSubSequence;
+
+    }
+
+    pageMaster=currentSubSequence.getNextPageMaster(isOddPage,isFirstPage,isLastPage,isBlankPage);
+
+  }
+
+  return pageMaster;
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+/** 
+
+ * Returns the next subsequence specifier
+
+ * @return a subsequence specifier
+
+ */
+
+private SubSequenceSpecifier getNextSubSequence(){
+
+  currentSubSequenceNumber++;
+
+  if (currentSubSequenceNumber >= 0 && currentSubSequenceNumber < subSequenceSpecifiers.size()) {
+
+    return subSequenceSpecifiers.get(currentSubSequenceNumber);
+
+  }
+
+  return null;
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+List<SubSequenceSpecifier> getSubSequenceSpecifier(){
+
+  return Collections.unmodifiableList(subSequenceSpecifiers);
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+/** 
+
+ * Used to set the "cursor position" for the page masters to the previous item.
+
+ * @return true if there is a previous item, false if the current one was the first one.
+
+ */
+
+public boolean goToPreviousSimplePageMaster(){
+
+  if (currentSubSequence != null) {
+
+    boolean success=currentSubSequence.goToPrevious();
+
+    if (!success) {
+
+      if (currentSubSequenceNumber > 0) {
+
+        currentSubSequenceNumber--;
+
+        currentSubSequence=subSequenceSpecifiers.get(currentSubSequenceNumber);
+
+      }
+
+ else {
+
+        currentSubSequence=null;
+
+      }
+
+    }
+
+  }
+
+  return (currentSubSequence != null);
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+/** 
+
+ * @return true if the page-sequence-master has a page-master with page-position="last" 
+
+ */
+
+public boolean hasPagePositionLast(){
+
+  return (currentSubSequence != null && currentSubSequence.hasPagePositionLast());
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+/** 
+
+ * @return true if the page-sequence-master has a page-master with page-position="only" 
+
+ */
+
+public boolean hasPagePositionOnly(){
+
+  return (currentSubSequence != null && currentSubSequence.hasPagePositionOnly());
+
+}
+
+Location: PageSequenceMaster.java
+
+Content: 
+
+/** 
+
+ * Create a PageSequenceMaster instance that is a child of the given  {@link FONode}.
+
+ * @param parent {@link FONode} that is the parent of this object
+
+ * @param blockLevelEventProducer event producer
+
+ */
+
+public PageSequenceMaster(FONode parent,BlockLevelEventProducer blockLevelEventProducer){
+
+  super(parent);
+
+  this.blockLevelEventProducer=blockLevelEventProducer;
+
+}
+

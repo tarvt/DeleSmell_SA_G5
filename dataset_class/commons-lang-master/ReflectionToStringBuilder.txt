@@ -1,0 +1,788 @@
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Returns whether or not to append the given  {@code Field}. <ul> <li>Transient fields are appended only if  {@link #isAppendTransients()} returns {@code true}. <li>Static fields are appended only if  {@link #isAppendStatics()} returns {@code true}. <li>Inner class fields are not appended.</li> </ul>
+
+ * @param field The Field to test.
+
+ * @return Whether or not to append the given {@code Field}.
+
+ */
+
+protected boolean accept(final Field field){
+
+  if (field.getName().indexOf(ClassUtils.INNER_CLASS_SEPARATOR_CHAR) != -1) {
+
+    return false;
+
+  }
+
+  if (Modifier.isTransient(field.getModifiers()) && !this.isAppendTransients()) {
+
+    return false;
+
+  }
+
+  if (Modifier.isStatic(field.getModifiers()) && !this.isAppendStatics()) {
+
+    return false;
+
+  }
+
+  if (this.excludeFieldNames != null && Arrays.binarySearch(this.excludeFieldNames,field.getName()) >= 0) {
+
+    return false;
+
+  }
+
+  return !field.isAnnotationPresent(ToStringExclude.class);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Appends the fields and values defined by the given object of the given Class. </p> <p> If a cycle is detected as an object is &quot;toString()'ed&quot;, such an object is rendered as if {@code Object.toString()} had been called and not implemented by the object.</p>
+
+ * @param clazz The class of object parameter
+
+ */
+
+protected void appendFieldsIn(final Class<?> clazz){
+
+  if (clazz.isArray()) {
+
+    this.reflectionAppendArray(this.getObject());
+
+    return;
+
+  }
+
+  final Field[] fields=ArraySorter.sort(clazz.getDeclaredFields(),Comparator.comparing(Field::getName));
+
+  AccessibleObject.setAccessible(fields,true);
+
+  for (  final Field field : fields) {
+
+    final String fieldName=field.getName();
+
+    if (this.accept(field)) {
+
+      try {
+
+        final Object fieldValue=this.getValue(field);
+
+        if (!excludeNullValues || fieldValue != null) {
+
+          this.append(fieldName,fieldValue,!field.isAnnotationPresent(ToStringSummary.class));
+
+        }
+
+      }
+
+ catch (      final IllegalAccessException ex) {
+
+        throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+private static Object checkNotNull(final Object obj){
+
+  return Validate.notNull(obj,"obj");
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * @return Returns the excludeFieldNames.
+
+ */
+
+public String[] getExcludeFieldNames(){
+
+  return this.excludeFieldNames.clone();
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Gets the last super class to stop appending fields for. </p>
+
+ * @return The last super class to stop appending fields for.
+
+ */
+
+public Class<?> getUpToClass(){
+
+  return this.upToClass;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Calls  {@code java.lang.reflect.Field.get(Object)}. </p>
+
+ * @param field The Field to query.
+
+ * @return The Object from the given Field.
+
+ * @throws IllegalArgumentException see  {@link java.lang.reflect.Field#get(Object)}
+
+ * @throws IllegalAccessException see  {@link java.lang.reflect.Field#get(Object)}
+
+ * @see java.lang.reflect.Field#get(Object)
+
+ */
+
+protected Object getValue(final Field field) throws IllegalAccessException {
+
+  return field.get(this.getObject());
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Gets whether or not to append static fields. </p>
+
+ * @return Whether or not to append static fields.
+
+ * @since 2.1
+
+ */
+
+public boolean isAppendStatics(){
+
+  return this.appendStatics;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Gets whether or not to append transient fields. </p>
+
+ * @return Whether or not to append transient fields.
+
+ */
+
+public boolean isAppendTransients(){
+
+  return this.appendTransients;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Gets whether or not to append fields whose values are null. </p>
+
+ * @return Whether or not to append fields whose values are null.
+
+ * @since 3.6
+
+ */
+
+public boolean isExcludeNullValues(){
+
+  return this.excludeNullValues;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Append to the  {@code toString} an {@code Object} array.</p>
+
+ * @param array the array to add to the  {@code toString}
+
+ * @return this
+
+ */
+
+public ReflectionToStringBuilder reflectionAppendArray(final Object array){
+
+  this.getStyle().reflectionAppendArrayDetail(this.getStringBuffer(),null,array);
+
+  return this;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Constructor. </p> <p> This constructor outputs using the default style set with  {@code setDefaultStyle}. </p>
+
+ * @param object the Object to build a  {@code toString} for, must not be {@code null}
+
+ * @throws IllegalArgumentException if the Object passed in is  {@code null}
+
+ */
+
+public ReflectionToStringBuilder(final Object object){
+
+  super(checkNotNull(object));
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Constructor. </p> <p> If the style is  {@code null}, the default style is used. </p>
+
+ * @param object the Object to build a  {@code toString} for, must not be {@code null}
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @throws IllegalArgumentException if the Object passed in is  {@code null}
+
+ */
+
+public ReflectionToStringBuilder(final Object object,final ToStringStyle style){
+
+  super(checkNotNull(object),style);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Constructor. </p> <p> If the style is  {@code null}, the default style is used. </p> <p> If the buffer is  {@code null}, a new one is created. </p>
+
+ * @param object the Object to build a  {@code toString} for
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @param buffer the  {@code StringBuffer} to populate, may be {@code null}
+
+ * @throws IllegalArgumentException if the Object passed in is  {@code null}
+
+ */
+
+public ReflectionToStringBuilder(final Object object,final ToStringStyle style,final StringBuffer buffer){
+
+  super(checkNotNull(object),style,buffer);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ * @param < T > the type of the object
+
+ * @param object the Object to build a  {@code toString} for
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @param buffer the  {@code StringBuffer} to populate, may be {@code null}
+
+ * @param reflectUpToClass the superclass to reflect up to (inclusive), may be  {@code null}
+
+ * @param outputTransients whether to include transient fields
+
+ * @param outputStatics whether to include static fields
+
+ * @since 2.1
+
+ */
+
+public <T>ReflectionToStringBuilder(final T object,final ToStringStyle style,final StringBuffer buffer,final Class<? super T> reflectUpToClass,final boolean outputTransients,final boolean outputStatics){
+
+  super(checkNotNull(object),style,buffer);
+
+  this.setUpToClass(reflectUpToClass);
+
+  this.setAppendTransients(outputTransients);
+
+  this.setAppendStatics(outputStatics);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ * @param < T > the type of the object
+
+ * @param object the Object to build a  {@code toString} for
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @param buffer the  {@code StringBuffer} to populate, may be {@code null}
+
+ * @param reflectUpToClass the superclass to reflect up to (inclusive), may be  {@code null}
+
+ * @param outputTransients whether to include transient fields
+
+ * @param outputStatics whether to include static fields
+
+ * @param excludeNullValues whether to exclude fields who value is null
+
+ * @since 3.6
+
+ */
+
+public <T>ReflectionToStringBuilder(final T object,final ToStringStyle style,final StringBuffer buffer,final Class<? super T> reflectUpToClass,final boolean outputTransients,final boolean outputStatics,final boolean excludeNullValues){
+
+  super(checkNotNull(object),style,buffer);
+
+  this.setUpToClass(reflectUpToClass);
+
+  this.setAppendTransients(outputTransients);
+
+  this.setAppendStatics(outputStatics);
+
+  this.setExcludeNullValues(excludeNullValues);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Sets whether or not to append static fields. </p>
+
+ * @param appendStatics Whether or not to append static fields.
+
+ * @since 2.1
+
+ */
+
+public void setAppendStatics(final boolean appendStatics){
+
+  this.appendStatics=appendStatics;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Sets whether or not to append transient fields. </p>
+
+ * @param appendTransients Whether or not to append transient fields.
+
+ */
+
+public void setAppendTransients(final boolean appendTransients){
+
+  this.appendTransients=appendTransients;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Sets the field names to exclude.
+
+ * @param excludeFieldNamesParam The excludeFieldNames to excluding from toString or  {@code null}.
+
+ * @return {@code this}
+
+ */
+
+public ReflectionToStringBuilder setExcludeFieldNames(final String... excludeFieldNamesParam){
+
+  if (excludeFieldNamesParam == null) {
+
+    this.excludeFieldNames=null;
+
+  }
+
+ else {
+
+    this.excludeFieldNames=ArraySorter.sort(toNoNullStringArray(excludeFieldNamesParam));
+
+  }
+
+  return this;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Sets whether or not to append fields whose values are null. </p>
+
+ * @param excludeNullValues Whether or not to append fields whose values are null.
+
+ * @since 3.6
+
+ */
+
+public void setExcludeNullValues(final boolean excludeNullValues){
+
+  this.excludeNullValues=excludeNullValues;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Sets the last super class to stop appending fields for. </p>
+
+ * @param clazz The last super class to stop appending fields for.
+
+ */
+
+public void setUpToClass(final Class<?> clazz){
+
+  if (clazz != null) {
+
+    final Object object=getObject();
+
+    if (object != null && !clazz.isInstance(object)) {
+
+      throw new IllegalArgumentException("Specified class is not a superclass of the object");
+
+    }
+
+  }
+
+  this.upToClass=clazz;
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Converts the given Collection into an array of Strings. The returned array does not contain  {@code null}entries. Note that  {@link Arrays#sort(Object[])} will throw an {@link NullPointerException} if an array elementis  {@code null}.
+
+ * @param collection The collection to convert
+
+ * @return A new array of Strings.
+
+ */
+
+static String[] toNoNullStringArray(final Collection<String> collection){
+
+  if (collection == null) {
+
+    return ArrayUtils.EMPTY_STRING_ARRAY;
+
+  }
+
+  return toNoNullStringArray(collection.toArray());
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Returns a new array of Strings without null elements. Internal method used to normalize exclude lists (arrays and collections). Note that  {@link Arrays#sort(Object[])} will throw an {@link NullPointerException}if an array element is  {@code null}.
+
+ * @param array The array to check
+
+ * @return The given array or a new array without null.
+
+ */
+
+static String[] toNoNullStringArray(final Object[] array){
+
+  final List<String> list=new ArrayList<>(array.length);
+
+  for (  final Object e : array) {
+
+    if (e != null) {
+
+      list.add(e.toString());
+
+    }
+
+  }
+
+  return list.toArray(ArrayUtils.EMPTY_STRING_ARRAY);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Builds a String for a toString method excluding the given field names.
+
+ * @param object The object to "toString".
+
+ * @param excludeFieldNames The field names to exclude. Null excludes nothing.
+
+ * @return The toString value.
+
+ */
+
+public static String toStringExclude(final Object object,final Collection<String> excludeFieldNames){
+
+  return toStringExclude(object,toNoNullStringArray(excludeFieldNames));
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * Builds a String for a toString method excluding the given field names.
+
+ * @param object The object to "toString".
+
+ * @param excludeFieldNames The field names to exclude
+
+ * @return The toString value.
+
+ */
+
+public static String toStringExclude(final Object object,final String... excludeFieldNames){
+
+  return new ReflectionToStringBuilder(object).setExcludeFieldNames(excludeFieldNames).toString();
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Builds a  {@code toString} value through reflection.</p> <p> It uses  {@code AccessibleObject.setAccessible} to gain access to private fields. This means that it willthrow a security exception if run under a security manager, if the permissions are not set up correctly. It is also not as efficient as testing explicitly. </p> <p> Transient members will be not be included, as they are likely derived. Static fields will not be included. Superclass fields will be appended. </p> <p> If the style is  {@code null}, the default  {@code ToStringStyle} is used.</p>
+
+ * @param object the Object to be output
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @return the String result
+
+ * @throws IllegalArgumentException if the Object or  {@code ToStringStyle} is {@code null}
+
+ * @see ToStringExclude
+
+ * @see ToStringSummary
+
+ */
+
+public static String toString(final Object object,final ToStringStyle style){
+
+  return toString(object,style,false,false,null);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Builds a  {@code toString} value through reflection.</p> <p> It uses  {@code AccessibleObject.setAccessible} to gain access to private fields. This means that it willthrow a security exception if run under a security manager, if the permissions are not set up correctly. It is also not as efficient as testing explicitly. </p> <p> If the  {@code outputTransients} is {@code true}, transient members will be output, otherwise they are ignored, as they are likely derived fields, and not part of the value of the Object. </p> <p> Static fields will not be included. Superclass fields will be appended. </p> <p> If the style is  {@code null}, the default  {@code ToStringStyle} is used.</p>
+
+ * @param object the Object to be output
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @param outputTransients whether to include transient fields
+
+ * @return the String result
+
+ * @throws IllegalArgumentException if the Object is  {@code null}
+
+ * @see ToStringExclude
+
+ * @see ToStringSummary
+
+ */
+
+public static String toString(final Object object,final ToStringStyle style,final boolean outputTransients){
+
+  return toString(object,style,outputTransients,false,null);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Builds a  {@code toString} value through reflection.</p> <p> It uses  {@code AccessibleObject.setAccessible} to gain access to private fields. This means that it willthrow a security exception if run under a security manager, if the permissions are not set up correctly. It is also not as efficient as testing explicitly. </p> <p> If the  {@code outputTransients} is {@code true}, transient fields will be output, otherwise they are ignored, as they are likely derived fields, and not part of the value of the Object. </p> <p> If the  {@code outputStatics} is {@code true}, static fields will be output, otherwise they are ignored. </p> <p> Static fields will not be included. Superclass fields will be appended. </p> <p> If the style is  {@code null}, the default  {@code ToStringStyle} is used.</p>
+
+ * @param object the Object to be output
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @param outputTransients whether to include transient fields
+
+ * @param outputStatics whether to include static fields
+
+ * @return the String result
+
+ * @throws IllegalArgumentException if the Object is  {@code null}
+
+ * @see ToStringExclude
+
+ * @see ToStringSummary
+
+ * @since 2.1
+
+ */
+
+public static String toString(final Object object,final ToStringStyle style,final boolean outputTransients,final boolean outputStatics){
+
+  return toString(object,style,outputTransients,outputStatics,null);
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Builds a  {@code toString} value through reflection.</p> <p> It uses  {@code AccessibleObject.setAccessible} to gain access to private fields. This means that it willthrow a security exception if run under a security manager, if the permissions are not set up correctly. It is also not as efficient as testing explicitly. </p> <p> If the  {@code outputTransients} is {@code true}, transient fields will be output, otherwise they are ignored, as they are likely derived fields, and not part of the value of the Object. </p> <p> If the  {@code outputStatics} is {@code true}, static fields will be output, otherwise they are ignored. </p> <p> Superclass fields will be appended up to and including the specified superclass. A null superclass is treated as {@code java.lang.Object}. </p> <p> If the style is  {@code null}, the default  {@code ToStringStyle} is used.</p>
+
+ * @param < T > the type of the object
+
+ * @param object the Object to be output
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @param outputTransients whether to include transient fields
+
+ * @param outputStatics whether to include static fields
+
+ * @param excludeNullValues whether to exclude fields whose values are null
+
+ * @param reflectUpToClass the superclass to reflect up to (inclusive), may be  {@code null}
+
+ * @return the String result
+
+ * @throws IllegalArgumentException if the Object is  {@code null}
+
+ * @see ToStringExclude
+
+ * @see ToStringSummary
+
+ * @since 3.6
+
+ */
+
+public static <T>String toString(final T object,final ToStringStyle style,final boolean outputTransients,final boolean outputStatics,final boolean excludeNullValues,final Class<? super T> reflectUpToClass){
+
+  return new ReflectionToStringBuilder(object,style,null,reflectUpToClass,outputTransients,outputStatics,excludeNullValues).toString();
+
+}
+
+Location: ReflectionToStringBuilder.java
+
+Content: 
+
+/** 
+
+ * <p> Builds a  {@code toString} value through reflection.</p> <p> It uses  {@code AccessibleObject.setAccessible} to gain access to private fields. This means that it willthrow a security exception if run under a security manager, if the permissions are not set up correctly. It is also not as efficient as testing explicitly. </p> <p> If the  {@code outputTransients} is {@code true}, transient fields will be output, otherwise they are ignored, as they are likely derived fields, and not part of the value of the Object. </p> <p> If the  {@code outputStatics} is {@code true}, static fields will be output, otherwise they are ignored. </p> <p> Superclass fields will be appended up to and including the specified superclass. A null superclass is treated as {@code java.lang.Object}. </p> <p> If the style is  {@code null}, the default  {@code ToStringStyle} is used.</p>
+
+ * @param < T > the type of the object
+
+ * @param object the Object to be output
+
+ * @param style the style of the  {@code toString} to create, may be {@code null}
+
+ * @param outputTransients whether to include transient fields
+
+ * @param outputStatics whether to include static fields
+
+ * @param reflectUpToClass the superclass to reflect up to (inclusive), may be  {@code null}
+
+ * @return the String result
+
+ * @throws IllegalArgumentException if the Object is  {@code null}
+
+ * @see ToStringExclude
+
+ * @see ToStringSummary
+
+ * @since 2.1
+
+ */
+
+public static <T>String toString(final T object,final ToStringStyle style,final boolean outputTransients,final boolean outputStatics,final Class<? super T> reflectUpToClass){
+
+  return new ReflectionToStringBuilder(object,style,null,reflectUpToClass,outputTransients,outputStatics).toString();
+
+}
+

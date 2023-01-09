@@ -1,0 +1,334 @@
+Location: DistRaid.java
+
+Content: 
+
+/** 
+
+ * Add paths to be raided 
+
+ */
+
+public void addRaidPaths(PolicyInfo info,List<FileStatus> paths){
+
+  raidPolicyPathPairList.add(new RaidPolicyPathPair(info,paths));
+
+}
+
+Location: DistRaid.java
+
+Content: 
+
+/** 
+
+ * Checks if the map-reduce job has completed.
+
+ * @return true if the job completed, false otherwise.
+
+ * @throws IOException
+
+ */
+
+public boolean checkComplete() throws IOException {
+
+  JobID jobID=runningJob.getJobID();
+
+  try {
+
+    if (runningJob.isComplete()) {
+
+      Configuration jobConf=runningJob.getConfiguration();
+
+      final String jobdir=jobConf.get(JOB_DIR_LABEL);
+
+      if (jobdir != null) {
+
+        final Path jobpath=new Path(jobdir);
+
+        jobpath.getFileSystem(jobConf).delete(jobpath,true);
+
+      }
+
+      if (runningJob.isSuccessful()) {
+
+        LOG.info("Job Complete(Succeeded): " + jobID);
+
+      }
+
+ else {
+
+        LOG.error("Job Complete(Failed): " + jobID);
+
+      }
+
+      raidPolicyPathPairList.clear();
+
+      return true;
+
+    }
+
+ else {
+
+      String report=(" job " + jobID + " map "+ StringUtils.formatPercent(runningJob.mapProgress(),0)+ " reduce "+ StringUtils.formatPercent(runningJob.reduceProgress(),0));
+
+      if (!report.equals(lastReport)) {
+
+        LOG.info(report);
+
+        lastReport=report;
+
+      }
+
+      return false;
+
+    }
+
+  }
+
+ catch (  InterruptedException e) {
+
+    return false;
+
+  }
+
+}
+
+Location: DistRaid.java
+
+Content: 
+
+/** 
+
+ * set up input file which has the list of input files.
+
+ * @return boolean
+
+ * @throws IOException
+
+ */
+
+private void createInputFile(Job job) throws IOException {
+
+  Configuration jobConf=job.getConfiguration();
+
+  Path jobDir=new Path(JOB_DIR_LABEL + getRandomId());
+
+  Path inDir=new Path(jobDir,"in");
+
+  Path outDir=new Path(jobDir,"out");
+
+  FileInputFormat.setInputPaths(job,inDir);
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  Path opList=new Path(inDir,NAME);
+
+  Configuration tmp=new Configuration(jobConf);
+
+  tmp.setInt("dfs.blocks.size",OP_LIST_BLOCK_SIZE);
+
+  FileSystem fs=opList.getFileSystem(tmp);
+
+  int opCount=0, synCount=0;
+
+  SequenceFile.Writer opWriter=null;
+
+  try {
+
+    opWriter=SequenceFile.createWriter(jobConf,Writer.file(opList),Writer.keyClass(Text.class),Writer.valueClass(PolicyInfo.class),Writer.compression(SequenceFile.CompressionType.NONE));
+
+    for (    RaidPolicyPathPair p : raidPolicyPathPairList) {
+
+      java.util.Collections.shuffle(p.srcPaths);
+
+      for (      FileStatus st : p.srcPaths) {
+
+        opWriter.append(new Text(st.getPath().toString()),p.policy);
+
+        opCount++;
+
+        if (++synCount > SYNC_FILE_MAX) {
+
+          opWriter.sync();
+
+          synCount=0;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    if (opWriter != null) {
+
+      opWriter.close();
+
+    }
+
+    fs.setReplication(opList,OP_LIST_REPLICATION);
+
+  }
+
+  raidPolicyPathPairList.clear();
+
+  LOG.info("Number of files=" + opCount);
+
+}
+
+Location: DistRaid.java
+
+Content: 
+
+/** 
+
+ * Creates a new Job object.
+
+ * @param conf
+
+ * @return a Job object
+
+ * @throws IOException
+
+ */
+
+static Job createJob(Configuration jobConf) throws IOException {
+
+  String jobName=NAME + " " + dateForm.format(new Date(RaidNode.now()));
+
+  setSchedulerOption(jobConf);
+
+  Job job=Job.getInstance(jobConf,jobName);
+
+  job.setSpeculativeExecution(false);
+
+  job.setJarByClass(DistRaid.class);
+
+  job.setInputFormatClass(DistRaidInputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setMapperClass(DistRaidMapper.class);
+
+  job.setNumReduceTasks(0);
+
+  return job;
+
+}
+
+Location: DistRaid.java
+
+Content: 
+
+public DistRaid(Configuration conf){
+
+  super(conf);
+
+}
+
+Location: DistRaid.java
+
+Content: 
+
+/** 
+
+ * Set options specified in raid.scheduleroption. The string should be formatted as key:value[,key:value]
+
+ */
+
+static void setSchedulerOption(Configuration conf){
+
+  String schedulerOption=conf.get("raid.scheduleroption");
+
+  if (schedulerOption != null) {
+
+    String[] keyValues=schedulerOption.trim().split(",");
+
+    for (    String keyValue : keyValues) {
+
+      String[] fields=keyValue.trim().split(":");
+
+      String key=fields[0].trim();
+
+      String value=fields[1].trim();
+
+      conf.set(key,value);
+
+    }
+
+  }
+
+}
+
+Location: DistRaid.java
+
+Content: 
+
+/** 
+
+ * Invokes a map-reduce job do parallel raiding.
+
+ * @return true if the job was started, false otherwise
+
+ * @throws InterruptedException
+
+ */
+
+public boolean startDistRaid() throws IOException {
+
+  assert (raidPolicyPathPairList.size() > 0);
+
+  Job job=createJob(getConf());
+
+  createInputFile(job);
+
+  try {
+
+    job.submit();
+
+    this.runningJob=job;
+
+    LOG.info("Job Started: " + runningJob.getJobID());
+
+    return true;
+
+  }
+
+ catch (  ClassNotFoundException e) {
+
+    throw new IOException(e);
+
+  }
+
+catch (  InterruptedException e) {
+
+    return false;
+
+  }
+
+}
+
+Location: DistRaid.java
+
+Content: 
+
+public boolean successful() throws IOException {
+
+  try {
+
+    return runningJob.isSuccessful();
+
+  }
+
+ catch (  InterruptedException e) {
+
+    return false;
+
+  }
+
+}
+

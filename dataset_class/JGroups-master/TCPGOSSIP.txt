@@ -1,0 +1,72 @@
+Location: TCPGOSSIP.java
+
+Content: 
+
+@ManagedOperation public void addInitialHost(String hostname,int port){
+
+  removeInitialHost(hostname,port);
+
+  InetSocketAddress isa=new InetSocketAddress(hostname,port);
+
+  initial_hosts.add(isa);
+
+  stubManager.createAndRegisterStub(null,new IpAddress(isa.getAddress(),isa.getPort()));
+
+  stubManager.connectStubs();
+
+}
+
+Location: TCPGOSSIP.java
+
+Content: 
+
+@Override public void members(List<PingData> mbrs){
+
+  PhysicalAddress own_physical_addr=(PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS,local_addr));
+
+  PingData data=new PingData(local_addr,false,org.jgroups.util.NameCache.get(local_addr),own_physical_addr);
+
+  PingHeader hdr=new PingHeader(PingHeader.GET_MBRS_REQ).clusterName(cluster_name);
+
+  Set<PhysicalAddress> physical_addrs=mbrs.stream().filter(ping_data -> ping_data != null && ping_data.getPhysicalAddr() != null).map(PingData::getPhysicalAddr).collect(Collectors.toSet());
+
+  for (  PhysicalAddress physical_addr : physical_addrs) {
+
+    if (own_physical_addr.equals(physical_addr))     continue;
+
+    final Message msg=new Message(physical_addr).setFlag(Message.Flag.INTERNAL,Message.Flag.DONT_BUNDLE,Message.Flag.OOB).putHeader(this.id,hdr).setBuffer(marshal(data));
+
+    log.trace("%s: sending discovery request to %s",local_addr,msg.getDest());
+
+    down_prot.down(msg);
+
+  }
+
+}
+
+Location: TCPGOSSIP.java
+
+Content: 
+
+@ManagedOperation public boolean removeInitialHost(String hostname,int port){
+
+  InetSocketAddress isa=new InetSocketAddress(hostname,port);
+
+  stubManager.unregisterStub(new IpAddress(isa.getAddress(),isa.getPort()));
+
+  return initial_hosts.remove(isa);
+
+}
+
+Location: TCPGOSSIP.java
+
+Content: 
+
+@Property(name="initial_hosts",description="Comma delimited list of hosts to be contacted for initial membership",converter=PropertyConverters.InitialHosts2.class) public void setInitialHosts(List<InetSocketAddress> hosts){
+
+  if (hosts == null || hosts.isEmpty())   throw new IllegalArgumentException("initial_hosts must contain the address of at least one GossipRouter");
+
+  initial_hosts.addAll(hosts);
+
+}
+

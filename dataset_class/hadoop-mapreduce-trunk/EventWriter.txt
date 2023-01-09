@@ -1,0 +1,106 @@
+Location: EventWriter.java
+
+Content: 
+
+EventWriter(FSDataOutputStream out) throws IOException {
+
+  this.out=out;
+
+  out.writeBytes(VERSION);
+
+  out.writeBytes("\n");
+
+  out.writeBytes(Event.SCHEMA$.toString());
+
+  out.writeBytes("\n");
+
+  this.encoder=new JsonEncoder(Event.SCHEMA$,out);
+
+}
+
+Location: EventWriter.java
+
+Content: 
+
+void flush() throws IOException {
+
+  encoder.flush();
+
+}
+
+Location: EventWriter.java
+
+Content: 
+
+static JhCounters toAvro(Counters counters){
+
+  return toAvro(counters,"COUNTERS");
+
+}
+
+Location: EventWriter.java
+
+Content: 
+
+static JhCounters toAvro(Counters counters,String name){
+
+  JhCounters result=new JhCounters();
+
+  result.name=new Utf8(name);
+
+  result.groups=new GenericData.Array<JhCounterGroup>(0,GROUPS);
+
+  if (counters == null)   return result;
+
+  for (  CounterGroup group : counters) {
+
+    JhCounterGroup g=new JhCounterGroup();
+
+    g.name=new Utf8(group.getName());
+
+    g.displayName=new Utf8(group.getDisplayName());
+
+    g.counts=new GenericData.Array<JhCounter>(group.size(),COUNTERS);
+
+    for (    Counter counter : group) {
+
+      JhCounter c=new JhCounter();
+
+      c.name=new Utf8(counter.getName());
+
+      c.displayName=new Utf8(counter.getDisplayName());
+
+      c.value=counter.getValue();
+
+      g.counts.add(c);
+
+    }
+
+    result.groups.add(g);
+
+  }
+
+  return result;
+
+}
+
+Location: EventWriter.java
+
+Content: 
+
+synchronized void write(HistoryEvent event) throws IOException {
+
+  Event wrapper=new Event();
+
+  wrapper.type=event.getEventType();
+
+  wrapper.event=event.getDatum();
+
+  writer.write(wrapper,encoder);
+
+  encoder.flush();
+
+  out.writeBytes("\n");
+
+}
+

@@ -1,0 +1,170 @@
+Location: DeskewedJobTraceReader.java
+
+Content: 
+
+public DeskewedJobTraceReader(JobTraceReader reader) throws IOException {
+
+  this(reader,0,true);
+
+}
+
+Location: DeskewedJobTraceReader.java
+
+Content: 
+
+/** 
+
+ * Constructor.
+
+ * @param reader the  {@link JobTraceReader} that's being protected
+
+ * @param skewBufferLength [the number of late jobs that can preced a later out-of-order earlier job
+
+ * @throws IOException
+
+ */
+
+public DeskewedJobTraceReader(JobTraceReader reader,int skewBufferLength,boolean abortOnUnfixableSkew) throws IOException {
+
+  this.reader=reader;
+
+  this.skewBufferLength=skewBufferLength;
+
+  this.abortOnUnfixableSkew=abortOnUnfixableSkew;
+
+  skewBuffer=new PriorityQueue<LoggedJob>(skewBufferLength + 1,new JobComparator());
+
+  fillSkewBuffer();
+
+}
+
+Location: DeskewedJobTraceReader.java
+
+Content: 
+
+private void fillSkewBuffer() throws IOException {
+
+  for (int i=0; i < skewBufferLength; ++i) {
+
+    LoggedJob newJob=rawNextJob();
+
+    if (newJob == null) {
+
+      return;
+
+    }
+
+    skewBuffer.add(newJob);
+
+  }
+
+}
+
+Location: DeskewedJobTraceReader.java
+
+Content: 
+
+int neededSkewBufferSize(){
+
+  return maxSkewBufferNeeded;
+
+}
+
+Location: DeskewedJobTraceReader.java
+
+Content: 
+
+LoggedJob nextJob() throws IOException, OutOfOrderException {
+
+  LoggedJob newJob=rawNextJob();
+
+  if (newJob != null) {
+
+    skewBuffer.add(newJob);
+
+  }
+
+  LoggedJob result=skewBuffer.poll();
+
+  while (result != null && result.getSubmitTime() < returnedLatestSubmitTime) {
+
+    LOG.error("The current job was submitted earlier than the previous one");
+
+    LOG.error("Its jobID is " + result.getJobID());
+
+    LOG.error("Its submit time is " + result.getSubmitTime() + ",but the previous one was "+ returnedLatestSubmitTime);
+
+    if (abortOnUnfixableSkew) {
+
+      throw new OutOfOrderException("Job submit time is " + result.getSubmitTime() + ",but the previous one was "+ returnedLatestSubmitTime);
+
+    }
+
+    result=rawNextJob();
+
+  }
+
+  if (result != null) {
+
+    returnedLatestSubmitTime=result.getSubmitTime();
+
+  }
+
+  return result;
+
+}
+
+Location: DeskewedJobTraceReader.java
+
+Content: 
+
+private LoggedJob rawNextJob() throws IOException {
+
+  LoggedJob result=reader.getNext();
+
+  if ((!abortOnUnfixableSkew || skewBufferLength > 0) && result != null) {
+
+    long thisTime=result.getSubmitTime();
+
+    if (submitTimesSoFar.contains(thisTime)) {
+
+      Integer myCount=countedRepeatedSubmitTimesSoFar.get(thisTime);
+
+      countedRepeatedSubmitTimesSoFar.put(thisTime,myCount == null ? 2 : myCount + 1);
+
+    }
+
+ else {
+
+      submitTimesSoFar.add(thisTime);
+
+    }
+
+    if (thisTime < skewMeasurementLatestSubmitTime) {
+
+      Iterator<Long> endCursor=submitTimesSoFar.descendingIterator();
+
+      int thisJobNeedsSkew=0;
+
+      Long keyNeedingSkew;
+
+      while (endCursor.hasNext() && (keyNeedingSkew=endCursor.next()) > thisTime) {
+
+        Integer keyNeedsSkewAmount=countedRepeatedSubmitTimesSoFar.get(keyNeedingSkew);
+
+        thisJobNeedsSkew+=keyNeedsSkewAmount == null ? 1 : keyNeedsSkewAmount;
+
+      }
+
+      maxSkewBufferNeeded=Math.max(maxSkewBufferNeeded,thisJobNeedsSkew);
+
+    }
+
+    skewMeasurementLatestSubmitTime=Math.max(thisTime,skewMeasurementLatestSubmitTime);
+
+  }
+
+  return result;
+
+}
+

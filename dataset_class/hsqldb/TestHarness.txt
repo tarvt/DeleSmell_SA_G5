@@ -1,0 +1,326 @@
+Location: TestHarness.java
+
+Content: 
+
+private void append(String s){
+
+  textArea.setText(textArea.getText() + "\n" + s);
+
+}
+
+Location: TestHarness.java
+
+Content: 
+
+protected void doClose(){
+
+  try {
+
+    Connection con=getConnection("sa","password",false);
+
+    if (con != null) {
+
+      Statement stmt=con.createStatement();
+
+      stmt.execute("SHUTDOWN");
+
+      stmt.close();
+
+      con.close();
+
+    }
+
+  }
+
+ catch (  SQLException e) {
+
+    e.printStackTrace();
+
+  }
+
+  System.exit(0);
+
+}
+
+Location: TestHarness.java
+
+Content: 
+
+protected void doCreate(){
+
+  try {
+
+    Connection con=getConnection("sa","",false);
+
+    if (con != null) {
+
+      Statement stmt=con.createStatement();
+
+      stmt.execute("SET PASSWORD 'password'");
+
+      stmt.execute("CREATE USER abcd PASSWORD 'dcba'");
+
+      stmt.execute("CREATE SEQUENCE MySeq");
+
+      stmt.execute("CREATE TABLE MyTable (Id INT PRIMARY KEY, Name VARCHAR(100) NOT NULL)");
+
+      stmt.execute("CREATE TABLE Dummy (Blah VARCHAR(100) NOT NULL)");
+
+      stmt.execute("INSERT INTO Dummy (Blah) VALUES ('dummy value')");
+
+      stmt.execute("GRANT ALL ON MyTable TO abcd");
+
+      stmt.execute("GRANT ALL ON Dummy TO abcd");
+
+      stmt.execute("GRANT ALL ON SEQUENCE MySeq TO abcd");
+
+      stmt.close();
+
+      con.close();
+
+      textArea.setText("Database created.");
+
+    }
+
+  }
+
+ catch (  SQLException e) {
+
+    e.printStackTrace();
+
+  }
+
+}
+
+Location: TestHarness.java
+
+Content: 
+
+protected void doInsert(){
+
+  try {
+
+    Connection con=getConnection("ABCD","dcba",false);
+
+    if (con != null) {
+
+      Statement stmt=con.createStatement();
+
+      ResultSet rs=stmt.executeQuery("SELECT NEXT VALUE FOR MySeq FROM Dummy");
+
+      rs.next();
+
+      int id=rs.getInt(1);
+
+      stmt.executeUpdate("INSERT INTO MyTable (Id, Name) VALUES (" + id + ", 'This is row #"+ id+ "')");
+
+      append("Row #" + id + " added");
+
+      stmt.close();
+
+      con.close();
+
+    }
+
+  }
+
+ catch (  SQLException e) {
+
+    e.printStackTrace();
+
+  }
+
+}
+
+Location: TestHarness.java
+
+Content: 
+
+protected void doListing(){
+
+  try {
+
+    Connection con=getConnection("ABCD","dcba",false);
+
+    if (con != null) {
+
+      Statement stmt=con.createStatement();
+
+      ResultSet rs=stmt.executeQuery("SELECT * FROM MyTable ORDER BY Id ASC");
+
+      append("Listing 'MyTable'....");
+
+      while (rs.next()) {
+
+        append("  " + rs.getString(1) + ", "+ rs.getString(2));
+
+      }
+
+      append("...done.");
+
+      stmt.close();
+
+      con.close();
+
+    }
+
+  }
+
+ catch (  SQLException e) {
+
+    e.printStackTrace();
+
+  }
+
+}
+
+Location: TestHarness.java
+
+Content: 
+
+protected Connection getConnection(String username,String password,boolean ifExists) throws SQLException {
+
+  Properties props=new Properties();
+
+  props.put("user",username);
+
+  props.put("password",password);
+
+  props.put("ifexists",String.valueOf(ifExists));
+
+  return DriverManager.getConnection(dbURL,props);
+
+}
+
+Location: TestHarness.java
+
+Content: 
+
+protected void initComponents(){
+
+  Container main=getContentPane();
+
+  textArea=new JTextArea();
+
+  JPanel buttons=new JPanel(new FlowLayout());
+
+  JButton close=new JButton("Close Gracefully");
+
+  close.addActionListener(new ActionListener(){
+
+    public void actionPerformed(    ActionEvent e){
+
+      doClose();
+
+    }
+
+  }
+
+);
+
+  JButton create=new JButton("Add Row");
+
+  create.addActionListener(new ActionListener(){
+
+    public void actionPerformed(    ActionEvent e){
+
+      doInsert();
+
+    }
+
+  }
+
+);
+
+  JButton list=new JButton("List Data");
+
+  list.addActionListener(new ActionListener(){
+
+    public void actionPerformed(    ActionEvent e){
+
+      doListing();
+
+    }
+
+  }
+
+);
+
+  JButton kill=new JButton("Kill");
+
+  kill.addActionListener(new ActionListener(){
+
+    public void actionPerformed(    ActionEvent e){
+
+      System.exit(0);
+
+    }
+
+  }
+
+);
+
+  buttons.add(create);
+
+  buttons.add(list);
+
+  buttons.add(kill);
+
+  buttons.add(close);
+
+  main.add(new JScrollPane(textArea),BorderLayout.CENTER);
+
+  main.add(buttons,BorderLayout.SOUTH);
+
+}
+
+Location: TestHarness.java
+
+Content: 
+
+public TestHarness(String url){
+
+  super("HSQLDB Test Harness");
+
+  this.dbURL=url;
+
+  setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+
+  addWindowListener(new WindowAdapter(){
+
+    public void windowClosing(    WindowEvent e){
+
+      doClose();
+
+    }
+
+  }
+
+);
+
+  initComponents();
+
+  setSize(400,400);
+
+  setLocation(200,200);
+
+  setVisible(true);
+
+  try {
+
+    Connection c=getConnection("sa","password",true);
+
+    textArea.setText("Database already exists.");
+
+    c.close();
+
+  }
+
+ catch (  SQLException e1) {
+
+    doCreate();
+
+  }
+
+}
+

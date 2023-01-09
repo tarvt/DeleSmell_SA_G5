@@ -1,0 +1,246 @@
+Location: DFSCIOTest.java
+
+Content: 
+
+private static void analyzeResult(FileSystem fs,int testType,long execTime,String resFileName) throws IOException {
+
+  Path reduceFile;
+
+  if (testType == TEST_TYPE_WRITE)   reduceFile=new Path(WRITE_DIR,"part-00000");
+
+ else   reduceFile=new Path(READ_DIR,"part-00000");
+
+  DataInputStream in;
+
+  in=new DataInputStream(fs.open(reduceFile));
+
+  BufferedReader lines;
+
+  lines=new BufferedReader(new InputStreamReader(in));
+
+  long tasks=0;
+
+  long size=0;
+
+  long time=0;
+
+  float rate=0;
+
+  float sqrate=0;
+
+  String line;
+
+  while ((line=lines.readLine()) != null) {
+
+    StringTokenizer tokens=new StringTokenizer(line," \t\n\r\f%");
+
+    String attr=tokens.nextToken();
+
+    if (attr.endsWith(":tasks"))     tasks=Long.parseLong(tokens.nextToken());
+
+ else     if (attr.endsWith(":size"))     size=Long.parseLong(tokens.nextToken());
+
+ else     if (attr.endsWith(":time"))     time=Long.parseLong(tokens.nextToken());
+
+ else     if (attr.endsWith(":rate"))     rate=Float.parseFloat(tokens.nextToken());
+
+ else     if (attr.endsWith(":sqrate"))     sqrate=Float.parseFloat(tokens.nextToken());
+
+  }
+
+  double med=rate / 1000 / tasks;
+
+  double stdDev=Math.sqrt(Math.abs(sqrate / 1000 / tasks - med * med));
+
+  String resultLines[]={"----- DFSCIOTest ----- : " + ((testType == TEST_TYPE_WRITE) ? "write" : (testType == TEST_TYPE_READ) ? "read" : "unknown"),"           Date & time: " + new Date(System.currentTimeMillis()),"       Number of files: " + tasks,"Total MBytes processed: " + size / MEGA,"     Throughput mb/sec: " + size * 1000.0 / (time * MEGA),"Average IO rate mb/sec: " + med," Std IO rate deviation: " + stdDev,"    Test exec time sec: " + (float)execTime / 1000,""};
+
+  PrintStream res=new PrintStream(new FileOutputStream(new File(resFileName),true));
+
+  for (int i=0; i < resultLines.length; i++) {
+
+    LOG.info(resultLines[i]);
+
+    res.println(resultLines[i]);
+
+  }
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+private static void cleanup(FileSystem fs) throws Exception {
+
+  LOG.info("Cleaning up test files");
+
+  fs.delete(new Path(TEST_ROOT_DIR),true);
+
+  fs.delete(HDFS_TEST_DIR,true);
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+private static void createControlFile(FileSystem fs,int fileSize,int nrFiles) throws IOException {
+
+  LOG.info("creating control file: " + fileSize + " mega bytes, "+ nrFiles+ " files");
+
+  fs.delete(CONTROL_DIR,true);
+
+  for (int i=0; i < nrFiles; i++) {
+
+    String name=getFileName(i);
+
+    Path controlFile=new Path(CONTROL_DIR,"in_file_" + name);
+
+    SequenceFile.Writer writer=null;
+
+    try {
+
+      writer=SequenceFile.createWriter(fs,fsConfig,controlFile,Text.class,LongWritable.class,CompressionType.NONE);
+
+      writer.append(new Text(name),new LongWritable(fileSize));
+
+    }
+
+ catch (    Exception e) {
+
+      throw new IOException(e.getLocalizedMessage());
+
+    }
+
+ finally {
+
+      if (writer != null)       writer.close();
+
+      writer=null;
+
+    }
+
+  }
+
+  LOG.info("created control files for: " + nrFiles + " files");
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+private static void readTest(FileSystem fs) throws IOException {
+
+  fs.delete(READ_DIR,true);
+
+  runIOTest(ReadMapper.class,READ_DIR);
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+private static void runIOTest(Class<? extends Mapper> mapperClass,Path outputDir) throws IOException {
+
+  JobConf job=new JobConf(fsConfig,DFSCIOTest.class);
+
+  FileInputFormat.setInputPaths(job,CONTROL_DIR);
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setMapperClass(mapperClass);
+
+  job.setReducerClass(AccumulatingReducer.class);
+
+  FileOutputFormat.setOutputPath(job,outputDir);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setNumReduceTasks(1);
+
+  JobClient.runJob(job);
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+private static void sequentialTest(FileSystem fs,int testType,int fileSize,int nrFiles) throws Exception {
+
+  IOStatMapper ioer=null;
+
+  if (testType == TEST_TYPE_READ)   ioer=new ReadMapper();
+
+ else   if (testType == TEST_TYPE_WRITE)   ioer=new WriteMapper();
+
+ else   return;
+
+  for (int i=0; i < nrFiles; i++)   ioer.doIO(Reporter.NULL,BASE_FILE_NAME + Integer.toString(i),MEGA * fileSize);
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+/** 
+
+ * Run the test with default parameters.
+
+ * @throws Exception
+
+ */
+
+public void testIOs() throws Exception {
+
+  testIOs(10,10);
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+/** 
+
+ * Run the test with the specified parameters.
+
+ * @param fileSize file size
+
+ * @param nrFiles number of files
+
+ * @throws IOException
+
+ */
+
+public static void testIOs(int fileSize,int nrFiles) throws IOException {
+
+  FileSystem fs=FileSystem.get(fsConfig);
+
+  createControlFile(fs,fileSize,nrFiles);
+
+  writeTest(fs);
+
+  readTest(fs);
+
+}
+
+Location: DFSCIOTest.java
+
+Content: 
+
+private static void writeTest(FileSystem fs) throws IOException {
+
+  fs.delete(DATA_DIR,true);
+
+  fs.delete(WRITE_DIR,true);
+
+  runIOTest(WriteMapper.class,WRITE_DIR);
+
+}
+

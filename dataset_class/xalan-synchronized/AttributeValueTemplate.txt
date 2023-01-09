@@ -1,0 +1,254 @@
+Location: AttributeValueTemplate.java
+
+Content: 
+
+public AttributeValueTemplate(String value,Parser parser,SyntaxTreeNode parent){
+
+  setParent(parent);
+
+  setParser(parser);
+
+  try {
+
+    parseAVTemplate(value,parser);
+
+  }
+
+ catch (  NoSuchElementException e) {
+
+    reportError(parent,parser,ErrorMsg.ATTR_VAL_TEMPLATE_ERR,value);
+
+  }
+
+}
+
+Location: AttributeValueTemplate.java
+
+Content: 
+
+/** 
+
+ * Two-pass parsing of ATVs. In the first pass, double curly braces are replaced by one, and expressions are delimited using DELIMITER. The second pass splits up the resulting buffer into literal and non-literal expressions. Errors are reported during the first pass.
+
+ */
+
+private void parseAVTemplate(String text,Parser parser){
+
+  StringTokenizer tokenizer=new StringTokenizer(text,"{}\"\'",true);
+
+  String t=null;
+
+  String lookahead=null;
+
+  StringBuffer buffer=new StringBuffer();
+
+  int state=OUT_EXPR;
+
+  while (tokenizer.hasMoreTokens()) {
+
+    if (lookahead != null) {
+
+      t=lookahead;
+
+      lookahead=null;
+
+    }
+
+ else {
+
+      t=tokenizer.nextToken();
+
+    }
+
+    if (t.length() == 1) {
+
+switch (t.charAt(0)) {
+
+case '{':
+
+switch (state) {
+
+case OUT_EXPR:
+
+          lookahead=tokenizer.nextToken();
+
+        if (lookahead.equals("{")) {
+
+          buffer.append(lookahead);
+
+          lookahead=null;
+
+        }
+
+ else {
+
+          buffer.append(DELIMITER);
+
+          state=IN_EXPR;
+
+        }
+
+      break;
+
+case IN_EXPR:
+
+case IN_EXPR_SQUOTES:
+
+case IN_EXPR_DQUOTES:
+
+    reportError(getParent(),parser,ErrorMsg.ATTR_VAL_TEMPLATE_ERR,text);
+
+  break;
+
+}
+
+break;
+
+case '}':
+
+switch (state) {
+
+case OUT_EXPR:
+
+lookahead=tokenizer.nextToken();
+
+if (lookahead.equals("}")) {
+
+buffer.append(lookahead);
+
+lookahead=null;
+
+}
+
+ else {
+
+reportError(getParent(),parser,ErrorMsg.ATTR_VAL_TEMPLATE_ERR,text);
+
+}
+
+break;
+
+case IN_EXPR:
+
+buffer.append(DELIMITER);
+
+state=OUT_EXPR;
+
+break;
+
+case IN_EXPR_SQUOTES:
+
+case IN_EXPR_DQUOTES:
+
+buffer.append(t);
+
+break;
+
+}
+
+break;
+
+case '\'':
+
+switch (state) {
+
+case IN_EXPR:
+
+state=IN_EXPR_SQUOTES;
+
+break;
+
+case IN_EXPR_SQUOTES:
+
+state=IN_EXPR;
+
+break;
+
+case OUT_EXPR:
+
+case IN_EXPR_DQUOTES:
+
+break;
+
+}
+
+buffer.append(t);
+
+break;
+
+case '\"':
+
+switch (state) {
+
+case IN_EXPR:
+
+state=IN_EXPR_DQUOTES;
+
+break;
+
+case IN_EXPR_DQUOTES:
+
+state=IN_EXPR;
+
+break;
+
+case OUT_EXPR:
+
+case IN_EXPR_SQUOTES:
+
+break;
+
+}
+
+buffer.append(t);
+
+break;
+
+default :
+
+buffer.append(t);
+
+break;
+
+}
+
+}
+
+ else {
+
+buffer.append(t);
+
+}
+
+}
+
+if (state != OUT_EXPR) {
+
+reportError(getParent(),parser,ErrorMsg.ATTR_VAL_TEMPLATE_ERR,text);
+
+}
+
+tokenizer=new StringTokenizer(buffer.toString(),DELIMITER,true);
+
+while (tokenizer.hasMoreTokens()) {
+
+t=tokenizer.nextToken();
+
+if (t.equals(DELIMITER)) {
+
+addElement(parser.parseExpression(this,tokenizer.nextToken()));
+
+tokenizer.nextToken();
+
+}
+
+ else {
+
+addElement(new LiteralExpr(t));
+
+}
+
+}
+
+}
+

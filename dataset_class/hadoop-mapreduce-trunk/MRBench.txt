@@ -1,0 +1,182 @@
+Location: MRBench.java
+
+Content: 
+
+/** 
+
+ * Generate a text file on the given filesystem with the given path name. The text file will contain the given number of lines of generated data. The generated data are string representations of numbers.  Each line is the same length, which is achieved by padding each number with an appropriate number of leading '0' (zero) characters.  The order of generated data is one of ascending, descending, or random.
+
+ */
+
+public void generateTextFile(FileSystem fs,Path inputFile,long numLines,Order sortOrder) throws IOException {
+
+  LOG.info("creating control file: " + numLines + " numLines, "+ sortOrder+ " sortOrder");
+
+  PrintStream output=null;
+
+  try {
+
+    output=new PrintStream(fs.create(inputFile));
+
+    int padding=String.valueOf(numLines).length();
+
+switch (sortOrder) {
+
+case RANDOM:
+
+      for (long l=0; l < numLines; l++) {
+
+        output.println(pad((new Random()).nextLong(),padding));
+
+      }
+
+    break;
+
+case ASCENDING:
+
+  for (long l=0; l < numLines; l++) {
+
+    output.println(pad(l,padding));
+
+  }
+
+break;
+
+case DESCENDING:
+
+for (long l=numLines; l > 0; l--) {
+
+output.println(pad(l,padding));
+
+}
+
+break;
+
+}
+
+}
+
+  finally {
+
+if (output != null) output.close();
+
+}
+
+LOG.info("created control file: " + inputFile);
+
+}
+
+Location: MRBench.java
+
+Content: 
+
+/** 
+
+ * Convert the given number to a string and pad the number with  leading '0' (zero) characters so that the string is exactly the given length.
+
+ */
+
+private static String pad(long number,int length){
+
+  String str=String.valueOf(number);
+
+  StringBuffer value=new StringBuffer();
+
+  for (int i=str.length(); i < length; i++) {
+
+    value.append("0");
+
+  }
+
+  value.append(str);
+
+  return value.toString();
+
+}
+
+Location: MRBench.java
+
+Content: 
+
+/** 
+
+ * Runs a MapReduce task, given number of times. The input to each run is the same file.
+
+ */
+
+private ArrayList<Long> runJobInSequence(JobConf masterJobConf,int numRuns) throws IOException {
+
+  Random rand=new Random();
+
+  ArrayList<Long> execTimes=new ArrayList<Long>();
+
+  for (int i=0; i < numRuns; i++) {
+
+    JobConf jobConf=new JobConf(masterJobConf);
+
+    jobConf.setJar(masterJobConf.getJar());
+
+    FileOutputFormat.setOutputPath(jobConf,new Path(OUTPUT_DIR,"output_" + rand.nextInt()));
+
+    LOG.info("Running job " + i + ":"+ " input="+ FileInputFormat.getInputPaths(jobConf)[0]+ " output="+ FileOutputFormat.getOutputPath(jobConf));
+
+    long curTime=System.currentTimeMillis();
+
+    JobClient.runJob(jobConf);
+
+    execTimes.add(new Long(System.currentTimeMillis() - curTime));
+
+  }
+
+  return execTimes;
+
+}
+
+Location: MRBench.java
+
+Content: 
+
+/** 
+
+ * Create the job configuration.
+
+ */
+
+private JobConf setupJob(int numMaps,int numReduces,String jarFile){
+
+  JobConf jobConf=new JobConf(getConf());
+
+  jobConf.setJarByClass(MRBench.class);
+
+  FileInputFormat.addInputPath(jobConf,INPUT_DIR);
+
+  jobConf.setInputFormat(TextInputFormat.class);
+
+  jobConf.setOutputFormat(TextOutputFormat.class);
+
+  jobConf.setOutputValueClass(UTF8.class);
+
+  jobConf.setMapOutputKeyClass(UTF8.class);
+
+  jobConf.setMapOutputValueClass(UTF8.class);
+
+  if (null != jarFile) {
+
+    jobConf.setJar(jarFile);
+
+  }
+
+  jobConf.setMapperClass(Map.class);
+
+  jobConf.setReducerClass(Reduce.class);
+
+  jobConf.setNumMapTasks(numMaps);
+
+  jobConf.setNumReduceTasks(numReduces);
+
+  jobConf.setBoolean("mapreduce.job.complete.cancel.delegation.tokens",false);
+
+  return jobConf;
+
+}
+

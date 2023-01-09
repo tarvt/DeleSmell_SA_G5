@@ -1,0 +1,152 @@
+Location: URLNormalizers.java
+
+Content: 
+
+/** 
+
+ * Function returns an array of  {@link URLNormalizer}s for a given scope, with a specified order.
+
+ * @param scope The scope to return the <code>Array</code> of {@link URLNormalizer}s for.
+
+ * @return An <code>Array</code> of {@link URLNormalizer}s for the given scope.
+
+ * @throws PluginRuntimeException
+
+ */
+
+URLNormalizer[] getURLNormalizers(String scope){
+
+  List<Extension> extensions=getExtensions(scope);
+
+  ObjectCache objectCache=ObjectCache.get(conf);
+
+  if (extensions == EMPTY_EXTENSION_LIST) {
+
+    return EMPTY_NORMALIZERS;
+
+  }
+
+  List<URLNormalizer> normalizers=new Vector<>(extensions.size());
+
+  Iterator<Extension> it=extensions.iterator();
+
+  while (it.hasNext()) {
+
+    Extension ext=it.next();
+
+    URLNormalizer normalizer=null;
+
+    try {
+
+      normalizer=(URLNormalizer)objectCache.getObject(ext.getId());
+
+      if (normalizer == null) {
+
+        normalizer=(URLNormalizer)ext.getExtensionInstance();
+
+        objectCache.setObject(ext.getId(),normalizer);
+
+      }
+
+      normalizers.add(normalizer);
+
+    }
+
+ catch (    PluginRuntimeException e) {
+
+      e.printStackTrace();
+
+      LOG.warn("URLNormalizers:PluginRuntimeException when " + "initializing url normalizer plugin " + ext.getDescriptor().getPluginId() + " instance in getURLNormalizers "+ "function: attempting to continue instantiating plugins");
+
+    }
+
+  }
+
+  return normalizers.toArray(new URLNormalizer[normalizers.size()]);
+
+}
+
+Location: URLNormalizers.java
+
+Content: 
+
+/** 
+
+ * Normalize
+
+ * @param urlString The URL string to normalize.
+
+ * @param scope The given scope.
+
+ * @return A normalized String, using the given <code>scope</code>
+
+ * @throws MalformedURLException If the given URL string is malformed.
+
+ */
+
+public String normalize(String urlString,String scope) throws MalformedURLException {
+
+  String initialString=urlString;
+
+  for (int k=0; k < loopCount; k++) {
+
+    for (int i=0; i < this.normalizers.length; i++) {
+
+      if (urlString == null)       return null;
+
+      urlString=this.normalizers[i].normalize(urlString,scope);
+
+    }
+
+    if (initialString.equals(urlString))     break;
+
+    initialString=urlString;
+
+  }
+
+  return urlString;
+
+}
+
+Location: URLNormalizers.java
+
+Content: 
+
+public URLNormalizers(Configuration conf,String scope){
+
+  this.conf=conf;
+
+  this.extensionPoint=PluginRepository.get(conf).getExtensionPoint(URLNormalizer.X_POINT_ID);
+
+  ObjectCache objectCache=ObjectCache.get(conf);
+
+  if (this.extensionPoint == null) {
+
+    throw new RuntimeException("x point " + URLNormalizer.X_POINT_ID + " not found.");
+
+  }
+
+  normalizers=(URLNormalizer[])objectCache.getObject(URLNormalizer.X_POINT_ID + "_" + scope);
+
+  if (normalizers == null) {
+
+    normalizers=getURLNormalizers(scope);
+
+  }
+
+  if (normalizers == EMPTY_NORMALIZERS) {
+
+    normalizers=(URLNormalizer[])objectCache.getObject(URLNormalizer.X_POINT_ID + "_" + SCOPE_DEFAULT);
+
+    if (normalizers == null) {
+
+      normalizers=getURLNormalizers(SCOPE_DEFAULT);
+
+    }
+
+  }
+
+  loopCount=conf.getInt("urlnormalizer.loop.count",1);
+
+}
+

@@ -1,0 +1,494 @@
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Assemble ordered array of lookup table use specifications according to the specified features and candidate lookups, where the order of the array is in accordance to the order of the applicable lookup list.
+
+ * @param features array of feature identifiers to apply
+
+ * @param lookups a mapping from lookup specifications to lists of look tables from which to select lookup tables according to the specified features
+
+ * @return ordered array of assembled lookup table use specifications
+
+ */
+
+public UseSpec[] assembleLookups(String[] features,Map<LookupSpec,List<LookupTable>> lookups){
+
+  TreeSet<UseSpec> uss=new TreeSet<UseSpec>();
+
+  for (  String feature : features) {
+
+    for (    Object o : lookups.entrySet()) {
+
+      Map.Entry<LookupSpec,List<LookupTable>> e=(Map.Entry<LookupSpec,List<LookupTable>>)o;
+
+      LookupSpec ls=e.getKey();
+
+      if (ls.getFeature().equals(feature)) {
+
+        List<LookupTable> ltl=e.getValue();
+
+        if (ltl != null) {
+
+          for (          Object aLtl : ltl) {
+
+            LookupTable lt=(LookupTable)aLtl;
+
+            uss.add(new UseSpec(lt,feature));
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+  return uss.toArray(new UseSpec[uss.size()]);
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Obtain ordered list of glyph lookup tables that match a specific lookup specification.
+
+ * @param ls a (non-null) lookup specification
+
+ * @return a (possibly empty) ordered list of lookup tables whose corresponding lookup specifications match the specified lookup spec
+
+ */
+
+public List<LookupTable> findLookupTables(LookupSpec ls){
+
+  TreeSet<LookupTable> lts=new TreeSet<LookupTable>();
+
+  List<String> ids;
+
+  if ((ids=lookups.get(ls)) != null) {
+
+    for (    Object id : ids) {
+
+      String lid=(String)id;
+
+      LookupTable lt;
+
+      if ((lt=lookupTables.get(lid)) != null) {
+
+        lts.add(lt);
+
+      }
+
+    }
+
+  }
+
+  return new ArrayList<LookupTable>(lts);
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Freeze subtables, i.e., do not allow further subtable addition, and create resulting cached state.
+
+ */
+
+protected void freezeSubtables(){
+
+  if (!frozen) {
+
+    for (    Object o : lookupTables.values()) {
+
+      LookupTable lt=(LookupTable)o;
+
+      lt.freezeSubtables(lookupTables);
+
+    }
+
+    frozen=true;
+
+  }
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Obtain glyph definition table.
+
+ * @return (possibly null) glyph definition table
+
+ */
+
+public GlyphDefinitionTable getGlyphDefinitions(){
+
+  return (GlyphDefinitionTable)gdef;
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Obtain list of all lookup specifications.
+
+ * @return (possibly empty) list of all lookup specifications
+
+ */
+
+public List<LookupSpec> getLookups(){
+
+  return matchLookupSpecs("*","*","*");
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Obtain ordered list of all lookup tables, where order is by lookup identifier, which lexicographic ordering follows the lookup list order.
+
+ * @return (possibly empty) ordered list of all lookup tables
+
+ */
+
+public List<LookupTable> getLookupTables(){
+
+  TreeSet<String> lids=new TreeSet<String>(lookupTables.keySet());
+
+  List<LookupTable> ltl=new ArrayList<LookupTable>(lids.size());
+
+  for (  Object lid1 : lids) {
+
+    String lid=(String)lid1;
+
+    ltl.add(lookupTables.get(lid));
+
+  }
+
+  return ltl;
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Obtain lookup table by lookup id. This method is used by test code, and provides access to embedded lookups not normally accessed by {script, language, feature} lookup spec.
+
+ * @param lid lookup id
+
+ * @return table associated with lookup id or null if none
+
+ */
+
+public LookupTable getLookupTable(String lid){
+
+  return lookupTables.get(lid);
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Obtain glyph table type from name.
+
+ * @param name of table type to map to type value
+
+ * @return glyph table type (as an integer constant)
+
+ */
+
+public static int getTableTypeFromName(String name){
+
+  int t;
+
+  String s=name.toLowerCase();
+
+  if ("gsub".equals(s)) {
+
+    t=GLYPH_TABLE_TYPE_SUBSTITUTION;
+
+  }
+
+ else   if ("gpos".equals(s)) {
+
+    t=GLYPH_TABLE_TYPE_POSITIONING;
+
+  }
+
+ else   if ("jstf".equals(s)) {
+
+    t=GLYPH_TABLE_TYPE_JUSTIFICATION;
+
+  }
+
+ else   if ("base".equals(s)) {
+
+    t=GLYPH_TABLE_TYPE_BASELINE;
+
+  }
+
+ else   if ("gdef".equals(s)) {
+
+    t=GLYPH_TABLE_TYPE_DEFINITION;
+
+  }
+
+ else {
+
+    t=-1;
+
+  }
+
+  return t;
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Instantiate glyph table with specified lookups.
+
+ * @param gdef glyph definition table that applies
+
+ * @param lookups map from lookup specs to lookup tables
+
+ */
+
+public GlyphTable(GlyphTable gdef,Map<LookupSpec,List<String>> lookups,Map<String,ScriptProcessor> processors){
+
+  this.processors=processors;
+
+  if ((gdef != null) && !(gdef instanceof GlyphDefinitionTable)) {
+
+    throw new AdvancedTypographicTableFormatException("bad glyph definition table");
+
+  }
+
+ else   if (lookups == null) {
+
+    throw new AdvancedTypographicTableFormatException("lookups must be non-null map");
+
+  }
+
+ else {
+
+    this.gdef=gdef;
+
+    this.lookups=lookups;
+
+    this.lookupTables=new LinkedHashMap<String,LookupTable>();
+
+    this.matchedLookups=new HashMap<LookupSpec,Map<LookupSpec,List<LookupTable>>>();
+
+  }
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Determine if table supports specific feature, i.e., supports at least one lookup.
+
+ * @param script to qualify feature lookup
+
+ * @param language to qualify feature lookup
+
+ * @param feature to test
+
+ * @return true if feature supported (has at least one lookup)
+
+ */
+
+public boolean hasFeature(String script,String language,String feature){
+
+  UseSpec[] usa=assembleLookups(new String[]{feature},matchLookups(script,language,feature));
+
+  return usa.length > 0;
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Match lookup specifications according to &lt;script,language,feature&gt; tuple, where '*' is a wildcard for a tuple component.
+
+ * @param script a script identifier
+
+ * @param language a language identifier
+
+ * @param feature a feature identifier
+
+ * @return a (possibly empty) array of matching lookup specifications
+
+ */
+
+public List<LookupSpec> matchLookupSpecs(String script,String language,String feature){
+
+  Set<LookupSpec> keys=lookups.keySet();
+
+  List<LookupSpec> matches=new ArrayList<LookupSpec>();
+
+  for (  Object key : keys) {
+
+    LookupSpec ls=(LookupSpec)key;
+
+    if (!"*".equals(script)) {
+
+      if (!ls.getScript().equals(script)) {
+
+        continue;
+
+      }
+
+    }
+
+    if (!"*".equals(language)) {
+
+      if (!ls.getLanguage().equals(language)) {
+
+        continue;
+
+      }
+
+    }
+
+    if (!"*".equals(feature)) {
+
+      if (!ls.getFeature().equals(feature)) {
+
+        continue;
+
+      }
+
+    }
+
+    matches.add(ls);
+
+  }
+
+  return matches;
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Match lookup specifications according to &lt;script,language,feature&gt; tuple, where '*' is a wildcard for a tuple component.
+
+ * @param script a script identifier
+
+ * @param language a language identifier
+
+ * @param feature a feature identifier
+
+ * @return a (possibly empty) map from matching lookup specifications to lists of corresponding lookup tables
+
+ */
+
+public Map<LookupSpec,List<LookupTable>> matchLookups(String script,String language,String feature){
+
+  LookupSpec lsm=new LookupSpec(script,language,feature,true,true);
+
+  Map<LookupSpec,List<LookupTable>> lm=matchedLookups.get(lsm);
+
+  if (lm == null) {
+
+    lm=new LinkedHashMap();
+
+    List<LookupSpec> lsl=matchLookupSpecs(script,language,feature);
+
+    for (    Object aLsl : lsl) {
+
+      LookupSpec ls=(LookupSpec)aLsl;
+
+      lm.put(ls,findLookupTables(ls));
+
+    }
+
+    matchedLookups.put(lsm,lm);
+
+  }
+
+  if (lm.isEmpty() && !OTFScript.isDefault(script) && !OTFScript.isWildCard(script)) {
+
+    return matchLookups(OTFScript.DEFAULT,OTFLanguage.DEFAULT,feature);
+
+  }
+
+ else {
+
+    return lm;
+
+  }
+
+}
+
+Location: GlyphTable.java
+
+Content: 
+
+/** 
+
+ * Resolve references to lookup tables in a collection of rules sets.
+
+ * @param rsa array of rule sets
+
+ * @param lookupTables map from lookup table identifers, e.g. "lu4", to lookup tables
+
+ */
+
+public static void resolveLookupReferences(RuleSet[] rsa,Map<String,LookupTable> lookupTables){
+
+  if ((rsa != null) && (lookupTables != null)) {
+
+    for (    RuleSet rs : rsa) {
+
+      if (rs != null) {
+
+        rs.resolveLookupReferences(lookupTables);
+
+      }
+
+    }
+
+  }
+
+}
+

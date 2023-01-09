@@ -1,0 +1,1504 @@
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Construct the node map from the node.
+
+ * @param type              raw type ID, one of DTM.XXX_NODE.
+
+ * @param expandedTypeID    The expended type ID.
+
+ * @param parentIndex       The current parent index.
+
+ * @param previousSibling   The previous sibling index.
+
+ * @param dataOrPrefix      index into m_data table, or string handle.
+
+ * @param canHaveFirstChild true if the node can have a first child, false if itis atomic.
+
+ * @return The index identity of the node that was added.
+
+ */
+
+protected final int addNode(int type,int expandedTypeID,int parentIndex,int previousSibling,int dataOrPrefix,boolean canHaveFirstChild){
+
+  int nodeIndex=m_size++;
+
+  if (nodeIndex == m_maxNodeIndex) {
+
+    addNewDTMID(nodeIndex);
+
+    m_maxNodeIndex+=(1 << DTMManager.IDENT_DTM_NODE_BITS);
+
+  }
+
+  m_firstch.addElement(DTM.NULL);
+
+  m_nextsib.addElement(DTM.NULL);
+
+  m_parent.addElement(parentIndex);
+
+  m_exptype.addElement(expandedTypeID);
+
+  m_dataOrQName.addElement(dataOrPrefix);
+
+  if (m_prevsib != null) {
+
+    m_prevsib.addElement(previousSibling);
+
+  }
+
+  if (m_locator != null && m_useSourceLocationProperty) {
+
+    setSourceLocation();
+
+  }
+
+switch (type) {
+
+case DTM.NAMESPACE_NODE:
+
+    declareNamespaceInContext(parentIndex,nodeIndex);
+
+  break;
+
+case DTM.ATTRIBUTE_NODE:
+
+break;
+
+default :
+
+if (DTM.NULL != previousSibling) {
+
+m_nextsib.setElementAt(nodeIndex,previousSibling);
+
+}
+
+ else if (DTM.NULL != parentIndex) {
+
+m_firstch.setElementAt(nodeIndex,parentIndex);
+
+}
+
+break;
+
+}
+
+return nodeIndex;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Check whether accumulated text should be stripped; if not, append the appropriate flavor of text/cdata node.
+
+ */
+
+protected final void charactersFlush(){
+
+  if (m_textPendingStart >= 0) {
+
+    int length=m_chars.size() - m_textPendingStart;
+
+    boolean doStrip=false;
+
+    if (getShouldStripWhitespace()) {
+
+      doStrip=m_chars.isWhitespace(m_textPendingStart,length);
+
+    }
+
+    if (doStrip) {
+
+      m_chars.setLength(m_textPendingStart);
+
+    }
+
+ else {
+
+      if (length > 0) {
+
+        if (length <= TEXT_LENGTH_MAX && m_textPendingStart <= TEXT_OFFSET_MAX) {
+
+          m_previous=addNode(m_coalescedTextType,DTM.TEXT_NODE,m_parents.peek(),m_previous,length + (m_textPendingStart << TEXT_LENGTH_BITS),false);
+
+        }
+
+ else {
+
+          int dataIndex=m_data.size();
+
+          m_previous=addNode(m_coalescedTextType,DTM.TEXT_NODE,m_parents.peek(),m_previous,-dataIndex,false);
+
+          m_data.addElement(m_textPendingStart);
+
+          m_data.addElement(length);
+
+        }
+
+      }
+
+    }
+
+    m_textPendingStart=-1;
+
+    m_textType=m_coalescedTextType=DTM.TEXT_NODE;
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Copy attribute nodes from an element .
+
+ * @param nodeID  The Element node identity
+
+ * @param handler The SerializationHandler
+
+ */
+
+protected final void copyAttributes(final int nodeID,SerializationHandler handler) throws SAXException {
+
+  for (int current=getFirstAttributeIdentity(nodeID); current != DTM.NULL; current=getNextAttributeIdentity(current)) {
+
+    int eType=_exptype2(current);
+
+    copyAttribute(current,eType,handler);
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Copy an Attribute node to a SerializationHandler
+
+ * @param nodeID  The node identity
+
+ * @param exptype The expanded type of the Element node
+
+ * @param handler The SerializationHandler
+
+ */
+
+protected final void copyAttribute(int nodeID,int exptype,SerializationHandler handler) throws SAXException {
+
+  final ExtendedType extType=m_extendedTypes[exptype];
+
+  final String uri=extType.getNamespace();
+
+  final String localName=extType.getLocalName();
+
+  String prefix=null;
+
+  String qname=null;
+
+  int dataIndex=_dataOrQName(nodeID);
+
+  int valueIndex=dataIndex;
+
+  if (dataIndex <= 0) {
+
+    int prefixIndex=m_data.elementAt(-dataIndex);
+
+    valueIndex=m_data.elementAt(-dataIndex + 1);
+
+    qname=m_valuesOrPrefixes.indexToString(prefixIndex);
+
+    int colonIndex=qname.indexOf(':');
+
+    if (colonIndex > 0) {
+
+      prefix=qname.substring(0,colonIndex);
+
+    }
+
+  }
+
+  if (uri.length() != 0) {
+
+    handler.namespaceAfterStartElement(prefix,uri);
+
+  }
+
+  String nodeName=(prefix != null) ? qname : localName;
+
+  String nodeValue=(String)m_values.elementAt(valueIndex);
+
+  handler.addAttribute(nodeName,nodeValue);
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Copy an Element node to a SerializationHandler.
+
+ * @param nodeID  The node identity
+
+ * @param exptype The expanded type of the Element node
+
+ * @param handler The SerializationHandler
+
+ * @return The qualified name of the Element node.
+
+ */
+
+protected final String copyElement(int nodeID,int exptype,SerializationHandler handler) throws SAXException {
+
+  final ExtendedType extType=m_extendedTypes[exptype];
+
+  String uri=extType.getNamespace();
+
+  String name=extType.getLocalName();
+
+  if (uri.length() == 0) {
+
+    handler.startElement(name);
+
+    return name;
+
+  }
+
+ else {
+
+    int qnameIndex=m_dataOrQName.elementAt(nodeID);
+
+    if (qnameIndex == 0) {
+
+      handler.startElement(name);
+
+      handler.namespaceAfterStartElement(EMPTY_STR,uri);
+
+      return name;
+
+    }
+
+    if (qnameIndex < 0) {
+
+      qnameIndex=-qnameIndex;
+
+      qnameIndex=m_data.elementAt(qnameIndex);
+
+    }
+
+    String qName=m_valuesOrPrefixes.indexToString(qnameIndex);
+
+    handler.startElement(qName);
+
+    int prefixIndex=qName.indexOf(':');
+
+    String prefix;
+
+    if (prefixIndex > 0) {
+
+      prefix=qName.substring(0,prefixIndex);
+
+    }
+
+ else {
+
+      prefix=null;
+
+    }
+
+    handler.namespaceAfterStartElement(prefix,uri);
+
+    return qName;
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Copy namespace nodes.
+
+ * @param nodeID  The Element node identity
+
+ * @param handler The SerializationHandler
+
+ * @param inScope true if all namespaces in scope should be copied, false ifonly the namespace declarations should be copied.
+
+ */
+
+protected final void copyNS(final int nodeID,SerializationHandler handler,boolean inScope) throws SAXException {
+
+  if (m_namespaceDeclSetElements != null && m_namespaceDeclSetElements.size() == 1 && m_namespaceDeclSets != null && ((SuballocatedIntVector)m_namespaceDeclSets.elementAt(0)).size() == 1)   return;
+
+  SuballocatedIntVector nsContext=null;
+
+  int nextNSNode;
+
+  if (inScope) {
+
+    nsContext=findNamespaceContext(nodeID);
+
+    if (nsContext == null || nsContext.size() < 1)     return;
+
+ else     nextNSNode=makeNodeIdentity(nsContext.elementAt(0));
+
+  }
+
+ else   nextNSNode=getNextNamespaceNode2(nodeID);
+
+  int nsIndex=1;
+
+  while (nextNSNode != DTM.NULL) {
+
+    int eType=_exptype2(nextNSNode);
+
+    String nodeName=m_extendedTypes[eType].getLocalName();
+
+    int dataIndex=m_dataOrQName.elementAt(nextNSNode);
+
+    if (dataIndex < 0) {
+
+      dataIndex=-dataIndex;
+
+      dataIndex=m_data.elementAt(dataIndex + 1);
+
+    }
+
+    String nodeValue=(String)m_values.elementAt(dataIndex);
+
+    handler.namespaceAfterStartElement(nodeName,nodeValue);
+
+    if (inScope) {
+
+      if (nsIndex < nsContext.size()) {
+
+        nextNSNode=makeNodeIdentity(nsContext.elementAt(nsIndex));
+
+        nsIndex++;
+
+      }
+
+ else       return;
+
+    }
+
+ else     nextNSNode=getNextNamespaceNode2(nextNSNode);
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Copy the String value of a Text node to a SerializationHandler
+
+ */
+
+protected final void copyTextNode(final int nodeID,SerializationHandler handler) throws SAXException {
+
+  if (nodeID != DTM.NULL) {
+
+    int dataIndex=m_dataOrQName.elementAt(nodeID);
+
+    if (dataIndex >= 0) {
+
+      m_chars.sendSAXcharacters(handler,dataIndex >>> TEXT_LENGTH_BITS,dataIndex & TEXT_LENGTH_MAX);
+
+    }
+
+ else {
+
+      m_chars.sendSAXcharacters(handler,m_data.elementAt(-dataIndex),m_data.elementAt(-dataIndex + 1));
+
+    }
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of SAX2DTM.dispatchCharactersEvents(int, ContentHandler, boolean). <p> Directly call the characters method on the passed ContentHandler for the string-value of the given node (see http://www.w3.org/TR/xpath#data-model for the definition of a node's string-value). Multiple calls to the ContentHandler's characters methods may well occur for a single call to this method.
+
+ * @param nodeHandle The node ID.
+
+ * @param ch         A non-null reference to a ContentHandler.
+
+ * @param normalize  true if the content should be normalized according to therules for the XPath <a href= "http://www.w3.org/TR/xpath#function-normalize-space">normalize-space</a> function.
+
+ * @throws SAXException
+
+ */
+
+public final void dispatchCharactersEvents(int nodeHandle,ContentHandler ch,boolean normalize) throws SAXException {
+
+  int identity=makeNodeIdentity(nodeHandle);
+
+  if (identity == DTM.NULL)   return;
+
+  int type=_type2(identity);
+
+  if (type == DTM.ELEMENT_NODE || type == DTM.DOCUMENT_NODE) {
+
+    int startNode=identity;
+
+    identity=_firstch2(identity);
+
+    if (DTM.NULL != identity) {
+
+      int offset=-1;
+
+      int length=0;
+
+      do {
+
+        type=_exptype2(identity);
+
+        if (type == DTM.TEXT_NODE || type == DTM.CDATA_SECTION_NODE) {
+
+          int dataIndex=m_dataOrQName.elementAt(identity);
+
+          if (dataIndex >= 0) {
+
+            if (-1 == offset) {
+
+              offset=dataIndex >>> TEXT_LENGTH_BITS;
+
+            }
+
+            length+=dataIndex & TEXT_LENGTH_MAX;
+
+          }
+
+ else {
+
+            if (-1 == offset) {
+
+              offset=m_data.elementAt(-dataIndex);
+
+            }
+
+            length+=m_data.elementAt(-dataIndex + 1);
+
+          }
+
+        }
+
+        identity++;
+
+      }
+
+ while (_parent2(identity) >= startNode);
+
+      if (length > 0) {
+
+        if (normalize)         m_chars.sendNormalizedSAXcharacters(ch,offset,length);
+
+ else         m_chars.sendSAXcharacters(ch,offset,length);
+
+      }
+
+    }
+
+  }
+
+ else   if (DTM.TEXT_NODE == type || DTM.CDATA_SECTION_NODE == type) {
+
+    int dataIndex=m_dataOrQName.elementAt(identity);
+
+    if (dataIndex >= 0) {
+
+      if (normalize)       m_chars.sendNormalizedSAXcharacters(ch,dataIndex >>> TEXT_LENGTH_BITS,dataIndex & TEXT_LENGTH_MAX);
+
+ else       m_chars.sendSAXcharacters(ch,dataIndex >>> TEXT_LENGTH_BITS,dataIndex & TEXT_LENGTH_MAX);
+
+    }
+
+ else {
+
+      if (normalize)       m_chars.sendNormalizedSAXcharacters(ch,m_data.elementAt(-dataIndex),m_data.elementAt(-dataIndex + 1));
+
+ else       m_chars.sendSAXcharacters(ch,m_data.elementAt(-dataIndex),m_data.elementAt(-dataIndex + 1));
+
+    }
+
+  }
+
+ else {
+
+    int dataIndex=m_dataOrQName.elementAt(identity);
+
+    if (dataIndex < 0) {
+
+      dataIndex=-dataIndex;
+
+      dataIndex=m_data.elementAt(dataIndex + 1);
+
+    }
+
+    String str=(String)m_values.elementAt(dataIndex);
+
+    if (normalize)     FastStringBuffer.sendNormalizedSAXcharacters(str.toCharArray(),0,str.length(),ch);
+
+ else     ch.characters(str.toCharArray(),0,str.length());
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase.getExpandedTypeID(int). <p> This one is only used by DOMAdapter.getExpandedTypeID(int), which is mostly called from the compiled translets.
+
+ */
+
+public final int getExpandedTypeID2(int nodeHandle){
+
+  int nodeID=makeNodeIdentity(nodeHandle);
+
+  if (nodeID != NULL) {
+
+    if (nodeID < m_blocksize)     return m_exptype_map0[nodeID];
+
+ else     return m_exptype_map[nodeID >>> m_SHIFT][nodeID & m_MASK];
+
+  }
+
+ else   return NULL;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase.getFirstAttributeIdentity(int). <p> Given a node identity, get the index of the node's first attribute.
+
+ * @param identity int identity of the node.
+
+ * @return Identity of first attribute, or DTM.NULL to indicate none exists.
+
+ */
+
+protected int getFirstAttributeIdentity(int identity){
+
+  if (identity == NULL) {
+
+    return NULL;
+
+  }
+
+  int type=_type2(identity);
+
+  if (DTM.ELEMENT_NODE == type) {
+
+    while (true) {
+
+      identity++;
+
+      type=_type2(identity);
+
+      if (type == DTM.ATTRIBUTE_NODE) {
+
+        return identity;
+
+      }
+
+ else       if (DTM.NAMESPACE_NODE != type) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return DTM.NULL;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase.getFirstAttribute(). <p> Given a node handle, get the index of the node's first attribute.
+
+ * @param nodeHandle int Handle of the node.
+
+ * @return Handle of first attribute, or DTM.NULL to indicate none exists.
+
+ */
+
+public final int getFirstAttribute(int nodeHandle){
+
+  int nodeID=makeNodeIdentity(nodeHandle);
+
+  if (nodeID == DTM.NULL)   return DTM.NULL;
+
+  int type=_type2(nodeID);
+
+  if (DTM.ELEMENT_NODE == type) {
+
+    while (true) {
+
+      nodeID++;
+
+      type=_type2(nodeID);
+
+      if (type == DTM.ATTRIBUTE_NODE) {
+
+        return makeNodeHandle(nodeID);
+
+      }
+
+ else       if (DTM.NAMESPACE_NODE != type) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return DTM.NULL;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Get a prefix either from the uri mapping, or just make one up!
+
+ * @param uri The namespace URI, which may be null.
+
+ * @return The prefix if there is one, or null.
+
+ */
+
+public int getIdForNamespace(String uri){
+
+  int index=m_values.indexOf(uri);
+
+  if (index < 0) {
+
+    m_values.addElement(uri);
+
+    return m_valueIndex++;
+
+  }
+
+ else   return index;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase.getNextAttributeIdentity(int). <p> Given a node identity for an attribute, advance to the next attribute.
+
+ * @param identity int identity of the attribute node. This<strong>must</strong> be an attribute node.
+
+ * @return int DTM node-identity of the resolved attr, or DTM.NULL to indicatenone exists.
+
+ */
+
+protected int getNextAttributeIdentity(int identity){
+
+  while (true) {
+
+    identity++;
+
+    int type=_type2(identity);
+
+    if (type == DTM.ATTRIBUTE_NODE) {
+
+      return identity;
+
+    }
+
+ else     if (type != DTM.NAMESPACE_NODE) {
+
+      break;
+
+    }
+
+  }
+
+  return DTM.NULL;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Return the next namespace node following the given base node.
+
+ * @baseID The node identity of the base node, which can be an element,attribute or namespace node.
+
+ * @return The namespace node immediately following the base node.
+
+ */
+
+protected final int getNextNamespaceNode2(int baseID){
+
+  int type;
+
+  while ((type=_type2(++baseID)) == DTM.ATTRIBUTE_NODE)   ;
+
+  if (type == DTM.NAMESPACE_NODE)   return baseID;
+
+ else   return NULL;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of SAX2DTM.getNodeNameX(). <p> Given a node handle, return the XPath node name. This should be the name as described by the XPath data model, NOT the DOM- style name.
+
+ * @param nodeHandle the id of the node.
+
+ * @return String Name of this node, which may be an empty string.
+
+ */
+
+public final String getNodeNameX(int nodeHandle){
+
+  int nodeID=makeNodeIdentity(nodeHandle);
+
+  int eType=_exptype2(nodeID);
+
+  if (eType == DTM.PROCESSING_INSTRUCTION_NODE) {
+
+    int dataIndex=_dataOrQName(nodeID);
+
+    dataIndex=m_data.elementAt(-dataIndex);
+
+    return m_valuesOrPrefixes.indexToString(dataIndex);
+
+  }
+
+  final ExtendedType extType=m_extendedTypes[eType];
+
+  if (extType.getNamespace().length() == 0) {
+
+    return extType.getLocalName();
+
+  }
+
+ else {
+
+    int qnameIndex=m_dataOrQName.elementAt(nodeID);
+
+    if (qnameIndex == 0)     return extType.getLocalName();
+
+    if (qnameIndex < 0) {
+
+      qnameIndex=-qnameIndex;
+
+      qnameIndex=m_data.elementAt(qnameIndex);
+
+    }
+
+    return m_valuesOrPrefixes.indexToString(qnameIndex);
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of SAX2DTM.getNodeName(). <p> Given a node handle, return its DOM-style node name. This will include names such as #text or #document.
+
+ * @param nodeHandle the id of the node.
+
+ * @return String Name of this node, which may be an empty string. %REVIEW%Document when empty string is possible... %REVIEW-COMMENT% It should never be empty, should it?
+
+ */
+
+public String getNodeName(int nodeHandle){
+
+  int nodeID=makeNodeIdentity(nodeHandle);
+
+  int eType=_exptype2(nodeID);
+
+  final ExtendedType extType=m_extendedTypes[eType];
+
+  if (extType.getNamespace().length() == 0) {
+
+    int type=extType.getNodeType();
+
+    String localName=extType.getLocalName();
+
+    if (type == DTM.NAMESPACE_NODE) {
+
+      if (localName.length() == 0)       return "xmlns";
+
+ else       return "xmlns:" + localName;
+
+    }
+
+ else     if (type == DTM.PROCESSING_INSTRUCTION_NODE) {
+
+      int dataIndex=_dataOrQName(nodeID);
+
+      dataIndex=m_data.elementAt(-dataIndex);
+
+      return m_valuesOrPrefixes.indexToString(dataIndex);
+
+    }
+
+ else     if (localName.length() == 0) {
+
+      return getFixedNames(type);
+
+    }
+
+ else     return localName;
+
+  }
+
+ else {
+
+    int qnameIndex=m_dataOrQName.elementAt(nodeID);
+
+    if (qnameIndex == 0)     return extType.getLocalName();
+
+    if (qnameIndex < 0) {
+
+      qnameIndex=-qnameIndex;
+
+      qnameIndex=m_data.elementAt(qnameIndex);
+
+    }
+
+    return m_valuesOrPrefixes.indexToString(qnameIndex);
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Given a node handle, return its node value. This is mostly as defined by the DOM, but may ignore some conveniences. <p>
+
+ * @param nodeHandle The node id.
+
+ * @return String Value of this node, or null if not meaningful for this nodetype.
+
+ */
+
+public String getNodeValue(int nodeHandle){
+
+  int identity=makeNodeIdentity(nodeHandle);
+
+  int type=_type2(identity);
+
+  if (type == DTM.TEXT_NODE || type == DTM.CDATA_SECTION_NODE) {
+
+    int dataIndex=_dataOrQName(identity);
+
+    if (dataIndex > 0) {
+
+      return m_chars.getString(dataIndex >>> TEXT_LENGTH_BITS,dataIndex & TEXT_LENGTH_MAX);
+
+    }
+
+ else {
+
+      return m_chars.getString(m_data.elementAt(-dataIndex),m_data.elementAt(-dataIndex + 1));
+
+    }
+
+  }
+
+ else   if (DTM.ELEMENT_NODE == type || DTM.DOCUMENT_FRAGMENT_NODE == type || DTM.DOCUMENT_NODE == type) {
+
+    return null;
+
+  }
+
+ else {
+
+    int dataIndex=m_dataOrQName.elementAt(identity);
+
+    if (dataIndex < 0) {
+
+      dataIndex=-dataIndex;
+
+      dataIndex=m_data.elementAt(dataIndex + 1);
+
+    }
+
+    return (String)m_values.elementAt(dataIndex);
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of SAX2DTM.getStringValue(int). <p> %OPT% This is one of the most often used interfaces. Performance is critical here. This one is different from SAX2DTM.getStringValue(int) in that it returns a String instead of a XMLString. Get the string- value of a node as a String object (see http: //www. w3. org/TR/xpath#data- model for the definition of a node's string- value).
+
+ * @param nodeHandle The node ID.
+
+ * @return A string object that represents the string-value of the given node.
+
+ */
+
+public final String getStringValueX(final int nodeHandle){
+
+  int identity=makeNodeIdentity(nodeHandle);
+
+  if (identity == DTM.NULL)   return EMPTY_STR;
+
+  int type=_type2(identity);
+
+  if (type == DTM.ELEMENT_NODE || type == DTM.DOCUMENT_NODE) {
+
+    int startNode=identity;
+
+    identity=_firstch2(identity);
+
+    if (DTM.NULL != identity) {
+
+      int offset=-1;
+
+      int length=0;
+
+      do {
+
+        type=_exptype2(identity);
+
+        if (type == DTM.TEXT_NODE || type == DTM.CDATA_SECTION_NODE) {
+
+          int dataIndex=m_dataOrQName.elementAt(identity);
+
+          if (dataIndex >= 0) {
+
+            if (-1 == offset) {
+
+              offset=dataIndex >>> TEXT_LENGTH_BITS;
+
+            }
+
+            length+=dataIndex & TEXT_LENGTH_MAX;
+
+          }
+
+ else {
+
+            if (-1 == offset) {
+
+              offset=m_data.elementAt(-dataIndex);
+
+            }
+
+            length+=m_data.elementAt(-dataIndex + 1);
+
+          }
+
+        }
+
+        identity++;
+
+      }
+
+ while (_parent2(identity) >= startNode);
+
+      if (length > 0) {
+
+        return m_chars.getString(offset,length);
+
+      }
+
+ else       return EMPTY_STR;
+
+    }
+
+ else     return EMPTY_STR;
+
+  }
+
+ else   if (DTM.TEXT_NODE == type || DTM.CDATA_SECTION_NODE == type) {
+
+    int dataIndex=m_dataOrQName.elementAt(identity);
+
+    if (dataIndex >= 0) {
+
+      return m_chars.getString(dataIndex >>> TEXT_LENGTH_BITS,dataIndex & TEXT_LENGTH_MAX);
+
+    }
+
+ else {
+
+      return m_chars.getString(m_data.elementAt(-dataIndex),m_data.elementAt(-dataIndex + 1));
+
+    }
+
+  }
+
+ else {
+
+    int dataIndex=m_dataOrQName.elementAt(identity);
+
+    if (dataIndex < 0) {
+
+      dataIndex=-dataIndex;
+
+      dataIndex=m_data.elementAt(dataIndex + 1);
+
+    }
+
+    return (String)m_values.elementAt(dataIndex);
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Override SAX2DTM.getStringValue(int) <p> This method is only used by Xalan-J Interpretive. It is not used by XSLTC. <p> If the caller supplies an XMLStringFactory, the getStringValue() interface in SAX2DTM will be called. Otherwise just calls getStringValueX() and wraps the returned String in an XMLString. Get the string-value of a node as a String object (see http://www.w3.org/TR/xpath#data-model for the definition of a node's string-value).
+
+ * @param nodeHandle The node ID.
+
+ * @return A string object that represents the string-value of the given node.
+
+ */
+
+public XMLString getStringValue(int nodeHandle){
+
+  int identity=makeNodeIdentity(nodeHandle);
+
+  if (identity == DTM.NULL)   return EMPTY_XML_STR;
+
+  int type=_type2(identity);
+
+  if (type == DTM.ELEMENT_NODE || type == DTM.DOCUMENT_NODE) {
+
+    int startNode=identity;
+
+    identity=_firstch2(identity);
+
+    if (DTM.NULL != identity) {
+
+      int offset=-1;
+
+      int length=0;
+
+      do {
+
+        type=_exptype2(identity);
+
+        if (type == DTM.TEXT_NODE || type == DTM.CDATA_SECTION_NODE) {
+
+          int dataIndex=m_dataOrQName.elementAt(identity);
+
+          if (dataIndex >= 0) {
+
+            if (-1 == offset) {
+
+              offset=dataIndex >>> TEXT_LENGTH_BITS;
+
+            }
+
+            length+=dataIndex & TEXT_LENGTH_MAX;
+
+          }
+
+ else {
+
+            if (-1 == offset) {
+
+              offset=m_data.elementAt(-dataIndex);
+
+            }
+
+            length+=m_data.elementAt(-dataIndex + 1);
+
+          }
+
+        }
+
+        identity++;
+
+      }
+
+ while (_parent2(identity) >= startNode);
+
+      if (length > 0) {
+
+        if (m_xstrf != null)         return m_xstrf.newstr(m_chars,offset,length);
+
+ else         return new XMLStringDefault(m_chars.getString(offset,length));
+
+      }
+
+ else       return EMPTY_XML_STR;
+
+    }
+
+ else     return EMPTY_XML_STR;
+
+  }
+
+ else   if (DTM.TEXT_NODE == type || DTM.CDATA_SECTION_NODE == type) {
+
+    int dataIndex=m_dataOrQName.elementAt(identity);
+
+    if (dataIndex >= 0) {
+
+      if (m_xstrf != null)       return m_xstrf.newstr(m_chars,dataIndex >>> TEXT_LENGTH_BITS,dataIndex & TEXT_LENGTH_MAX);
+
+ else       return new XMLStringDefault(m_chars.getString(dataIndex >>> TEXT_LENGTH_BITS,dataIndex & TEXT_LENGTH_MAX));
+
+    }
+
+ else {
+
+      if (m_xstrf != null)       return m_xstrf.newstr(m_chars,m_data.elementAt(-dataIndex),m_data.elementAt(-dataIndex + 1));
+
+ else       return new XMLStringDefault(m_chars.getString(m_data.elementAt(-dataIndex),m_data.elementAt(-dataIndex + 1)));
+
+    }
+
+  }
+
+ else {
+
+    int dataIndex=m_dataOrQName.elementAt(identity);
+
+    if (dataIndex < 0) {
+
+      dataIndex=-dataIndex;
+
+      dataIndex=m_data.elementAt(dataIndex + 1);
+
+    }
+
+    if (m_xstrf != null)     return m_xstrf.newstr((String)m_values.elementAt(dataIndex));
+
+ else     return new XMLStringDefault((String)m_values.elementAt(dataIndex));
+
+  }
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase.getTypedAttribute(int, int). <p> Given a node handle and an expanded type ID, get the index of the node's attribute of that type, if any.
+
+ * @param nodeHandle int Handle of the node.
+
+ * @param attType    int expanded type ID of the required attribute.
+
+ * @return Handle of attribute of the required type, or DTM.NULL to indicatenone exists.
+
+ */
+
+protected final int getTypedAttribute(int nodeHandle,int attType){
+
+  int nodeID=makeNodeIdentity(nodeHandle);
+
+  if (nodeID == DTM.NULL)   return DTM.NULL;
+
+  int type=_type2(nodeID);
+
+  if (DTM.ELEMENT_NODE == type) {
+
+    int expType;
+
+    while (true) {
+
+      nodeID++;
+
+      expType=_exptype2(nodeID);
+
+      if (expType != DTM.NULL)       type=m_extendedTypes[expType].getNodeType();
+
+ else       return DTM.NULL;
+
+      if (type == DTM.ATTRIBUTE_NODE) {
+
+        if (expType == attType)         return makeNodeHandle(nodeID);
+
+      }
+
+ else       if (DTM.NAMESPACE_NODE != type) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return DTM.NULL;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Construct a SAX2DTM2 object using the default block size.
+
+ */
+
+public SAX2DTM2(DTMManager mgr,Source source,int dtmIdentity,DTMWSFilter whiteSpaceFilter,XMLStringFactory xstringfactory,boolean doIndexing){
+
+  this(mgr,source,dtmIdentity,whiteSpaceFilter,xstringfactory,doIndexing,DEFAULT_BLOCKSIZE,true,true,false);
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Construct a SAX2DTM2 object using the given block size.
+
+ */
+
+public SAX2DTM2(DTMManager mgr,Source source,int dtmIdentity,DTMWSFilter whiteSpaceFilter,XMLStringFactory xstringfactory,boolean doIndexing,int blocksize,boolean usePrevsib,boolean buildIdIndex,boolean newNameTable){
+
+  super(mgr,source,dtmIdentity,whiteSpaceFilter,xstringfactory,doIndexing,blocksize,usePrevsib,newNameTable);
+
+  int shift;
+
+  for (shift=0; (blocksize>>>=1) != 0; ++shift)   ;
+
+  m_blocksize=1 << shift;
+
+  m_SHIFT=shift;
+
+  m_MASK=m_blocksize - 1;
+
+  m_buildIdIndex=buildIdIndex;
+
+  m_values=new Vector(32,512);
+
+  m_maxNodeIndex=1 << DTMManager.IDENT_DTM_NODE_BITS;
+
+  m_exptype_map0=m_exptype.getMap0();
+
+  m_nextsib_map0=m_nextsib.getMap0();
+
+  m_firstch_map0=m_firstch.getMap0();
+
+  m_parent_map0=m_parent.getMap0();
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Return the node type from the expanded type
+
+ */
+
+public final int _exptype2Type(int exptype){
+
+  if (NULL != exptype)   return m_extendedTypes[exptype].getNodeType();
+
+ else   return NULL;
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase._exptype().
+
+ * @param identity A node identity, which <em>must not</em> be equal to<code>DTM.NULL</code>
+
+ */
+
+public final int _exptype2(int identity){
+
+  if (identity < m_blocksize)   return m_exptype_map0[identity];
+
+ else   return m_exptype_map[identity >>> m_SHIFT][identity & m_MASK];
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * Override DTMDefaultBase._exptype() by dropping the incremental code. <p> This one is less efficient than _exptype2. It is only used during DTM building. _exptype2 is used after the document is fully built.
+
+ */
+
+public final int _exptype(int identity){
+
+  return m_exptype.elementAt(identity);
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase._firstch().
+
+ * @param identity A node identity, which <em>must not</em> be equal to<code>DTM.NULL</code>
+
+ */
+
+public final int _firstch2(int identity){
+
+  if (identity < m_blocksize)   return m_firstch_map0[identity];
+
+ else   return m_firstch_map[identity >>> m_SHIFT][identity & m_MASK];
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase._nextsib().
+
+ * @param identity A node identity, which <em>must not</em> be equal to<code>DTM.NULL</code>
+
+ */
+
+public final int _nextsib2(int identity){
+
+  if (identity < m_blocksize)   return m_nextsib_map0[identity];
+
+ else   return m_nextsib_map[identity >>> m_SHIFT][identity & m_MASK];
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase._parent().
+
+ * @param identity A node identity, which <em>must not</em> be equal to<code>DTM.NULL</code>
+
+ */
+
+public final int _parent2(int identity){
+
+  if (identity < m_blocksize)   return m_parent_map0[identity];
+
+ else   return m_parent_map[identity >>> m_SHIFT][identity & m_MASK];
+
+}
+
+Location: SAX2DTM2.java
+
+Content: 
+
+/** 
+
+ * The optimized version of DTMDefaultBase._type().
+
+ * @param identity A node identity, which <em>must not</em> be equal to<code>DTM.NULL</code>
+
+ */
+
+public final int _type2(int identity){
+
+  int eType;
+
+  if (identity < m_blocksize)   eType=m_exptype_map0[identity];
+
+ else   eType=m_exptype_map[identity >>> m_SHIFT][identity & m_MASK];
+
+  if (NULL != eType)   return m_extendedTypes[eType].getNodeType();
+
+ else   return NULL;
+
+}
+

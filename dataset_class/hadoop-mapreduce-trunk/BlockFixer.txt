@@ -1,0 +1,176 @@
+Location: BlockFixer.java
+
+Content: 
+
+public BlockFixer(Configuration conf){
+
+  super(conf);
+
+  blockFixInterval=getConf().getLong(BLOCKFIX_INTERVAL,DEFAULT_BLOCKFIX_INTERVAL);
+
+  historyInterval=getConf().getLong(BLOCKFIX_HISTORY_INTERVAL,DEFAULT_BLOCKFIX_HISTORY_INTERVAL);
+
+}
+
+Location: BlockFixer.java
+
+Content: 
+
+public static BlockFixer createBlockFixer(Configuration conf) throws ClassNotFoundException {
+
+  try {
+
+    Class<?> blockFixerClass=conf.getClass(BLOCKFIX_CLASSNAME,DistBlockFixer.class);
+
+    if (!BlockFixer.class.isAssignableFrom(blockFixerClass)) {
+
+      throw new ClassNotFoundException("not an implementation of blockfixer");
+
+    }
+
+    Constructor<?> constructor=blockFixerClass.getConstructor(new Class[]{Configuration.class});
+
+    return (BlockFixer)constructor.newInstance(conf);
+
+  }
+
+ catch (  NoSuchMethodException e) {
+
+    throw new ClassNotFoundException("cannot construct blockfixer",e);
+
+  }
+
+catch (  InstantiationException e) {
+
+    throw new ClassNotFoundException("cannot construct blockfixer",e);
+
+  }
+
+catch (  IllegalAccessException e) {
+
+    throw new ClassNotFoundException("cannot construct blockfixer",e);
+
+  }
+
+catch (  InvocationTargetException e) {
+
+    throw new ClassNotFoundException("cannot construct blockfixer",e);
+
+  }
+
+}
+
+Location: BlockFixer.java
+
+Content: 
+
+/** 
+
+ * returns the number of files that have been fixed by this block fixer
+
+ */
+
+public synchronized long filesFixed(){
+
+  return numFilesFixed;
+
+}
+
+Location: BlockFixer.java
+
+Content: 
+
+void filterUnfixableSourceFiles(Iterator<Path> it) throws IOException {
+
+  String xorPrefix=RaidNode.xorDestinationPath(getConf()).toUri().getPath();
+
+  if (!xorPrefix.endsWith(Path.SEPARATOR)) {
+
+    xorPrefix+=Path.SEPARATOR;
+
+  }
+
+  String rsPrefix=RaidNode.rsDestinationPath(getConf()).toUri().getPath();
+
+  if (!rsPrefix.endsWith(Path.SEPARATOR)) {
+
+    rsPrefix+=Path.SEPARATOR;
+
+  }
+
+  String[] destPrefixes=new String[]{xorPrefix,rsPrefix};
+
+  while (it.hasNext()) {
+
+    Path p=it.next();
+
+    if (isSourceFile(p,destPrefixes) && RaidNode.xorParityForSource(p,getConf()) == null && RaidNode.rsParityForSource(p,getConf()) == null) {
+
+      it.remove();
+
+    }
+
+  }
+
+}
+
+Location: BlockFixer.java
+
+Content: 
+
+/** 
+
+ * increments the number of files that have been fixed by this block fixer
+
+ */
+
+protected synchronized void incrFilesFixed(){
+
+  numFilesFixed++;
+
+}
+
+Location: BlockFixer.java
+
+Content: 
+
+/** 
+
+ * increments the number of files that have been fixed by this block fixer
+
+ */
+
+protected synchronized void incrFilesFixed(long incr){
+
+  if (incr < 0) {
+
+    throw new IllegalArgumentException("cannot increment by negative value " + incr);
+
+  }
+
+  numFilesFixed+=incr;
+
+}
+
+Location: BlockFixer.java
+
+Content: 
+
+static boolean isSourceFile(Path p,String[] destPrefixes){
+
+  String pathStr=p.toUri().getPath();
+
+  for (  String destPrefix : destPrefixes) {
+
+    if (pathStr.startsWith(destPrefix)) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+

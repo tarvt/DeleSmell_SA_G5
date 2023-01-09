@@ -1,0 +1,936 @@
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Adds the public and/or encrypted shared keys to the payload of msg. If msg already has a payload, the message will be copied and the new payload consists of the keys and the original payload
+
+ * @param msg The original message
+
+ * @return A copy of the message
+
+ */
+
+protected Message addKeysToMessage(Message msg,boolean copy,boolean add_secret_keys,Address serialize_only){
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(pub_map.size() * 200 + msg.getLength());
+
+  try {
+
+    serializeKeys(out,add_secret_keys,serialize_only);
+
+    if (msg.getLength() > 0)     out.write(msg.getRawBuffer(),msg.getOffset(),msg.getLength());
+
+    return (copy ? msg.copy(true,true) : msg).setBuffer(out.getBuffer()).putHeader(id,new EncryptHeader(EncryptHeader.INSTALL_KEYS,symVersion()));
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error("%s: failed adding keys to message: %s",local_addr,t.getMessage());
+
+    return null;
+
+  }
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected Processing addMetadata(Message msg,boolean add_secret_keys,Address include_secret_key_only_for,boolean attach_fetch_key_header){
+
+  try {
+
+    if (use_external_key_exchange && !attach_fetch_key_header)     return Processing.PROCESS;
+
+    Message encr_msg=encrypt(msg);
+
+    if (use_external_key_exchange) {
+
+      Address srv=key_exchange.getServerLocation();
+
+      if (srv == null)       srv=getCachedServerAddress();
+
+      log.trace("%s: asking %s to fetch the shared group key %s via an external key exchange protocol (srv=%s)",local_addr,encr_msg.getDest() == null ? "all members" : encr_msg.getDest(),Util.byteArrayToHexString(sym_version),srv);
+
+      encr_msg.putHeader(id,new EncryptHeader(EncryptHeader.FETCH_SHARED_KEY,symVersion()).server(srv));
+
+    }
+
+ else {
+
+      encr_msg=addKeysToMessage(encr_msg,false,add_secret_keys,include_secret_key_only_for);
+
+      if (add_secret_keys || include_secret_key_only_for != null)       log.trace("%s: sending encrypted group key to %s (version: %s)",local_addr,encr_msg.getDest() == null ? "all members" : encr_msg.getDest(),Util.byteArrayToHexString(sym_version));
+
+    }
+
+    down_prot.down(encr_msg);
+
+    return Processing.DROP;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.warn("%s: unable to send message down: %s",local_addr,ex.getMessage());
+
+    return Processing.PROCESS;
+
+  }
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public Cipher asymCipher(){
+
+  return asym_cipher;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Cache the current shared key (and its cipher) to decrypt messages encrypted with the old shared group key 
+
+ */
+
+protected void cacheGroupKey(byte[] version) throws Exception {
+
+  Cipher decoding_cipher=secret_key != null ? decoding_ciphers.take() : null;
+
+  if (decoding_cipher != null)   key_map.putIfAbsent(new AsciiString(version),decoding_cipher);
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected static void cacheServerAddress(Address srv){
+
+  srv_addr.set(srv);
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected void createNewKey(String message){
+
+  try {
+
+    this.secret_key=createSecretKey();
+
+    initSymCiphers(sym_algorithm,secret_key);
+
+    log.debug("%s: created new group key (version: %s) %s",local_addr,Util.byteArrayToHexString(sym_version),message);
+
+    cacheGroupKey(sym_version);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed creating group key and initializing ciphers",local_addr,ex);
+
+  }
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Initialise the symmetric key if none is supplied in a keystore 
+
+ */
+
+protected SecretKey createSecretKey() throws Exception {
+
+  KeyGenerator keyGen=null;
+
+  if (provider != null && !provider.trim().isEmpty())   keyGen=KeyGenerator.getInstance(getAlgorithm(sym_algorithm),provider);
+
+ else   keyGen=KeyGenerator.getInstance(getAlgorithm(sym_algorithm));
+
+  keyGen.init(sym_keylength);
+
+  return keyGen.generateKey();
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected SecretKeySpec decodeKey(byte[] encodedKey) throws Exception {
+
+  byte[] keyBytes;
+
+synchronized (this) {
+
+    try {
+
+      keyBytes=asym_cipher.doFinal(encodedKey);
+
+    }
+
+ catch (    BadPaddingException|IllegalBlockSizeException e) {
+
+      asym_cipher.init(Cipher.DECRYPT_MODE,key_pair.getPrivate());
+
+      throw e;
+
+    }
+
+  }
+
+  try {
+
+    SecretKeySpec keySpec=new SecretKeySpec(keyBytes,getAlgorithm(sym_algorithm));
+
+    Cipher temp;
+
+    if (provider != null && !provider.trim().isEmpty())     temp=Cipher.getInstance(sym_algorithm,provider);
+
+ else     temp=Cipher.getInstance(sym_algorithm);
+
+    temp.init(Cipher.SECRET_KEY,keySpec);
+
+    return keySpec;
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("FailedDecodingKey"),e);
+
+    return null;
+
+  }
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected boolean dropMulticastMessageFromNonMember(Message msg){
+
+  return msg.dest() == null && !inView(msg.src(),String.format("%s: dropped multicast message from non-member %s",local_addr,msg.getSrc()));
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Encrypts the current secret key with the requester's public key (the requester will decrypt it with its private key) 
+
+ */
+
+protected byte[] encryptSecretKey(Key secret_key,PublicKey public_key) throws Exception {
+
+  Cipher tmp;
+
+  if (provider != null && !provider.trim().isEmpty())   tmp=Cipher.getInstance(asym_algorithm,provider);
+
+ else   tmp=Cipher.getInstance(asym_algorithm);
+
+  tmp.init(Cipher.ENCRYPT_MODE,public_key);
+
+  return tmp.doFinal(secret_key.getEncoded());
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public ASYM_ENCRYPT fetchAndSetKeyExchange(){
+
+  if ((key_exchange=stack.findProtocol(KeyExchange.class)) == null)   throw new IllegalStateException(KeyExchange.class.getSimpleName() + " not found in stack");
+
+  return this;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected static Address getCachedServerAddress(){
+
+  Address retval=srv_addr.get();
+
+  srv_addr.remove();
+
+  return retval;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public boolean getChangeKeyOnCoordLeave(){
+
+  return change_key_on_coord_leave;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public boolean getChangeKeyOnLeave(){
+
+  return change_key_on_leave;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+@ManagedAttribute(description="The current key server") public String getKeyServerAddress(){
+
+  return key_server_addr != null ? key_server_addr.toString() : "null";
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+@ManagedAttribute(description="Keys in the public key map") public String getPublicKeys(){
+
+  return pub_map.keySet().toString();
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public boolean getUseExternalKeyExchange(){
+
+  return use_external_key_exchange;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Generates the public/private key pair from the init params 
+
+ */
+
+protected void initKeyPair() throws Exception {
+
+  if (this.key_pair == null) {
+
+    KeyPairGenerator KpairGen=null;
+
+    if (provider != null && !provider.trim().isEmpty())     KpairGen=KeyPairGenerator.getInstance(getAlgorithm(asym_algorithm),provider);
+
+ else     KpairGen=KeyPairGenerator.getInstance(getAlgorithm(asym_algorithm));
+
+    KpairGen.initialize(asym_keylength,new SecureRandom());
+
+    key_pair=KpairGen.generateKeyPair();
+
+  }
+
+  if (provider != null && !provider.trim().isEmpty())   asym_cipher=Cipher.getInstance(asym_algorithm,provider);
+
+ else   asym_cipher=Cipher.getInstance(asym_algorithm);
+
+  asym_cipher.init(Cipher.DECRYPT_MODE,key_pair.getPrivate());
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected void installPublicKeys(Address sender,byte[] buf,int offset,int length){
+
+  ByteArrayDataInputStream in=new ByteArrayDataInputStream(buf,offset,length);
+
+  try {
+
+    int num_keys=in.readInt();
+
+    for (int i=0; i < num_keys; i++) {
+
+      Address mbr=Util.readAddress(in);
+
+      int len=in.readInt();
+
+      byte[] key=new byte[len];
+
+      in.readFully(key,0,key.length);
+
+      pub_map.put(mbr,key);
+
+    }
+
+    log.trace("%s: added %d public keys to local cache",local_addr,num_keys);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading public keys received from %s: %s",local_addr,sender,ex);
+
+  }
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected synchronized void installSharedGroupKey(Address sender,SecretKey key,byte[] version) throws Exception {
+
+  if (Arrays.equals(this.sym_version,version)) {
+
+    log.debug("%s: ignoring group key received from %s (version: %s); it has already been installed",local_addr,sender != null ? sender : "key exchange protocol",Util.byteArrayToHexString(version));
+
+    return;
+
+  }
+
+  log.debug("%s: installing group key received from %s (version: %s)",local_addr,sender != null ? sender : "key exchange protocol",Util.byteArrayToHexString(version));
+
+  secret_key=key;
+
+  initSymCiphers(key.getAlgorithm(),key);
+
+  sym_version=version;
+
+  cacheGroupKey(version);
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+@ManagedAttribute(description="True if this member is the current key server, false otherwise") public boolean isKeyServer(){
+
+  return Objects.equals(key_server_addr,local_addr);
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public KeyPair keyPair(){
+
+  return key_pair;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public Address keyServerAddr(){
+
+  return key_server_addr;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public ASYM_ENCRYPT keyServerAddr(Address ks){
+
+  this.key_server_addr=ks;
+
+  return this;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Used to reconstitute public key sent in byte form from peer 
+
+ */
+
+protected PublicKey makePublicKey(byte[] encodedKey){
+
+  PublicKey pubKey=null;
+
+  try {
+
+    KeyFactory KeyFac=KeyFactory.getInstance(getAlgorithm(asym_algorithm));
+
+    X509EncodedKeySpec x509KeySpec=new X509EncodedKeySpec(encodedKey);
+
+    pubKey=KeyFac.generatePublic(x509KeySpec);
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+  }
+
+  return pubKey;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected boolean processEncryptMessage(Message msg,EncryptHeader hdr,boolean retval){
+
+  if (hdr == null)   return retval;
+
+switch (hdr.type) {
+
+case EncryptHeader.INSTALL_KEYS:
+
+    removeKeysFromMessageAndInstall(msg,hdr.version());
+
+  break;
+
+case EncryptHeader.FETCH_SHARED_KEY:
+
+if (!Objects.equals(local_addr,msg.getSrc())) {
+
+  try {
+
+    Address key_server=hdr.server() != null ? hdr.server() : msg.src();
+
+    if (log.isTraceEnabled())     log.trace("%s: fetching group key from %s",local_addr,key_server);
+
+    key_exchange.fetchSecretKeyFrom(key_server);
+
+  }
+
+ catch (  Exception e) {
+
+    log.warn("%s: failed fetching group key from %s: %s",local_addr,msg.src(),e);
+
+  }
+
+}
+
+break;
+
+}
+
+return retval;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Removes the public and/or private keys from the payload of msg and installs them. If there is some payload left (the original payload), the offset of the message will be changed. Otherwise, the payload will be nulled, to re-create the original message
+
+ */
+
+protected void removeKeysFromMessageAndInstall(Message msg,byte[] version){
+
+  ByteArrayDataInputStream in=new ByteArrayDataInputStream(msg.getRawBuffer(),msg.getOffset(),msg.getLength());
+
+  unserializeAndInstallKeys(msg.getSrc(),version,in);
+
+  int len=msg.getLength(), offset=msg.getOffset(), bytes_read=in.position();
+
+  if (offset + bytes_read == len)   msg.setBuffer(null,0,0);
+
+ else   msg.setBuffer(msg.getRawBuffer(),offset + bytes_read,len - bytes_read);
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Serializes all public keys and their corresponding encrypted shared group keys into a buffer 
+
+ */
+
+protected void serializeKeys(ByteArrayDataOutputStream out,boolean serialize_shared_keys,Address serialize_only) throws Exception {
+
+  out.writeInt(pub_map.size());
+
+  int num=0;
+
+  for (  Map.Entry<Address,byte[]> e : pub_map.entrySet()) {
+
+    Address mbr=e.getKey();
+
+    byte[] public_key=e.getValue();
+
+    Util.writeAddress(mbr,out);
+
+    out.writeInt(public_key.length);
+
+    out.write(public_key,0,public_key.length);
+
+    if (serialize_shared_keys || Objects.equals(mbr,serialize_only)) {
+
+      PublicKey pk=makePublicKey(public_key);
+
+      byte[] encrypted_shared_key=encryptSecretKey(secret_key,pk);
+
+      out.writeInt(encrypted_shared_key.length);
+
+      out.write(encrypted_shared_key,0,encrypted_shared_key.length);
+
+    }
+
+ else     out.writeInt(0);
+
+    num++;
+
+  }
+
+  int curr_pos=out.position();
+
+  out.position(0).writeInt(num);
+
+  out.position(curr_pos);
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected static Buffer serializeKeys(Map<Address,byte[]> keys) throws Exception {
+
+  int num_keys=keys.size();
+
+  if (num_keys == 0)   return null;
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(num_keys * 100);
+
+  out.writeInt(num_keys);
+
+  for (  Map.Entry<Address,byte[]> e : keys.entrySet()) {
+
+    Util.writeAddress(e.getKey(),out);
+
+    byte[] val=e.getValue();
+
+    out.writeInt(val.length);
+
+    out.write(val,0,val.length);
+
+  }
+
+  return out.getBuffer();
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public ASYM_ENCRYPT setChangeKeyOnCoordLeave(boolean c){
+
+  change_key_on_coord_leave=c;
+
+  return this;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public ASYM_ENCRYPT setChangeKeyOnLeave(boolean c){
+
+  change_key_on_leave=c;
+
+  return this;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+public ASYM_ENCRYPT setUseExternalKeyExchange(boolean u){
+
+  use_external_key_exchange=u;
+
+  return this;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Processes a message with a GMS header (e.g. by adding the secret key to a JOIN response) and returns true if the message should be passed down (not encrypted) or false if the message needs to be encrypted
+
+ * @return Processing {@link Processing#DROP} if the message needs to be dropped, {@link Processing#SKIP} if themessage needs to be skipped (not encrypted), or  {@link Processing#PROCESS} if the message needs to beprocessed (= encrypted)
+
+ */
+
+protected Processing skipDownMessage(Message msg){
+
+  GMS.GmsHeader hdr=msg.getHeader(GMS_ID);
+
+  if (hdr == null)   return Processing.PROCESS;
+
+switch (hdr.getType()) {
+
+case GMS.GmsHeader.JOIN_REQ:
+
+case GMS.GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER:
+
+case GMS.GmsHeader.MERGE_RSP:
+
+    if (!use_external_key_exchange) {
+
+      Message copy=addKeysToMessage(msg,true,false,null);
+
+      down_prot.down(copy);
+
+      return Processing.DROP;
+
+    }
+
+  return Processing.SKIP;
+
+case GMS.GmsHeader.JOIN_RSP:
+
+return addMetadata(msg,false,msg.getDest(),true);
+
+case GMS.GmsHeader.VIEW:
+
+boolean tmp=send_group_keys;
+
+send_group_keys=false;
+
+return addMetadata(msg,tmp,null,tmp);
+
+case GMS.GmsHeader.INSTALL_MERGE_VIEW:
+
+if (Objects.equals(local_addr,msg.dest())) break;
+
+return addMetadata(msg,true,null,true);
+
+case GMS.GmsHeader.MERGE_REQ:
+
+case GMS.GmsHeader.VIEW_ACK:
+
+case GMS.GmsHeader.GET_DIGEST_REQ:
+
+case GMS.GmsHeader.GET_DIGEST_RSP:
+
+return Processing.SKIP;
+
+}
+
+return Processing.PROCESS;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Checks if the message contains a public key (and adds it to pub_map if present) or an encrypted group key (and installs it if present) 
+
+ */
+
+protected boolean skipUpMessage(Message msg){
+
+  GMS.GmsHeader hdr=msg.getHeader(GMS_ID);
+
+  if (hdr == null)   return false;
+
+  EncryptHeader h=msg.getHeader(id);
+
+switch (hdr.getType()) {
+
+case GMS.GmsHeader.JOIN_REQ:
+
+case GMS.GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER:
+
+case GMS.GmsHeader.MERGE_RSP:
+
+    return processEncryptMessage(msg,h,true);
+
+case GMS.GmsHeader.JOIN_RSP:
+
+case GMS.GmsHeader.VIEW:
+
+case GMS.GmsHeader.INSTALL_MERGE_VIEW:
+
+  if (hdr.getType() == GMS.GmsHeader.INSTALL_MERGE_VIEW)   cacheServerAddress(h.server());
+
+return processEncryptMessage(msg,h,false);
+
+case GMS.GmsHeader.MERGE_REQ:
+
+case GMS.GmsHeader.VIEW_ACK:
+
+case GMS.GmsHeader.GET_DIGEST_REQ:
+
+case GMS.GmsHeader.GET_DIGEST_RSP:
+
+return true;
+
+}
+
+return false;
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+/** 
+
+ * Unserializes public keys and installs them to pub_map, then reads encrypted shared keys and install our own 
+
+ */
+
+protected void unserializeAndInstallKeys(Address sender,byte[] version,ByteArrayDataInputStream in){
+
+  try {
+
+    int num_keys=in.readInt();
+
+    for (int i=0; i < num_keys; i++) {
+
+      Address mbr=Util.readAddress(in);
+
+      int len=in.readInt();
+
+      if (len > 0) {
+
+        byte[] public_key=new byte[len];
+
+        in.readFully(public_key,0,public_key.length);
+
+        pub_map.put(mbr,public_key);
+
+      }
+
+      if ((len=in.readInt()) > 0) {
+
+        byte[] encrypted_shared_group_key=new byte[len];
+
+        in.readFully(encrypted_shared_group_key,0,encrypted_shared_group_key.length);
+
+        if (local_addr.equals(mbr)) {
+
+          try {
+
+            SecretKey tmp=decodeKey(encrypted_shared_group_key);
+
+            if (tmp != null)             installSharedGroupKey(sender,tmp,version);
+
+          }
+
+ catch (          Exception e) {
+
+            log.warn("%s: unable to process key received from %s: %s",local_addr,sender,e);
+
+          }
+
+        }
+
+      }
+
+    }
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading keys received from %s: %s",local_addr,sender,ex);
+
+  }
+
+}
+
+Location: ASYM_ENCRYPT.java
+
+Content: 
+
+protected Map<Address,byte[]> unserializeKeys(Address sender,byte[] buf,int offset,int length){
+
+  Map<Address,byte[]> map=new HashMap<>();
+
+  ByteArrayDataInputStream in=new ByteArrayDataInputStream(buf,offset,length);
+
+  try {
+
+    int num_keys=in.readInt();
+
+    for (int i=0; i < num_keys; i++) {
+
+      Address mbr=Util.readAddress(in);
+
+      int len=in.readInt();
+
+      byte[] key=new byte[len];
+
+      in.readFully(key,0,key.length);
+
+      map.put(mbr,key);
+
+    }
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading keys received from %s: %s",local_addr,sender,ex);
+
+  }
+
+  return map;
+
+}
+

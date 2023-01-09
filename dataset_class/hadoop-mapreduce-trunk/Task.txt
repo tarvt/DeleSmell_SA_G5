@@ -1,0 +1,1176 @@
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Calculates the size of output for this task.
+
+ * @return -1 if it can't be found.
+
+ */
+
+private long calculateOutputSize() throws IOException {
+
+  if (!isMapOrReduce()) {
+
+    return -1;
+
+  }
+
+  if (isMapTask() && conf.getNumReduceTasks() > 0) {
+
+    try {
+
+      Path mapOutput=mapOutputFile.getOutputFile();
+
+      FileSystem localFS=FileSystem.getLocal(conf);
+
+      return localFS.getFileStatus(mapOutput).getLen();
+
+    }
+
+ catch (    IOException e) {
+
+      LOG.warn("Could not find output size ",e);
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: Task.java
+
+Content: 
+
+private void commit(TaskUmbilicalProtocol umbilical,TaskReporter reporter,org.apache.hadoop.mapreduce.OutputCommitter committer) throws IOException {
+
+  int retries=MAX_RETRIES;
+
+  while (true) {
+
+    try {
+
+      while (!umbilical.canCommit(taskId)) {
+
+        try {
+
+          Thread.sleep(1000);
+
+        }
+
+ catch (        InterruptedException ie) {
+
+        }
+
+        reporter.setProgressFlag();
+
+      }
+
+      break;
+
+    }
+
+ catch (    IOException ie) {
+
+      LOG.warn("Failure asking whether task can commit: " + StringUtils.stringifyException(ie));
+
+      if (--retries == 0) {
+
+        discardOutput(taskContext);
+
+        System.exit(68);
+
+      }
+
+    }
+
+  }
+
+  try {
+
+    LOG.info("Task " + taskId + " is allowed to commit now");
+
+    committer.commitTask(taskContext);
+
+    return;
+
+  }
+
+ catch (  IOException iee) {
+
+    LOG.warn("Failure committing: " + StringUtils.stringifyException(iee));
+
+    discardOutput(taskContext);
+
+    throw iee;
+
+  }
+
+}
+
+Location: Task.java
+
+Content: 
+
+@SuppressWarnings("unchecked") protected static <INKEY,INVALUE,OUTKEY,OUTVALUE>org.apache.hadoop.mapreduce.Reducer<INKEY,INVALUE,OUTKEY,OUTVALUE>.Context createReduceContext(org.apache.hadoop.mapreduce.Reducer<INKEY,INVALUE,OUTKEY,OUTVALUE> reducer,Configuration job,org.apache.hadoop.mapreduce.TaskAttemptID taskId,RawKeyValueIterator rIter,org.apache.hadoop.mapreduce.Counter inputKeyCounter,org.apache.hadoop.mapreduce.Counter inputValueCounter,org.apache.hadoop.mapreduce.RecordWriter<OUTKEY,OUTVALUE> output,org.apache.hadoop.mapreduce.OutputCommitter committer,org.apache.hadoop.mapreduce.StatusReporter reporter,RawComparator<INKEY> comparator,Class<INKEY> keyClass,Class<INVALUE> valueClass) throws IOException, InterruptedException {
+
+  org.apache.hadoop.mapreduce.ReduceContext<INKEY,INVALUE,OUTKEY,OUTVALUE> reduceContext=new ReduceContextImpl<INKEY,INVALUE,OUTKEY,OUTVALUE>(job,taskId,rIter,inputKeyCounter,inputValueCounter,output,committer,reporter,comparator,keyClass,valueClass);
+
+  org.apache.hadoop.mapreduce.Reducer<INKEY,INVALUE,OUTKEY,OUTVALUE>.Context reducerContext=new WrappedReducer<INKEY,INVALUE,OUTKEY,OUTVALUE>().getReducerContext(reduceContext);
+
+  return reducerContext;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Return an approprate thread runner for this task. 
+
+ * @param tip TODO
+
+ */
+
+public abstract TaskRunner createRunner(TaskTracker tracker,TaskTracker.TaskInProgress tip) throws IOException ;
+
+Location: Task.java
+
+Content: 
+
+private void discardOutput(TaskAttemptContext taskContext){
+
+  try {
+
+    committer.abortTask(taskContext);
+
+  }
+
+ catch (  IOException ioe) {
+
+    LOG.warn("Failure cleaning up: " + StringUtils.stringifyException(ioe));
+
+  }
+
+}
+
+Location: Task.java
+
+Content: 
+
+public void done(TaskUmbilicalProtocol umbilical,TaskReporter reporter) throws IOException, InterruptedException {
+
+  LOG.info("Task:" + taskId + " is done."+ " And is in the process of commiting");
+
+  updateCounters();
+
+  boolean commitRequired=isCommitRequired();
+
+  if (commitRequired) {
+
+    int retries=MAX_RETRIES;
+
+    setState(TaskStatus.State.COMMIT_PENDING);
+
+    while (true) {
+
+      try {
+
+        umbilical.commitPending(taskId,taskStatus);
+
+        break;
+
+      }
+
+ catch (      InterruptedException ie) {
+
+      }
+
+catch (      IOException ie) {
+
+        LOG.warn("Failure sending commit pending: " + StringUtils.stringifyException(ie));
+
+        if (--retries == 0) {
+
+          System.exit(67);
+
+        }
+
+      }
+
+    }
+
+    commit(umbilical,reporter,committer);
+
+  }
+
+  taskDone.set(true);
+
+  reporter.stopCommunicationThread();
+
+  updateCounters();
+
+  sendLastUpdate(umbilical);
+
+  sendDone(umbilical);
+
+}
+
+Location: Task.java
+
+Content: 
+
+BytesWritable getExtraData(){
+
+  return extraData;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Counters to measure the usage of the different file systems. Always return the String array with two elements. First one is the name of   BYTES_READ counter and second one is of the BYTES_WRITTEN counter.
+
+ */
+
+protected static String[] getFileSystemCounterNames(String uriScheme){
+
+  String scheme=uriScheme.toUpperCase();
+
+  return new String[]{scheme + "_BYTES_READ",scheme + "_BYTES_WRITTEN"};
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Get the job token secret
+
+ * @return the token secret
+
+ */
+
+public SecretKey getJobTokenSecret(){
+
+  return this.tokenSecret;
+
+}
+
+Location: Task.java
+
+Content: 
+
+public int getNumSlotsRequired(){
+
+  return numSlotsRequired;
+
+}
+
+Location: Task.java
+
+Content: 
+
+static synchronized String getOutputName(int partition){
+
+  return "part-" + NUMBER_FORMAT.format(partition);
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Get the index of this task within the job.
+
+ * @return the integer part of the task id
+
+ */
+
+public int getPartition(){
+
+  return partition;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Return current phase of the task.  needs to be synchronized as communication thread sends the phase every second
+
+ * @return the curent phase of the task
+
+ */
+
+public synchronized TaskStatus.Phase getPhase(){
+
+  return this.taskStatus.getPhase();
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Get skipRanges.
+
+ */
+
+public SortedRanges getSkipRanges(){
+
+  return skipRanges;
+
+}
+
+Location: Task.java
+
+Content: 
+
+public void initialize(JobConf job,JobID id,Reporter reporter,boolean useNewApi) throws IOException, ClassNotFoundException, InterruptedException {
+
+  jobContext=new JobContextImpl(job,id,reporter);
+
+  taskContext=new TaskAttemptContextImpl(job,taskId,reporter);
+
+  if (getState() == TaskStatus.State.UNASSIGNED) {
+
+    setState(TaskStatus.State.RUNNING);
+
+  }
+
+  if (useNewApi) {
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug("using new api for output committer");
+
+    }
+
+    outputFormat=ReflectionUtils.newInstance(taskContext.getOutputFormatClass(),job);
+
+    committer=outputFormat.getOutputCommitter(taskContext);
+
+  }
+
+ else {
+
+    committer=conf.getOutputCommitter();
+
+  }
+
+  Path outputPath=FileOutputFormat.getOutputPath(conf);
+
+  if (outputPath != null) {
+
+    if ((committer instanceof FileOutputCommitter)) {
+
+      FileOutputFormat.setWorkOutputPath(conf,((FileOutputCommitter)committer).getTempTaskOutputPath(taskContext));
+
+    }
+
+ else {
+
+      FileOutputFormat.setWorkOutputPath(conf,outputPath);
+
+    }
+
+  }
+
+  committer.setupTask(taskContext);
+
+  Class<? extends ResourceCalculatorPlugin> clazz=conf.getClass(TTConfig.TT_RESOURCE_CALCULATOR_PLUGIN,null,ResourceCalculatorPlugin.class);
+
+  resourceCalculator=ResourceCalculatorPlugin.getResourceCalculatorPlugin(clazz,conf);
+
+  LOG.info(" Using ResourceCalculatorPlugin : " + resourceCalculator);
+
+  if (resourceCalculator != null) {
+
+    initCpuCumulativeTime=resourceCalculator.getProcResourceValues().getCumulativeCpuTime();
+
+  }
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Checks if this task has anything to commit, depending on the type of task, as well as on whether the  {@link OutputCommitter}has anything to commit.
+
+ * @return true if the task has to commit
+
+ * @throws IOException
+
+ */
+
+boolean isCommitRequired() throws IOException {
+
+  boolean commitRequired=false;
+
+  if (isMapOrReduce()) {
+
+    commitRequired=committer.needsTaskCommit(taskContext);
+
+  }
+
+  return commitRequired;
+
+}
+
+Location: Task.java
+
+Content: 
+
+boolean isJobAbortTask(){
+
+  return isJobCleanupTask() && (jobRunStateForCleanup == JobStatus.State.KILLED || jobRunStateForCleanup == JobStatus.State.FAILED);
+
+}
+
+Location: Task.java
+
+Content: 
+
+boolean isJobCleanupTask(){
+
+  return jobCleanup;
+
+}
+
+Location: Task.java
+
+Content: 
+
+boolean isJobSetupTask(){
+
+  return jobSetup;
+
+}
+
+Location: Task.java
+
+Content: 
+
+boolean isMapOrReduce(){
+
+  return !jobSetup && !jobCleanup && !taskCleanup;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Is Task in skipping mode.
+
+ */
+
+public boolean isSkipping(){
+
+  return skipping;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Localize the given JobConf to be specific for this task.
+
+ */
+
+public void localizeConfiguration(JobConf conf) throws IOException {
+
+  conf.set(JobContext.TASK_ID,taskId.getTaskID().toString());
+
+  conf.set(JobContext.TASK_ATTEMPT_ID,taskId.toString());
+
+  conf.setBoolean(JobContext.TASK_ISMAP,isMapTask());
+
+  conf.setInt(JobContext.TASK_PARTITION,partition);
+
+  conf.set(JobContext.ID,taskId.getJobID().toString());
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Report a fatal error to the parent (task) tracker.
+
+ */
+
+protected void reportFatalError(TaskAttemptID id,Throwable throwable,String logMsg){
+
+  LOG.fatal(logMsg);
+
+  Throwable tCause=throwable.getCause();
+
+  String cause=tCause == null ? StringUtils.stringifyException(throwable) : StringUtils.stringifyException(tCause);
+
+  try {
+
+    umbilical.fatalError(id,cause);
+
+  }
+
+ catch (  IOException ioe) {
+
+    LOG.fatal("Failed to contact the tasktracker",ioe);
+
+    System.exit(-1);
+
+  }
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Reports the next executing record range to TaskTracker.
+
+ * @param umbilical
+
+ * @param nextRecIndex the record index which would be fed next.
+
+ * @throws IOException
+
+ */
+
+protected void reportNextRecordRange(final TaskUmbilicalProtocol umbilical,long nextRecIndex) throws IOException {
+
+  long len=nextRecIndex - currentRecStartIndex + 1;
+
+  SortedRanges.Range range=new SortedRanges.Range(currentRecStartIndex,len);
+
+  taskStatus.setNextRecordRange(range);
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("sending reportNextRecordRange " + range);
+
+  }
+
+  umbilical.reportNextRecordRange(taskId,range);
+
+}
+
+Location: Task.java
+
+Content: 
+
+protected void runJobCleanupTask(TaskUmbilicalProtocol umbilical,TaskReporter reporter) throws IOException, InterruptedException {
+
+  setPhase(TaskStatus.Phase.CLEANUP);
+
+  getProgress().setStatus("cleanup");
+
+  statusUpdate(umbilical);
+
+  LOG.info("Cleaning up job");
+
+  if (jobRunStateForCleanup == JobStatus.State.FAILED || jobRunStateForCleanup == JobStatus.State.KILLED) {
+
+    LOG.info("Aborting job with runstate : " + jobRunStateForCleanup.name());
+
+    if (conf.getUseNewMapper()) {
+
+      committer.abortJob(jobContext,jobRunStateForCleanup);
+
+    }
+
+ else {
+
+      org.apache.hadoop.mapred.OutputCommitter oldCommitter=(org.apache.hadoop.mapred.OutputCommitter)committer;
+
+      oldCommitter.abortJob(jobContext,jobRunStateForCleanup);
+
+    }
+
+  }
+
+ else   if (jobRunStateForCleanup == JobStatus.State.SUCCEEDED) {
+
+    LOG.info("Committing job");
+
+    committer.commitJob(jobContext);
+
+  }
+
+ else {
+
+    throw new IOException("Invalid state of the job for cleanup. State found " + jobRunStateForCleanup + " expecting "+ JobStatus.State.SUCCEEDED+ ", "+ JobStatus.State.FAILED+ " or "+ JobStatus.State.KILLED);
+
+  }
+
+  JobConf conf=new JobConf(jobContext.getConfiguration());
+
+  if (!supportIsolationRunner(conf)) {
+
+    String jobTempDir=conf.get("mapreduce.job.dir");
+
+    Path jobTempDirPath=new Path(jobTempDir);
+
+    FileSystem fs=jobTempDirPath.getFileSystem(conf);
+
+    fs.delete(jobTempDirPath,true);
+
+  }
+
+  done(umbilical,reporter);
+
+}
+
+Location: Task.java
+
+Content: 
+
+protected void runJobSetupTask(TaskUmbilicalProtocol umbilical,TaskReporter reporter) throws IOException, InterruptedException {
+
+  getProgress().setStatus("setup");
+
+  committer.setupJob(jobContext);
+
+  done(umbilical,reporter);
+
+}
+
+Location: Task.java
+
+Content: 
+
+protected void runTaskCleanupTask(TaskUmbilicalProtocol umbilical,TaskReporter reporter) throws IOException, InterruptedException {
+
+  taskCleanup(umbilical);
+
+  done(umbilical,reporter);
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Run this task as a part of the named job.  This method is executed in the child process and is what invokes user-supplied map, reduce, etc. methods.
+
+ * @param umbilical for progress reports
+
+ */
+
+public abstract void run(JobConf job,TaskUmbilicalProtocol umbilical) throws IOException, ClassNotFoundException, InterruptedException ;
+
+Location: Task.java
+
+Content: 
+
+private void sendDone(TaskUmbilicalProtocol umbilical) throws IOException {
+
+  int retries=MAX_RETRIES;
+
+  while (true) {
+
+    try {
+
+      umbilical.done(getTaskID());
+
+      LOG.info("Task '" + taskId + "' done.");
+
+      return;
+
+    }
+
+ catch (    IOException ie) {
+
+      LOG.warn("Failure signalling completion: " + StringUtils.stringifyException(ie));
+
+      if (--retries == 0) {
+
+        throw ie;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Sends last status update before sending umbilical.done(); 
+
+ */
+
+private void sendLastUpdate(TaskUmbilicalProtocol umbilical) throws IOException {
+
+  taskStatus.setOutputSize(calculateOutputSize());
+
+  taskStatus.statusUpdate(taskProgress.get(),taskProgress.toString(),counters);
+
+  statusUpdate(umbilical);
+
+}
+
+Location: Task.java
+
+Content: 
+
+void setExtraData(BytesWritable extraData){
+
+  this.extraData=extraData;
+
+}
+
+Location: Task.java
+
+Content: 
+
+void setJobCleanupTask(){
+
+  jobCleanup=true;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Sets the task to do job abort in the cleanup.
+
+ * @param status the final runstate of the job. 
+
+ */
+
+void setJobCleanupTaskState(JobStatus.State status){
+
+  jobRunStateForCleanup=status;
+
+}
+
+Location: Task.java
+
+Content: 
+
+public void setJobFile(String jobFile){
+
+  this.jobFile=jobFile;
+
+}
+
+Location: Task.java
+
+Content: 
+
+void setJobSetupTask(){
+
+  jobSetup=true;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Set the job token secret 
+
+ * @param tokenSecret the secret
+
+ */
+
+public void setJobTokenSecret(SecretKey tokenSecret){
+
+  this.tokenSecret=tokenSecret;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Set current phase of the task. 
+
+ * @param phase task phase 
+
+ */
+
+protected synchronized void setPhase(TaskStatus.Phase phase){
+
+  this.taskStatus.setPhase(phase);
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Sets whether to run Task in skipping mode.
+
+ * @param skipping
+
+ */
+
+public void setSkipping(boolean skipping){
+
+  this.skipping=skipping;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Set skipRanges.
+
+ */
+
+public void setSkipRanges(SortedRanges skipRanges){
+
+  this.skipRanges=skipRanges;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Set current state of the task. 
+
+ * @param state
+
+ */
+
+synchronized void setState(TaskStatus.State state){
+
+  this.taskStatus.setRunState(state);
+
+}
+
+Location: Task.java
+
+Content: 
+
+void setTaskCleanupTask(){
+
+  taskCleanup=true;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Set whether to write skip records.
+
+ */
+
+protected void setWriteSkipRecs(boolean writeSkipRecs){
+
+  this.writeSkipRecs=writeSkipRecs;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Create a TaskReporter and start communication thread
+
+ */
+
+TaskReporter startReporter(final TaskUmbilicalProtocol umbilical){
+
+  TaskReporter reporter=new TaskReporter(getProgress(),umbilical);
+
+  reporter.startCommunicationThread();
+
+  return reporter;
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Send a status update to the task tracker
+
+ * @param umbilical
+
+ * @throws IOException
+
+ */
+
+public void statusUpdate(TaskUmbilicalProtocol umbilical) throws IOException {
+
+  int retries=MAX_RETRIES;
+
+  while (true) {
+
+    try {
+
+      if (!umbilical.statusUpdate(getTaskID(),taskStatus)) {
+
+        LOG.warn("Parent died.  Exiting " + taskId);
+
+        System.exit(66);
+
+      }
+
+      taskStatus.clearStatus();
+
+      return;
+
+    }
+
+ catch (    InterruptedException ie) {
+
+      Thread.currentThread().interrupt();
+
+    }
+
+catch (    IOException ie) {
+
+      LOG.warn("Failure sending status update: " + StringUtils.stringifyException(ie));
+
+      if (--retries == 0) {
+
+        throw ie;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Task.java
+
+Content: 
+
+protected boolean supportIsolationRunner(JobConf conf){
+
+  return (conf.getKeepTaskFilesPattern() != null || conf.getKeepFailedTaskFiles());
+
+}
+
+Location: Task.java
+
+Content: 
+
+public Task(){
+
+  taskStatus=TaskStatus.createTaskStatus(isMapTask());
+
+  taskId=new TaskAttemptID();
+
+  spilledRecordsCounter=counters.findCounter(TaskCounter.SPILLED_RECORDS);
+
+  failedShuffleCounter=counters.findCounter(TaskCounter.FAILED_SHUFFLE);
+
+  mergedMapOutputsCounter=counters.findCounter(TaskCounter.MERGED_MAP_OUTPUTS);
+
+  gcUpdater=new GcTimeUpdater();
+
+}
+
+Location: Task.java
+
+Content: 
+
+void taskCleanup(TaskUmbilicalProtocol umbilical) throws IOException {
+
+  setPhase(TaskStatus.Phase.CLEANUP);
+
+  getProgress().setStatus("cleanup");
+
+  statusUpdate(umbilical);
+
+  LOG.info("Runnning cleanup for the task");
+
+  committer.abortTask(taskContext);
+
+}
+
+Location: Task.java
+
+Content: 
+
+public Task(String jobFile,TaskAttemptID taskId,int partition,int numSlotsRequired){
+
+  this.jobFile=jobFile;
+
+  this.taskId=taskId;
+
+  this.partition=partition;
+
+  this.numSlotsRequired=numSlotsRequired;
+
+  this.taskStatus=TaskStatus.createTaskStatus(isMapTask(),this.taskId,0.0f,numSlotsRequired,TaskStatus.State.UNASSIGNED,"","","",isMapTask() ? TaskStatus.Phase.MAP : TaskStatus.Phase.SHUFFLE,counters);
+
+  spilledRecordsCounter=counters.findCounter(TaskCounter.SPILLED_RECORDS);
+
+  failedShuffleCounter=counters.findCounter(TaskCounter.FAILED_SHUFFLE);
+
+  mergedMapOutputsCounter=counters.findCounter(TaskCounter.MERGED_MAP_OUTPUTS);
+
+  gcUpdater=new GcTimeUpdater();
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Get whether to write skip records.
+
+ */
+
+protected boolean toWriteSkipRecs(){
+
+  return writeSkipRecs;
+
+}
+
+Location: Task.java
+
+Content: 
+
+private synchronized void updateCounters(){
+
+  for (  Statistics stat : FileSystem.getAllStatistics()) {
+
+    String uriScheme=stat.getScheme();
+
+    FileSystemStatisticUpdater updater=statisticUpdaters.get(uriScheme);
+
+    if (updater == null) {
+
+      updater=new FileSystemStatisticUpdater(uriScheme,stat);
+
+      statisticUpdaters.put(uriScheme,updater);
+
+    }
+
+    updater.updateCounters();
+
+  }
+
+  gcUpdater.incrementGcCounter();
+
+  updateResourceCounters();
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Updates the  {@link TaskCounter#COMMITTED_HEAP_BYTES} counter to reflect thecurrent total committed heap space usage of this JVM.
+
+ */
+
+@SuppressWarnings("deprecation") private void updateHeapUsageCounter(){
+
+  long currentHeapUsage=Runtime.getRuntime().totalMemory();
+
+  counters.findCounter(TaskCounter.COMMITTED_HEAP_BYTES).setValue(currentHeapUsage);
+
+}
+
+Location: Task.java
+
+Content: 
+
+/** 
+
+ * Update resource information counters
+
+ */
+
+void updateResourceCounters(){
+
+  updateHeapUsageCounter();
+
+  if (resourceCalculator == null) {
+
+    return;
+
+  }
+
+  ProcResourceValues res=resourceCalculator.getProcResourceValues();
+
+  long cpuTime=res.getCumulativeCpuTime();
+
+  long pMem=res.getPhysicalMemorySize();
+
+  long vMem=res.getVirtualMemorySize();
+
+  cpuTime-=initCpuCumulativeTime;
+
+  counters.findCounter(TaskCounter.CPU_MILLISECONDS).setValue(cpuTime);
+
+  counters.findCounter(TaskCounter.PHYSICAL_MEMORY_BYTES).setValue(pMem);
+
+  counters.findCounter(TaskCounter.VIRTUAL_MEMORY_BYTES).setValue(vMem);
+
+}
+

@@ -1,0 +1,226 @@
+Location: GenerateArabicTestData.java
+
+Content: 
+
+private static void compile(){
+
+  for (  String sfn : SRC_FILES) {
+
+    try {
+
+      String spn=SRC_FILES_DIR + File.separator + sfn+ "."+ WF_FILE_SRC_EXT;
+
+      compile(WF_FILE_SCRIPT,WF_FILE_LANGUAGE,spn);
+
+    }
+
+ catch (    Exception e) {
+
+      System.err.println(e.getMessage());
+
+    }
+
+  }
+
+}
+
+Location: GenerateArabicTestData.java
+
+Content: 
+
+private static void compile(String script,String language,String spn){
+
+  int fno=0;
+
+  for (  String tfn : TTX_FONTS) {
+
+    TTXFile tf=TTXFile.getFromCache(TTX_FONTS_DIR + File.separator + tfn);
+
+    assert tf != null;
+
+    List data=compile(script,language,spn,tfn,tf);
+
+    output(makeDataPathName(spn,fno++),data);
+
+  }
+
+}
+
+Location: GenerateArabicTestData.java
+
+Content: 
+
+private static List compile(String script,String language,String spn,String tfn,TTXFile tf){
+
+  List<Object[]> data=new ArrayList<Object[]>();
+
+  data.add(new Object[]{script,language,spn,tfn});
+
+  GlyphSubstitutionTable gsub=tf.getGSUB();
+
+  GlyphPositioningTable gpos=tf.getGPOS();
+
+  int[] widths=tf.getWidths();
+
+  if ((gsub != null) && (gpos != null)) {
+
+    FileInputStream fis=null;
+
+    try {
+
+      fis=new FileInputStream(spn);
+
+      LineNumberReader lr=new LineNumberReader(new InputStreamReader(fis,Charset.forName("UTF-8")));
+
+      String wf;
+
+      while ((wf=lr.readLine()) != null) {
+
+        GlyphSequence igs=tf.mapCharsToGlyphs(wf);
+
+        GlyphSequence ogs=gsub.substitute(igs,script,language);
+
+        int[][] paa=new int[ogs.getGlyphCount()][4];
+
+        if (!gpos.position(ogs,script,language,1000,widths,paa)) {
+
+          paa=null;
+
+        }
+
+        data.add(new Object[]{wf,getGlyphs(igs),getGlyphs(ogs),paa});
+
+      }
+
+      lr.close();
+
+    }
+
+ catch (    FileNotFoundException e) {
+
+      throw new RuntimeException(e.getMessage(),e);
+
+    }
+
+catch (    IOException e) {
+
+      throw new RuntimeException(e.getMessage(),e);
+
+    }
+
+catch (    Exception e) {
+
+      throw new RuntimeException(e.getMessage(),e);
+
+    }
+
+ finally {
+
+      IOUtils.closeQuietly(fis);
+
+    }
+
+  }
+
+ else {
+
+    assert gsub != null;
+
+    assert gpos != null;
+
+  }
+
+  System.err.println("compiled " + (data.size() - 1) + " word forms using font "+ tfn);
+
+  return data;
+
+}
+
+Location: GenerateArabicTestData.java
+
+Content: 
+
+private GenerateArabicTestData(){
+
+}
+
+Location: GenerateArabicTestData.java
+
+Content: 
+
+private static String makeDataPathName(String spn,int fno){
+
+  File f=new File(spn);
+
+  return DAT_FILES_DIR + File.separator + stripExtension(f.getName())+ "-f"+ fno+ "."+ WF_FILE_DAT_EXT;
+
+}
+
+Location: GenerateArabicTestData.java
+
+Content: 
+
+private static void output(String dpn,List<Object[]> data){
+
+  FileOutputStream fos=null;
+
+  try {
+
+    fos=new FileOutputStream(dpn);
+
+    ObjectOutputStream oos=new ObjectOutputStream(fos);
+
+    oos.writeObject(data);
+
+    oos.close();
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+    throw new RuntimeException(e.getMessage(),e);
+
+  }
+
+catch (  IOException e) {
+
+    throw new RuntimeException(e.getMessage(),e);
+
+  }
+
+catch (  Exception e) {
+
+    throw new RuntimeException(e.getMessage(),e);
+
+  }
+
+ finally {
+
+    IOUtils.closeQuietly(fos);
+
+  }
+
+}
+
+Location: GenerateArabicTestData.java
+
+Content: 
+
+private static String stripExtension(String s){
+
+  int i=s.lastIndexOf('.');
+
+  if (i >= 0) {
+
+    return s.substring(0,i);
+
+  }
+
+ else {
+
+    return s;
+
+  }
+
+}
+

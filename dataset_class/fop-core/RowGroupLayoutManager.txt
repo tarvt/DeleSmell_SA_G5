@@ -1,0 +1,244 @@
+Location: RowGroupLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Calculate the heights of the rows in the row group, see CSS21, 17.5.3 Table height algorithms. TODO this method will need to be adapted once clarification has been made by the W3C regarding whether borders or border-separation must be included or not
+
+ */
+
+private void computeRowHeights(){
+
+  log.debug("rowGroup:");
+
+  MinOptMax[] rowHeights=new MinOptMax[rowGroup.length];
+
+  EffRow row;
+
+  for (int rgi=0; rgi < rowGroup.length; rgi++) {
+
+    row=rowGroup[rgi];
+
+    MinOptMax explicitRowHeight;
+
+    TableRow tableRowFO=rowGroup[rgi].getTableRow();
+
+    if (tableRowFO == null) {
+
+      rowHeights[rgi]=MAX_STRETCH;
+
+      explicitRowHeight=MAX_STRETCH;
+
+    }
+
+ else {
+
+      LengthRangeProperty rowBPD=tableRowFO.getBlockProgressionDimension();
+
+      rowHeights[rgi]=rowBPD.toMinOptMax(tableLM);
+
+      explicitRowHeight=rowBPD.toMinOptMax(tableLM);
+
+    }
+
+    for (    Object o : row.getGridUnits()) {
+
+      GridUnit gu=(GridUnit)o;
+
+      if (!gu.isEmpty() && gu.getColSpanIndex() == 0 && gu.isLastGridUnitRowSpan()) {
+
+        PrimaryGridUnit primary=gu.getPrimary();
+
+        int effectiveCellBPD=0;
+
+        LengthRangeProperty cellBPD=primary.getCell().getBlockProgressionDimension();
+
+        if (!cellBPD.getMinimum(tableLM).isAuto()) {
+
+          effectiveCellBPD=cellBPD.getMinimum(tableLM).getLength().getValue(tableLM);
+
+        }
+
+        if (!cellBPD.getOptimum(tableLM).isAuto()) {
+
+          effectiveCellBPD=cellBPD.getOptimum(tableLM).getLength().getValue(tableLM);
+
+        }
+
+        if (gu.getRowSpanIndex() == 0) {
+
+          effectiveCellBPD=Math.max(effectiveCellBPD,explicitRowHeight.getOpt());
+
+        }
+
+        effectiveCellBPD=Math.max(effectiveCellBPD,primary.getContentLength());
+
+        int borderWidths=primary.getBeforeAfterBorderWidth();
+
+        int padding=0;
+
+        CommonBorderPaddingBackground cbpb=primary.getCell().getCommonBorderPaddingBackground();
+
+        padding+=cbpb.getPaddingBefore(false,primary.getCellLM());
+
+        padding+=cbpb.getPaddingAfter(false,primary.getCellLM());
+
+        int effRowHeight=effectiveCellBPD + padding + borderWidths;
+
+        for (int prev=rgi - 1; prev >= rgi - gu.getRowSpanIndex(); prev--) {
+
+          effRowHeight-=rowHeights[prev].getOpt();
+
+        }
+
+        if (effRowHeight > rowHeights[rgi].getMin()) {
+
+          rowHeights[rgi]=rowHeights[rgi].extendMinimum(effRowHeight);
+
+        }
+
+      }
+
+    }
+
+    row.setHeight(rowHeights[rgi]);
+
+    row.setExplicitHeight(explicitRowHeight);
+
+  }
+
+}
+
+Location: RowGroupLayoutManager.java
+
+Content: 
+
+/** 
+
+ * Creates Knuth elements for a row group (see TableRowIterator.getNextRowGroup()).
+
+ * @param context Active LayoutContext
+
+ * @param alignment alignment indicator
+
+ * @param bodyType Indicates what kind of body is being processed (BODY, HEADER or FOOTER)
+
+ * @param returnList List to received the generated elements
+
+ */
+
+private void createElementsForRowGroup(LayoutContext context,int alignment,int bodyType,LinkedList returnList){
+
+  log.debug("Handling row group with " + rowGroup.length + " rows...");
+
+  EffRow row;
+
+  for (  EffRow aRowGroup : rowGroup) {
+
+    row=aRowGroup;
+
+    for (    Object o : row.getGridUnits()) {
+
+      GridUnit gu=(GridUnit)o;
+
+      if (gu.isPrimary()) {
+
+        PrimaryGridUnit primary=gu.getPrimary();
+
+        primary.createCellLM();
+
+        primary.getCellLM().setParent(tableLM);
+
+        int spanWidth=0;
+
+        Iterator colIter=tableLM.getTable().getColumns().listIterator(primary.getColIndex());
+
+        for (int i=0, c=primary.getCell().getNumberColumnsSpanned(); i < c; i++) {
+
+          spanWidth+=((TableColumn)colIter.next()).getColumnWidth().getValue(tableLM);
+
+        }
+
+        LayoutContext childLC=LayoutContext.newInstance();
+
+        childLC.setStackLimitBP(context.getStackLimitBP());
+
+        childLC.setRefIPD(spanWidth);
+
+        List elems=primary.getCellLM().getNextKnuthElements(childLC,alignment);
+
+        ElementListObserver.observe(elems,"table-cell",primary.getCell().getId());
+
+        primary.setElements(elems);
+
+      }
+
+    }
+
+  }
+
+  computeRowHeights();
+
+  List elements=tableStepper.getCombinedKnuthElementsForRowGroup(context,rowGroup,bodyType);
+
+  returnList.addAll(elements);
+
+}
+
+Location: RowGroupLayoutManager.java
+
+Content: 
+
+public LinkedList getNextKnuthElements(LayoutContext context,int alignment,int bodyType){
+
+  LinkedList returnList=new LinkedList();
+
+  createElementsForRowGroup(context,alignment,bodyType,returnList);
+
+  context.updateKeepWithPreviousPending(rowGroup[0].getKeepWithPrevious());
+
+  context.updateKeepWithNextPending(rowGroup[rowGroup.length - 1].getKeepWithNext());
+
+  int breakBefore=Constants.EN_AUTO;
+
+  TableRow firstRow=rowGroup[0].getTableRow();
+
+  if (firstRow != null) {
+
+    breakBefore=firstRow.getBreakBefore();
+
+  }
+
+  context.setBreakBefore(BreakUtil.compareBreakClasses(breakBefore,rowGroup[0].getBreakBefore()));
+
+  int breakAfter=Constants.EN_AUTO;
+
+  TableRow lastRow=rowGroup[rowGroup.length - 1].getTableRow();
+
+  if (lastRow != null) {
+
+    breakAfter=lastRow.getBreakAfter();
+
+  }
+
+  context.setBreakAfter(BreakUtil.compareBreakClasses(breakAfter,rowGroup[rowGroup.length - 1].getBreakAfter()));
+
+  return returnList;
+
+}
+
+Location: RowGroupLayoutManager.java
+
+Content: 
+
+RowGroupLayoutManager(TableLayoutManager tableLM,EffRow[] rowGroup,TableStepper tableStepper){
+
+  this.tableLM=tableLM;
+
+  this.rowGroup=rowGroup;
+
+  this.tableStepper=tableStepper;
+
+}
+

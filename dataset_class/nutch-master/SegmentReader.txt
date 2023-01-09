@@ -1,0 +1,680 @@
+Location: SegmentReader.java
+
+Content: 
+
+/** 
+
+ * Appends two files and updates the Recno counter 
+
+ */
+
+private int append(FileSystem fs,Configuration conf,Path src,PrintWriter writer,int currentRecordNumber) throws IOException {
+
+  try (BufferedReader reader=new BufferedReader(new InputStreamReader(fs.open(src),StandardCharsets.UTF_8))){
+
+    String line=reader.readLine();
+
+    while (line != null) {
+
+      if (line.startsWith("Recno:: ")) {
+
+        line="Recno:: " + currentRecordNumber++;
+
+      }
+
+      writer.println(line);
+
+      line=reader.readLine();
+
+    }
+
+    return currentRecordNumber;
+
+  }
+
+ }
+
+Location: SegmentReader.java
+
+Content: 
+
+public void dump(Path segment,Path output) throws IOException, InterruptedException, ClassNotFoundException {
+
+  LOG.info("SegmentReader: dump segment: {}",segment);
+
+  Job job=NutchJob.getInstance(getConf());
+
+  job.setJobName("read " + segment);
+
+  Configuration conf=job.getConfiguration();
+
+  if (ge)   FileInputFormat.addInputPath(job,new Path(segment,CrawlDatum.GENERATE_DIR_NAME));
+
+  if (fe)   FileInputFormat.addInputPath(job,new Path(segment,CrawlDatum.FETCH_DIR_NAME));
+
+  if (pa)   FileInputFormat.addInputPath(job,new Path(segment,CrawlDatum.PARSE_DIR_NAME));
+
+  if (co)   FileInputFormat.addInputPath(job,new Path(segment,Content.DIR_NAME));
+
+  if (pd)   FileInputFormat.addInputPath(job,new Path(segment,ParseData.DIR_NAME));
+
+  if (pt)   FileInputFormat.addInputPath(job,new Path(segment,ParseText.DIR_NAME));
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setMapperClass(InputCompatMapper.class);
+
+  job.setReducerClass(InputCompatReducer.class);
+
+  job.setJarByClass(SegmentReader.class);
+
+  Path tempDir=new Path(conf.get("hadoop.tmp.dir","/tmp") + "/segread-" + RANDOM.nextInt());
+
+  FileSystem fs=tempDir.getFileSystem(conf);
+
+  fs.delete(tempDir,true);
+
+  FileOutputFormat.setOutputPath(job,tempDir);
+
+  job.setOutputFormatClass(TextOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(NutchWritable.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="SegmentReader job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+  Path dumpFile=new Path(output,conf.get("segment.dump.dir","dump"));
+
+  FileSystem outFs=dumpFile.getFileSystem(conf);
+
+  outFs.delete(dumpFile,true);
+
+  FileStatus[] fstats=fs.listStatus(tempDir,HadoopFSUtil.getPassAllFilter());
+
+  Path[] files=HadoopFSUtil.getPaths(fstats);
+
+  int currentRecordNumber=0;
+
+  if (files.length > 0) {
+
+    try (PrintWriter writer=new PrintWriter(new BufferedWriter(new OutputStreamWriter(outFs.create(dumpFile),StandardCharsets.UTF_8)))){
+
+      for (int i=0; i < files.length; i++) {
+
+        Path partFile=files[i];
+
+        try {
+
+          currentRecordNumber=append(fs,conf,partFile,writer,currentRecordNumber);
+
+        }
+
+ catch (        IOException exception) {
+
+          if (LOG.isWarnEnabled()) {
+
+            LOG.warn("Couldn't copy the content of " + partFile.toString() + " into "+ dumpFile.toString());
+
+            LOG.warn(exception.getMessage());
+
+          }
+
+        }
+
+      }
+
+    }
+
+   }
+
+  fs.delete(tempDir,true);
+
+  LOG.info("SegmentReader: done");
+
+}
+
+Location: SegmentReader.java
+
+Content: 
+
+/** 
+
+ * Try to get HTML encoding from parse metadata. Try {@link Metadata#CHAR_ENCODING_FOR_CONVERSION}, then {@link Metadata#CONTENT_ENCODING} then fallback{@link java.nio.charset.StandardCharsets#UTF_8}
+
+ * @param parseMeta a populated {@link Metadata}
+
+ * @return {@link Charset} 
+
+ */
+
+public static Charset getCharset(Metadata parseMeta){
+
+  Charset cs=StandardCharsets.UTF_8;
+
+  String charset=parseMeta.get(Metadata.CHAR_ENCODING_FOR_CONVERSION);
+
+  if (charset == null) {
+
+    charset=parseMeta.get(Metadata.CONTENT_ENCODING);
+
+  }
+
+  try {
+
+    cs=Charset.forName(charset);
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  return cs;
+
+}
+
+Location: SegmentReader.java
+
+Content: 
+
+private List<Writable> getMapRecords(Path dir,Text key) throws Exception {
+
+  MapFile.Reader[] readers=MapFileOutputFormat.getReaders(dir,getConf());
+
+  ArrayList<Writable> res=new ArrayList<>();
+
+  Class<?> keyClass=readers[0].getKeyClass();
+
+  Class<?> valueClass=readers[0].getValueClass();
+
+  if (!keyClass.getName().equals("org.apache.hadoop.io.Text"))   throw new IOException("Incompatible key (" + keyClass.getName() + ")");
+
+  Writable value=(Writable)valueClass.getConstructor().newInstance();
+
+  for (int i=0; i < readers.length; i++) {
+
+    if (readers[i].get(key,value) != null) {
+
+      res.add(value);
+
+      value=(Writable)valueClass.getConstructor().newInstance();
+
+      Text aKey=(Text)keyClass.getConstructor().newInstance();
+
+      while (readers[i].next(aKey,value) && aKey.equals(key)) {
+
+        res.add(value);
+
+        value=(Writable)valueClass.getConstructor().newInstance();
+
+      }
+
+    }
+
+    readers[i].close();
+
+  }
+
+  return res;
+
+}
+
+Location: SegmentReader.java
+
+Content: 
+
+private List<Writable> getSeqRecords(Path dir,Text key) throws Exception {
+
+  SequenceFile.Reader[] readers=org.apache.hadoop.mapred.SequenceFileOutputFormat.getReaders(getConf(),dir);
+
+  ArrayList<Writable> res=new ArrayList<>();
+
+  Class<?> keyClass=readers[0].getKeyClass();
+
+  Class<?> valueClass=readers[0].getValueClass();
+
+  if (!keyClass.getName().equals("org.apache.hadoop.io.Text"))   throw new IOException("Incompatible key (" + keyClass.getName() + ")");
+
+  WritableComparable<?> aKey=(WritableComparable<?>)keyClass.getConstructor().newInstance();
+
+  Writable value=(Writable)valueClass.getConstructor().newInstance();
+
+  for (int i=0; i < readers.length; i++) {
+
+    while (readers[i].next(aKey,value)) {
+
+      if (aKey.equals(key)) {
+
+        res.add(value);
+
+        value=(Writable)valueClass.getConstructor().newInstance();
+
+      }
+
+    }
+
+    readers[i].close();
+
+  }
+
+  return res;
+
+}
+
+Location: SegmentReader.java
+
+Content: 
+
+public void getStats(Path segment,final SegmentReaderStats stats) throws Exception {
+
+  long cnt=0L;
+
+  Text key=new Text();
+
+  CrawlDatum val=new CrawlDatum();
+
+  FileSystem fs=segment.getFileSystem(getConf());
+
+  if (ge) {
+
+    SequenceFile.Reader[] readers=SegmentReaderUtil.getReaders(new Path(segment,CrawlDatum.GENERATE_DIR_NAME),getConf());
+
+    for (int i=0; i < readers.length; i++) {
+
+      while (readers[i].next(key,val))       cnt++;
+
+      readers[i].close();
+
+    }
+
+    stats.generated=cnt;
+
+  }
+
+  if (fe) {
+
+    Path fetchDir=new Path(segment,CrawlDatum.FETCH_DIR_NAME);
+
+    if (fs.exists(fetchDir) && fs.getFileStatus(fetchDir).isDirectory()) {
+
+      cnt=0L;
+
+      long start=Long.MAX_VALUE;
+
+      long end=Long.MIN_VALUE;
+
+      CrawlDatum value=new CrawlDatum();
+
+      MapFile.Reader[] mreaders=MapFileOutputFormat.getReaders(fetchDir,getConf());
+
+      for (int i=0; i < mreaders.length; i++) {
+
+        while (mreaders[i].next(key,value)) {
+
+          cnt++;
+
+          if (value.getFetchTime() < start)           start=value.getFetchTime();
+
+          if (value.getFetchTime() > end)           end=value.getFetchTime();
+
+        }
+
+        mreaders[i].close();
+
+      }
+
+      stats.start=start;
+
+      stats.end=end;
+
+      stats.fetched=cnt;
+
+    }
+
+  }
+
+  if (pd) {
+
+    Path parseDir=new Path(segment,ParseData.DIR_NAME);
+
+    if (fs.exists(parseDir) && fs.getFileStatus(parseDir).isDirectory()) {
+
+      cnt=0L;
+
+      long errors=0L;
+
+      ParseData value=new ParseData();
+
+      MapFile.Reader[] mreaders=MapFileOutputFormat.getReaders(parseDir,getConf());
+
+      for (int i=0; i < mreaders.length; i++) {
+
+        while (mreaders[i].next(key,value)) {
+
+          cnt++;
+
+          if (!value.getStatus().isSuccess())           errors++;
+
+        }
+
+        mreaders[i].close();
+
+      }
+
+      stats.parsed=cnt;
+
+      stats.parseErrors=errors;
+
+    }
+
+  }
+
+}
+
+Location: SegmentReader.java
+
+Content: 
+
+public void get(final Path segment,final Text key,Writer writer,final Map<String,List<Writable>> results) throws Exception {
+
+  LOG.info("SegmentReader: get '{}'",key);
+
+  ArrayList<Thread> threads=new ArrayList<>();
+
+  if (co)   threads.add(new Thread(){
+
+    public void run(){
+
+      try {
+
+        List<Writable> res=getMapRecords(new Path(segment,Content.DIR_NAME),key);
+
+        results.put("co",res);
+
+      }
+
+ catch (      Exception e) {
+
+        LOG.error("Exception:",e);
+
+      }
+
+    }
+
+  }
+
+);
+
+  if (fe)   threads.add(new Thread(){
+
+    public void run(){
+
+      try {
+
+        List<Writable> res=getMapRecords(new Path(segment,CrawlDatum.FETCH_DIR_NAME),key);
+
+        results.put("fe",res);
+
+      }
+
+ catch (      Exception e) {
+
+        LOG.error("Exception:",e);
+
+      }
+
+    }
+
+  }
+
+);
+
+  if (ge)   threads.add(new Thread(){
+
+    public void run(){
+
+      try {
+
+        List<Writable> res=getSeqRecords(new Path(segment,CrawlDatum.GENERATE_DIR_NAME),key);
+
+        results.put("ge",res);
+
+      }
+
+ catch (      Exception e) {
+
+        LOG.error("Exception:",e);
+
+      }
+
+    }
+
+  }
+
+);
+
+  if (pa)   threads.add(new Thread(){
+
+    public void run(){
+
+      try {
+
+        List<Writable> res=getSeqRecords(new Path(segment,CrawlDatum.PARSE_DIR_NAME),key);
+
+        results.put("pa",res);
+
+      }
+
+ catch (      Exception e) {
+
+        LOG.error("Exception:",e);
+
+      }
+
+    }
+
+  }
+
+);
+
+  if (pd)   threads.add(new Thread(){
+
+    public void run(){
+
+      try {
+
+        List<Writable> res=getMapRecords(new Path(segment,ParseData.DIR_NAME),key);
+
+        results.put("pd",res);
+
+      }
+
+ catch (      Exception e) {
+
+        LOG.error("Exception:",e);
+
+      }
+
+    }
+
+  }
+
+);
+
+  if (pt)   threads.add(new Thread(){
+
+    public void run(){
+
+      try {
+
+        List<Writable> res=getMapRecords(new Path(segment,ParseText.DIR_NAME),key);
+
+        results.put("pt",res);
+
+      }
+
+ catch (      Exception e) {
+
+        LOG.error("Exception:",e);
+
+      }
+
+    }
+
+  }
+
+);
+
+  Iterator<Thread> it=threads.iterator();
+
+  while (it.hasNext())   it.next().start();
+
+  int cnt;
+
+  do {
+
+    cnt=0;
+
+    try {
+
+      Thread.sleep(5000);
+
+    }
+
+ catch (    Exception e) {
+
+    }
+
+    ;
+
+    it=threads.iterator();
+
+    while (it.hasNext()) {
+
+      if (it.next().isAlive())       cnt++;
+
+    }
+
+    if ((cnt > 0) && (LOG.isDebugEnabled())) {
+
+      LOG.debug("(" + cnt + " to retrieve)");
+
+    }
+
+  }
+
+ while (cnt > 0);
+
+  for (int i=0; i < keys.length; i++) {
+
+    List<Writable> res=results.get(keys[i][0]);
+
+    if (res != null && res.size() > 0) {
+
+      for (int k=0; k < res.size(); k++) {
+
+        writer.write(keys[i][1]);
+
+        if (recodeContent && keys[i][0].equals("co")) {
+
+          Charset charset=getCharset(((ParseData)results.get("pd").get(k)).getParseMeta());
+
+          writer.write(((Content)res.get(k)).toString(charset));
+
+        }
+
+ else {
+
+          writer.write(res.get(k).toString());
+
+        }
+
+        writer.write('\n');
+
+      }
+
+    }
+
+    writer.flush();
+
+  }
+
+}
+
+Location: SegmentReader.java
+
+Content: 
+
+public void list(List<Path> dirs,Writer writer) throws Exception {
+
+  writer.write("NAME\t\tGENERATED\tFETCHER START\t\tFETCHER END\t\tFETCHED\tPARSED\n");
+
+  for (int i=0; i < dirs.size(); i++) {
+
+    Path dir=dirs.get(i);
+
+    SegmentReaderStats stats=new SegmentReaderStats();
+
+    getStats(dir,stats);
+
+    writer.write(dir.getName() + "\t");
+
+    if (stats.generated == -1)     writer.write("?");
+
+ else     writer.write(stats.generated + "");
+
+    writer.write("\t\t");
+
+    if (stats.start == -1)     writer.write("?\t");
+
+ else     writer.write(sdf.format(new Date(stats.start)));
+
+    writer.write("\t");
+
+    if (stats.end == -1)     writer.write("?");
+
+ else     writer.write(sdf.format(new Date(stats.end)));
+
+    writer.write("\t");
+
+    if (stats.fetched == -1)     writer.write("?");
+
+ else     writer.write(stats.fetched + "");
+
+    writer.write("\t");
+
+    if (stats.parsed == -1)     writer.write("?");
+
+ else     writer.write(stats.parsed + "");
+
+    writer.write("\n");
+
+    writer.flush();
+
+  }
+
+}
+

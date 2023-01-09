@@ -1,0 +1,176 @@
+Location: CompositeRecordReader.java
+
+Content: 
+
+/** 
+
+ * Add a RecordReader to this collection. The id() of a RecordReader determines where in the Tuple its entry will appear. Adding RecordReaders with the same id has undefined behavior.
+
+ */
+
+public void add(ComposableRecordReader<K,? extends V> rr) throws IOException, InterruptedException {
+
+  kids[rr.id()]=rr;
+
+}
+
+Location: CompositeRecordReader.java
+
+Content: 
+
+/** 
+
+ * Create a RecordReader with <tt>capacity</tt> children to position <tt>id</tt> in the parent reader. The id of a root CompositeRecordReader is -1 by convention, but relying on this is not recommended.
+
+ */
+
+@SuppressWarnings("unchecked") public CompositeRecordReader(int id,int capacity,Class<? extends WritableComparator> cmpcl) throws IOException {
+
+  assert capacity > 0 : "Invalid capacity";
+
+  this.id=id;
+
+  if (null != cmpcl) {
+
+    cmp=ReflectionUtils.newInstance(cmpcl,null);
+
+    q=new PriorityQueue<ComposableRecordReader<K,?>>(3,new Comparator<ComposableRecordReader<K,?>>(){
+
+      public int compare(      ComposableRecordReader<K,?> o1,      ComposableRecordReader<K,?> o2){
+
+        return cmp.compare(o1.key(),o2.key());
+
+      }
+
+    }
+
+);
+
+  }
+
+  jc=new JoinCollector(capacity);
+
+  kids=new ComposableRecordReader[capacity];
+
+}
+
+Location: CompositeRecordReader.java
+
+Content: 
+
+/** 
+
+ * Create a value to be used internally for joins.
+
+ */
+
+protected TupleWritable createInternalValue(){
+
+  Writable[] vals=new Writable[kids.length];
+
+  for (int i=0; i < vals.length; ++i) {
+
+    vals[i]=kids[i].createValue();
+
+  }
+
+  return new TupleWritable(vals);
+
+}
+
+Location: CompositeRecordReader.java
+
+Content: 
+
+/** 
+
+ * Create a value to be used internally for joins.
+
+ */
+
+protected TupleWritable createTupleWritable(){
+
+  Writable[] vals=new Writable[kids.length];
+
+  for (int i=0; i < vals.length; ++i) {
+
+    vals[i]=kids[i].createValue();
+
+  }
+
+  return new TupleWritable(vals);
+
+}
+
+Location: CompositeRecordReader.java
+
+Content: 
+
+/** 
+
+ * For all child RRs offering the key provided, obtain an iterator at that position in the JoinCollector.
+
+ */
+
+protected void fillJoinCollector(K iterkey) throws IOException, InterruptedException {
+
+  if (!q.isEmpty()) {
+
+    q.peek().key(iterkey);
+
+    while (0 == cmp.compare(q.peek().key(),iterkey)) {
+
+      ComposableRecordReader<K,?> t=q.poll();
+
+      t.accept(jc,iterkey);
+
+      if (t.hasNext()) {
+
+        q.add(t);
+
+      }
+
+ else       if (q.isEmpty()) {
+
+        return;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: CompositeRecordReader.java
+
+Content: 
+
+/** 
+
+ * Return comparator defining the ordering for RecordReaders in this composite.
+
+ */
+
+protected WritableComparator getComparator(){
+
+  return cmp;
+
+}
+
+Location: CompositeRecordReader.java
+
+Content: 
+
+/** 
+
+ * Return sorted list of RecordReaders for this composite.
+
+ */
+
+protected PriorityQueue<ComposableRecordReader<K,?>> getRecordReaderQueue(){
+
+  return q;
+
+}
+

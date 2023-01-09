@@ -1,0 +1,196 @@
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+private void addStatusToHistory(JobWorker worker){
+
+synchronized (workersHistory) {
+
+    if (!workersHistory.offer(worker)) {
+
+      workersHistory.poll();
+
+      workersHistory.add(worker);
+
+    }
+
+  }
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+@Override protected void afterExecute(Runnable runnable,Throwable throwable){
+
+  super.afterExecute(runnable,throwable);
+
+synchronized (runningWorkers) {
+
+    runningWorkers.remove((JobWorker)runnable);
+
+  }
+
+  JobWorker worker=((JobWorker)runnable);
+
+  addStatusToHistory(worker);
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+@Override protected void beforeExecute(Thread thread,Runnable runnable){
+
+  super.beforeExecute(thread,runnable);
+
+synchronized (runningWorkers) {
+
+    runningWorkers.offer(((JobWorker)runnable));
+
+  }
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+/** 
+
+ * Find the Job Worker Thread.
+
+ * @param jobId a jobId allows locating a specific worker thread
+
+ * @return a {@link JobWorker} or else null
+
+ */
+
+public JobWorker findWorker(String jobId){
+
+synchronized (runningWorkers) {
+
+    for (    JobWorker worker : runningWorkers) {
+
+      if (StringUtils.equals(worker.getInfo().getId(),jobId)) {
+
+        return worker;
+
+      }
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+/** 
+
+ * get all jobs (currently running and completed)
+
+ * @return a {@link Collection} of {@link JobInfo}'s
+
+ */
+
+@SuppressWarnings("unchecked") public Collection<JobInfo> getAllJobs(){
+
+  return CollectionUtils.union(getJobRunning(),getJobHistory());
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+public JobInfo getInfo(String jobId){
+
+  for (  JobInfo jobInfo : getAllJobs()) {
+
+    if (StringUtils.equals(jobId,jobInfo.getId())) {
+
+      return jobInfo;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+/** 
+
+ * Get the Job history
+
+ * @return a {@link Collection} of {@link JobInfo}'s
+
+ */
+
+public Collection<JobInfo> getJobHistory(){
+
+  return getJobsInfo(workersHistory);
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+/** 
+
+ * Get the list of currently running jobs
+
+ * @return a {@link Collection} of {@link JobInfo}'s
+
+ */
+
+public Collection<JobInfo> getJobRunning(){
+
+  return getJobsInfo(runningWorkers);
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+private Collection<JobInfo> getJobsInfo(Collection<JobWorker> workers){
+
+  List<JobInfo> jobsInfo=Lists.newLinkedList();
+
+  for (  JobWorker worker : workers) {
+
+    jobsInfo.add(worker.getInfo());
+
+  }
+
+  return jobsInfo;
+
+}
+
+Location: NutchServerPoolExecutor.java
+
+Content: 
+
+public NutchServerPoolExecutor(int corePoolSize,int maxPoolSize,long keepAliveTime,TimeUnit unit,BlockingQueue<Runnable> workQueue){
+
+  super(corePoolSize,maxPoolSize,keepAliveTime,unit,workQueue);
+
+  workersHistory=Queues.newArrayBlockingQueue(maxPoolSize);
+
+  runningWorkers=Queues.newArrayBlockingQueue(maxPoolSize);
+
+}
+

@@ -1,0 +1,150 @@
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+protected boolean advanceReadIndex(final int wi){
+
+  boolean advanced=false;
+
+  for (int i=increment(ri); i != wi; i=increment(i)) {
+
+    if (buf[i] != NULL_MSG)     break;
+
+    buf[i]=null;
+
+    ri=i;
+
+    advanced=true;
+
+  }
+
+  if (advanced)   read_index.set(ri);
+
+  return advanced;
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+protected int getWriteIndex(int current_read_index){
+
+  for (; ; ) {
+
+    int wi=write_index.get();
+
+    int next_wi=index(wi + 1);
+
+    if (next_wi == current_read_index)     return -1;
+
+    if (write_index.compareAndSet(wi,next_wi))     return wi;
+
+  }
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+protected final int increment(int index){
+
+  return index + 1 == buf.length ? 0 : index + 1;
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+public RingBufferBundlerLockless2(){
+
+  this(1024,true);
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+public RingBufferBundlerLockless2(int capacity){
+
+  this(capacity,true);
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+public RingBufferBundlerLockless2(int capacity,boolean padded){
+
+  buf=new Message[Util.getNextHigherPowerOfTwo(capacity)];
+
+  read_index=padded ? new PaddedAtomicInteger(0) : new AtomicInteger(0);
+
+  write_index=padded ? new PaddedAtomicInteger(1) : new AtomicInteger(1);
+
+  accumulated_bytes=padded ? new PaddedAtomicLong(0) : new AtomicLong(0);
+
+  num_threads=padded ? new PaddedAtomicInteger(0) : new AtomicInteger(0);
+
+  unparking=padded ? new PaddedAtomicBoolean(false) : new AtomicBoolean(false);
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+protected void unparkIfNeeded(long size){
+
+  long acc_bytes=size > 0 ? accumulated_bytes.addAndGet(size) : accumulated_bytes.get();
+
+  boolean size_exceeded=acc_bytes >= transport.getMaxBundleSize() && accumulated_bytes.compareAndSet(acc_bytes,0);
+
+  boolean no_other_threads=num_threads.decrementAndGet() == 0;
+
+  boolean unpark=size_exceeded || no_other_threads;
+
+  if (unpark && unparking.compareAndSet(false,true)) {
+
+    Thread thread=bundler_thread.getThread();
+
+    if (thread != null)     LockSupport.unpark(thread);
+
+    unparking.set(false);
+
+  }
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+public int _readMessages(){
+
+  int wi=write_index.get();
+
+  if (index(ri + 1) == wi)   return 0;
+
+  int sent_msgs=sendBundledMessages(buf,ri,wi);
+
+  advanceReadIndex(wi);
+
+  return sent_msgs;
+
+}
+
+Location: RingBufferBundlerLockless2.java
+
+Content: 
+
+protected int _size(int ri,int wi){
+
+  return ri < wi ? wi - ri - 1 : buf.length - ri - 1 + wi;
+
+}
+

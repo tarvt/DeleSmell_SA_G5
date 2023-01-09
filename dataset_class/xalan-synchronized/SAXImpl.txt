@@ -1,0 +1,824 @@
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Copies a processing instruction node to an output handler
+
+ */
+
+private void copyPI(final int node,SerializationHandler handler) throws TransletException {
+
+  final String target=getNodeName(node);
+
+  final String value=getStringValueX(node);
+
+  try {
+
+    handler.processingInstruction(target,value);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new TransletException(e);
+
+  }
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+private final void copy(final int node,SerializationHandler handler,boolean isChild) throws TransletException {
+
+  int nodeID=makeNodeIdentity(node);
+
+  int eType=_exptype2(nodeID);
+
+  int type=_exptype2Type(eType);
+
+  try {
+
+switch (type) {
+
+case DTM.ROOT_NODE:
+
+case DTM.DOCUMENT_NODE:
+
+      for (int c=_firstch2(nodeID); c != DTM.NULL; c=_nextsib2(c)) {
+
+        copy(makeNodeHandle(c),handler,true);
+
+      }
+
+    break;
+
+case DTM.PROCESSING_INSTRUCTION_NODE:
+
+  copyPI(node,handler);
+
+break;
+
+case DTM.COMMENT_NODE:
+
+handler.comment(getStringValueX(node));
+
+break;
+
+case DTM.TEXT_NODE:
+
+boolean oldEscapeSetting=false;
+
+boolean escapeBit=false;
+
+if (_dontEscape != null) {
+
+escapeBit=_dontEscape.getBit(getNodeIdent(node));
+
+if (escapeBit) {
+
+oldEscapeSetting=handler.setEscaping(false);
+
+}
+
+}
+
+copyTextNode(nodeID,handler);
+
+if (escapeBit) {
+
+handler.setEscaping(oldEscapeSetting);
+
+}
+
+break;
+
+case DTM.ATTRIBUTE_NODE:
+
+copyAttribute(nodeID,eType,handler);
+
+break;
+
+case DTM.NAMESPACE_NODE:
+
+handler.namespaceAfterStartElement(getNodeNameX(node),getNodeValue(node));
+
+break;
+
+default :
+
+if (type == DTM.ELEMENT_NODE) {
+
+final String name=copyElement(nodeID,eType,handler);
+
+copyNS(nodeID,handler,!isChild);
+
+copyAttributes(nodeID,handler);
+
+for (int c=_firstch2(nodeID); c != DTM.NULL; c=_nextsib2(c)) {
+
+copy(makeNodeHandle(c),handler,true);
+
+}
+
+handler.endElement(name);
+
+}
+
+ else {
+
+final String uri=getNamespaceName(node);
+
+if (uri.length() != 0) {
+
+final String prefix=getPrefix(node);
+
+handler.namespaceAfterStartElement(prefix,uri);
+
+}
+
+handler.addAttribute(getNodeName(node),getNodeValue(node));
+
+}
+
+break;
+
+}
+
+}
+
+ catch (Exception e) {
+
+throw new TransletException(e);
+
+}
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Copy the whole tree to an output handler
+
+ */
+
+public void copy(SerializationHandler handler) throws TransletException {
+
+  copy(getDocument(),handler);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+private void definePrefixAndUri(String prefix,String uri) throws SAXException {
+
+  Integer eType=new Integer(getIdForNamespace(uri));
+
+  if ((Integer)_nsIndex.get(eType) == null) {
+
+    _nsIndex.put(eType,new Integer(_uriCount++));
+
+  }
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the value of a given attribute type of a given element
+
+ */
+
+public String getAttributeValue(final int type,final int element){
+
+  final int attr=getAttributeNode(type,element);
+
+  return (attr != DTM.NULL) ? getStringValueX(attr) : EMPTYSTRING;
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * This method is for testing/debugging only
+
+ */
+
+public String getAttributeValue(final String name,final int element){
+
+  return getAttributeValue(getGeneralizedType(name),element);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Returns an instance of the DOMBuilder inner class This class will consume the input document through a SAX2 interface and populate the tree.
+
+ */
+
+public DOMBuilder getBuilder(){
+
+  return this;
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the internal type associated with an expanded QName
+
+ */
+
+public int getGeneralizedType(final String name){
+
+  return getGeneralizedType(name,true);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the internal type associated with an expanded QName
+
+ */
+
+public int getGeneralizedType(final String name,boolean searchOnly){
+
+  String lName, ns=null;
+
+  int index=-1;
+
+  int code;
+
+  if ((index=name.lastIndexOf(':')) > -1) {
+
+    ns=name.substring(0,index);
+
+  }
+
+  int lNameStartIdx=index + 1;
+
+  if (name.charAt(lNameStartIdx) == '@') {
+
+    code=DTM.ATTRIBUTE_NODE;
+
+    lNameStartIdx++;
+
+  }
+
+ else {
+
+    code=DTM.ELEMENT_NODE;
+
+  }
+
+  lName=(lNameStartIdx == 0) ? name : name.substring(lNameStartIdx);
+
+  return m_expandedNameTable.getExpandedTypeID(ns,lName,code,searchOnly);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Get mapping from DOM element/attribute types to external types. This method is used when the document is not fully built.
+
+ */
+
+private short[] getMapping2(String[] names,String[] uris,int[] types){
+
+  int i;
+
+  final int namesLength=names.length;
+
+  final int exLength=m_expandedNameTable.getSize();
+
+  int[] generalizedTypes=null;
+
+  if (namesLength > 0) {
+
+    generalizedTypes=new int[namesLength];
+
+  }
+
+  int resultLength=exLength;
+
+  for (i=0; i < namesLength; i++) {
+
+    generalizedTypes[i]=m_expandedNameTable.getExpandedTypeID(uris[i],names[i],types[i],false);
+
+    if (_namesSize < 0 && generalizedTypes[i] >= resultLength) {
+
+      resultLength=generalizedTypes[i] + 1;
+
+    }
+
+  }
+
+  final short[] result=new short[resultLength];
+
+  for (i=0; i < DTM.NTYPES; i++) {
+
+    result[i]=(short)i;
+
+  }
+
+  for (i=NTYPES; i < exLength; i++) {
+
+    result[i]=m_expandedNameTable.getType(i);
+
+  }
+
+  for (i=0; i < namesLength; i++) {
+
+    int genType=generalizedTypes[i];
+
+    if (genType >= 0 && genType < resultLength) {
+
+      result[genType]=(short)(i + DTM.NTYPES);
+
+    }
+
+  }
+
+  return (result);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Get mapping from DOM element/attribute types to external types
+
+ */
+
+public short[] getMapping(String[] names,String[] uris,int[] types){
+
+  if (_namesSize < 0) {
+
+    return getMapping2(names,uris,types);
+
+  }
+
+  int i;
+
+  final int namesLength=names.length;
+
+  final int exLength=m_expandedNameTable.getSize();
+
+  final short[] result=new short[exLength];
+
+  for (i=0; i < DTM.NTYPES; i++) {
+
+    result[i]=(short)i;
+
+  }
+
+  for (i=NTYPES; i < exLength; i++) {
+
+    result[i]=m_expandedNameTable.getType(i);
+
+  }
+
+  for (i=0; i < namesLength; i++) {
+
+    int genType=m_expandedNameTable.getExpandedTypeID(uris[i],names[i],types[i],true);
+
+    if (genType >= 0 && genType < exLength) {
+
+      result[genType]=(short)(i + DTM.NTYPES);
+
+    }
+
+  }
+
+  return result;
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Get mapping from DOM namespace types to external namespace types
+
+ */
+
+public short[] getNamespaceMapping(String[] namespaces){
+
+  int i;
+
+  final int nsLength=namespaces.length;
+
+  final int mappingLength=_uriCount;
+
+  final short[] result=new short[mappingLength];
+
+  for (i=0; i < mappingLength; i++) {
+
+    result[i]=(short)(-1);
+
+  }
+
+  for (i=0; i < nsLength; i++) {
+
+    int eType=getIdForNamespace(namespaces[i]);
+
+    Integer type=(Integer)_nsIndex.get(new Integer(eType));
+
+    if (type != null) {
+
+      result[type.intValue()]=(short)i;
+
+    }
+
+  }
+
+  return (result);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Get mapping from external element/attribute types to DOM types
+
+ */
+
+public int[] getReverseMapping(String[] names,String[] uris,int[] types){
+
+  int i;
+
+  final int[] result=new int[names.length + DTM.NTYPES];
+
+  for (i=0; i < DTM.NTYPES; i++) {
+
+    result[i]=i;
+
+  }
+
+  for (i=0; i < names.length; i++) {
+
+    int type=m_expandedNameTable.getExpandedTypeID(uris[i],names[i],types[i],true);
+
+    result[i + DTM.NTYPES]=type;
+
+  }
+
+  return (result);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Get mapping from external namespace types to DOM namespace types
+
+ */
+
+public short[] getReverseNamespaceMapping(String[] namespaces){
+
+  int i;
+
+  final int length=namespaces.length;
+
+  final short[] result=new short[length];
+
+  for (i=0; i < length; i++) {
+
+    int eType=getIdForNamespace(namespaces[i]);
+
+    Integer type=(Integer)_nsIndex.get(new Integer(eType));
+
+    result[i]=(type == null) ? -1 : type.shortValue();
+
+  }
+
+  return result;
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Returns an iterator with all descendants of a node that are of a given type.
+
+ */
+
+public DTMAxisIterator getTypedDescendantIterator(int type){
+
+  return new TypedDescendantIterator(type);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Creates a text-node and checks if it is a whitespace node.
+
+ */
+
+private void handleTextEscaping(){
+
+  if (_disableEscaping && _textNodeToProcess != DTM.NULL && _type(_textNodeToProcess) == DTM.TEXT_NODE) {
+
+    if (_dontEscape == null) {
+
+      _dontEscape=new BitArray(_size);
+
+    }
+
+    if (_textNodeToProcess >= _dontEscape.size()) {
+
+      _dontEscape.resize(_dontEscape.size() * 2);
+
+    }
+
+    _dontEscape.setBit(_textNodeToProcess);
+
+    _disableEscaping=false;
+
+  }
+
+  _textNodeToProcess=DTM.NULL;
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Return true if the input source is DOMSource.
+
+ */
+
+public boolean hasDOMSource(){
+
+  return _hasDOMSource;
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Prints the whole tree to standard output
+
+ */
+
+public void print(int node,int level){
+
+switch (getNodeType(node)) {
+
+case DTM.ROOT_NODE:
+
+case DTM.DOCUMENT_NODE:
+
+    print(getFirstChild(node),level);
+
+  break;
+
+case DTM.TEXT_NODE:
+
+case DTM.COMMENT_NODE:
+
+case DTM.PROCESSING_INSTRUCTION_NODE:
+
+System.out.print(getStringValueX(node));
+
+break;
+
+default :
+
+final String name=getNodeName(node);
+
+System.out.print("<" + name);
+
+for (int a=getFirstAttribute(node); a != DTM.NULL; a=getNextAttribute(a)) {
+
+System.out.print("\n" + getNodeName(a) + "=\""+ getStringValueX(a)+ "\"");
+
+}
+
+System.out.print('>');
+
+for (int child=getFirstChild(node); child != DTM.NULL; child=getNextSibling(child)) {
+
+print(child,level + 1);
+
+}
+
+System.out.println("</" + name + '>');
+
+break;
+
+}
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Construct a SAXImpl object using the default block size.
+
+ */
+
+public SAXImpl(XSLTCDTMManager mgr,Source source,int dtmIdentity,DTMWSFilter whiteSpaceFilter,XMLStringFactory xstringfactory,boolean doIndexing,boolean buildIdIndex){
+
+  this(mgr,source,dtmIdentity,whiteSpaceFilter,xstringfactory,doIndexing,DEFAULT_BLOCKSIZE,buildIdIndex,false);
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Construct a SAXImpl object using the given block size.
+
+ */
+
+public SAXImpl(XSLTCDTMManager mgr,Source source,int dtmIdentity,DTMWSFilter whiteSpaceFilter,XMLStringFactory xstringfactory,boolean doIndexing,int blocksize,boolean buildIdIndex,boolean newNameTable){
+
+  super(mgr,source,dtmIdentity,whiteSpaceFilter,xstringfactory,doIndexing,blocksize,false,buildIdIndex,newNameTable);
+
+  _dtmManager=mgr;
+
+  _size=blocksize;
+
+  _xmlSpaceStack=new int[blocksize <= 64 ? 4 : 64];
+
+  _xmlSpaceStack[0]=DTMDefaultBase.ROOTNODE;
+
+  if (source instanceof DOMSource) {
+
+    _hasDOMSource=true;
+
+    DOMSource domsrc=(DOMSource)source;
+
+    Node node=domsrc.getNode();
+
+    if (node instanceof Document) {
+
+      _document=(Document)node;
+
+    }
+
+ else {
+
+      _document=node.getOwnerDocument();
+
+    }
+
+    _node2Ids=new Hashtable();
+
+  }
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Sets up a translet-to-dom type mapping table
+
+ */
+
+private int[] setupMapping(String[] names,String[] uris,int[] types,int nNames){
+
+  final int[] result=new int[m_expandedNameTable.getSize()];
+
+  for (int i=0; i < nNames; i++) {
+
+    int type=m_expandedNameTable.getExpandedTypeID(uris[i],names[i],types[i],false);
+
+    result[type]=type;
+
+  }
+
+  return result;
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Specialized interface used by DOM2SAX. This one has an extra Node parameter to build the Node -> id map.
+
+ */
+
+public void startElement(String uri,String localName,String qname,Attributes attributes,Node node) throws SAXException {
+
+  this.startElement(uri,localName,qname,attributes);
+
+  if (m_buildIdIndex) {
+
+    _node2Ids.put(node,new Integer(m_parents.peek()));
+
+  }
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Call this when an xml:space attribute is encountered to define the whitespace strip/preserve settings.
+
+ */
+
+private void xmlSpaceDefine(String val,final int node){
+
+  final boolean setting=val.equals(PRESERVE_STRING);
+
+  if (setting != _preserve) {
+
+    _xmlSpaceStack[_idx++]=node;
+
+    _preserve=setting;
+
+  }
+
+}
+
+Location: SAXImpl.java
+
+Content: 
+
+/** 
+
+ * Call this from endElement() to revert strip/preserve setting to whatever it was before the corresponding startElement().
+
+ */
+
+private void xmlSpaceRevert(final int node){
+
+  if (node == _xmlSpaceStack[_idx - 1]) {
+
+    _idx--;
+
+    _preserve=!_preserve;
+
+  }
+
+}
+

@@ -1,0 +1,168 @@
+Location: PCLPainterTestCase.java
+
+Content: 
+
+private ByteArrayOutputStream getPCL(boolean optimizeResources) throws IFException, URISyntaxException, IOException, FontFormatException {
+
+  Rectangle size=new Rectangle(1,1);
+
+  PCLPageDefinition pclPageDef=new PCLPageDefinition("",0,new Dimension(),size,true);
+
+  PCLDocumentHandler documentHandler=new PCLDocumentHandler(new IFContext(ua));
+
+  ByteArrayOutputStream output=new ByteArrayOutputStream();
+
+  documentHandler.setResult(new StreamResult(output));
+
+  documentHandler.startDocument();
+
+  PCLPainter pclPainter=new PCLPainter(documentHandler,pclPageDef);
+
+  pclPainter.getPCLUtil().setOptimizeResources(optimizeResources);
+
+  FontInfo fi=new FontInfo();
+
+  fi.addFontProperties("","","",0);
+
+  MultiByteFont mbf=new MultiByteFont(ua.getResourceResolver(),EmbeddingMode.AUTO);
+
+  mbf.setEmbedURI(new URI("test/resources/fonts/ttf/DejaVuLGCSerif.ttf"));
+
+  mbf.setFontType(FontType.TRUETYPE);
+
+  fi.addMetrics("",new CustomFontMetricsMapper(mbf));
+
+  documentHandler.setFontInfo(fi);
+
+  pclPainter.setFont("","",0,"",0,Color.BLACK);
+
+  pclPainter.drawText(0,0,0,0,null,"test");
+
+  return output;
+
+}
+
+Location: PCLPainterTestCase.java
+
+Content: 
+
+@Test public void testDrawGraphics() throws IOException, IFException {
+
+  Rectangle size=new Rectangle(1,1);
+
+  PCLPageDefinition pclPageDef=new PCLPageDefinition("",0,new Dimension(),size,true);
+
+  PCLDocumentHandler documentHandler=new PCLDocumentHandler(new IFContext(ua));
+
+  ByteArrayOutputStream output=new ByteArrayOutputStream();
+
+  documentHandler.setResult(new StreamResult(output));
+
+  documentHandler.startDocument();
+
+  PCLPainter pclPainter=new PCLPainter(documentHandler,pclPageDef);
+
+  PCLImageHandlerGraphics2D graphics2D=new PCLImageHandlerGraphics2D();
+
+  ImageInfo info=new ImageInfo(null,null);
+
+  info.setSize(new ImageSize());
+
+  ImageGraphics2D imageGraphics2D=new ImageGraphics2D(info,new MyGraphics2DImagePainter());
+
+  graphics2D.handleImage(pclPainter.createRenderingContext(),imageGraphics2D,new Rectangle(50,100));
+
+  Assert.assertTrue(output.toString().contains("*c0.5x1Y"));
+
+  output.reset();
+
+  pclPainter.startGroup(AffineTransform.getRotateInstance(-Math.PI / 2),null);
+
+  graphics2D.handleImage(pclPainter.createRenderingContext(),imageGraphics2D,new Rectangle(50,100));
+
+  Assert.assertTrue(output.toString().contains("*c1x0.5Y"));
+
+}
+
+Location: PCLPainterTestCase.java
+
+Content: 
+
+@Test public void testDrawImage() throws IFException {
+
+  Rectangle size=new Rectangle(1,1);
+
+  PCLPageDefinition pclPageDef=new PCLPageDefinition("",0,new Dimension(),size,true);
+
+  PCLDocumentHandler documentHandler=new PCLDocumentHandler(new IFContext(ua));
+
+  ByteArrayOutputStream output=new ByteArrayOutputStream();
+
+  documentHandler.setResult(new StreamResult(output));
+
+  documentHandler.startDocument();
+
+  PCLPainter pclPainter=new PCLPainter(documentHandler,pclPageDef);
+
+  pclPainter.getPCLUtil().setColorEnabled(true);
+
+  pclPainter.drawImage("test/resources/images/fop-logo-color-24bit.png",new Rectangle(100,100));
+
+  Assert.assertTrue(output.toString(),output.toString().contains("*r0f1t1S"));
+
+}
+
+Location: PCLPainterTestCase.java
+
+Content: 
+
+@Test public void testFillRect() throws IFException {
+
+  Rectangle size=new Rectangle(1,1);
+
+  PCLPageDefinition pclPageDef=new PCLPageDefinition("",0,new Dimension(),size,true);
+
+  PCLDocumentHandler documentHandler=new PCLDocumentHandler(new IFContext(ua));
+
+  ByteArrayOutputStream output=new ByteArrayOutputStream();
+
+  documentHandler.setResult(new StreamResult(output));
+
+  documentHandler.startDocument();
+
+  PCLPainter pclPainter=new PCLPainter(documentHandler,pclPageDef);
+
+  pclPainter.fillRect(size,Color.RED);
+
+  Assert.assertTrue(output.toString().contains("*c4Q\u001B*c0.01h0.01V\u001B*c32G\u001B*c4P"));
+
+  output.reset();
+
+  pclPainter.getPCLUtil().setColorEnabled(true);
+
+  pclPainter.fillRect(size,Color.RED);
+
+  Assert.assertFalse(output.toString().contains("*c4P"));
+
+  Assert.assertTrue(output.toString().contains("*v255a0b0c0I\u001B*v0S\u001B*c0.01h0.01V\u001B*c0P"));
+
+}
+
+Location: PCLPainterTestCase.java
+
+Content: 
+
+@Test public void testTruetype() throws IFException, IOException, FontFormatException, URISyntaxException {
+
+  String optimizeResources=getPCL(true).toString();
+
+  String notOptimizeResources=getPCL(false).toString();
+
+  Assert.assertTrue(notOptimizeResources.contains("DejaVu"));
+
+  Assert.assertFalse(optimizeResources.contains("DejaVu"));
+
+  Assert.assertTrue(optimizeResources.length() > 900);
+
+}
+

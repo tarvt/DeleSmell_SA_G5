@@ -1,0 +1,114 @@
+Location: TestFileQueue.java
+
+Content: 
+
+static ByteArrayOutputStream fillVerif() throws IOException {
+
+  final byte[] b=new byte[BLOCK];
+
+  final ByteArrayOutputStream out=new ByteArrayOutputStream();
+
+  for (int i=0; i < NFILES; ++i) {
+
+    Arrays.fill(b,(byte)('A' + i));
+
+    out.write(b,0,(int)len[i]);
+
+  }
+
+  return out;
+
+}
+
+Location: TestFileQueue.java
+
+Content: 
+
+@Test public void testEmpty() throws Exception {
+
+  final Configuration conf=new Configuration();
+
+  final FileQueue q=new FileQueue(new CombineFileSplit(new Path[0],new long[0],new long[0],new String[0]),conf);
+
+}
+
+Location: TestFileQueue.java
+
+Content: 
+
+@Test public void testRepeat() throws Exception {
+
+  final Configuration conf=new Configuration();
+
+  Arrays.fill(loc,"");
+
+  Arrays.fill(start,0L);
+
+  Arrays.fill(len,BLOCK);
+
+  final ByteArrayOutputStream out=fillVerif();
+
+  final FileQueue q=new FileQueue(new CombineFileSplit(paths,start,len,loc),conf);
+
+  final byte[] verif=out.toByteArray();
+
+  final byte[] check=new byte[2 * NFILES * BLOCK];
+
+  q.read(check,0,NFILES * BLOCK);
+
+  assertArrayEquals(verif,Arrays.copyOf(check,NFILES * BLOCK));
+
+  final byte[] verif2=new byte[2 * NFILES * BLOCK];
+
+  System.arraycopy(verif,0,verif2,0,verif.length);
+
+  System.arraycopy(verif,0,verif2,verif.length,verif.length);
+
+  q.read(check,0,2 * NFILES * BLOCK);
+
+  assertArrayEquals(verif2,check);
+
+}
+
+Location: TestFileQueue.java
+
+Content: 
+
+@Test public void testUneven() throws Exception {
+
+  final Configuration conf=new Configuration();
+
+  Arrays.fill(loc,"");
+
+  Arrays.fill(start,0L);
+
+  Arrays.fill(len,BLOCK);
+
+  final int B2=BLOCK / 2;
+
+  for (int i=0; i < NFILES; i+=2) {
+
+    start[i]+=B2;
+
+    len[i]-=B2;
+
+  }
+
+  final FileQueue q=new FileQueue(new CombineFileSplit(paths,start,len,loc),conf);
+
+  final ByteArrayOutputStream out=fillVerif();
+
+  final byte[] verif=out.toByteArray();
+
+  final byte[] check=new byte[NFILES / 2 * BLOCK + NFILES / 2 * B2];
+
+  q.read(check,0,verif.length);
+
+  assertArrayEquals(verif,Arrays.copyOf(check,verif.length));
+
+  q.read(check,0,verif.length);
+
+  assertArrayEquals(verif,Arrays.copyOf(check,verif.length));
+
+}
+

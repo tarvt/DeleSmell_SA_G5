@@ -1,0 +1,158 @@
+Location: FontPatternExtractor.java
+
+Content: 
+
+private int countUSAsciiCharacters(String filename){
+
+  int count=0;
+
+  for (int i=0, c=filename.length(); i < c; i++) {
+
+    if (filename.charAt(i) < 128) {
+
+      count++;
+
+    }
+
+  }
+
+  return count;
+
+}
+
+Location: FontPatternExtractor.java
+
+Content: 
+
+/** 
+
+ * Extracts the Type1 PFB file from the given AFP outline font.
+
+ * @param file the AFP file to read from
+
+ * @param targetDir the target directory where the PFB file is to be placed.
+
+ * @throws IOException if an I/O error occurs
+
+ */
+
+public void extract(File file,File targetDir) throws IOException {
+
+  InputStream in=new java.io.FileInputStream(file);
+
+  try {
+
+    MODCAParser parser=new MODCAParser(in);
+
+    ByteArrayOutputStream baout=new ByteArrayOutputStream();
+
+    UnparsedStructuredField strucField;
+
+    while ((strucField=parser.readNextStructuredField()) != null) {
+
+      if (strucField.getSfTypeID() == 0xD3EE89) {
+
+        byte[] sfData=strucField.getData();
+
+        println(strucField.toString());
+
+        HexDump.dump(sfData,0,printStream,0);
+
+        baout.write(sfData);
+
+      }
+
+    }
+
+    ByteArrayInputStream bin=new ByteArrayInputStream(baout.toByteArray());
+
+    IOUtils.closeQuietly(baout);
+
+    DataInputStream din=new DataInputStream(bin);
+
+    long len=din.readInt() & 0xFFFFFFFFL;
+
+    println("Length: " + len);
+
+    if (din.skip(4) != 4) {
+
+      throw new IOException("premature EOF when skipping checksum");
+
+    }
+
+    int tidLen=din.readUnsignedShort() - 2;
+
+    byte[] tid=new byte[tidLen];
+
+    din.readFully(tid);
+
+    String filename=new String(tid,"ISO-8859-1");
+
+    int asciiCount1=countUSAsciiCharacters(filename);
+
+    String filenameEBCDIC=new String(tid,"Cp1146");
+
+    int asciiCount2=countUSAsciiCharacters(filenameEBCDIC);
+
+    println("TID: " + filename + " "+ filenameEBCDIC);
+
+    if (asciiCount2 > asciiCount1) {
+
+      filename=filenameEBCDIC;
+
+    }
+
+    if (!filename.toLowerCase().endsWith(".pfb")) {
+
+      filename=filename + ".pfb";
+
+    }
+
+    println("Output filename: " + filename);
+
+    File out=new File(targetDir,filename);
+
+    OutputStream fout=new java.io.FileOutputStream(out);
+
+    try {
+
+      IOUtils.copyLarge(din,fout);
+
+    }
+
+  finally {
+
+      IOUtils.closeQuietly(fout);
+
+    }
+
+  }
+
+  finally {
+
+    IOUtils.closeQuietly(in);
+
+  }
+
+}
+
+Location: FontPatternExtractor.java
+
+Content: 
+
+private void println(){
+
+  printStream.println();
+
+}
+
+Location: FontPatternExtractor.java
+
+Content: 
+
+private void println(String s){
+
+  printStream.println(s);
+
+}
+

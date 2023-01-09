@@ -1,0 +1,306 @@
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+private void assertSameAdjustments(int[][] expected,int[][] actual,String wf,String tfn){
+
+  assertEquals("unequal adjustment count, word form(" + wf + "), font ("+ tfn+ ")",expected.length,actual.length);
+
+  for (int i=0, n=expected.length; i < n; i++) {
+
+    int[] ea=expected[i];
+
+    int[] aa=actual[i];
+
+    assertEquals("bad adjustments length, word form(" + wf + "), font ("+ tfn+ ")",ea.length,aa.length);
+
+    for (int k=0; k < 4; k++) {
+
+      int e=ea[k];
+
+      int a=aa[k];
+
+      assertEquals("unequal adjustment[" + i + "]["+ k+ "], word form("+ wf+ "), font ("+ tfn+ ")",e,a);
+
+    }
+
+  }
+
+}
+
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+private void assertSameGlyphs(int[] expected,int[] actual,String label,String wf,String tfn){
+
+  assertEquals(label + ": unequal glyph count, word form(" + wf+ "), font ("+ tfn+ ")",expected.length,actual.length);
+
+  for (int i=0, n=expected.length; i < n; i++) {
+
+    int e=expected[i];
+
+    int a=actual[i];
+
+    assertEquals(label + ": unequal glyphs[" + i+ "], word form("+ wf+ "), font ("+ tfn+ ")",e,a);
+
+  }
+
+}
+
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+private static int[] getGlyphs(GlyphSequence gs){
+
+  IntBuffer gb=gs.getGlyphs();
+
+  int[] ga=new int[gb.limit()];
+
+  gb.rewind();
+
+  gb.get(ga);
+
+  return ga;
+
+}
+
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+private String[] listWordFormFiles(File dfd){
+
+  return dfd.list(new FilenameFilter(){
+
+    public boolean accept(    File f,    String name){
+
+      return hasPrefixFrom(name,SRC_FILES) && hasExtension(name,WF_FILE_DAT_EXT);
+
+    }
+
+    private boolean hasPrefixFrom(    String name,    String[] prefixes){
+
+      for (      String p : prefixes) {
+
+        if (name.startsWith(p)) {
+
+          return true;
+
+        }
+
+      }
+
+      return false;
+
+    }
+
+    private boolean hasExtension(    String name,    String extension){
+
+      return name.endsWith("." + extension);
+
+    }
+
+  }
+
+);
+
+}
+
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+private void processWordForms(File dfd){
+
+  String[] files=listWordFormFiles(dfd);
+
+  for (  String fn : files) {
+
+    File dff=new File(dfd,fn);
+
+    processWordForms(dff.getAbsolutePath());
+
+  }
+
+}
+
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+private void processWordForms(List<Object[]> data){
+
+  assert data != null;
+
+  assert data.size() > 0;
+
+  String script=null;
+
+  String language=null;
+
+  String tfn=null;
+
+  TTXFile tf=null;
+
+  GlyphSubstitutionTable gsub=null;
+
+  GlyphPositioningTable gpos=null;
+
+  int[] widths=null;
+
+  for (  Object[] d : data) {
+
+    if (script == null) {
+
+      assert d.length >= 4;
+
+      script=(String)d[0];
+
+      language=(String)d[1];
+
+      tfn=(String)d[3];
+
+      tf=TTXFile.getFromCache(TTX_FONTS_DIR + File.separator + tfn);
+
+      assertTrue(tf != null);
+
+      gsub=tf.getGSUB();
+
+      assertTrue(gsub != null);
+
+      gpos=tf.getGPOS();
+
+      assertTrue(gpos != null);
+
+      widths=tf.getWidths();
+
+      assertTrue(widths != null);
+
+    }
+
+ else {
+
+      assert tf != null;
+
+      assert gsub != null;
+
+      assert gpos != null;
+
+      assert tfn != null;
+
+      assert d.length >= 4;
+
+      String wf=(String)d[0];
+
+      int[] iga=(int[])d[1];
+
+      int[] oga=(int[])d[2];
+
+      int[][] paa=(int[][])d[3];
+
+      GlyphSequence tigs=tf.mapCharsToGlyphs(wf);
+
+      assertSameGlyphs(iga,getGlyphs(tigs),"input glyphs",wf,tfn);
+
+      GlyphSequence togs=gsub.substitute(tigs,script,language);
+
+      assertSameGlyphs(oga,getGlyphs(togs),"output glyphs",wf,tfn);
+
+      int[][] tpaa=new int[togs.getGlyphCount()][4];
+
+      if (gpos.position(togs,script,language,1000,widths,tpaa)) {
+
+        assertSameAdjustments(paa,tpaa,wf,tfn);
+
+      }
+
+ else       if (paa != null) {
+
+        assertEquals("unequal adjustment count, word form(" + wf + "), font ("+ tfn+ ")",paa.length,0);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+private void processWordForms(String dpn){
+
+  FileInputStream fis=null;
+
+  try {
+
+    fis=new FileInputStream(dpn);
+
+    ObjectInputStream ois=new ObjectInputStream(fis);
+
+    List<Object[]> data=(List<Object[]>)ois.readObject();
+
+    if (data != null) {
+
+      processWordForms(data);
+
+    }
+
+    ois.close();
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+    throw new RuntimeException(e.getMessage(),e);
+
+  }
+
+catch (  IOException e) {
+
+    throw new RuntimeException(e.getMessage(),e);
+
+  }
+
+catch (  Exception e) {
+
+    throw new RuntimeException(e.getMessage(),e);
+
+  }
+
+ finally {
+
+    IOUtils.closeQuietly(fis);
+
+  }
+
+}
+
+Location: ArabicWordFormsTestCase.java
+
+Content: 
+
+@Test public void testArabicWordForms(){
+
+  for (  String sfn : SRC_FILES) {
+
+    try {
+
+      processWordForms(new File(DAT_FILES_DIR));
+
+    }
+
+ catch (    Exception e) {
+
+      fail(e.getMessage());
+
+    }
+
+  }
+
+}
+

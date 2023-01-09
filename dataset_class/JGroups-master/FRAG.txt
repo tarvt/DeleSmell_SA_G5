@@ -1,0 +1,182 @@
+Location: FRAG.java
+
+Content: 
+
+/** 
+
+ * Send all fragments as separate messages (with same ID !). Example: <pre> Given the generated ID is 2344, number of fragments=3, message {dst,src,buf} would be fragmented into: <p/> [2344,3,0]{dst,src,buf1}, [2344,3,1]{dst,src,buf2} and [2344,3,2]{dst,src,buf3} </pre>
+
+ */
+
+private void fragment(Message msg,long size){
+
+  Address dest=msg.getDest(), src=msg.getSrc();
+
+  long frag_id=curr_id.getAndIncrement();
+
+  int num_frags;
+
+  try {
+
+    ByteArrayDataOutputStream dos=new ByteArrayDataOutputStream((int)(size + 50));
+
+    msg.writeTo(dos);
+
+    byte[] buffer=dos.buffer();
+
+    byte[][] fragments=Util.fragmentBuffer(buffer,frag_size,dos.position());
+
+    num_frags=fragments.length;
+
+    num_sent_frags+=num_frags;
+
+    if (log.isTraceEnabled()) {
+
+      StringBuilder sb=new StringBuilder();
+
+      sb.append("fragmenting packet to ").append(dest != null ? dest.toString() : "<all members>").append(" (size=").append(buffer.length).append(") into ").append(num_frags).append(" fragment(s) [frag_size=").append(frag_size).append(']');
+
+      log.trace(sb.toString());
+
+    }
+
+    for (int i=0; i < num_frags; i++) {
+
+      Message frag_msg=new Message(dest,fragments[i]).src(src);
+
+      FragHeader hdr=new FragHeader(frag_id,i,num_frags);
+
+      frag_msg.putHeader(this.id,hdr);
+
+      down_prot.down(frag_msg);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("ExceptionOccurredTryingToFragmentMessage"),e);
+
+  }
+
+}
+
+Location: FRAG.java
+
+Content: 
+
+public int getFragSize(){
+
+  return frag_size;
+
+}
+
+Location: FRAG.java
+
+Content: 
+
+public long getNumberOfReceivedFragments(){
+
+  return num_received_frags;
+
+}
+
+Location: FRAG.java
+
+Content: 
+
+public long getNumberOfSentFragments(){
+
+  return num_sent_frags;
+
+}
+
+Location: FRAG.java
+
+Content: 
+
+public long getNumberOfSentMessages(){
+
+  return num_sent_msgs;
+
+}
+
+Location: FRAG.java
+
+Content: 
+
+public void setFragSize(int s){
+
+  frag_size=s;
+
+}
+
+Location: FRAG.java
+
+Content: 
+
+/** 
+
+ * 1. Get all the fragment buffers 2. When all are received -> Assemble them into one big buffer 3. Read headers and byte buffer from big buffer 4. Set headers and buffer in msg 5. Pass msg up the stack
+
+ */
+
+private Message unfragment(Message msg,FragHeader hdr){
+
+  Address sender=msg.getSrc();
+
+  FragmentationTable frag_table=fragment_list.get(sender);
+
+  if (frag_table == null) {
+
+    frag_table=new FragmentationTable(sender);
+
+    try {
+
+      fragment_list.add(sender,frag_table);
+
+    }
+
+ catch (    IllegalArgumentException x) {
+
+      frag_table=fragment_list.get(sender);
+
+    }
+
+  }
+
+  num_received_frags++;
+
+  byte[] buf=frag_table.add(hdr.id,hdr.frag_id,hdr.num_frags,msg.getBuffer());
+
+  if (buf == null)   return null;
+
+  try {
+
+    DataInput in=new ByteArrayDataInputStream(buf);
+
+    Message assembled_msg=new Message(false);
+
+    assembled_msg.readFrom(in);
+
+    assembled_msg.setSrc(sender);
+
+    if (log.isTraceEnabled())     log.trace("assembled_msg is " + assembled_msg);
+
+    num_received_msgs++;
+
+    return assembled_msg;
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("FailedUnfragmentingAMessage"),e);
+
+    return null;
+
+  }
+
+}
+

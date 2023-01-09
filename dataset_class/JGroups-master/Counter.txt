@@ -1,0 +1,944 @@
+Location: Counter.java
+
+Content: 
+
+/** 
+
+ * Atomically adds the given value to the current value.
+
+ * @param delta the value to add
+
+ * @return the updated value
+
+ */
+
+public long addAndGet(long delta);
+
+Location: Counter.java
+
+Content: 
+
+/** 
+
+ * Atomically updates the counter using a CAS operation
+
+ * @param expect The expected value of the counter
+
+ * @param update The new value of the counter
+
+ * @return True if the counter could be updated, false otherwise
+
+ */
+
+public boolean compareAndSet(long expect,long update);
+
+Location: COUNTER.java
+
+Content: 
+
+protected static Request createRequest(RequestType type){
+
+switch (type) {
+
+case COMPARE_AND_SET:
+
+    return new CompareAndSetRequest();
+
+case ADD_AND_GET:
+
+  return new AddAndGetRequest();
+
+case UPDATE:
+
+return new UpdateRequest();
+
+case GET_OR_CREATE:
+
+return new GetOrCreateRequest();
+
+case DELETE:
+
+return new DeleteRequest();
+
+case SET:
+
+return new SetRequest();
+
+case RECONCILE:
+
+return new ReconcileRequest();
+
+case RESEND_PENDING_REQUESTS:
+
+return new ResendPendingRequests();
+
+default :
+
+throw new IllegalArgumentException("failed creating a request from " + type);
+
+}
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static Response createResponse(ResponseType type){
+
+switch (type) {
+
+case VOID:
+
+    return new SimpleResponse();
+
+case GET_OR_CREATE:
+
+  return new GetOrCreateResponse();
+
+case BOOLEAN:
+
+return new BooleanResponse();
+
+case VALUE:
+
+return new ValueResponse();
+
+case EXCEPTION:
+
+return new ExceptionResponse();
+
+case RECONCILE:
+
+return new ReconcileResponse();
+
+default :
+
+throw new IllegalArgumentException("failed creating a response from " + type);
+
+}
+
+}
+
+Location: Counter.java
+
+Content: 
+
+/** 
+
+ * Atomically decrements the counter and returns the new value
+
+ * @return The new value
+
+ */
+
+public long decrementAndGet();
+
+Location: COUNTER.java
+
+Content: 
+
+/** 
+
+ * Sent asynchronously - we don't wait for an ack 
+
+ */
+
+public void deleteCounter(String name){
+
+  Owner owner=getOwner();
+
+  Request req=new DeleteRequest(owner,name);
+
+  sendRequest(coord,req);
+
+  if (!local_addr.equals(coord))   counters.remove(name);
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+@ManagedOperation(description="Dumps all pending requests") public String dumpPendingRequests(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Tuple<Request,Promise> tuple : pending_requests.values()) {
+
+    Request tmp=tuple.getVal1();
+
+    sb.append(tmp + " (" + tmp.getClass().getCanonicalName()+ ") ");
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static String dump(String[] names,long[] values,long[] versions){
+
+  StringBuilder sb=new StringBuilder();
+
+  if (names != null) {
+
+    for (int i=0; i < names.length; i++) {
+
+      sb.append(names[i]).append(": ").append(values[i]).append(" (").append(versions[i]).append(")\n");
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+@ManagedAttribute(description="List of the backup coordinator (null if num_backups <= 0") public String getBackupCoords(){
+
+  return backup_coords != null ? backup_coords.toString() : "null";
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+public boolean getBypassBundling(){
+
+  return bypass_bundling;
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected VersionedValue getCounter(String name){
+
+  VersionedValue val=counters.get(name);
+
+  if (val == null)   throw new IllegalStateException("counter \"" + name + "\" not found");
+
+  return val;
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+public Counter getOrCreateCounter(String name,long initial_value){
+
+  if (local_addr == null)   throw new IllegalArgumentException("the channel needs to be connected before creating or getting a counter");
+
+  Owner owner=getOwner();
+
+  GetOrCreateRequest req=new GetOrCreateRequest(owner,name,initial_value);
+
+  Promise<long[]> promise=new Promise<>();
+
+  pending_requests.put(owner,new Tuple<>(req,promise));
+
+  sendRequest(coord,req);
+
+  long[] result=new long[0];
+
+  try {
+
+    result=promise.getResultWithTimeout(timeout);
+
+    long value=result[0], version=result[1];
+
+    if (!coord.equals(local_addr))     counters.put(name,new VersionedValue(value,version));
+
+    return new CounterImpl(name);
+
+  }
+
+ catch (  TimeoutException e) {
+
+    throw new RuntimeException(e);
+
+  }
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected Owner getOwner(){
+
+  return new Owner(local_addr,Thread.currentThread().getId());
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected void handleRequest(Request req,Address sender){
+
+  RequestType type=requestToRequestType(req);
+
+switch (type) {
+
+case GET_OR_CREATE:
+
+    if (!local_addr.equals(coord) || discard_requests)     return;
+
+  GetOrCreateRequest tmp=(GetOrCreateRequest)req;
+
+VersionedValue new_val=new VersionedValue(tmp.initial_value);
+
+VersionedValue val=counters.putIfAbsent(tmp.name,new_val);
+
+if (val == null) val=new_val;
+
+Response rsp=new GetOrCreateResponse(tmp.owner,val.value,val.version);
+
+sendResponse(sender,rsp);
+
+if (backup_coords != null) updateBackups(tmp.name,val.value,val.version);
+
+break;
+
+case DELETE:
+
+if (!local_addr.equals(coord) || discard_requests) return;
+
+counters.remove(((SimpleRequest)req).name);
+
+break;
+
+case SET:
+
+if (!local_addr.equals(coord) || discard_requests) return;
+
+val=counters.get(((SimpleRequest)req).name);
+
+if (val == null) {
+
+sendCounterNotFoundExceptionResponse(sender,((SimpleRequest)req).owner,((SimpleRequest)req).name);
+
+return;
+
+}
+
+long[] result=val.set(((SetRequest)req).value);
+
+rsp=new ValueResponse(((SimpleRequest)req).owner,result[0],result[1]);
+
+sendResponse(sender,rsp);
+
+if (backup_coords != null) updateBackups(((SimpleRequest)req).name,result[0],result[1]);
+
+break;
+
+case COMPARE_AND_SET:
+
+if (!local_addr.equals(coord) || discard_requests) return;
+
+val=counters.get(((SimpleRequest)req).name);
+
+if (val == null) {
+
+sendCounterNotFoundExceptionResponse(sender,((SimpleRequest)req).owner,((SimpleRequest)req).name);
+
+return;
+
+}
+
+result=val.compareAndSet(((CompareAndSetRequest)req).expected,((CompareAndSetRequest)req).update);
+
+rsp=new ValueResponse(((SimpleRequest)req).owner,result == null ? -1 : result[0],result == null ? -1 : result[1]);
+
+sendResponse(sender,rsp);
+
+if (backup_coords != null) {
+
+VersionedValue value=counters.get(((SimpleRequest)req).name);
+
+updateBackups(((SimpleRequest)req).name,value.value,value.version);
+
+}
+
+break;
+
+case ADD_AND_GET:
+
+if (!local_addr.equals(coord) || discard_requests) return;
+
+val=counters.get(((SimpleRequest)req).name);
+
+if (val == null) {
+
+sendCounterNotFoundExceptionResponse(sender,((SimpleRequest)req).owner,((SimpleRequest)req).name);
+
+return;
+
+}
+
+result=val.addAndGet(((AddAndGetRequest)req).value);
+
+rsp=new ValueResponse(((SimpleRequest)req).owner,result[0],result[1]);
+
+sendResponse(sender,rsp);
+
+if (backup_coords != null) updateBackups(((SimpleRequest)req).name,result[0],result[1]);
+
+break;
+
+case UPDATE:
+
+String counter_name=((UpdateRequest)req).name;
+
+long new_value=((UpdateRequest)req).value, new_version=((UpdateRequest)req).version;
+
+VersionedValue current=counters.get(counter_name);
+
+if (current == null) counters.put(counter_name,new VersionedValue(new_value,new_version));
+
+ else {
+
+current.updateIfBigger(new_value,new_version);
+
+}
+
+break;
+
+case RECONCILE:
+
+if (sender.equals(local_addr)) break;
+
+ReconcileRequest reconcile_req=(ReconcileRequest)req;
+
+Map<String,VersionedValue> map=new HashMap<>(counters);
+
+if (reconcile_req.names != null) {
+
+for (int i=0; i < reconcile_req.names.length; i++) {
+
+counter_name=reconcile_req.names[i];
+
+long version=reconcile_req.versions[i];
+
+VersionedValue my_value=map.get(counter_name);
+
+if (my_value != null && my_value.version <= version) map.remove(counter_name);
+
+}
+
+}
+
+int len=map.size();
+
+String[] names=new String[len];
+
+long[] values=new long[len];
+
+long[] versions=new long[len];
+
+int index=0;
+
+for (Map.Entry<String,VersionedValue> entry : map.entrySet()) {
+
+names[index]=entry.getKey();
+
+values[index]=entry.getValue().value;
+
+versions[index]=entry.getValue().version;
+
+index++;
+
+}
+
+rsp=new ReconcileResponse(names,values,versions);
+
+sendResponse(sender,rsp);
+
+break;
+
+case RESEND_PENDING_REQUESTS:
+
+for (Tuple<Request,Promise> tuple : pending_requests.values()) {
+
+Request request=tuple.getVal1();
+
+if (log.isTraceEnabled()) log.trace("[" + local_addr + "] --> ["+ coord+ "] resending "+ request);
+
+sendRequest(coord,request);
+
+}
+
+break;
+
+default :
+
+break;
+
+}
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+@SuppressWarnings("unchecked") protected void handleResponse(Response rsp,Address sender){
+
+  if (rsp instanceof ReconcileResponse) {
+
+    if (log.isTraceEnabled() && ((ReconcileResponse)rsp).names != null && ((ReconcileResponse)rsp).names.length > 0)     log.trace("[" + local_addr + "] <-- ["+ sender+ "] RECONCILE-RSP: "+ dump(((ReconcileResponse)rsp).names,((ReconcileResponse)rsp).values,((ReconcileResponse)rsp).versions));
+
+    if (reconciliation_task != null)     reconciliation_task.add((ReconcileResponse)rsp,sender);
+
+    return;
+
+  }
+
+  Tuple<Request,Promise> tuple=pending_requests.remove(((SimpleResponse)rsp).owner);
+
+  if (tuple == null) {
+
+    log.warn("response for " + ((SimpleResponse)rsp).owner + " didn't have an entry");
+
+    return;
+
+  }
+
+  Promise promise=tuple.getVal2();
+
+  if (rsp instanceof ValueResponse) {
+
+    ValueResponse tmp=(ValueResponse)rsp;
+
+    if (tmp.result == -1 && tmp.version == -1)     promise.setResult(null);
+
+ else {
+
+      long[] result={tmp.result,tmp.version};
+
+      promise.setResult(result);
+
+    }
+
+  }
+
+ else   if (rsp instanceof BooleanResponse)   promise.setResult(((BooleanResponse)rsp).result);
+
+ else   if (rsp instanceof ExceptionResponse) {
+
+    promise.setResult(new Throwable(((ExceptionResponse)rsp).error_message));
+
+  }
+
+ else   promise.setResult(null);
+
+}
+
+Location: Counter.java
+
+Content: 
+
+/** 
+
+ * Atomically increments the counter and returns the new value
+
+ * @return The new value
+
+ */
+
+public long incrementAndGet();
+
+Location: COUNTER.java
+
+Content: 
+
+@ManagedOperation(description="Dumps all counters") public String printCounters(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Map.Entry<String,VersionedValue> entry : counters.entrySet())   sb.append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+
+  return sb.toString();
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static long[] readReconciliationLongs(DataInput in,int len) throws IOException {
+
+  long[] retval=new long[len];
+
+  for (int i=0; i < len; i++)   retval[i]=Bits.readLong(in);
+
+  return retval;
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static String[] readReconciliationNames(DataInput in,int len) throws IOException {
+
+  String[] retval=new String[len];
+
+  for (int i=0; i < len; i++)   retval[i]=Bits.readString(in);
+
+  return retval;
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static final Request requestFromBuffer(byte[] buf,int offset,int length) throws Exception {
+
+  ByteArrayInputStream input=new ByteArrayInputStream(buf,offset,length);
+
+  DataInputStream in=new DataInputStream(input);
+
+  RequestType type=RequestType.values()[in.readByte()];
+
+  Request retval=createRequest(type);
+
+  retval.readFrom(in);
+
+  return retval;
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static Buffer requestToBuffer(Request req) throws Exception {
+
+  return streamableToBuffer(REQUEST,(byte)requestToRequestType(req).ordinal(),req);
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static RequestType requestToRequestType(Request req){
+
+  if (req instanceof GetOrCreateRequest)   return RequestType.GET_OR_CREATE;
+
+  if (req instanceof DeleteRequest)   return RequestType.DELETE;
+
+  if (req instanceof AddAndGetRequest)   return RequestType.ADD_AND_GET;
+
+  if (req instanceof UpdateRequest)   return RequestType.UPDATE;
+
+  if (req instanceof SetRequest)   return RequestType.SET;
+
+  if (req instanceof CompareAndSetRequest)   return RequestType.COMPARE_AND_SET;
+
+  if (req instanceof ReconcileRequest)   return RequestType.RECONCILE;
+
+  if (req instanceof ResendPendingRequests)   return RequestType.RESEND_PENDING_REQUESTS;
+
+  throw new IllegalStateException("request " + req + " cannot be mapped to request type");
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static final Response responseFromBuffer(byte[] buf,int offset,int length) throws Exception {
+
+  ByteArrayInputStream input=new ByteArrayInputStream(buf,offset,length);
+
+  DataInputStream in=new DataInputStream(input);
+
+  ResponseType type=ResponseType.values()[in.readByte()];
+
+  Response retval=createResponse(type);
+
+  retval.readFrom(in);
+
+  return retval;
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static Buffer responseToBuffer(Response rsp) throws Exception {
+
+  return streamableToBuffer(RESPONSE,(byte)responseToResponseType(rsp).ordinal(),rsp);
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static ResponseType responseToResponseType(Response rsp){
+
+  if (rsp instanceof GetOrCreateResponse)   return ResponseType.GET_OR_CREATE;
+
+  if (rsp instanceof BooleanResponse)   return ResponseType.BOOLEAN;
+
+  if (rsp instanceof ValueResponse)   return ResponseType.VALUE;
+
+  if (rsp instanceof ExceptionResponse)   return ResponseType.EXCEPTION;
+
+  if (rsp instanceof ReconcileResponse)   return ResponseType.RECONCILE;
+
+  if (rsp != null)   return ResponseType.VOID;
+
+  throw new IllegalStateException("response " + rsp + " cannot be mapped to response type");
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected void sendCounterNotFoundExceptionResponse(Address dest,Owner owner,String counter_name){
+
+  Response rsp=new ExceptionResponse(owner,"counter \"" + counter_name + "\" not found");
+
+  sendResponse(dest,rsp);
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected void sendRequest(Address dest,Request req){
+
+  try {
+
+    Buffer buffer=requestToBuffer(req);
+
+    Message msg=new Message(dest,buffer).putHeader(id,new CounterHeader());
+
+    if (bypass_bundling)     msg.setFlag(Message.Flag.DONT_BUNDLE);
+
+    if (log.isTraceEnabled())     log.trace("[" + local_addr + "] --> ["+ (dest == null ? "ALL" : dest)+ "] "+ req);
+
+    down_prot.down(msg);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedSending") + req + " request: "+ ex);
+
+  }
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected void sendResponse(Address dest,Response rsp){
+
+  try {
+
+    Buffer buffer=responseToBuffer(rsp);
+
+    Message rsp_msg=new Message(dest,buffer).putHeader(id,new CounterHeader());
+
+    if (bypass_bundling)     rsp_msg.setFlag(Message.Flag.DONT_BUNDLE);
+
+    if (log.isTraceEnabled())     log.trace("[" + local_addr + "] --> ["+ dest+ "] "+ rsp);
+
+    down_prot.down(rsp_msg);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedSending") + rsp + " message to "+ dest+ ": "+ ex);
+
+  }
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected void send(Address dest,Buffer buffer){
+
+  try {
+
+    Message rsp_msg=new Message(dest,buffer).putHeader(id,new CounterHeader());
+
+    if (bypass_bundling)     rsp_msg.setFlag(Message.Flag.DONT_BUNDLE);
+
+    down_prot.down(rsp_msg);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedSendingMessageTo") + dest + ": "+ ex);
+
+  }
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+public void setBypassBundling(boolean bypass_bundling){
+
+  this.bypass_bundling=bypass_bundling;
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected synchronized void startReconciliationTask(){
+
+  if (reconciliation_task_future == null || reconciliation_task_future.isDone()) {
+
+    reconciliation_task=new ReconciliationTask();
+
+    reconciliation_task_future=getTransport().getTimer().schedule(reconciliation_task,0,TimeUnit.MILLISECONDS);
+
+  }
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected synchronized void stopReconciliationTask(){
+
+  if (reconciliation_task_future != null) {
+
+    reconciliation_task_future.cancel(true);
+
+    if (reconciliation_task != null)     reconciliation_task.cancel();
+
+    reconciliation_task_future=null;
+
+  }
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static Streamable streamableFromBuffer(byte[] buf,int offset,int length) throws Exception {
+
+switch (buf[offset]) {
+
+case REQUEST:
+
+    return requestFromBuffer(buf,offset + 1,length - 1);
+
+case RESPONSE:
+
+  return responseFromBuffer(buf,offset + 1,length - 1);
+
+default :
+
+throw new IllegalArgumentException("type " + buf[offset] + " is invalid (expected Request (1) or RESPONSE (2)");
+
+}
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static Buffer streamableToBuffer(byte req_or_rsp,byte type,Streamable obj) throws Exception {
+
+  int expected_size=obj instanceof SizeStreamable ? ((SizeStreamable)obj).serializedSize() : 100;
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(expected_size);
+
+  out.writeByte(req_or_rsp);
+
+  out.writeByte(type);
+
+  obj.writeTo(out);
+
+  return new Buffer(out.buffer(),0,out.position());
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected void updateBackups(String name,long value,long version){
+
+  Request req=new UpdateRequest(name,value,version);
+
+  try {
+
+    Buffer buffer=requestToBuffer(req);
+
+    if (backup_coords != null && !backup_coords.isEmpty()) {
+
+      for (      Address backup_coord : backup_coords)       send(backup_coord,buffer);
+
+    }
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedSending") + req + " to backup coordinator(s):"+ ex);
+
+  }
+
+}
+
+Location: COUNTER.java
+
+Content: 
+
+protected static void writeReconciliation(DataOutput out,String[] names,long[] values,long[] versions) throws IOException {
+
+  if (names == null) {
+
+    out.writeInt(0);
+
+    return;
+
+  }
+
+  out.writeInt(names.length);
+
+  for (  String name : names)   Bits.writeString(name,out);
+
+  for (  long value : values)   Bits.writeLong(value,out);
+
+  for (  long version : versions)   Bits.writeLong(version,out);
+
+}
+

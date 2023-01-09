@@ -1,0 +1,288 @@
+Location: HashArrayMappedTrie.java
+
+Content: 
+
+private Node find(int key){
+
+  if (root == null)   return null;
+
+  return find(root,key);
+
+}
+
+Location: HashArrayMappedTrie.java
+
+Content: 
+
+private Node find(Node node,int key){
+
+  if (node instanceof KeyValueNode) {
+
+    KeyValueNode<V> kvNode=(KeyValueNode<V>)node;
+
+    if (kvNode.key == key)     return kvNode;
+
+    return null;
+
+  }
+
+ else   if (node instanceof ArrayNode) {
+
+    ArrayNode arrayNode=(ArrayNode)node;
+
+    int position=getPosition(arrayNode.height,key);
+
+    Node possibleNode=arrayNode.getChild(position);
+
+    if (possibleNode == null)     return null;
+
+    return find(possibleNode,key);
+
+  }
+
+  return null;
+
+}
+
+Location: HashArrayMappedTrie.java
+
+Content: 
+
+/** 
+
+ * Get the "BITS" length integer starting at height*BITS position. e.g. BITS=5 height=1 value==266 big-endian=100001010 (shifts height*BITS off the right) return=1000 (8 in decimal)
+
+ */
+
+private static final int getPosition(int height,int value){
+
+  return (value >>> height * BITS) & MASK;
+
+}
+
+Location: HashArrayMappedTrie.java
+
+Content: 
+
+private V put(ArrayNode parent,Node node,byte height,int key,V value){
+
+  byte newHeight=height;
+
+  if (node instanceof KeyValueNode) {
+
+    KeyValueNode<V> kvNode=(KeyValueNode<V>)node;
+
+    if (key == kvNode.key) {
+
+      kvNode.value=value;
+
+      return value;
+
+    }
+
+    KeyValueNode<V> oldParent=kvNode;
+
+    int newParentPosition=getPosition(newHeight - 1,key);
+
+    int oldParentPosition=getPosition(newHeight,oldParent.key);
+
+    int childPosition=getPosition(newHeight,key);
+
+    ArrayNode newParent=new ArrayNode(parent,key,newHeight);
+
+    newParent.parent=parent;
+
+    if (parent == null) {
+
+      root=newParent;
+
+    }
+
+ else {
+
+      parent.addChild(newParentPosition,newParent);
+
+    }
+
+    if (oldParentPosition != childPosition) {
+
+      newParent.addChild(oldParentPosition,oldParent);
+
+      oldParent.parent=newParent;
+
+      newParent.addChild(childPosition,new KeyValueNode<V>(newParent,key,value));
+
+      return null;
+
+    }
+
+    while (oldParentPosition == childPosition) {
+
+      newHeight++;
+
+      if (newHeight > MAX_DEPTH) {
+
+        throw new RuntimeException("Yikes! Found two keys which match exactly.");
+
+      }
+
+      newParentPosition=getPosition(newHeight - 1,key);
+
+      ArrayNode newParent2=new ArrayNode(newParent,key,newHeight);
+
+      newParent.addChild(newParentPosition,newParent2);
+
+      oldParentPosition=getPosition(newHeight,oldParent.key);
+
+      childPosition=getPosition(newHeight,key);
+
+      if (oldParentPosition != childPosition) {
+
+        newParent2.addChild(oldParentPosition,oldParent);
+
+        oldParent.parent=newParent2;
+
+        newParent2.addChild(childPosition,new KeyValueNode<V>(newParent2,key,value));
+
+      }
+
+ else {
+
+        newParent=newParent2;
+
+      }
+
+    }
+
+    return null;
+
+  }
+
+ else   if (node instanceof ArrayNode) {
+
+    ArrayNode arrayRoot=(ArrayNode)node;
+
+    int position=getPosition(arrayRoot.height,key);
+
+    Node child=arrayRoot.getChild(position);
+
+    if (child == null) {
+
+      arrayRoot.addChild(position,new KeyValueNode<V>(arrayRoot,key,value));
+
+      return null;
+
+    }
+
+    return put(arrayRoot,child,(byte)(newHeight + 1),key,value);
+
+  }
+
+  return null;
+
+}
+
+Location: HashArrayMappedTrie.java
+
+Content: 
+
+/** 
+
+ * Convert a big-endian binary string to a little-endian binary string and also pads with zeros to make it "BITS" length. e.g. BITS=5 value==6 big-endian=110 little-endian=011 (pad) return=01100
+
+ */
+
+private static final String toBinaryString(int value){
+
+  StringBuilder builder=new StringBuilder(Integer.toBinaryString(value));
+
+  builder=builder.reverse();
+
+  while (builder.length() < BITS) {
+
+    builder.append('0');
+
+  }
+
+  return builder.toString();
+
+}
+
+Location: HashArrayMappedTrie.java
+
+Content: 
+
+private static <V>boolean validate(ArrayNode parent,ArrayNode node){
+
+  if (parent != null) {
+
+    if (parent.key != (node.parent.key))     return false;
+
+    if (parent.height + 1 != node.height)     return false;
+
+  }
+
+  int children=0;
+
+  for (int i=0; i < node.children.length; i++) {
+
+    Node child=node.children[i];
+
+    if (child != null) {
+
+      children++;
+
+      if (child instanceof KeyValueNode) {
+
+        KeyValueNode<V> kvChild=(KeyValueNode<V>)child;
+
+        if (!validate(node,kvChild))         return false;
+
+      }
+
+ else       if (child instanceof ArrayNode) {
+
+        ArrayNode arrayNode=(ArrayNode)child;
+
+        if (!validate(node,arrayNode))         return false;
+
+      }
+
+ else {
+
+        return false;
+
+      }
+
+    }
+
+  }
+
+  boolean result=(children == node.getNumberOfChildren());
+
+  if (!result) {
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: HashArrayMappedTrie.java
+
+Content: 
+
+private static <V>boolean validate(ArrayNode parent,KeyValueNode<V> child){
+
+  if (parent == null || parent.height == 0)   return true;
+
+  int parentPosition=getPosition(parent.height - 1,parent.key);
+
+  int childPosition=getPosition(parent.height - 1,child.key);
+
+  return (childPosition == parentPosition);
+
+}
+

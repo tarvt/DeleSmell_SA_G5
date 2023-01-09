@@ -1,0 +1,308 @@
+Location: Main.java
+
+Content: 
+
+/** 
+
+ * @return true if FOP's dependecies are available in the current ClassLoader setup.
+
+ */
+
+public static boolean checkDependencies(){
+
+  try {
+
+    Class clazz=Class.forName("org.apache.commons.io.IOUtils");
+
+    return (clazz != null);
+
+  }
+
+ catch (  Exception e) {
+
+    return false;
+
+  }
+
+}
+
+Location: Main.java
+
+Content: 
+
+/** 
+
+ * @return the list of URLs to all libraries.
+
+ * @throws MalformedURLException In case there is a problem converting java.io.Fileinstances to URLs.
+
+ */
+
+public static URL[] getJARList() throws MalformedURLException {
+
+  String fopHome=System.getProperty("fop.home");
+
+  File baseDir;
+
+  if (fopHome != null) {
+
+    baseDir=new File(fopHome).getAbsoluteFile();
+
+  }
+
+ else {
+
+    baseDir=new File(".").getAbsoluteFile().getParentFile();
+
+  }
+
+  File buildDir;
+
+  if ("build".equals(baseDir.getName())) {
+
+    buildDir=baseDir;
+
+    baseDir=baseDir.getParentFile();
+
+  }
+
+ else {
+
+    buildDir=new File(baseDir,"build");
+
+  }
+
+  File fopJar=new File(buildDir,"fop.jar");
+
+  if (!fopJar.exists()) {
+
+    fopJar=new File(baseDir,"fop.jar");
+
+  }
+
+  if (!fopJar.exists()) {
+
+    throw new RuntimeException("fop.jar not found in directory: " + baseDir.getAbsolutePath() + " (or below)");
+
+  }
+
+  List jars=new java.util.ArrayList();
+
+  jars.add(fopJar.toURI().toURL());
+
+  File[] files;
+
+  FileFilter filter=new FileFilter(){
+
+    public boolean accept(    File pathname){
+
+      return pathname.getName().endsWith(".jar");
+
+    }
+
+  }
+
+;
+
+  File libDir=new File(baseDir,"lib");
+
+  if (!libDir.exists()) {
+
+    libDir=baseDir;
+
+  }
+
+  files=libDir.listFiles(filter);
+
+  if (files != null) {
+
+    for (    File file : files) {
+
+      jars.add(file.toURI().toURL());
+
+    }
+
+  }
+
+  String optionalLib=System.getProperty("fop.optional.lib");
+
+  if (optionalLib != null) {
+
+    files=new File(optionalLib).listFiles(filter);
+
+    if (files != null) {
+
+      for (      File file : files) {
+
+        jars.add(file.toURI().toURL());
+
+      }
+
+    }
+
+  }
+
+  URL[] urls=(URL[])jars.toArray(new URL[jars.size()]);
+
+  return urls;
+
+}
+
+Location: Main.java
+
+Content: 
+
+private Main(){
+
+}
+
+Location: Main.java
+
+Content: 
+
+/** 
+
+ * Dynamically builds a ClassLoader and executes FOP.
+
+ * @param args command-line arguments
+
+ */
+
+public static void startFOPWithDynamicClasspath(String[] args){
+
+  try {
+
+    final URL[] urls=getJARList();
+
+    ClassLoader loader=(ClassLoader)AccessController.doPrivileged(new PrivilegedAction(){
+
+      public Object run(){
+
+        return new java.net.URLClassLoader(urls,null);
+
+      }
+
+    }
+
+);
+
+    Thread.currentThread().setContextClassLoader(loader);
+
+    Class clazz=Class.forName("org.apache.fop.cli.Main",true,loader);
+
+    Method mainMethod=clazz.getMethod("startFOP",new Class[]{String[].class});
+
+    mainMethod.invoke(null,new Object[]{args});
+
+  }
+
+ catch (  Exception e) {
+
+    System.err.println("Unable to start FOP:");
+
+    e.printStackTrace();
+
+    System.exit(-1);
+
+  }
+
+}
+
+Location: Main.java
+
+Content: 
+
+/** 
+
+ * Executes FOP with the given arguments. If no argument is provided, returns its version number as well as a short usage statement; if '-v' is provided, returns its version number alone; if '-h' is provided, returns its short help message.
+
+ * @param args command-line arguments
+
+ */
+
+public static void startFOP(String[] args){
+
+  CommandLineOptions options=null;
+
+  FOUserAgent foUserAgent=null;
+
+  OutputStream out=null;
+
+  try {
+
+    options=new CommandLineOptions();
+
+    if (!options.parse(args)) {
+
+      System.exit(0);
+
+    }
+
+    foUserAgent=options.getFOUserAgent();
+
+    String outputFormat=options.getOutputFormat();
+
+    try {
+
+      if (options.getOutputFile() != null) {
+
+        out=new java.io.BufferedOutputStream(new java.io.FileOutputStream(options.getOutputFile()));
+
+        foUserAgent.setOutputFile(options.getOutputFile());
+
+      }
+
+ else       if (options.isOutputToStdOut()) {
+
+        out=new java.io.BufferedOutputStream(System.out);
+
+      }
+
+      if (!MimeConstants.MIME_XSL_FO.equals(outputFormat)) {
+
+        options.getInputHandler().renderTo(foUserAgent,outputFormat,out);
+
+      }
+
+ else {
+
+        options.getInputHandler().transformTo(out);
+
+      }
+
+    }
+
+  finally {
+
+      IOUtils.closeQuietly(out);
+
+    }
+
+    if (!MimeConstants.MIME_FOP_AWT_PREVIEW.equals(outputFormat)) {
+
+      System.exit(0);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    if (options != null) {
+
+      options.getLogger().error("Exception",e);
+
+      if (options.getOutputFile() != null) {
+
+        options.getOutputFile().delete();
+
+      }
+
+    }
+
+    System.exit(1);
+
+  }
+
+}
+

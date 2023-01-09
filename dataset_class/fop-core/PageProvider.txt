@@ -1,0 +1,586 @@
+Location: PageProvider.java
+
+Content: 
+
+private Page cacheNextPage(int index,boolean isBlank,boolean isLastPage,boolean spanAll){
+
+  String pageNumberString=pageSeq.makeFormattedPageNumber(index);
+
+  boolean isFirstPage=(startPageOfPageSequence == index);
+
+  SimplePageMaster spm=pageSeq.getNextSimplePageMaster(index,isFirstPage,isLastPage,isBlank);
+
+  boolean isPagePositionOnly=pageSeq.hasPagePositionOnly() && !skipPagePositionOnly;
+
+  if (isPagePositionOnly) {
+
+    spm=pageSeq.getNextSimplePageMaster(index,isFirstPage,true,isBlank);
+
+  }
+
+  Page page=new Page(spm,index,pageNumberString,isBlank,spanAll,isPagePositionOnly);
+
+  page.getPageViewport().setKey(areaTreeHandler.generatePageViewportKey());
+
+  page.getPageViewport().setForeignAttributes(spm.getForeignAttributes());
+
+  page.getPageViewport().setWritingModeTraits(pageSeq);
+
+  cachedPages.add(page);
+
+  if (isLastPage) {
+
+    pageSeq.getRoot().setLastSeq(pageSeq);
+
+  }
+
+ else   if (!isFirstPage) {
+
+    pageSeq.getRoot().setLastSeq(null);
+
+  }
+
+  return page;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Compares the IPD of the given part with the following one.
+
+ * @param index index of the current part
+
+ * @return a negative integer, zero or a positive integer as the current IPD is lessthan, equal to or greater than the IPD of the following part
+
+ */
+
+public int compareIPDs(int index){
+
+  Column column=getColumn(index);
+
+  if (column.colIndex + 1 < column.columnCount) {
+
+    return 0;
+
+  }
+
+ else {
+
+    Page nextPage=getPage(false,column.pageIndex + 1,RELTO_CURRENT_ELEMENT_LIST);
+
+    return column.page.getPageViewport().getBodyRegion().getColumnIPD() - nextPage.getPageViewport().getBodyRegion().getColumnIPD();
+
+  }
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+protected void discardCacheStartingWith(int index){
+
+  while (index < cachedPages.size()) {
+
+    this.cachedPages.remove(cachedPages.size() - 1);
+
+    if (!pageSeq.goToPreviousSimplePageMaster()) {
+
+      log.warn("goToPreviousSimplePageMaster() on the first page called!");
+
+    }
+
+  }
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Checks if a break at the passed index would end a page
+
+ * @param index the index of the element before the break
+
+ * @return  {@code true} if the break ends a page
+
+ */
+
+boolean endPage(int index){
+
+  Column column=getColumn(index);
+
+  return column.colIndex == column.columnCount - 1;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Returns the available BPD for the part/page indicated by the index parameter. The index is the part/page relative to the start of the current element list. This method takes multiple columns into account.
+
+ * @param index zero-based index of the requested part/page
+
+ * @return the available BPD
+
+ */
+
+public int getAvailableBPD(int index){
+
+  if (this.lastRequestedIndex == index) {
+
+    if (log.isTraceEnabled()) {
+
+      log.trace("getAvailableBPD(" + index + ") -> (cached) "+ lastReportedBPD);
+
+    }
+
+    return this.lastReportedBPD;
+
+  }
+
+  int pageIndexTmp=index;
+
+  int pageIndex=0;
+
+  int colIndex=startColumnOfCurrentElementList;
+
+  Page page=getPage(false,pageIndex,RELTO_CURRENT_ELEMENT_LIST);
+
+  while (pageIndexTmp > 0) {
+
+    colIndex++;
+
+    if (colIndex >= page.getPageViewport().getCurrentSpan().getColumnCount()) {
+
+      colIndex=0;
+
+      pageIndex++;
+
+      page=getPage(false,pageIndex,RELTO_CURRENT_ELEMENT_LIST);
+
+      BodyRegion br=page.getPageViewport().getBodyRegion();
+
+      if (!pageSeq.getMainFlow().getFlowName().equals(br.getRegionName())) {
+
+        pageIndexTmp++;
+
+      }
+
+    }
+
+    pageIndexTmp--;
+
+  }
+
+  this.lastRequestedIndex=index;
+
+  this.lastReportedBPD=page.getPageViewport().getBodyRegion().getRemainingBPD();
+
+  if (log.isTraceEnabled()) {
+
+    log.trace("getAvailableBPD(" + index + ") -> "+ lastReportedBPD);
+
+  }
+
+  return this.lastReportedBPD;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Obtain the applicable column-count for the element at the passed index
+
+ * @param index the index of the element
+
+ * @return  the number of columns
+
+ */
+
+int getColumnCount(int index){
+
+  return getColumn(index).columnCount;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+public int getCurrentIPD(){
+
+  return getPageFromColumnIndex(startColumnOfCurrentElementList).getPageViewport().getBodyRegion().getColumnIPD();
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+public int getIndexOfCachedLastPage(){
+
+  return indexOfCachedLastPage;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+public int getLastPageIndex(){
+
+  return lastPageIndex;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+public int getLastPageIPD(){
+
+  int index=this.cachedPages.size();
+
+  boolean isFirstPage=(startPageOfPageSequence == index);
+
+  SimplePageMaster spm=pageSeq.getLastSimplePageMaster(index,isFirstPage,false);
+
+  Page page=new Page(spm,index,"",false,false,false);
+
+  if (pageSeq.getRoot().getLastSeq() != null && pageSeq.getRoot().getLastSeq() != pageSeq) {
+
+    return -1;
+
+  }
+
+  return page.getPageViewport().getBodyRegion().getColumnIPD();
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+Page getPageFromColumnIndex(int columnIndex){
+
+  return getColumn(columnIndex).page;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Returns a Page.
+
+ * @param isBlank true if the Page should be a blank one
+
+ * @param index the Page's index
+
+ * @return a Page instance
+
+ */
+
+protected Page getPage(boolean isBlank,int index){
+
+  boolean isLastPage=(lastPageIndex >= 0) && (index == lastPageIndex);
+
+  if (log.isTraceEnabled()) {
+
+    log.trace("getPage(" + index + " "+ (isBlank ? "blank" : "non-blank")+ (isLastPage ? " <LAST>" : "")+ ")");
+
+  }
+
+  int intIndex=index - startPageOfPageSequence;
+
+  if (log.isTraceEnabled()) {
+
+    if (isBlank) {
+
+      log.trace("blank page requested: " + index);
+
+    }
+
+    if (isLastPage) {
+
+      log.trace("last page requested: " + index);
+
+    }
+
+  }
+
+  if (intIndex > cachedPages.size()) {
+
+    throw new UnsupportedOperationException("Cannot handle holes in page cache");
+
+  }
+
+ else   if (intIndex == cachedPages.size()) {
+
+    if (log.isTraceEnabled()) {
+
+      log.trace("Caching " + index);
+
+    }
+
+    cacheNextPage(index,isBlank,isLastPage,this.spanAllForCurrentElementList);
+
+  }
+
+  Page page=cachedPages.get(intIndex);
+
+  boolean replace=false;
+
+  if (page.getPageViewport().isBlank() != isBlank) {
+
+    log.debug("blank condition doesn't match. Replacing PageViewport.");
+
+    replace=true;
+
+  }
+
+  if (page.getPageViewport().getCurrentSpan().getColumnCount() == 1 && !this.spanAllForCurrentElementList) {
+
+    RegionBody rb=(RegionBody)page.getSimplePageMaster().getRegion(Region.FO_REGION_BODY);
+
+    int colCount=rb.getColumnCount();
+
+    if (colCount > 1) {
+
+      log.debug("Span doesn't match. Replacing PageViewport.");
+
+      replace=true;
+
+    }
+
+  }
+
+  if ((isLastPage && indexOfCachedLastPage != intIndex) || (!isLastPage && indexOfCachedLastPage >= 0)) {
+
+    log.debug("last page condition doesn't match. Replacing PageViewport.");
+
+    replace=true;
+
+    indexOfCachedLastPage=(isLastPage ? intIndex : -1);
+
+  }
+
+  if (replace) {
+
+    discardCacheStartingWith(intIndex);
+
+    PageViewport oldPageVP=page.getPageViewport();
+
+    page=cacheNextPage(index,isBlank,isLastPage,this.spanAllForCurrentElementList);
+
+    PageViewport newPageVP=page.getPageViewport();
+
+    newPageVP.replace(oldPageVP);
+
+    this.areaTreeHandler.getIDTracker().replacePageViewPort(oldPageVP,newPageVP);
+
+  }
+
+  return page;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Returns a Page.
+
+ * @param isBlank true if this page is supposed to be blank.
+
+ * @param index Index of the page (see relativeTo)
+
+ * @param relativeTo Defines which value the index parameter should be evaluated relativeto. (One of PageProvider.RELTO_*)
+
+ * @return the requested Page
+
+ */
+
+public Page getPage(boolean isBlank,int index,int relativeTo){
+
+  if (relativeTo == RELTO_PAGE_SEQUENCE) {
+
+    return getPage(isBlank,index);
+
+  }
+
+ else   if (relativeTo == RELTO_CURRENT_ELEMENT_LIST) {
+
+    int effIndex=startPageOfCurrentElementList + index;
+
+    effIndex+=startPageOfPageSequence - 1;
+
+    return getPage(isBlank,effIndex);
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException("Illegal value for relativeTo: " + relativeTo);
+
+  }
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Returns the part index (0&lt;x&lt;partCount) which denotes the first part on the last page generated by the current element list.
+
+ * @param partCount Number of parts determined by the breaking algorithm
+
+ * @return the requested part index
+
+ */
+
+public int getStartingPartIndexForLastPage(int partCount){
+
+  int lastPartIndex=partCount - 1;
+
+  return lastPartIndex - getColumn(lastPartIndex).colIndex;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Indicates whether the column/page at the given index is on the first page of the page sequence.
+
+ * @return {@code true} if the given part is on the first page of the sequence
+
+ */
+
+boolean isOnFirstPage(int partIndex){
+
+  Column column=getColumn(partIndex);
+
+  return startPageOfCurrentElementList + column.pageIndex == startPageOfPageSequence;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Main constructor.
+
+ * @param ath the area tree handler
+
+ * @param ps The page-sequence the provider operates on
+
+ */
+
+public PageProvider(AreaTreeHandler ath,PageSequence ps){
+
+  this.areaTreeHandler=ath;
+
+  this.pageSeq=ps;
+
+  this.startPageOfPageSequence=ps.getStartingPageNumber();
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Sets the index of the last page. This is done as soon as the position of the last page is known or assumed.
+
+ * @param index the index relative to the first page in the page-sequence
+
+ */
+
+public void setLastPageIndex(int index){
+
+  this.lastPageIndex=index;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * The page breaker notifies the provider about the page number an element list starts on so it can later retrieve PageViewports relative to this first page.
+
+ * @param startPage the number of the first page for the element list.
+
+ * @param startColumn the starting column number for the element list.
+
+ * @param spanAll true if the current element list is for a column-spanning section
+
+ */
+
+public void setStartOfNextElementList(int startPage,int startColumn,boolean spanAll){
+
+  if (log.isDebugEnabled()) {
+
+    log.debug("start of the next element list is:" + " page=" + startPage + " col="+ startColumn+ (spanAll ? ", column-spanning" : ""));
+
+  }
+
+  this.startPageOfCurrentElementList=startPage - startPageOfPageSequence + 1;
+
+  this.startColumnOfCurrentElementList=startColumn;
+
+  this.spanAllForCurrentElementList=spanAll;
+
+  this.lastRequestedIndex=-1;
+
+  this.lastReportedBPD=-1;
+
+}
+
+Location: PageProvider.java
+
+Content: 
+
+/** 
+
+ * Checks if a break at the passed index would start a new page
+
+ * @param index the index of the element before the break
+
+ * @return  {@code true} if the break starts a new page
+
+ */
+
+boolean startPage(int index){
+
+  return getColumn(index).colIndex == 0;
+
+}
+

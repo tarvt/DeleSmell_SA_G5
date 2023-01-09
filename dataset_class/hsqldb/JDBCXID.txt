@@ -1,0 +1,142 @@
+Location: JDBCXID.java
+
+Content: 
+
+public byte[] getBranchQualifier(){
+
+  return txBranch;
+
+}
+
+Location: JDBCXID.java
+
+Content: 
+
+public int getFormatId(){
+
+  return formatID;
+
+}
+
+Location: JDBCXID.java
+
+Content: 
+
+public byte[] getGlobalTransactionId(){
+
+  return txID;
+
+}
+
+Location: JDBCXID.java
+
+Content: 
+
+private static byte[] getLocalIp(){
+
+  if (null == s_localIp) {
+
+    try {
+
+      s_localIp=Inet4Address.getLocalHost().getAddress();
+
+    }
+
+ catch (    Exception ex) {
+
+      s_localIp=new byte[]{0x7F,0x00,0x00,0x01};
+
+    }
+
+  }
+
+  return s_localIp;
+
+}
+
+Location: JDBCXID.java
+
+Content: 
+
+/** 
+
+ * Retrieves a randomly generated JDBCXID. The newly generated object is based on the local IP address, the given <tt>threadId</tt> and a randomly generated number using the current time in milliseconds as the random seed. Note that java.util.Random is used, not java.security.SecureRandom.
+
+ * @param threadId can be a real thread id or just some convenienttracking value.
+
+ * @return a randomly generated JDBCXID
+
+ */
+
+public static Xid getUniqueXid(final int threadId){
+
+  final Random random=new Random(System.currentTimeMillis());
+
+  int txnSequenceNumberValue=nextTxnSequenceNumber();
+
+  int threadIdValue=threadId;
+
+  int randomValue=random.nextInt();
+
+  byte[] globalTransactionId=new byte[MAXGTRIDSIZE];
+
+  byte[] branchQualifier=new byte[MAXBQUALSIZE];
+
+  byte[] localIp=getLocalIp();
+
+  System.arraycopy(localIp,0,globalTransactionId,0,4);
+
+  System.arraycopy(localIp,0,branchQualifier,0,4);
+
+  for (int i=0; i <= 3; i++) {
+
+    globalTransactionId[i + 4]=(byte)(txnSequenceNumberValue % 0x100);
+
+    branchQualifier[i + 4]=(byte)(txnSequenceNumberValue % 0x100);
+
+    txnSequenceNumberValue>>=8;
+
+    globalTransactionId[i + 8]=(byte)(threadIdValue % 0x100);
+
+    branchQualifier[i + 8]=(byte)(threadIdValue % 0x100);
+
+    threadIdValue>>=8;
+
+    globalTransactionId[i + 12]=(byte)(randomValue % 0x100);
+
+    branchQualifier[i + 12]=(byte)(randomValue % 0x100);
+
+    randomValue>>=8;
+
+  }
+
+  return new JDBCXID(UXID_FORMAT_ID,globalTransactionId,branchQualifier);
+
+}
+
+Location: JDBCXID.java
+
+Content: 
+
+public JDBCXID(int formatID,byte[] txID,byte[] txBranch){
+
+  this.formatID=formatID;
+
+  this.txID=txID;
+
+  this.txBranch=txBranch;
+
+}
+
+Location: JDBCXID.java
+
+Content: 
+
+private static int nextTxnSequenceNumber(){
+
+  s_txnSequenceNumber++;
+
+  return s_txnSequenceNumber;
+
+}
+

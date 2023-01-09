@@ -1,0 +1,182 @@
+Location: TestTaskLogServlet.java
+
+Content: 
+
+private HttpTester doRequest(HttpTester request) throws Exception {
+
+  String reqStr=request.generate();
+
+  LOG.info("Testing request: " + reqStr);
+
+  String respStr=tester.getResponses(reqStr);
+
+  LOG.info("Response: " + respStr);
+
+  HttpTester response=new HttpTester();
+
+  response.parse(respStr);
+
+  return response;
+
+}
+
+Location: TestTaskLogServlet.java
+
+Content: 
+
+private void makeLog(File f,String contents) throws IOException {
+
+  LOG.info("Creating log at " + f);
+
+  FileWriter fw=new FileWriter(f);
+
+  try {
+
+    fw.write(contents);
+
+  }
+
+  finally {
+
+    fw.close();
+
+  }
+
+}
+
+Location: TestTaskLogServlet.java
+
+Content: 
+
+private void setupValidLogs(String attemptIdStr) throws IOException {
+
+  TaskAttemptID attemptId=TaskAttemptID.forName(attemptIdStr);
+
+  File logDir=TaskLog.getAttemptDir(attemptId,false);
+
+  FileUtil.fullyDelete(logDir);
+
+  logDir.mkdirs();
+
+  assertTrue(logDir.exists());
+
+  TaskLog.syncLogs(logDir.getAbsolutePath(),attemptId,false);
+
+  makeLog(new File(logDir,"stderr"),"<b>this is stderr");
+
+  makeLog(new File(logDir,"stdout"),"<b>this is stdout");
+
+  makeLog(new File(logDir,"syslog"),"<b>this is syslog");
+
+  TaskLog.syncLogs(logDir.getAbsolutePath(),attemptId,false);
+
+}
+
+Location: TestTaskLogServlet.java
+
+Content: 
+
+@Test public void testHtmlLogs() throws Exception {
+
+  String attemptIdStr="attempt_123_0001_m_000001_0";
+
+  setupValidLogs(attemptIdStr);
+
+  HttpTester request=new HttpTester();
+
+  request.setMethod("GET");
+
+  request.setURI("/tasklog?attemptid=" + attemptIdStr);
+
+  request.setVersion("HTTP/1.0");
+
+  HttpTester response=doRequest(request);
+
+  assertEquals(HttpServletResponse.SC_OK,response.getStatus());
+
+  assertEquals("text/html; charset=utf-8",response.getHeader("content-type"));
+
+  assertTrue(response.getContent().contains("&lt;b&gt;this is stderr"));
+
+  assertTrue(response.getContent().contains("&lt;b&gt;this is stdout"));
+
+  assertTrue(response.getContent().contains("&lt;b&gt;this is syslog"));
+
+  request.setURI("/tasklog?attemptid=" + attemptIdStr + "&start=1&end=6");
+
+  response=doRequest(request);
+
+  assertEquals(HttpServletResponse.SC_OK,response.getStatus());
+
+  assertEquals("text/html; charset=utf-8",response.getHeader("content-type"));
+
+  assertFalse(response.getContent().contains("&lt;b"));
+
+  assertFalse(response.getContent().contains("this is"));
+
+  assertTrue(response.getContent().contains("b&gt;thi</pre>"));
+
+}
+
+Location: TestTaskLogServlet.java
+
+Content: 
+
+@Test public void testMissingParameters() throws Exception {
+
+  HttpTester request=new HttpTester();
+
+  request.setMethod("GET");
+
+  request.setURI("/tasklog");
+
+  request.setVersion("HTTP/1.0");
+
+  HttpTester response=new HttpTester();
+
+  response.parse(tester.getResponses(request.generate()));
+
+  assertEquals(400,response.getStatus());
+
+}
+
+Location: TestTaskLogServlet.java
+
+Content: 
+
+@Test public void testPlaintextLogs() throws Exception {
+
+  String attemptIdStr="attempt_123_0001_m_000001_0";
+
+  setupValidLogs(attemptIdStr);
+
+  HttpTester request=new HttpTester();
+
+  request.setMethod("GET");
+
+  request.setURI("/tasklog?plaintext=true&attemptid=" + attemptIdStr);
+
+  request.setVersion("HTTP/1.0");
+
+  HttpTester response=doRequest(request);
+
+  assertEquals(HttpServletResponse.SC_BAD_REQUEST,response.getStatus());
+
+  request.setURI("/tasklog?plaintext=true&filter=stdout&attemptid=" + attemptIdStr);
+
+  response=doRequest(request);
+
+  assertEquals("text/plain; charset=utf-8",response.getHeader("content-type"));
+
+  assertEquals("<b>this is stdout",response.getContent());
+
+  request.setURI("/tasklog?plaintext=true&filter=stdout" + "&attemptid=" + attemptIdStr + "&start=1&end=6");
+
+  response=doRequest(request);
+
+  assertEquals("text/plain; charset=utf-8",response.getHeader("content-type"));
+
+  assertEquals("b>thi",response.getContent());
+
+}
+

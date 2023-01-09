@@ -1,0 +1,156 @@
+Location: GroupRequest.java
+
+Content: 
+
+protected RspList<T> doAndComplete(Callable<RspList<T>> supplier){
+
+  try {
+
+    return supplier.call();
+
+  }
+
+ catch (  Throwable t) {
+
+    complete(this.rsps);
+
+    return this.rsps;
+
+  }
+
+ finally {
+
+    corrDone();
+
+  }
+
+}
+
+Location: GroupRequest.java
+
+Content: 
+
+public RspList<T> getNow(RspList<T> valueIfAbsent){
+
+  return doAndComplete(() -> super.getNow(valueIfAbsent));
+
+}
+
+Location: GroupRequest.java
+
+Content: 
+
+public boolean getResponsesComplete(){
+
+  lock.lock();
+
+  try {
+
+    return responsesComplete();
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: GroupRequest.java
+
+Content: 
+
+public RspList<T> get(long timeout,TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+
+  return waitForCompletion(timeout,unit);
+
+}
+
+Location: GroupRequest.java
+
+Content: 
+
+/** 
+
+ * @param corr The request correlator to be used. A request correlator sends requests tagged with a unique ID andnotifies the sender when matching responses are received. The reason  {@code GroupRequest} usesit instead of a  {@code Transport} is that multiple requests/responses might be sent/received concurrently
+
+ * @param targets The targets, which are supposed to receive the message. Any receiver not in this set willdiscard the message. Targets are always a subset of the current membership
+
+ * @param options The request options to be used for this call
+
+ */
+
+public GroupRequest(RequestCorrelator corr,Collection<Address> targets,RequestOptions options){
+
+  super(corr,options);
+
+  rsps=new RspList<>(targets.size());
+
+  targets.forEach(target -> rsps.put(target,new Rsp<>()));
+
+}
+
+Location: GroupRequest.java
+
+Content: 
+
+public RspList<T> join(){
+
+  return doAndComplete(super::join);
+
+}
+
+Location: GroupRequest.java
+
+Content: 
+
+@GuardedBy("lock") protected boolean responsesComplete(){
+
+  if (isDone())   return true;
+
+  final int num_total=rsps.size();
+
+switch (options.mode()) {
+
+case GET_FIRST:
+
+    return num_valid >= 1 || num_received >= num_total;
+
+case GET_ALL:
+
+  return num_valid >= num_total || num_received >= num_total;
+
+case GET_NONE:
+
+return true;
+
+}
+
+return false;
+
+}
+
+Location: GroupRequest.java
+
+Content: 
+
+protected void sendRequest(Buffer data,final Collection<Address> targetMembers) throws Exception {
+
+  try {
+
+    corr.sendRequest(targetMembers,data,options.mode() == ResponseMode.GET_NONE ? null : this,options);
+
+  }
+
+ catch (  Exception ex) {
+
+    corrDone();
+
+    throw ex;
+
+  }
+
+}
+

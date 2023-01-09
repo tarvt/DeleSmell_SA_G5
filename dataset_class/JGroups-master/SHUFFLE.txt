@@ -1,0 +1,274 @@
+Location: SHUFFLE.java
+
+Content: 
+
+protected SHUFFLE add(List<Message> queue,MessageBatch batch,Lock lock,Consumer<Message> send_function){
+
+  lock.lock();
+
+  try {
+
+    for (    Message msg : batch)     queue.add(msg);
+
+    if (queue.size() >= max_size)     reorderAndSend(queue,lock,send_function);
+
+    return this;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+protected SHUFFLE add(List<Message> queue,Message msg,Lock lock,Consumer<Message> send_function){
+
+  lock.lock();
+
+  try {
+
+    queue.add(msg);
+
+    if (queue.size() >= max_size)     reorderAndSend(queue,lock,send_function);
+
+ else     startTask();
+
+    return this;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+@ManagedOperation(description="Flushes all pending up and down messages. Optionally disables shuffling") public void flush(boolean stop_shuffling){
+
+  up_lock.lock();
+
+  try {
+
+    if (stop_shuffling)     up=false;
+
+    up_msgs.forEach(msg -> up_prot.up(msg));
+
+    up_msgs.clear();
+
+  }
+
+  finally {
+
+    up_lock.unlock();
+
+  }
+
+  down_lock.lock();
+
+  try {
+
+    if (stop_shuffling)     down=false;
+
+    down_msgs.forEach(msg -> down_prot.down(msg));
+
+    down_msgs.clear();
+
+  }
+
+  finally {
+
+    down_lock.unlock();
+
+  }
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public int getDownMessages(){
+
+  return down_msgs.size();
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public int getMaxSize(){
+
+  return max_size;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public long getMaxTime(){
+
+  return max_time;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public int getUpMessages(){
+
+  return up_msgs.size();
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public boolean isDown(){
+
+  return down;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public boolean isUp(){
+
+  return up;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+protected SHUFFLE reorderAndSend(List<Message> list,final Lock lock,Consumer<Message> send_function){
+
+  lock.lock();
+
+  try {
+
+    Collections.shuffle(list);
+
+    list.forEach(send_function);
+
+    list.clear();
+
+    return this;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public SHUFFLE setDown(boolean down){
+
+  this.down=down;
+
+  return this;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public SHUFFLE setMaxSize(int max_size){
+
+  this.max_size=max_size;
+
+  return this;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public SHUFFLE setMaxTime(long max_time){
+
+  this.max_time=max_time;
+
+  return this;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public SHUFFLE setUp(boolean up){
+
+  this.up=up;
+
+  return this;
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+protected static void shuffle(MessageBatch batch){
+
+  Message[] msgs=batch.array();
+
+  Util.shuffle(msgs,0,batch.index());
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+protected synchronized void startTask(){
+
+  if (task == null || task.isDone() || task.isCancelled())   task=timer.schedule(() -> {
+
+    reorderAndSend(up_msgs,up_lock,msg -> up_prot.up(msg));
+
+    reorderAndSend(down_msgs,down_lock,msg -> down_prot.down(msg));
+
+  }
+
+,max_time,TimeUnit.MILLISECONDS);
+
+}
+
+Location: SHUFFLE.java
+
+Content: 
+
+public synchronized void stopTask(){
+
+  if (task != null)   task.cancel(false);
+
+}
+

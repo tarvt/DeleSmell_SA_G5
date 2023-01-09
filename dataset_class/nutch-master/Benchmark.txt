@@ -1,0 +1,216 @@
+Location: Benchmark.java
+
+Content: 
+
+public BenchmarkResults benchmark(int seeds,int depth,int threads,int maxPerHost,long topN,boolean delete,String plugins) throws Exception {
+
+  Configuration conf=getConf();
+
+  conf.set("http.proxy.host","localhost");
+
+  conf.setInt("http.proxy.port",8181);
+
+  conf.set("http.agent.name","test");
+
+  conf.set("http.robots.agents","test,*");
+
+  if (!plugins.equals("default")) {
+
+    conf.set("plugin.includes",plugins);
+
+  }
+
+  conf.setInt(Generator.GENERATOR_MAX_COUNT,maxPerHost);
+
+  conf.set(Generator.GENERATOR_COUNT_MODE,Generator.GENERATOR_COUNT_VALUE_HOST);
+
+  @SuppressWarnings("unused") Job job=NutchJob.getInstance(getConf());
+
+  FileSystem fs=FileSystem.get(conf);
+
+  Path dir=new Path(getConf().get("hadoop.tmp.dir"),"bench-" + System.currentTimeMillis());
+
+  fs.mkdirs(dir);
+
+  Path rootUrlDir=new Path(dir,"seed");
+
+  fs.mkdirs(rootUrlDir);
+
+  createSeeds(fs,rootUrlDir,seeds);
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("crawl started in: " + dir);
+
+    LOG.info("rootUrlDir = " + rootUrlDir);
+
+    LOG.info("threads = " + threads);
+
+    LOG.info("depth = " + depth);
+
+  }
+
+  BenchmarkResults res=new BenchmarkResults();
+
+  res.delete=delete;
+
+  res.depth=depth;
+
+  res.plugins=plugins;
+
+  res.seeds=seeds;
+
+  res.threads=threads;
+
+  res.topN=topN;
+
+  Path crawlDb=new Path(dir + "/crawldb");
+
+  Path linkDb=new Path(dir + "/linkdb");
+
+  Path segments=new Path(dir + "/segments");
+
+  res.elapsed=System.currentTimeMillis();
+
+  Injector injector=new Injector(getConf());
+
+  Generator generator=new Generator(getConf());
+
+  Fetcher fetcher=new Fetcher(getConf());
+
+  ParseSegment parseSegment=new ParseSegment(getConf());
+
+  CrawlDb crawlDbTool=new CrawlDb(getConf());
+
+  LinkDb linkDbTool=new LinkDb(getConf());
+
+  long start=System.currentTimeMillis();
+
+  injector.inject(crawlDb,rootUrlDir);
+
+  long delta=System.currentTimeMillis() - start;
+
+  res.addTiming("inject","0",delta);
+
+  int i;
+
+  for (i=0; i < depth; i++) {
+
+    start=System.currentTimeMillis();
+
+    Path[] segs=generator.generate(crawlDb,segments,-1,topN,System.currentTimeMillis());
+
+    delta=System.currentTimeMillis() - start;
+
+    res.addTiming("generate",i + "",delta);
+
+    if (segs == null) {
+
+      LOG.info("Stopping at depth=" + i + " - no more URLs to fetch.");
+
+      break;
+
+    }
+
+    start=System.currentTimeMillis();
+
+    fetcher.fetch(segs[0],threads);
+
+    delta=System.currentTimeMillis() - start;
+
+    res.addTiming("fetch",i + "",delta);
+
+    if (!Fetcher.isParsing(conf)) {
+
+      start=System.currentTimeMillis();
+
+      parseSegment.parse(segs[0]);
+
+      delta=System.currentTimeMillis() - start;
+
+      res.addTiming("parse",i + "",delta);
+
+    }
+
+    start=System.currentTimeMillis();
+
+    crawlDbTool.update(crawlDb,segs,true,true);
+
+    delta=System.currentTimeMillis() - start;
+
+    res.addTiming("update",i + "",delta);
+
+    start=System.currentTimeMillis();
+
+    linkDbTool.invert(linkDb,segs,true,true,false);
+
+    delta=System.currentTimeMillis() - start;
+
+    res.addTiming("invert",i + "",delta);
+
+    if (delete) {
+
+      for (      Path p : segs) {
+
+        fs.delete(p,true);
+
+      }
+
+    }
+
+  }
+
+  if (i == 0) {
+
+    LOG.warn("No URLs to fetch - check your seed list and URL filters.");
+
+  }
+
+  if (LOG.isInfoEnabled()) {
+
+    LOG.info("crawl finished: " + dir);
+
+  }
+
+  res.elapsed=System.currentTimeMillis() - res.elapsed;
+
+  @SuppressWarnings("resource") CrawlDbReader dbreader=new CrawlDbReader();
+
+  dbreader.processStatJob(crawlDb.toString(),conf,false);
+
+  return res;
+
+}
+
+Location: Benchmark.java
+
+Content: 
+
+private void createSeeds(FileSystem fs,Path seedsDir,int count) throws Exception {
+
+  OutputStream os=fs.create(new Path(seedsDir,"seeds"));
+
+  for (int i=0; i < count; i++) {
+
+    String url="http://www.test-" + i + ".com/\r\n";
+
+    os.write(url.getBytes());
+
+  }
+
+  os.flush();
+
+  os.close();
+
+}
+
+Location: Benchmark.java
+
+Content: 
+
+@SuppressWarnings("unused") private static String getDate(){
+
+  return new SimpleDateFormat("yyyyMMddHHmmss").format(new Date(System.currentTimeMillis()));
+
+}
+

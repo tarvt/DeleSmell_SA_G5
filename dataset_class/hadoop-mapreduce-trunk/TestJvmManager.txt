@@ -1,0 +1,290 @@
+Location: TestJvmManager.java
+
+Content: 
+
+/** 
+
+ * Create a bunch of tasks and use a special hash map to detect racy access to the various internal data structures of JvmManager. (Regression test for MAPREDUCE-2224)
+
+ */
+
+@Test public void testForRaces() throws Exception {
+
+  JvmManagerForType mapJvmManager=jvmManager.getJvmManagerForType(TaskType.MAP);
+
+  mapJvmManager.jvmToRunningTask=new RaceHashMap<JVMId,TaskRunner>();
+
+  mapJvmManager.runningTaskToJvm=new RaceHashMap<TaskRunner,JVMId>();
+
+  mapJvmManager.jvmIdToRunner=new RaceHashMap<JVMId,JvmRunner>();
+
+  final ExecutorService exec=Executors.newFixedThreadPool(MAP_SLOTS);
+
+  final AtomicReference<Throwable> failed=new AtomicReference<Throwable>();
+
+  for (int i=0; i < MAP_SLOTS * 5; i++) {
+
+    JobConf taskConf=new JobConf(ttConf);
+
+    TaskAttemptID attemptID=new TaskAttemptID("test",0,TaskType.MAP,i,0);
+
+    Task task=new MapTask(null,attemptID,i,null,1);
+
+    task.setConf(taskConf);
+
+    TaskInProgress tip=tt.new TaskInProgress(task,taskConf);
+
+    File pidFile=new File(TEST_DIR,"pid_" + i);
+
+    final TaskRunner taskRunner=task.createRunner(tt,tip);
+
+    final Vector<String> vargs=new Vector<String>(2);
+
+    vargs.add(writeScript("script_" + i,"echo hi\n",pidFile).getAbsolutePath());
+
+    final File workDir=new File(TEST_DIR,"work_" + i);
+
+    workDir.mkdir();
+
+    final File stdout=new File(TEST_DIR,"stdout_" + i);
+
+    final File stderr=new File(TEST_DIR,"stderr_" + i);
+
+    Runnable launcher=new Runnable(){
+
+      public void run(){
+
+        try {
+
+          taskRunner.launchJvmAndWait(null,vargs,stdout,stderr,100,workDir,null);
+
+        }
+
+ catch (        Throwable t) {
+
+          failed.compareAndSet(null,t);
+
+          exec.shutdownNow();
+
+          return;
+
+        }
+
+      }
+
+    }
+
+;
+
+    exec.submit(launcher);
+
+  }
+
+  exec.shutdown();
+
+  exec.awaitTermination(3,TimeUnit.MINUTES);
+
+  if (failed.get() != null) {
+
+    throw new RuntimeException(failed.get());
+
+  }
+
+}
+
+Location: TestJvmManager.java
+
+Content: 
+
+/** 
+
+ * Tests the jvm kill from JvmRunner and JvmManager simultaneously. Starts a process, which sleeps for 60 seconds, in a thread. Calls JvmRunner.kill() in a thread. Also calls JvmManager.taskKilled(). Makes sure that the jvm is killed and JvmManager could launch another task properly.
+
+ * @throws Exception
+
+ */
+
+@Test public void testJvmKill() throws Exception {
+
+  JvmManagerForType mapJvmManager=jvmManager.getJvmManagerForType(TaskType.MAP);
+
+  JobConf taskConf=new JobConf(ttConf);
+
+  TaskAttemptID attemptID=new TaskAttemptID("test",0,TaskType.MAP,0,0);
+
+  Task task=new MapTask(null,attemptID,0,null,1);
+
+  task.setConf(taskConf);
+
+  TaskInProgress tip=tt.new TaskInProgress(task,taskConf);
+
+  File pidFile=new File(TEST_DIR,"pid");
+
+  final TaskRunner taskRunner=task.createRunner(tt,tip);
+
+  final Vector<String> vargs=new Vector<String>(2);
+
+  vargs.add(writeScript("SLEEP","sleep 60\n",pidFile).getAbsolutePath());
+
+  final File workDir=new File(TEST_DIR,"work");
+
+  workDir.mkdir();
+
+  final File stdout=new File(TEST_DIR,"stdout");
+
+  final File stderr=new File(TEST_DIR,"stderr");
+
+  Thread launcher=new Thread(){
+
+    public void run(){
+
+      try {
+
+        taskRunner.launchJvmAndWait(null,vargs,stdout,stderr,100,workDir,null);
+
+      }
+
+ catch (      InterruptedException e) {
+
+        e.printStackTrace();
+
+        return;
+
+      }
+
+    }
+
+  }
+
+;
+
+  launcher.start();
+
+  for (int i=0; i < 10; i++) {
+
+    if (pidFile.exists()) {
+
+      break;
+
+    }
+
+    UtilsForTests.waitFor(100);
+
+  }
+
+  assertTrue("pidFile is not present",pidFile.exists());
+
+  BufferedReader in=new BufferedReader(new FileReader(pidFile));
+
+  String pid=in.readLine();
+
+  in.close();
+
+  JVMId jvmid=mapJvmManager.runningTaskToJvm.get(taskRunner);
+
+  jvmManager.setPidToJvm(jvmid,pid);
+
+  final JvmRunner jvmRunner=mapJvmManager.jvmIdToRunner.get(jvmid);
+
+  Thread killer=new Thread(){
+
+    public void run(){
+
+      jvmRunner.kill();
+
+    }
+
+  }
+
+;
+
+  killer.start();
+
+  Thread.sleep(100);
+
+  taskRunner.kill();
+
+  assertTrue(jvmRunner.killed);
+
+  attemptID=new TaskAttemptID("test",0,TaskType.MAP,0,1);
+
+  task=new MapTask(null,attemptID,0,null,1);
+
+  task.setConf(taskConf);
+
+  tip=tt.new TaskInProgress(task,taskConf);
+
+  TaskRunner taskRunner2=task.createRunner(tt,tip);
+
+  Vector<String> vargs2=new Vector<String>(1);
+
+  vargs2.add(writeScript("LS","ls",pidFile).getAbsolutePath());
+
+  File workDir2=new File(TEST_DIR,"work2");
+
+  workDir.mkdir();
+
+  File stdout2=new File(TEST_DIR,"stdout2");
+
+  File stderr2=new File(TEST_DIR,"stderr2");
+
+  taskRunner2.launchJvmAndWait(null,vargs2,stdout2,stderr2,100,workDir2,null);
+
+  killer.join();
+
+  jvmRunner.join();
+
+  launcher.join();
+
+}
+
+Location: TestJvmManager.java
+
+Content: 
+
+public TestJvmManager() throws Exception {
+
+  tt=new TaskTracker();
+
+  ttConf=new JobConf();
+
+  ttConf.setLong(TTConfig.TT_SLEEP_TIME_BEFORE_SIG_KILL,2000);
+
+  tt.setConf(ttConf);
+
+  tt.setMaxMapSlots(MAP_SLOTS);
+
+  tt.setMaxReduceSlots(REDUCE_SLOTS);
+
+  tt.setTaskController(new DefaultTaskController());
+
+  jvmManager=new JvmManager(tt);
+
+  tt.setJvmManagerInstance(jvmManager);
+
+}
+
+Location: TestJvmManager.java
+
+Content: 
+
+private File writeScript(String fileName,String cmd,File pidFile) throws IOException {
+
+  File script=new File(TEST_DIR,fileName);
+
+  FileOutputStream out=new FileOutputStream(script);
+
+  out.write(("echo $$ >" + pidFile.toString() + ";").getBytes());
+
+  out.write(("trap '' 15\n").getBytes());
+
+  out.write(cmd.getBytes());
+
+  out.close();
+
+  script.setExecutable(true);
+
+  return script;
+
+}
+

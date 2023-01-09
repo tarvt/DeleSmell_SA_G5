@@ -1,0 +1,1118 @@
+Location: Transfer.java
+
+Content: 
+
+private boolean CatalogToSelect(){
+
+  Vector result=null;
+
+  try {
+
+    lTable.removeAll();
+
+    if (iSelectionStep == Transfer.SELECT_SOURCE_CATALOG) {
+
+      result=sourceDb.getCatalog();
+
+    }
+
+ else     if (iSelectionStep == Transfer.SELECT_DEST_CATALOG) {
+
+      result=targetDb.getCatalog();
+
+    }
+
+ else {
+
+      hongshuai();
+
+      cleanup();
+
+      fMain.dispose();
+
+      if (bMustExit) {
+
+        System.exit(0);
+
+      }
+
+    }
+
+    if (result.size() > 1) {
+
+      lTable.setMultipleMode(true);
+
+      if (iSelectionStep == Transfer.SELECT_SOURCE_CATALOG) {
+
+        bStart.setLabel("Select Catalog: Source");
+
+      }
+
+ else {
+
+        bStart.setLabel("Select Catalog: Destination");
+
+      }
+
+      bStart.invalidate();
+
+      bStart.setEnabled(true);
+
+      for (Enumeration e=result.elements(); e.hasMoreElements(); ) {
+
+        lTable.add(e.nextElement().toString());
+
+      }
+
+      lTable.repaint();
+
+      trace("Select correct Catalog");
+
+    }
+
+ else {
+
+      if (result.size() == 1) {
+
+        if (iSelectionStep == Transfer.SELECT_SOURCE_CATALOG) {
+
+          sSourceCatalog=(String)result.firstElement();
+
+          sSourceSchemas=null;
+
+        }
+
+ else {
+
+          sDestCatalog=(String)result.firstElement();
+
+          sDestSchema=null;
+
+        }
+
+      }
+
+ else {
+
+        if (iSelectionStep == Transfer.SELECT_SOURCE_CATALOG) {
+
+          sSourceCatalog=null;
+
+          sSourceSchemas=null;
+
+        }
+
+ else {
+
+          sDestCatalog=null;
+
+          sDestSchema=null;
+
+        }
+
+      }
+
+      if ((iSelectionStep == Transfer.SELECT_DEST_CATALOG) && (sDestCatalog != null)) {
+
+        try {
+
+          targetDb.setCatalog(sDestCatalog);
+
+        }
+
+ catch (        Exception ex) {
+
+          trace("Catalog " + sSourceCatalog + " could not be selected in the target database");
+
+          sSourceCatalog=null;
+
+        }
+
+      }
+
+      iSelectionStep++;
+
+      ProcessNextStep();
+
+      return false;
+
+    }
+
+  }
+
+ catch (  Exception exp) {
+
+    lTable.removeAll();
+
+    trace("Exception reading catalog: " + exp);
+
+    exp.printStackTrace();
+
+  }
+
+  return (lTable.getItemCount() > 0);
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+private void cleanup(){
+
+  try {
+
+    if (sourceDb != null) {
+
+      sourceDb.close();
+
+    }
+
+    if (targetDb != null) {
+
+      targetDb.close();
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ * @param center
+
+ */
+
+private Panel createBorderPanel(Component center){
+
+  Panel p=new Panel();
+
+  p.setBackground(SystemColor.control);
+
+  p.setLayout(new BorderLayout());
+
+  p.add("Center",center);
+
+  p.add("South",createLabel(""));
+
+  p.add("East",createLabel(""));
+
+  p.add("West",createLabel(""));
+
+  p.setBackground(SystemColor.control);
+
+  return p;
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ * @param t
+
+ */
+
+private void displayTable(TransferTable t){
+
+  tCurrent=t;
+
+  if (t == null) {
+
+    return;
+
+  }
+
+  tSourceTable.setText(t.Stmts.sSourceTable);
+
+  tDestTable.setText(t.Stmts.sDestTable);
+
+  tDestDrop.setText(t.Stmts.sDestDrop);
+
+  tDestCreateIndex.setText(t.Stmts.sDestCreateIndex);
+
+  tDestDropIndex.setText(t.Stmts.sDestDropIndex);
+
+  tDestCreate.setText(t.Stmts.sDestCreate);
+
+  tDestDelete.setText(t.Stmts.sDestDelete);
+
+  tSourceSelect.setText(t.Stmts.sSourceSelect);
+
+  tDestInsert.setText(t.Stmts.sDestInsert);
+
+  tDestAlter.setText(t.Stmts.sDestAlter);
+
+  cTransfer.setState(t.Stmts.bTransfer);
+
+  cDrop.setState(t.Stmts.bDrop);
+
+  cCreate.setState(t.Stmts.bCreate);
+
+  cDropIndex.setState(t.Stmts.bDropIndex);
+
+  cCreateIndex.setState(t.Stmts.bCreateIndex);
+
+  cDelete.setState(t.Stmts.bDelete);
+
+  cInsert.setState(t.Stmts.bInsert);
+
+  cAlter.setState(t.Stmts.bAlter);
+
+  cFKForced.setState(t.Stmts.bFKForced);
+
+  cIdxForced.setState(t.Stmts.bIdxForced);
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+protected void exit(){
+
+  cleanup();
+
+  fMain.dispose();
+
+  if (bMustExit) {
+
+    System.exit(0);
+
+  }
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+private void LoadPrefs(String f){
+
+  TransferTable t;
+
+  trace("Parsing Settings file");
+
+  bStart.setEnabled(false);
+
+  if (iTransferMode == TRFM_TRANSFER) {
+
+    bContinue.setEnabled(false);
+
+  }
+
+  tTable=TransferCommon.loadPrefs(f,sourceDb,targetDb,this);
+
+  iSelectionStep=SELECT_SOURCE_TABLES;
+
+  lTable.removeAll();
+
+  for (int i=0; i < tTable.size(); i++) {
+
+    t=(TransferTable)tTable.elementAt(i);
+
+    lTable.add(t.Stmts.sSourceTable);
+
+  }
+
+  t=(TransferTable)tTable.elementAt(0);
+
+  displayTable(t);
+
+  lTable.select(0);
+
+  updateEnabled(true);
+
+  lTable.invalidate();
+
+  if (iTransferMode == TRFM_TRANSFER) {
+
+    bStart.setLabel("Start Transfer");
+
+    trace("Edit definitions and press [Start Transfer]");
+
+  }
+
+ else   if (iTransferMode == TRFM_DUMP) {
+
+    bStart.setLabel("Start Dump");
+
+    trace("Edit definitions and press [Start Dump]");
+
+  }
+
+ else   if (iTransferMode == TRFM_RESTORE) {
+
+    bStart.setLabel("Start Restore");
+
+    trace("Edit definitions and press [Start Restore]");
+
+  }
+
+  bStart.invalidate();
+
+  if (iTransferMode == TRFM_TRANSFER) {
+
+    bContinue.setEnabled(false);
+
+  }
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+/** 
+
+ * Method ProcessNextStep
+
+ */
+
+private void ProcessNextStep(){
+
+switch (iSelectionStep) {
+
+case SELECT_SOURCE_CATALOG:
+
+case SELECT_DEST_CATALOG:
+
+    if (CatalogToSelect()) {
+
+      fMain.show();
+
+      return;
+
+    }
+
+  break;
+
+case SELECT_DEST_SCHEMA:
+
+case SELECT_SOURCE_SCHEMA:
+
+if (SchemaToSelect()) {
+
+  fMain.show();
+
+  return;
+
+}
+
+break;
+
+case SELECT_SOURCE_TABLES:
+
+if (iTransferMode == TRFM_TRANSFER) {
+
+bStart.setLabel("Start Transfer");
+
+}
+
+ else if (iTransferMode == TRFM_DUMP) {
+
+bStart.setLabel("Start Dump");
+
+}
+
+ else if (iTransferMode == TRFM_RESTORE) {
+
+bStart.setLabel("Start Restore");
+
+}
+
+bStart.invalidate();
+
+bStart.setEnabled(false);
+
+lTable.setMultipleMode(false);
+
+RefreshMainDisplay();
+
+break;
+
+default :
+
+break;
+
+}
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+private void RefreshMainDisplay(){
+
+  lTable.removeAll();
+
+  lTable.repaint();
+
+  try {
+
+    tTable=sourceDb.getTables(sSourceCatalog,sSourceSchemas);
+
+    for (int i=0; i < tTable.size(); i++) {
+
+      TransferTable t=(TransferTable)tTable.elementAt(i);
+
+      t.setDest(sDestSchema,targetDb);
+
+      t.extractTableStructure(sourceDb,targetDb);
+
+      lTable.add(t.Stmts.sSourceTable);
+
+      lTable.select(i);
+
+      displayTable(t);
+
+    }
+
+    bStart.setEnabled(true);
+
+    if (iTransferMode == TRFM_TRANSFER) {
+
+      trace("Edit definitions and press [Start Transfer]");
+
+    }
+
+ else     if (iTransferMode == TRFM_DUMP) {
+
+      trace("Edit definitions and press [Start Dump]");
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    trace("Exception reading source tables: " + e);
+
+    e.printStackTrace();
+
+  }
+
+  fMain.show();
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+private void SavePrefs(String f){
+
+  hongshuai();
+
+  if (tCurrent == null) {
+
+    return;
+
+  }
+
+  TransferTable t=tCurrent;
+
+  t.Stmts.sSourceTable=tSourceTable.getText();
+
+  t.Stmts.sDestTable=tDestTable.getText();
+
+  t.Stmts.sDestDrop=tDestDrop.getText();
+
+  t.Stmts.sDestCreateIndex=tDestCreateIndex.getText();
+
+  t.Stmts.sDestDropIndex=tDestDropIndex.getText();
+
+  t.Stmts.sDestCreate=tDestCreate.getText();
+
+  t.Stmts.sDestDelete=tDestDelete.getText();
+
+  t.Stmts.sSourceSelect=tSourceSelect.getText();
+
+  t.Stmts.sDestInsert=tDestInsert.getText();
+
+  t.Stmts.sDestAlter=tDestAlter.getText();
+
+  t.Stmts.bTransfer=cTransfer.getState();
+
+  t.Stmts.bDrop=cDrop.getState();
+
+  t.Stmts.bCreate=cCreate.getState();
+
+  t.Stmts.bDelete=cDelete.getState();
+
+  t.Stmts.bInsert=cInsert.getState();
+
+  t.Stmts.bAlter=cAlter.getState();
+
+  t.Stmts.bCreateIndex=cCreateIndex.getState();
+
+  t.Stmts.bDropIndex=cDropIndex.getState();
+
+  if (!t.Stmts.bTransfer) {
+
+    t.Stmts.bInsert=false;
+
+    cInsert.setState(false);
+
+  }
+
+  boolean reparsetable=((t.Stmts.bFKForced != cFKForced.getState()) || (t.Stmts.bIdxForced != cIdxForced.getState()));
+
+  t.Stmts.bFKForced=cFKForced.getState();
+
+  t.Stmts.bIdxForced=cIdxForced.getState();
+
+  if (reparsetable) {
+
+    try {
+
+      sourceDb.getTableStructure(t,targetDb);
+
+    }
+
+ catch (    Exception e) {
+
+      trace("Exception reading source tables: " + e);
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+  TransferCommon.savePrefs(f,sourceDb,targetDb,this,tTable);
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+private boolean SchemaToSelect(){
+
+  Vector result=null;
+
+  try {
+
+    lTable.removeAll();
+
+    if (iSelectionStep == Transfer.SELECT_SOURCE_SCHEMA) {
+
+      result=sourceDb.getSchemas();
+
+    }
+
+ else     if (iSelectionStep == Transfer.SELECT_DEST_SCHEMA) {
+
+      result=targetDb.getSchemas();
+
+    }
+
+ else {
+
+      hongshuai();
+
+      cleanup();
+
+      fMain.dispose();
+
+      if (bMustExit) {
+
+        System.exit(0);
+
+      }
+
+    }
+
+    if (result.size() > 1) {
+
+      lTable.setMultipleMode(true);
+
+      if (iSelectionStep == Transfer.SELECT_SOURCE_SCHEMA) {
+
+        bStart.setLabel("Select Schema: Source");
+
+      }
+
+ else {
+
+        bStart.setLabel("Select Schema: Destination");
+
+      }
+
+      bStart.invalidate();
+
+      bStart.setEnabled(true);
+
+      for (Enumeration e=result.elements(); e.hasMoreElements(); ) {
+
+        lTable.add(e.nextElement().toString());
+
+      }
+
+      lTable.repaint();
+
+      trace("Select correct Schema or load Settings file");
+
+    }
+
+ else {
+
+      if (result.size() == 1) {
+
+        if (iSelectionStep == Transfer.SELECT_SOURCE_SCHEMA) {
+
+          sSourceSchemas=new String[1];
+
+          sSourceSchemas[0]=(String)result.firstElement();
+
+        }
+
+ else {
+
+          sDestSchema=(String)result.firstElement();
+
+        }
+
+      }
+
+ else {
+
+        if (iSelectionStep == Transfer.SELECT_SOURCE_SCHEMA) {
+
+          sSourceSchemas=null;
+
+        }
+
+ else {
+
+          sDestSchema=null;
+
+        }
+
+      }
+
+      if (iTransferMode == TRFM_DUMP) {
+
+        iSelectionStep=Transfer.SELECT_SOURCE_TABLES;
+
+      }
+
+ else {
+
+        iSelectionStep++;
+
+      }
+
+      ProcessNextStep();
+
+      return false;
+
+    }
+
+  }
+
+ catch (  Exception exp) {
+
+    lTable.removeAll();
+
+    trace("Exception reading schemas: " + exp);
+
+    exp.printStackTrace();
+
+  }
+
+  return (lTable.getItemCount() > 0);
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ * @param s
+
+ */
+
+public void trace(String s){
+
+  if ((s != null) && !s.equals("")) {
+
+    tMessage.setText(s);
+
+    if (TRACE) {
+
+      System.out.println(s);
+
+    }
+
+  }
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+/** 
+
+ * Method declaration
+
+ * @param and
+
+ */
+
+private void updateEnabled(boolean and){
+
+  boolean b=cTransfer.getState();
+
+  tDestTable.setEnabled(and && b);
+
+  tDestDrop.setEnabled(and && b && cDrop.getState());
+
+  tDestCreate.setEnabled(and && b && cCreate.getState());
+
+  tDestDelete.setEnabled(and && b && cDelete.getState());
+
+  tDestCreateIndex.setEnabled(and && b && cCreateIndex.getState());
+
+  tDestDropIndex.setEnabled(and && b && cDropIndex.getState());
+
+  tSourceSelect.setEnabled(and && b);
+
+  tDestInsert.setEnabled(and && b && cInsert.getState());
+
+  tDestAlter.setEnabled(and && b && cAlter.getState());
+
+  cDrop.setEnabled(and && b);
+
+  cCreate.setEnabled(and && b);
+
+  cDelete.setEnabled(and && b);
+
+  cCreateIndex.setEnabled(and && b);
+
+  cDropIndex.setEnabled(and && b);
+
+  cInsert.setEnabled(and && b);
+
+  cAlter.setEnabled(and && b);
+
+  cFKForced.setEnabled(cAlter.getState());
+
+  cIdxForced.setEnabled(cCreateIndex.getState());
+
+  bStart.setEnabled(and);
+
+  if (iTransferMode == TRFM_TRANSFER) {
+
+    bContinue.setEnabled(and);
+
+  }
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+/** 
+
+ * @throws IllegalArgumentException for the obvious reason
+
+ */
+
+public static void work(String[] arg){
+
+  Transfer m=new Transfer();
+
+  m._main(arg);
+
+}
+
+Location: Transfer.java
+
+Content: 
+
+/** 
+
+ * @throws IllegalArgumentException for the obvious reason
+
+ */
+
+void _main(String[] arg){
+
+  iTransferMode=TRFM_TRANSFER;
+
+  if (arg != null) {
+
+    if (arg.length != 1) {
+
+      throw new IllegalArgumentException();
+
+    }
+
+    if ((arg[0].toLowerCase().equals("-r")) || (arg[0].toLowerCase().equals("--restore"))) {
+
+      iTransferMode=TRFM_RESTORE;
+
+    }
+
+ else     if ((arg[0].toLowerCase().equals("-d")) || (arg[0].toLowerCase().equals("--dump"))) {
+
+      iTransferMode=TRFM_DUMP;
+
+    }
+
+ else     if ((arg[0].toLowerCase().equals("-h")) || (arg[0].toLowerCase().equals("--help"))) {
+
+      System.out.println(Transfer.SYNTAX_MSG);
+
+      return;
+
+    }
+
+ else {
+
+      throw new IllegalArgumentException();
+
+    }
+
+  }
+
+  fMain=new Frame("HSQL Transfer Tool");
+
+  imgEmpty=createImage(new MemoryImageSource(2,2,new int[4 * 4],2,2));
+
+  fMain.setIconImage(imgEmpty);
+
+  fMain.addWindowListener(this);
+
+  fMain.setSize(640,480);
+
+  fMain.add("Center",this);
+
+  MenuBar bar=new MenuBar();
+
+  String[] extras={"Insert 10 rows only","Insert 1000 rows only","Insert all rows","-","Load Settings...","Save Settings...","-","Exit"};
+
+  Menu menu=new Menu("Options");
+
+  addMenuItems(menu,extras);
+
+  bar.add(menu);
+
+  fMain.setMenuBar(bar);
+
+  initGUI();
+
+  Dimension d=Toolkit.getDefaultToolkit().getScreenSize();
+
+  Dimension size=fMain.getSize();
+
+  if (d.width >= 640) {
+
+    fMain.setLocation((d.width - size.width) / 2,(d.height - size.height) / 2);
+
+  }
+
+ else {
+
+    fMain.setLocation(0,0);
+
+    fMain.setSize(d);
+
+  }
+
+  fMain.setVisible(true);
+
+  CurrentTransfer=CurrentAlter=0;
+
+  try {
+
+    if ((iTransferMode == TRFM_DUMP) || (iTransferMode == TRFM_TRANSFER)) {
+
+      sourceDb=new TransferDb(ConnectionDialog.createConnection(fMain,"Source Database"),this);
+
+      if (!sourceDb.isConnected()) {
+
+        hongshuai();
+
+        cleanup();
+
+        fMain.dispose();
+
+        if (bMustExit) {
+
+          System.exit(0);
+
+        }
+
+        return;
+
+      }
+
+    }
+
+ else {
+
+      FileDialog f=new FileDialog(fMain,"Restore FileName",FileDialog.LOAD);
+
+      f.show();
+
+      String sFileName=f.getFile();
+
+      String Path=f.getDirectory();
+
+      if ((sFileName == null) || (sFileName.equals(""))) {
+
+        hongshuai();
+
+        cleanup();
+
+        fMain.dispose();
+
+        if (bMustExit) {
+
+          System.exit(0);
+
+        }
+
+        return;
+
+      }
+
+ else {
+
+        sourceDb=new TransferSQLText(Path + sFileName,this);
+
+      }
+
+    }
+
+    if ((iTransferMode == TRFM_RESTORE) || (iTransferMode == TRFM_TRANSFER)) {
+
+      targetDb=new TransferDb(ConnectionDialog.createConnection(fMain,"Target Database"),this);
+
+      if (!targetDb.isConnected()) {
+
+        hongshuai();
+
+        cleanup();
+
+        fMain.dispose();
+
+        if (bMustExit) {
+
+          System.exit(0);
+
+        }
+
+        return;
+
+      }
+
+    }
+
+ else {
+
+      FileDialog f=new FileDialog(fMain,"Dump FileName",FileDialog.SAVE);
+
+      f.show();
+
+      String sFileName=f.getFile();
+
+      String Path=f.getDirectory();
+
+      if ((sFileName == null) || (sFileName.equals(""))) {
+
+        hongshuai();
+
+        cleanup();
+
+        fMain.dispose();
+
+        if (bMustExit) {
+
+          System.exit(0);
+
+        }
+
+        return;
+
+      }
+
+ else {
+
+        targetDb=new TransferSQLText(Path + sFileName,this);
+
+      }
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    hongshuai();
+
+    cleanup();
+
+    fMain.dispose();
+
+    if (bMustExit) {
+
+      System.exit(0);
+
+    }
+
+    e.printStackTrace();
+
+    return;
+
+  }
+
+  if ((iTransferMode == TRFM_DUMP) || (iTransferMode == TRFM_TRANSFER)) {
+
+    iSelectionStep=SELECT_SOURCE_CATALOG;
+
+    sSourceCatalog=null;
+
+  }
+
+ else {
+
+    iSelectionStep=SELECT_DEST_CATALOG;
+
+    sDestCatalog=null;
+
+  }
+
+  ProcessNextStep();
+
+  fMain.show();
+
+  return;
+
+}
+

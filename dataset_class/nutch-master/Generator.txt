@@ -1,0 +1,530 @@
+Location: Generator.java
+
+Content: 
+
+public Path[] generate(Path dbDir,Path segments,int numLists,long topN,long curTime) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Job job=NutchJob.getInstance(getConf());
+
+  Configuration conf=job.getConfiguration();
+
+  boolean filter=conf.getBoolean(GENERATOR_FILTER,true);
+
+  boolean normalise=conf.getBoolean(GENERATOR_NORMALISE,true);
+
+  return generate(dbDir,segments,numLists,topN,curTime,filter,normalise,false,1,null);
+
+}
+
+Location: Generator.java
+
+Content: 
+
+/** 
+
+ * This is an old signature used for compatibility - does not specify whether or not to normalise and set the number of segments to 1
+
+ * @param dbDir Crawl database directory
+
+ * @param segments Segments directory
+
+ * @param numLists Number of reduce tasks
+
+ * @param topN Number of top URLs to be selected
+
+ * @param curTime Current time in milliseconds
+
+ * @param filter whether to apply filtering operation
+
+ * @param force if true, and the target lockfile exists, consider it valid. If falseand the target file exists, throw an IOException.
+
+ * @deprecated since 1.19 use {@link #generate(Path,Path,int,long,long,boolean,boolean,boolean,int,String,String)}or  {@link #generate(Path,Path,int,long,long,boolean,boolean,boolean,int,String)}in the instance that no hostdb is available
+
+ * @throws IOException if an I/O exception occurs.
+
+ * @see LockUtil#createLockFile(Configuration,Path,boolean)
+
+ * @throws InterruptedException if a thread is waiting, sleeping, or otherwise occupied, and the thread is interrupted, either before or  during the activity.
+
+ * @throws ClassNotFoundException if runtime class(es) are not available
+
+ * @return Path to generated segment or null if no entries were selected
+
+ */
+
+@Deprecated public Path[] generate(Path dbDir,Path segments,int numLists,long topN,long curTime,boolean filter,boolean force) throws IOException, InterruptedException, ClassNotFoundException {
+
+  return generate(dbDir,segments,numLists,topN,curTime,filter,true,force,1,null);
+
+}
+
+Location: Generator.java
+
+Content: 
+
+/** 
+
+ * This signature should be used in the instance that no hostdb is available. Generate fetchlists in one or more segments. Whether to filter URLs or not is read from the &quot;generate.filter&quot; property set for the job from command-line. If the property is not found, the URLs are filtered. Same for the normalisation.
+
+ * @param dbDir Crawl database directory
+
+ * @param segments Segments directory
+
+ * @param numLists Number of reduce tasks
+
+ * @param topN Number of top URLs to be selected
+
+ * @param curTime Current time in milliseconds
+
+ * @param filter whether to apply filtering operation
+
+ * @param norm whether to apply normilization operation
+
+ * @param force if true, and the target lockfile exists, consider it valid. If falseand the target file exists, throw an IOException.
+
+ * @param maxNumSegments maximum number of segments to generate
+
+ * @param expr a Jexl expression to use in the Generator job.
+
+ * @see JexlUtil#parseExpression(String)
+
+ * @throws IOException if an I/O exception occurs.
+
+ * @see LockUtil#createLockFile(Configuration,Path,boolean)
+
+ * @throws InterruptedException if a thread is waiting, sleeping, or otherwise occupied, and the thread is interrupted, either before or  during the activity.
+
+ * @throws ClassNotFoundException if runtime class(es) are not available
+
+ * @return Path to generated segment or null if no entries were selected
+
+ */
+
+public Path[] generate(Path dbDir,Path segments,int numLists,long topN,long curTime,boolean filter,boolean norm,boolean force,int maxNumSegments,String expr) throws IOException, InterruptedException, ClassNotFoundException {
+
+  return generate(dbDir,segments,numLists,topN,curTime,filter,true,force,1,expr,null);
+
+}
+
+Location: Generator.java
+
+Content: 
+
+/** 
+
+ * Generate fetchlists in one or more segments. Whether to filter URLs or not is read from the &quot;generate.filter&quot; property set for the job from command-line. If the property is not found, the URLs are filtered. Same for the normalisation.
+
+ * @param dbDir Crawl database directory
+
+ * @param segments Segments directory
+
+ * @param numLists Number of reduce tasks
+
+ * @param topN Number of top URLs to be selected
+
+ * @param curTime Current time in milliseconds
+
+ * @param filter whether to apply filtering operation
+
+ * @param norm whether to apply normilization operation
+
+ * @param force if true, and the target lockfile exists, consider it valid. If falseand the target file exists, throw an IOException.
+
+ * @param maxNumSegments maximum number of segments to generate
+
+ * @param expr a Jexl expression to use in the Generator job.
+
+ * @param hostdb name of a hostdb from which to execute Jexl expressions in a bidto determine the maximum URL count and/or fetch delay per host.
+
+ * @see JexlUtil#parseExpression(String)
+
+ * @throws IOException if an I/O exception occurs.
+
+ * @see LockUtil#createLockFile(Configuration,Path,boolean)
+
+ * @throws InterruptedException if a thread is waiting, sleeping, or otherwise occupied, and the thread is interrupted, either before or  during the activity.
+
+ * @throws ClassNotFoundException if runtime class(es) are not available
+
+ * @return Path to generated segment or null if no entries were selected
+
+ */
+
+public Path[] generate(Path dbDir,Path segments,int numLists,long topN,long curTime,boolean filter,boolean norm,boolean force,int maxNumSegments,String expr,String hostdb) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Path tempDir=new Path(getConf().get("mapreduce.cluster.temp.dir",".") + "/generate-temp-" + java.util.UUID.randomUUID().toString());
+
+  FileSystem fs=tempDir.getFileSystem(getConf());
+
+  Path lock=CrawlDb.lock(getConf(),dbDir,force);
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("Generator: starting at " + sdf.format(start));
+
+  LOG.info("Generator: Selecting best-scoring urls due for fetch.");
+
+  LOG.info("Generator: filtering: " + filter);
+
+  LOG.info("Generator: normalizing: " + norm);
+
+  if (topN != Long.MAX_VALUE) {
+
+    LOG.info("Generator: topN: {}",topN);
+
+  }
+
+  if (expr != null) {
+
+    LOG.info("Generator: expr: {}",expr);
+
+  }
+
+  if (hostdb != null) {
+
+    LOG.info("Generator: hostdb: {}",hostdb);
+
+  }
+
+  Job job=NutchJob.getInstance(getConf());
+
+  job.setJobName("generate: select from " + dbDir);
+
+  Configuration conf=job.getConfiguration();
+
+  if (numLists == -1) {
+
+    numLists=Integer.parseInt(conf.get("mapreduce.job.maps"));
+
+  }
+
+  if ("local".equals(conf.get("mapreduce.framework.name")) && numLists != 1) {
+
+    LOG.info("Generator: running in local mode, generating exactly one partition.");
+
+    numLists=1;
+
+  }
+
+  conf.setLong(GENERATOR_CUR_TIME,curTime);
+
+  long generateTime=System.currentTimeMillis();
+
+  conf.setLong(Nutch.GENERATE_TIME_KEY,generateTime);
+
+  conf.setLong(GENERATOR_TOP_N,topN);
+
+  conf.setBoolean(GENERATOR_FILTER,filter);
+
+  conf.setBoolean(GENERATOR_NORMALISE,norm);
+
+  conf.setInt(GENERATOR_MAX_NUM_SEGMENTS,maxNumSegments);
+
+  if (expr != null) {
+
+    conf.set(GENERATOR_EXPR,expr);
+
+  }
+
+  if (hostdb != null) {
+
+    conf.set(GENERATOR_HOSTDB,hostdb);
+
+  }
+
+  FileInputFormat.addInputPath(job,new Path(dbDir,CrawlDb.CURRENT_NAME));
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setJarByClass(Selector.class);
+
+  job.setMapperClass(SelectorMapper.class);
+
+  job.setPartitionerClass(Selector.class);
+
+  job.setReducerClass(SelectorReducer.class);
+
+  FileOutputFormat.setOutputPath(job,tempDir);
+
+  job.setOutputKeyClass(FloatWritable.class);
+
+  job.setSortComparatorClass(DecreasingFloatComparator.class);
+
+  job.setOutputValueClass(SelectorEntry.class);
+
+  MultipleOutputs.addNamedOutput(job,"sequenceFiles",SequenceFileOutputFormat.class,FloatWritable.class,SelectorEntry.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Generator job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      NutchJob.cleanupAfterFailure(tempDir,lock,fs);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("Generator job failed: {}",e.getMessage());
+
+    NutchJob.cleanupAfterFailure(tempDir,lock,fs);
+
+    throw e;
+
+  }
+
+  LOG.info("Generator: number of items rejected during selection:");
+
+  for (  Counter counter : job.getCounters().getGroup("Generator")) {
+
+    LOG.info("Generator: {}  {}",String.format(Locale.ROOT,"%6d",counter.getValue()),counter.getName());
+
+  }
+
+  if (!getConf().getBoolean(GENERATE_UPDATE_CRAWLDB,false)) {
+
+    LockUtil.removeLockFile(getConf(),lock);
+
+    lock=null;
+
+  }
+
+  List<Path> generatedSegments=new ArrayList<>();
+
+  FileStatus[] status=fs.listStatus(tempDir);
+
+  try {
+
+    for (    FileStatus stat : status) {
+
+      Path subfetchlist=stat.getPath();
+
+      if (!subfetchlist.getName().startsWith("fetchlist-"))       continue;
+
+      Path newSeg=partitionSegment(segments,subfetchlist,numLists);
+
+      generatedSegments.add(newSeg);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.warn("Generator: exception while partitioning segments, exiting ...");
+
+    NutchJob.cleanupAfterFailure(tempDir,lock,fs);
+
+    return null;
+
+  }
+
+  if (generatedSegments.size() == 0) {
+
+    LOG.warn("Generator: 0 records selected for fetching, exiting ...");
+
+    NutchJob.cleanupAfterFailure(tempDir,lock,fs);
+
+    return null;
+
+  }
+
+  if (getConf().getBoolean(GENERATE_UPDATE_CRAWLDB,false)) {
+
+    Path tempDir2=new Path(dbDir,"generate-temp-" + java.util.UUID.randomUUID().toString());
+
+    job=NutchJob.getInstance(getConf());
+
+    job.setJobName("generate: updatedb " + dbDir);
+
+    job.getConfiguration().setLong(Nutch.GENERATE_TIME_KEY,generateTime);
+
+    for (    Path segmpaths : generatedSegments) {
+
+      Path subGenDir=new Path(segmpaths,CrawlDatum.GENERATE_DIR_NAME);
+
+      FileInputFormat.addInputPath(job,subGenDir);
+
+    }
+
+    FileInputFormat.addInputPath(job,new Path(dbDir,CrawlDb.CURRENT_NAME));
+
+    job.setInputFormatClass(SequenceFileInputFormat.class);
+
+    job.setMapperClass(CrawlDbUpdater.CrawlDbUpdateMapper.class);
+
+    job.setReducerClass(CrawlDbUpdater.CrawlDbUpdateReducer.class);
+
+    job.setJarByClass(CrawlDbUpdater.class);
+
+    job.setOutputFormatClass(MapFileOutputFormat.class);
+
+    job.setOutputKeyClass(Text.class);
+
+    job.setOutputValueClass(CrawlDatum.class);
+
+    FileOutputFormat.setOutputPath(job,tempDir2);
+
+    try {
+
+      boolean success=job.waitForCompletion(true);
+
+      if (!success) {
+
+        String message="Generator job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+        LOG.error(message);
+
+        NutchJob.cleanupAfterFailure(tempDir,lock,fs);
+
+        NutchJob.cleanupAfterFailure(tempDir2,lock,fs);
+
+        throw new RuntimeException(message);
+
+      }
+
+      CrawlDb.install(job,dbDir);
+
+    }
+
+ catch (    IOException|InterruptedException|ClassNotFoundException e) {
+
+      LOG.error("Generator job failed: {}",e.getMessage());
+
+      NutchJob.cleanupAfterFailure(tempDir,lock,fs);
+
+      NutchJob.cleanupAfterFailure(tempDir2,lock,fs);
+
+      throw e;
+
+    }
+
+    fs.delete(tempDir2,true);
+
+  }
+
+  if (lock != null) {
+
+    LockUtil.removeLockFile(getConf(),lock);
+
+  }
+
+  fs.delete(tempDir,true);
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("Generator: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+  Path[] patharray=new Path[generatedSegments.size()];
+
+  return generatedSegments.toArray(patharray);
+
+}
+
+Location: Generator.java
+
+Content: 
+
+public Generator(){
+
+}
+
+Location: Generator.java
+
+Content: 
+
+public Generator(Configuration conf){
+
+  setConf(conf);
+
+}
+
+Location: Generator.java
+
+Content: 
+
+private Path partitionSegment(Path segmentsDir,Path inputDir,int numLists) throws IOException, ClassNotFoundException, InterruptedException {
+
+  LOG.info("Generator: Partitioning selected urls for politeness.");
+
+  Path segment=new Path(segmentsDir,generateSegmentName());
+
+  Path output=new Path(segment,CrawlDatum.GENERATE_DIR_NAME);
+
+  LOG.info("Generator: segment: " + segment);
+
+  Job job=NutchJob.getInstance(getConf());
+
+  job.setJobName("generate: partition " + segment);
+
+  Configuration conf=job.getConfiguration();
+
+  conf.setInt("partition.url.seed",RANDOM.nextInt());
+
+  FileInputFormat.addInputPath(job,inputDir);
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setJarByClass(Generator.class);
+
+  job.setMapperClass(SelectorInverseMapper.class);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(SelectorEntry.class);
+
+  job.setPartitionerClass(URLPartitioner.class);
+
+  job.setReducerClass(PartitionReducer.class);
+
+  job.setNumReduceTasks(numLists);
+
+  FileOutputFormat.setOutputPath(job,output);
+
+  job.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(CrawlDatum.class);
+
+  job.setSortComparatorClass(HashComparator.class);
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Generator job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error(StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+  return segment;
+
+}
+

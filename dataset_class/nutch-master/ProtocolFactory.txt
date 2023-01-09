@@ -1,0 +1,192 @@
+Location: ProtocolFactory.java
+
+Content: 
+
+boolean contains(String what,String where){
+
+  if (where != null) {
+
+    String parts[]=where.split("[, ]");
+
+    for (int i=0; i < parts.length; i++) {
+
+      if (parts[i].equals(what))       return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: ProtocolFactory.java
+
+Content: 
+
+private Extension findExtension(String name,String attribute) throws PluginRuntimeException {
+
+  for (int i=0; i < this.extensionPoint.getExtensions().length; i++) {
+
+    Extension extension=this.extensionPoint.getExtensions()[i];
+
+    if (contains(name,extension.getAttribute(attribute)))     return extension;
+
+  }
+
+  return null;
+
+}
+
+Location: ProtocolFactory.java
+
+Content: 
+
+private Extension getExtensionById(String id){
+
+  Extension[] extensions=this.extensionPoint.getExtensions();
+
+  for (int i=0; i < extensions.length; i++) {
+
+    if (id.equals(extensions[i].getId())) {
+
+      return extensions[i];
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: ProtocolFactory.java
+
+Content: 
+
+/** 
+
+ * @param id protocol plugin ID, e.g., <code>org.apache.nutch.protocol.http</code>
+
+ * @return protocol instance for the given ID
+
+ * @throws PluginRuntimeException if plugin not found or failed to instantiate
+
+ */
+
+public Protocol getProtocolById(String id) throws PluginRuntimeException {
+
+  Extension ext=getExtensionById(id);
+
+  if (ext == null) {
+
+    throw new PluginRuntimeException("ID " + id + " not found");
+
+  }
+
+  return getProtocolInstanceByExtension(ext);
+
+}
+
+Location: ProtocolFactory.java
+
+Content: 
+
+private Protocol getProtocolInstanceByExtension(Extension extension) throws PluginRuntimeException {
+
+  Protocol protocol=null;
+
+  String cacheId=extension.getId();
+
+  ObjectCache objectCache=ObjectCache.get(conf);
+
+synchronized (objectCache) {
+
+    if (!objectCache.hasObject(cacheId)) {
+
+      protocol=(Protocol)extension.getExtensionInstance();
+
+      objectCache.setObject(cacheId,protocol);
+
+    }
+
+    protocol=(Protocol)objectCache.getObject(cacheId);
+
+  }
+
+  return protocol;
+
+}
+
+Location: ProtocolFactory.java
+
+Content: 
+
+public ProtocolFactory(Configuration conf){
+
+  this.conf=conf;
+
+  this.extensionPoint=PluginRepository.get(conf).getExtensionPoint(Protocol.X_POINT_ID);
+
+  if (this.extensionPoint == null) {
+
+    throw new RuntimeException("x-point " + Protocol.X_POINT_ID + " not found.");
+
+  }
+
+  try {
+
+    BufferedReader reader=new BufferedReader(conf.getConfResourceAsReader("host-protocol-mapping.txt"));
+
+    String line;
+
+    String parts[];
+
+    while ((line=reader.readLine()) != null) {
+
+      if (StringUtils.isNotBlank(line) && !line.startsWith("#")) {
+
+        line=line.trim();
+
+        parts=line.split("\t");
+
+        if (parts.length == 2) {
+
+          if (parts[0].indexOf(":") == -1) {
+
+            hostProtocolMapping.put(parts[0].trim(),parts[1].trim());
+
+          }
+
+ else {
+
+            String[] moreParts=parts[0].split(":");
+
+            defaultProtocolImplMapping.put(moreParts[1].trim(),parts[1].trim());
+
+          }
+
+        }
+
+ else {
+
+          LOG.warn("Wrong format of line: {}",line);
+
+          LOG.warn("Expected format: <hostname> <tab> <plugin_id> or protocol:<protocol> <tab> <plugin_id>");
+
+        }
+
+      }
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.error("Unable to read host-protocol-mapping.txt",e);
+
+  }
+
+}
+

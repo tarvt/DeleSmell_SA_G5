@@ -1,0 +1,154 @@
+Location: LinkDumper.java
+
+Content: 
+
+/** 
+
+ * Runs the inverter and merger jobs of the LinkDumper tool to create the url to inlink node database.
+
+ * @param webGraphDb the {@link org.apache.hadoop.fs.Path} to the outputof  {@link org.apache.nutch.scoring.webgraph.WebGraph#createWebGraph(Path,Path[],boolean,boolean)} 
+
+ * @throws IOException if there is a fatal I/O issue at runtime
+
+ * @throws InterruptedException if the Job is interrupted during execution
+
+ * @throws ClassNotFoundException if classes required to run the Job cannot be located
+
+ */
+
+public void dumpLinks(Path webGraphDb) throws IOException, InterruptedException, ClassNotFoundException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("NodeDumper: starting at " + sdf.format(start));
+
+  Configuration conf=getConf();
+
+  FileSystem fs=webGraphDb.getFileSystem(conf);
+
+  Path linkdump=new Path(webGraphDb,DUMP_DIR);
+
+  Path nodeDb=new Path(webGraphDb,WebGraph.NODE_DIR);
+
+  Path outlinkDb=new Path(webGraphDb,WebGraph.OUTLINK_DIR);
+
+  Path tempInverted=new Path(webGraphDb,"inverted-" + Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Job inverter=NutchJob.getInstance(conf);
+
+  inverter.setJobName("LinkDumper: inverter");
+
+  FileInputFormat.addInputPath(inverter,nodeDb);
+
+  FileInputFormat.addInputPath(inverter,outlinkDb);
+
+  inverter.setInputFormatClass(SequenceFileInputFormat.class);
+
+  inverter.setJarByClass(Inverter.class);
+
+  inverter.setMapperClass(Inverter.InvertMapper.class);
+
+  inverter.setReducerClass(Inverter.InvertReducer.class);
+
+  inverter.setMapOutputKeyClass(Text.class);
+
+  inverter.setMapOutputValueClass(ObjectWritable.class);
+
+  inverter.setOutputKeyClass(Text.class);
+
+  inverter.setOutputValueClass(LinkNode.class);
+
+  FileOutputFormat.setOutputPath(inverter,tempInverted);
+
+  inverter.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+  try {
+
+    LOG.info("LinkDumper: running inverter");
+
+    boolean success=inverter.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="LinkDumper inverter job did not succeed, job status:" + inverter.getStatus().getState() + ", reason: "+ inverter.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+    LOG.info("LinkDumper: finished inverter");
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("LinkDumper inverter job failed:",e);
+
+    throw e;
+
+  }
+
+  Job merger=NutchJob.getInstance(conf);
+
+  merger.setJobName("LinkDumper: merger");
+
+  FileInputFormat.addInputPath(merger,tempInverted);
+
+  merger.setJarByClass(Merger.class);
+
+  merger.setInputFormatClass(SequenceFileInputFormat.class);
+
+  merger.setReducerClass(Merger.class);
+
+  merger.setMapOutputKeyClass(Text.class);
+
+  merger.setMapOutputValueClass(LinkNode.class);
+
+  merger.setOutputKeyClass(Text.class);
+
+  merger.setOutputValueClass(LinkNodes.class);
+
+  FileOutputFormat.setOutputPath(merger,linkdump);
+
+  merger.setOutputFormatClass(MapFileOutputFormat.class);
+
+  try {
+
+    LOG.info("LinkDumper: running merger");
+
+    boolean success=merger.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="LinkDumper merger job did not succeed, job status:" + merger.getStatus().getState() + ", reason: "+ merger.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      throw new RuntimeException(message);
+
+    }
+
+    LOG.info("LinkDumper: finished merger");
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.error("LinkDumper merger job failed:",e);
+
+    throw e;
+
+  }
+
+  fs.delete(tempInverted,true);
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("LinkDumper: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+

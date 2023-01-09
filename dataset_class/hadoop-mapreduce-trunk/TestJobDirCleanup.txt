@@ -1,0 +1,142 @@
+Location: TestJobDirCleanup.java
+
+Content: 
+
+private JobID runSleepJob(JobConf conf) throws Exception {
+
+  SleepJob sleep=new SleepJob();
+
+  sleep.setConf(conf);
+
+  Job job=sleep.createJob(1,10,1000,1,10000,1);
+
+  job.waitForCompletion(true);
+
+  return job.getJobID();
+
+}
+
+Location: TestJobDirCleanup.java
+
+Content: 
+
+public void testJobDirCleanup() throws Exception {
+
+  String namenode=null;
+
+  MiniDFSCluster dfs=null;
+
+  MiniMRCluster mr=null;
+
+  FileSystem fileSys=null;
+
+  try {
+
+    final int taskTrackers=10;
+
+    Configuration conf=new Configuration();
+
+    JobConf mrConf=new JobConf();
+
+    mrConf.set(TTConfig.TT_REDUCE_SLOTS,"1");
+
+    dfs=new MiniDFSCluster(conf,1,true,null);
+
+    fileSys=dfs.getFileSystem();
+
+    namenode=fileSys.getUri().toString();
+
+    mr=new MiniMRCluster(10,namenode,3,null,null,mrConf);
+
+    mr.setInlineCleanupThreads();
+
+    JobConf jobConf=mr.createJobConf();
+
+    JobID jobid=runSleepJob(jobConf);
+
+    verifyJobDirCleanup(mr,taskTrackers,jobid);
+
+  }
+
+  finally {
+
+    if (fileSys != null) {
+
+      fileSys.close();
+
+    }
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestJobDirCleanup.java
+
+Content: 
+
+static void verifyJobDirCleanup(MiniMRCluster mr,int numTT,JobID jobid) throws IOException {
+
+  boolean sent=true;
+
+  for (int i=0; i < 100; i++) {
+
+    sent=true;
+
+    for (int j=0; j < numTT; j++) {
+
+      if (mr.getTaskTrackerRunner(j).getTaskTracker().getRunningJob(org.apache.hadoop.mapred.JobID.downgrade(jobid)) != null) {
+
+        sent=false;
+
+        break;
+
+      }
+
+    }
+
+    if (!sent) {
+
+      UtilsForTests.waitFor(100);
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+  assertTrue("KillJobAction not sent for all trackers",sent);
+
+  String user=UserGroupInformation.getCurrentUser().getShortUserName();
+
+  String jobDirStr=TaskTracker.getLocalJobDir(user,jobid.toString());
+
+  for (int i=0; i < numTT; ++i) {
+
+    for (    String localDir : mr.getTaskTrackerLocalDirs(i)) {
+
+      File jobDir=new File(localDir,jobDirStr);
+
+      assertFalse(jobDir + " is not cleaned up.",jobDir.exists());
+
+    }
+
+  }
+
+}
+

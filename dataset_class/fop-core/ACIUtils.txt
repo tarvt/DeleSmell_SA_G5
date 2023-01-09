@@ -1,0 +1,248 @@
+Location: ACIUtils.java
+
+Content: 
+
+private ACIUtils(){
+
+}
+
+Location: ACIUtils.java
+
+Content: 
+
+/** 
+
+ * Dumps the contents of an ACI to System.out. Used for debugging only.
+
+ * @param aci the ACI to dump
+
+ */
+
+public static void dumpAttrs(AttributedCharacterIterator aci){
+
+  aci.first();
+
+  Set<Entry<Attribute,Object>> entries=aci.getAttributes().entrySet();
+
+  for (  Map.Entry<Attribute,Object> entry : entries) {
+
+    if (entry.getValue() != null) {
+
+      System.out.println(entry.getKey() + ": " + entry.getValue());
+
+    }
+
+  }
+
+  int start=aci.getBeginIndex();
+
+  System.out.print("AttrRuns: ");
+
+  while (aci.current() != CharacterIterator.DONE) {
+
+    int end=aci.getRunLimit();
+
+    System.out.print("" + (end - start) + ", ");
+
+    aci.setIndex(end);
+
+    if (start == end) {
+
+      break;
+
+    }
+
+    start=end;
+
+  }
+
+  System.out.println("");
+
+}
+
+Location: ACIUtils.java
+
+Content: 
+
+/** 
+
+ * Tries to find matching fonts in FOP's  {@link FontInfo} instance for fonts used byApache Batik. The method inspects the various GVT attributes found in the ACI.
+
+ * @param aci the ACI to find matching fonts for
+
+ * @param fontInfo the font info instance with FOP's fonts
+
+ * @return an array of matching fonts
+
+ */
+
+public static Font[] findFontsForBatikACI(AttributedCharacterIterator aci,FontInfo fontInfo){
+
+  List<Font> fonts=new java.util.ArrayList<Font>();
+
+  @SuppressWarnings("unchecked") List<GVTFontFamily> gvtFonts=(List<GVTFontFamily>)aci.getAttribute(GVTAttributedCharacterIterator.TextAttribute.GVT_FONT_FAMILIES);
+
+  String style=toStyle((Float)aci.getAttribute(TextAttribute.POSTURE));
+
+  int weight=toCSSWeight((Float)aci.getAttribute(TextAttribute.WEIGHT));
+
+  float fontSize=(Float)aci.getAttribute(TextAttribute.SIZE);
+
+  String firstFontFamily=null;
+
+  GVTFont gvtFont=(GVTFont)aci.getAttribute(GVTAttributedCharacterIterator.TextAttribute.GVT_FONT);
+
+  if (gvtFont != null) {
+
+    String gvtFontFamily=gvtFont.getFamilyName();
+
+    if (gvtFont instanceof FOPGVTFont) {
+
+      Font font=((FOPGVTFont)gvtFont).getFont();
+
+      if (LOG.isDebugEnabled()) {
+
+        LOG.debug("Found a font that matches the GVT font: " + gvtFontFamily + ", "+ weight+ ", "+ style+ " -> "+ font);
+
+      }
+
+      fonts.add(font);
+
+    }
+
+    firstFontFamily=gvtFontFamily;
+
+  }
+
+  if (gvtFonts != null) {
+
+    boolean haveInstanceOfSVGFontFamily=false;
+
+    for (    GVTFontFamily fontFamily : gvtFonts) {
+
+      if (fontFamily instanceof SVGFontFamily) {
+
+        haveInstanceOfSVGFontFamily=true;
+
+      }
+
+ else       if (fontFamily instanceof FOPGVTFontFamily) {
+
+        Font font=((FOPGVTFontFamily)fontFamily).deriveFont(fontSize,aci).getFont();
+
+        if (LOG.isDebugEnabled()) {
+
+          LOG.debug("Found a font that matches the GVT font family: " + fontFamily.getFamilyName() + ", "+ weight+ ", "+ style+ " -> "+ font);
+
+        }
+
+        fonts.add(font);
+
+      }
+
+      if (firstFontFamily == null) {
+
+        firstFontFamily=fontFamily.getFamilyName();
+
+      }
+
+    }
+
+    if (fonts.isEmpty() && haveInstanceOfSVGFontFamily) {
+
+      fontInfo.notifyStrokingSVGTextAsShapes(firstFontFamily);
+
+      return null;
+
+    }
+
+  }
+
+  return fonts.isEmpty() ? null : fonts.toArray(new Font[fonts.size()]);
+
+}
+
+Location: ACIUtils.java
+
+Content: 
+
+public static int toCSSWeight(Float weight){
+
+  if (weight == null) {
+
+    return 400;
+
+  }
+
+ else   if (weight <= TextAttribute.WEIGHT_EXTRA_LIGHT) {
+
+    return 100;
+
+  }
+
+ else   if (weight <= TextAttribute.WEIGHT_LIGHT) {
+
+    return 200;
+
+  }
+
+ else   if (weight <= TextAttribute.WEIGHT_DEMILIGHT) {
+
+    return 300;
+
+  }
+
+ else   if (weight <= TextAttribute.WEIGHT_REGULAR) {
+
+    return 400;
+
+  }
+
+ else   if (weight <= TextAttribute.WEIGHT_SEMIBOLD) {
+
+    return 500;
+
+  }
+
+ else   if (weight < TextAttribute.WEIGHT_BOLD) {
+
+    return 600;
+
+  }
+
+ else   if (weight == TextAttribute.WEIGHT_BOLD.floatValue()) {
+
+    return 700;
+
+  }
+
+ else   if (weight <= TextAttribute.WEIGHT_HEAVY) {
+
+    return 800;
+
+  }
+
+ else   if (weight <= TextAttribute.WEIGHT_EXTRABOLD) {
+
+    return 900;
+
+  }
+
+ else {
+
+    return 900;
+
+  }
+
+}
+
+Location: ACIUtils.java
+
+Content: 
+
+public static String toStyle(Float posture){
+
+  return ((posture != null) && (posture > 0.0)) ? Font.STYLE_ITALIC : Font.STYLE_NORMAL;
+
+}
+

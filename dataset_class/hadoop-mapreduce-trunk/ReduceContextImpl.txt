@@ -1,0 +1,238 @@
+Location: ReduceContextImpl.java
+
+Content: 
+
+public KEYIN getCurrentKey(){
+
+  return key;
+
+}
+
+Location: ReduceContextImpl.java
+
+Content: 
+
+@Override public VALUEIN getCurrentValue(){
+
+  return value;
+
+}
+
+Location: ReduceContextImpl.java
+
+Content: 
+
+/** 
+
+ * Iterate through the values for the current key, reusing the same value  object, which is stored in the context.
+
+ * @return the series of values associated with the current key. All of the objects returned directly and indirectly from this method are reused.
+
+ */
+
+public Iterable<VALUEIN> getValues() throws IOException, InterruptedException {
+
+  return iterable;
+
+}
+
+Location: ReduceContextImpl.java
+
+Content: 
+
+/** 
+
+ * Start processing next unique key. 
+
+ */
+
+public boolean nextKey() throws IOException, InterruptedException {
+
+  while (hasMore && nextKeyIsSame) {
+
+    hongshuai();
+
+    if (!hasMore) {
+
+      key=null;
+
+      value=null;
+
+      return false;
+
+    }
+
+    firstValue=!nextKeyIsSame;
+
+    DataInputBuffer nextKey=input.getKey();
+
+    currentRawKey.set(nextKey.getData(),nextKey.getPosition(),nextKey.getLength() - nextKey.getPosition());
+
+    buffer.reset(currentRawKey.getBytes(),0,currentRawKey.getLength());
+
+    key=keyDeserializer.deserialize(key);
+
+    DataInputBuffer nextVal=input.getValue();
+
+    buffer.reset(nextVal.getData(),nextVal.getPosition(),nextVal.getLength());
+
+    value=valueDeserializer.deserialize(value);
+
+    currentKeyLength=nextKey.getLength() - nextKey.getPosition();
+
+    currentValueLength=nextVal.getLength() - nextVal.getPosition();
+
+    if (isMarked) {
+
+      backupStore.write(nextKey,nextVal);
+
+    }
+
+    hasMore=input.next();
+
+    if (hasMore) {
+
+      nextKey=input.getKey();
+
+      nextKeyIsSame=comparator.compare(currentRawKey.getBytes(),0,currentRawKey.getLength(),nextKey.getData(),nextKey.getPosition(),nextKey.getLength() - nextKey.getPosition()) == 0;
+
+    }
+
+ else {
+
+      nextKeyIsSame=false;
+
+    }
+
+    inputValueCounter.increment(1);
+
+  }
+
+  if (hasMore) {
+
+    if (inputKeyCounter != null) {
+
+      inputKeyCounter.increment(1);
+
+    }
+
+    return nextKeyValue();
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: ReduceContextImpl.java
+
+Content: 
+
+/** 
+
+ * Advance to the next key/value pair.
+
+ */
+
+@Override public boolean nextKeyValue() throws IOException, InterruptedException {
+
+  if (!hasMore) {
+
+    key=null;
+
+    value=null;
+
+    return false;
+
+  }
+
+  firstValue=!nextKeyIsSame;
+
+  DataInputBuffer nextKey=input.getKey();
+
+  currentRawKey.set(nextKey.getData(),nextKey.getPosition(),nextKey.getLength() - nextKey.getPosition());
+
+  buffer.reset(currentRawKey.getBytes(),0,currentRawKey.getLength());
+
+  key=keyDeserializer.deserialize(key);
+
+  DataInputBuffer nextVal=input.getValue();
+
+  buffer.reset(nextVal.getData(),nextVal.getPosition(),nextVal.getLength());
+
+  value=valueDeserializer.deserialize(value);
+
+  currentKeyLength=nextKey.getLength() - nextKey.getPosition();
+
+  currentValueLength=nextVal.getLength() - nextVal.getPosition();
+
+  if (isMarked) {
+
+    backupStore.write(nextKey,nextVal);
+
+  }
+
+  hasMore=input.next();
+
+  if (hasMore) {
+
+    nextKey=input.getKey();
+
+    nextKeyIsSame=comparator.compare(currentRawKey.getBytes(),0,currentRawKey.getLength(),nextKey.getData(),nextKey.getPosition(),nextKey.getLength() - nextKey.getPosition()) == 0;
+
+  }
+
+ else {
+
+    nextKeyIsSame=false;
+
+  }
+
+  inputValueCounter.increment(1);
+
+  return true;
+
+}
+
+Location: ReduceContextImpl.java
+
+Content: 
+
+public ReduceContextImpl(Configuration conf,TaskAttemptID taskid,RawKeyValueIterator input,Counter inputKeyCounter,Counter inputValueCounter,RecordWriter<KEYOUT,VALUEOUT> output,OutputCommitter committer,StatusReporter reporter,RawComparator<KEYIN> comparator,Class<KEYIN> keyClass,Class<VALUEIN> valueClass) throws InterruptedException, IOException {
+
+  super(conf,taskid,output,committer,reporter);
+
+  this.input=input;
+
+  this.inputKeyCounter=inputKeyCounter;
+
+  this.inputValueCounter=inputValueCounter;
+
+  this.comparator=comparator;
+
+  this.serializationFactory=new SerializationFactory(conf);
+
+  this.keyDeserializer=serializationFactory.getDeserializer(keyClass);
+
+  this.keyDeserializer.open(buffer);
+
+  this.valueDeserializer=serializationFactory.getDeserializer(valueClass);
+
+  this.valueDeserializer.open(buffer);
+
+  hasMore=input.next();
+
+  this.keyClass=keyClass;
+
+  this.valueClass=valueClass;
+
+  this.conf=conf;
+
+  this.taskid=taskid;
+
+}
+

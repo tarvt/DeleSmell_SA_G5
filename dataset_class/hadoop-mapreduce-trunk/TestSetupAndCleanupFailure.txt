@@ -1,0 +1,284 @@
+Location: TestSetupAndCleanupFailure.java
+
+Content: 
+
+private TaskAttemptID getRunningTaskID(TaskInProgress[] tips){
+
+  TaskAttemptID taskid=null;
+
+  while (taskid == null) {
+
+    for (    TaskInProgress tip : tips) {
+
+      TaskStatus[] statuses=tip.getTaskStatuses();
+
+      for (      TaskStatus status : statuses) {
+
+        if (status.getRunState() == TaskStatus.State.RUNNING) {
+
+          taskid=status.getTaskID();
+
+          break;
+
+        }
+
+      }
+
+      if (taskid != null)       break;
+
+    }
+
+    try {
+
+      Thread.sleep(10);
+
+    }
+
+ catch (    InterruptedException ie) {
+
+    }
+
+  }
+
+  return taskid;
+
+}
+
+Location: TestSetupAndCleanupFailure.java
+
+Content: 
+
+private void killTaskFromCommandLine(RunningJob job,TaskAttemptID taskid,JobTracker jt) throws IOException {
+
+  job.killTask(taskid,false);
+
+  while (jt.getTaskStatus(taskid).getRunState() != TaskStatus.State.KILLED) {
+
+    try {
+
+      Thread.sleep(10);
+
+    }
+
+ catch (    InterruptedException ie) {
+
+    }
+
+  }
+
+}
+
+Location: TestSetupAndCleanupFailure.java
+
+Content: 
+
+private void killTaskWithLostTracker(MiniMRCluster mr,TaskAttemptID taskid){
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  String trackerName=jt.getTaskStatus(taskid).getTaskTracker();
+
+  int trackerID=mr.getTaskTrackerID(trackerName);
+
+  assertTrue(trackerID != -1);
+
+  mr.stopTaskTracker(trackerID);
+
+}
+
+Location: TestSetupAndCleanupFailure.java
+
+Content: 
+
+private RunningJob launchJobWithWaitingSetupAndCleanup(MiniMRCluster mr) throws IOException {
+
+  JobConf jobConf=mr.createJobConf();
+
+  jobConf.setOutputCommitter(CommitterWithLongSetupAndCommit.class);
+
+  RunningJob job=UtilsForTests.runJob(jobConf,inDir,outDir);
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  JobInProgress jip=jt.getJob(job.getID());
+
+  while (!jip.inited()) {
+
+    try {
+
+      Thread.sleep(10);
+
+    }
+
+ catch (    InterruptedException ie) {
+
+    }
+
+  }
+
+  return job;
+
+}
+
+Location: TestSetupAndCleanupFailure.java
+
+Content: 
+
+private void testFailCommitter(Class<? extends OutputCommitter> theClass,JobConf jobConf) throws IOException {
+
+  jobConf.setOutputCommitter(theClass);
+
+  RunningJob job=UtilsForTests.runJob(jobConf,inDir,outDir);
+
+  job.waitForCompletion();
+
+  assertEquals(JobStatus.FAILED,job.getJobState());
+
+}
+
+Location: TestSetupAndCleanupFailure.java
+
+Content: 
+
+/** 
+
+ * Tests setup and cleanup attempts getting killed from command-line  and lost tracker
+
+ * @param mr
+
+ * @param dfs
+
+ * @param commandLineKill if true, test with command-line killelse, test with lost tracker
+
+ * @throws IOException
+
+ */
+
+private void testSetupAndCleanupKill(MiniMRCluster mr,MiniDFSCluster dfs,boolean commandLineKill) throws IOException {
+
+  RunningJob job=launchJobWithWaitingSetupAndCleanup(mr);
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  JobInProgress jip=jt.getJob(job.getID());
+
+  TaskAttemptID setupID=getRunningTaskID(jip.getTasks(TaskType.JOB_SETUP));
+
+  if (commandLineKill) {
+
+    killTaskFromCommandLine(job,setupID,jt);
+
+  }
+
+ else {
+
+    killTaskWithLostTracker(mr,setupID);
+
+  }
+
+  UtilsForTests.writeFile(dfs.getNameNode(),dfs.getFileSystem().getConf(),setupSignalFile,(short)3);
+
+  while (job.reduceProgress() != 1.0f) {
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    InterruptedException ie) {
+
+    }
+
+  }
+
+  TaskAttemptID cleanupID=getRunningTaskID(jip.getTasks(TaskType.JOB_CLEANUP));
+
+  if (commandLineKill) {
+
+    killTaskFromCommandLine(job,cleanupID,jt);
+
+  }
+
+ else {
+
+    killTaskWithLostTracker(mr,cleanupID);
+
+  }
+
+  UtilsForTests.writeFile(dfs.getNameNode(),dfs.getFileSystem().getConf(),cleanupSignalFile,(short)3);
+
+  job.waitForCompletion();
+
+  assertEquals(JobStatus.SUCCEEDED,job.getJobState());
+
+  assertEquals(TaskStatus.State.KILLED,jt.getTaskStatus(setupID).getRunState());
+
+  assertEquals(TaskStatus.State.KILLED,jt.getTaskStatus(cleanupID).getRunState());
+
+}
+
+Location: TestSetupAndCleanupFailure.java
+
+Content: 
+
+public void testWithDFS() throws IOException {
+
+  MiniDFSCluster dfs=null;
+
+  MiniMRCluster mr=null;
+
+  FileSystem fileSys=null;
+
+  try {
+
+    final int taskTrackers=4;
+
+    Configuration conf=new Configuration();
+
+    dfs=new MiniDFSCluster(conf,4,true,null);
+
+    fileSys=dfs.getFileSystem();
+
+    JobConf jtConf=new JobConf();
+
+    jtConf.setInt(TTConfig.TT_MAP_SLOTS,1);
+
+    jtConf.setInt(TTConfig.TT_REDUCE_SLOTS,1);
+
+    jtConf.setLong(JTConfig.JT_TRACKER_EXPIRY_INTERVAL,10 * 1000);
+
+    mr=new MiniMRCluster(taskTrackers,fileSys.getUri().toString(),1,null,null,jtConf);
+
+    testFailCommitter(CommitterWithFailSetup.class,mr.createJobConf());
+
+    testFailCommitter(CommitterWithFailCommit.class,mr.createJobConf());
+
+    testSetupAndCleanupKill(mr,dfs,true);
+
+    fileSys.delete(setupSignalFile,true);
+
+    fileSys.delete(cleanupSignalFile,true);
+
+    testSetupAndCleanupKill(mr,dfs,false);
+
+  }
+
+  finally {
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+

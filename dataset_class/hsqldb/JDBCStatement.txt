@@ -1,0 +1,94 @@
+Location: JDBCStatement.java
+
+Content: 
+
+/** 
+
+ * Internal result producer for JDBCStatement (sqlExecDirect mode). <p>
+
+ * @param sql a character sequence representing the SQL to be executed
+
+ * @param statementRetType int
+
+ * @param generatedKeys int
+
+ * @param generatedIndexes int[]
+
+ * @param generatedNames String[]
+
+ * @throws SQLException when a database access error occurs
+
+ */
+
+private void fetchResult(String sql,int statementRetType,int generatedKeys,int[] generatedIndexes,String[] generatedNames) throws SQLException {
+
+  checkClosed();
+
+  closeResultData();
+
+  if (isEscapeProcessing) {
+
+    sql=connection.nativeSQL(sql);
+
+  }
+
+  resultOut.setPrepareOrExecuteProperties(sql,maxRows,fetchSize,statementRetType,queryTimeout,rsProperties,generatedKeys,generatedIndexes,generatedNames);
+
+  try {
+
+    resultIn=connection.sessionProxy.execute(resultOut);
+
+    performPostExecute();
+
+  }
+
+ catch (  HsqlException e) {
+
+    throw JDBCUtil.sqlException(e);
+
+  }
+
+  if (resultIn.isError()) {
+
+    throw JDBCUtil.sqlException(resultIn);
+
+  }
+
+  if (resultIn.isData()) {
+
+    currentResultSet=new JDBCResultSet(connection,this,resultIn,resultIn.metaData);
+
+  }
+
+ else   if (resultIn.getStatementType() == StatementTypes.RETURN_RESULT) {
+
+    getMoreResults();
+
+  }
+
+}
+
+Location: JDBCStatement.java
+
+Content: 
+
+/** 
+
+ * Constructs a new JDBCStatement with the specified connection and result type.
+
+ * @param c the connection on which this statement will execute
+
+ */
+
+JDBCStatement(JDBCConnection c,int props){
+
+  resultOut=Result.newExecuteDirectRequest();
+
+  connection=c;
+
+  connectionIncarnation=connection.incarnation;
+
+  rsProperties=props;
+
+}
+

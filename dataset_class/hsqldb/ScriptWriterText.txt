@@ -1,0 +1,358 @@
+Location: ScriptWriterText.java
+
+Content: 
+
+protected void finishStream() throws IOException {
+
+  if (isCompressed) {
+
+    ((GZIPOutputStream)fileStreamOut).finish();
+
+  }
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+protected void initBuffers(){
+
+  rowOut=new RowOutputTextLog();
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public ScriptWriterText(Database db,OutputStream outputStream,FileAccess.FileSync descriptor,boolean includeCachedData){
+
+  super(db,outputStream,descriptor,includeCachedData);
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public ScriptWriterText(Database db,String file,boolean includeCachedData,boolean compressed){
+
+  super(db,file,includeCachedData,true,false);
+
+  if (compressed) {
+
+    isCompressed=true;
+
+    try {
+
+      fileStreamOut=new GZIPOutputStream(fileStreamOut);
+
+    }
+
+ catch (    IOException e) {
+
+      throw Error.error(e,ErrorCode.FILE_IO_ERROR,ErrorCode.M_Message_Pair,new Object[]{e.toString(),outFile});
+
+    }
+
+  }
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public ScriptWriterText(Database db,String file,boolean includeCachedData,boolean newFile,boolean isUserScript){
+
+  super(db,file,includeCachedData,newFile,isUserScript);
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeCommitStatement(Session session) throws IOException {
+
+  writeSessionIdAndSchema(session);
+
+  rowOut.reset();
+
+  rowOut.writeBytes(BYTES_COMMIT);
+
+  rowOut.writeBytes(BYTES_LINE_SEP);
+
+  writeRowOutToFile();
+
+  needsSync=true;
+
+  if (writeDelay == 0) {
+
+    sync();
+
+  }
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+protected void writeDataTerm() throws IOException {
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeDeleteStatement(Session session,Table table,Object[] data) throws IOException {
+
+  schemaToLog=table.getName().schema;
+
+  writeSessionIdAndSchema(session);
+
+  rowOut.reset();
+
+  rowOut.setMode(RowOutputTextLog.MODE_DELETE);
+
+  rowOut.writeBytes(BYTES_DELETE_FROM);
+
+  rowOut.writeString(table.getName().statementName);
+
+  rowOut.writeBytes(BYTES_WHERE);
+
+  rowOut.writeData(table.getColumnCount(),table.getColumnTypes(),data,table.columnList,table.getPrimaryKey());
+
+  rowOut.writeBytes(BYTES_LINE_SEP);
+
+  writeRowOutToFile();
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeInsertStatement(Session session,Row row,Table table) throws IOException {
+
+  schemaToLog=table.getName().schema;
+
+  writeRow(session,row,table);
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeLogStatement(Session session,String s) throws IOException {
+
+  if (session != null) {
+
+    schemaToLog=session.currentSchema;
+
+    writeSessionIdAndSchema(session);
+
+  }
+
+  rowOut.reset();
+
+  rowOut.writeString(s);
+
+  rowOut.writeBytes(BYTES_LINE_SEP);
+
+  writeRowOutToFile();
+
+  needsSync=true;
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeOtherStatement(Session session,String s) throws IOException {
+
+  writeLogStatement(session,s);
+
+  if (writeDelay == 0) {
+
+    sync();
+
+  }
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+void writeRowOutToFile() throws IOException {
+
+  if (fileStreamOut == null) {
+
+    return;
+
+  }
+
+synchronized (fileStreamOut) {
+
+    fileStreamOut.write(rowOut.getBuffer(),0,rowOut.size());
+
+    byteCount+=rowOut.size();
+
+    lineCount++;
+
+  }
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeRow(Session session,Row row,Table table) throws IOException {
+
+  schemaToLog=table.getName().schema;
+
+  writeSessionIdAndSchema(session);
+
+  rowOut.reset();
+
+  rowOut.setMode(RowOutputTextLog.MODE_INSERT);
+
+  rowOut.writeBytes(BYTES_INSERT_INTO);
+
+  rowOut.writeString(table.getName().statementName);
+
+  rowOut.writeBytes(BYTES_VALUES);
+
+  rowOut.writeData(row,table.getColumnTypes());
+
+  rowOut.writeBytes(BYTES_TERM);
+
+  rowOut.writeBytes(BYTES_LINE_SEP);
+
+  writeRowOutToFile();
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+private void writeSchemaStatement(HsqlName schema){
+
+  rowOut.writeBytes(BYTES_SCHEMA);
+
+  rowOut.writeString(schema.statementName);
+
+  rowOut.writeBytes(BYTES_LINE_SEP);
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeSequenceStatement(Session session,NumberSequence seq) throws IOException {
+
+  schemaToLog=seq.getName().schema;
+
+  writeSessionIdAndSchema(session);
+
+  rowOut.reset();
+
+  rowOut.writeBytes(BYTES_SEQUENCE);
+
+  rowOut.writeString(seq.getSchemaName().statementName);
+
+  rowOut.writeByte('.');
+
+  rowOut.writeString(seq.getName().statementName);
+
+  rowOut.writeBytes(BYTES_SEQUENCE_MID);
+
+  rowOut.writeLong(seq.peek());
+
+  rowOut.writeBytes(BYTES_LINE_SEP);
+
+  writeRowOutToFile();
+
+  needsSync=true;
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+protected void writeSessionIdAndSchema(Session session) throws IOException {
+
+  if (session == null) {
+
+    return;
+
+  }
+
+  if (session != currentSession) {
+
+    rowOut.reset();
+
+    rowOut.writeBytes(BYTES_C_ID_INIT);
+
+    rowOut.writeLong(session.getId());
+
+    rowOut.writeBytes(BYTES_C_ID_TERM);
+
+    currentSession=session;
+
+    writeRowOutToFile();
+
+  }
+
+  if (schemaToLog != session.loggedSchema) {
+
+    rowOut.reset();
+
+    writeSchemaStatement(schemaToLog);
+
+    session.loggedSchema=schemaToLog;
+
+    writeRowOutToFile();
+
+  }
+
+}
+
+Location: ScriptWriterText.java
+
+Content: 
+
+public void writeTableInit(Table t) throws IOException {
+
+  if (t.isEmpty(currentSession)) {
+
+    return;
+
+  }
+
+  if (!includeTableInit && schemaToLog == currentSession.loggedSchema) {
+
+    return;
+
+  }
+
+  rowOut.reset();
+
+  writeSchemaStatement(t.getName().schema);
+
+  writeRowOutToFile();
+
+  currentSession.loggedSchema=schemaToLog;
+
+}
+

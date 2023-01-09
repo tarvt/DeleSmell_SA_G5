@@ -1,0 +1,1804 @@
+Location: TP.java
+
+Content: 
+
+protected boolean addPhysicalAddressToCache(Address logical_addr,PhysicalAddress physical_addr){
+
+  return addPhysicalAddressToCache(logical_addr,physical_addr,true);
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected boolean addPhysicalAddressToCache(Address logical_addr,PhysicalAddress physical_addr,boolean overwrite){
+
+  return logical_addr != null && physical_addr != null && overwrite ? logical_addr_cache.add(logical_addr,physical_addr) : logical_addr_cache.addIfAbsent(logical_addr,physical_addr);
+
+}
+
+Location: TP.java
+
+Content: 
+
+public AverageMinMax avgBatchSize(){
+
+  return avg_batch_size;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Number of spins before a real lock is acquired") public int bundlerNumSpins(){
+
+  return bundler instanceof RingBufferBundler ? ((RingBufferBundler)bundler).numSpins() : bundler_num_spins;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Sets the number of times a thread spins until a real lock is acquired") public <T extends TP>T bundlerNumSpins(int spins){
+
+  this.bundler_num_spins=spins;
+
+  if (bundler instanceof RingBufferBundler)   ((RingBufferBundler)bundler).numSpins(spins);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Returns stats about the current bundler") public String bundlerStats(){
+
+  Map<String,Object> tmp=bundler != null ? bundler.getStats() : null;
+
+  return tmp != null ? tmp.toString() : "n/a";
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Resets stats of the current bundler") public void bundlerStatsReset(){
+
+  bundler.resetStats();
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="The wait strategy for a RingBuffer") public String bundlerWaitStrategy(){
+
+  return bundler instanceof RingBufferBundler ? ((RingBufferBundler)bundler).waitStrategy() : bundler_wait_strategy;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Sets the wait strategy in the RingBufferBundler. Allowed values are \"spin\", " + "\"yield\", \"park\", \"spin-park\" and \"spin-yield\" or a fully qualified classname") public <T extends TP>T bundlerWaitStrategy(String strategy){
+
+  if (bundler instanceof RingBufferBundler) {
+
+    ((RingBufferBundler)bundler).waitStrategy(strategy);
+
+    this.bundler_wait_strategy=strategy;
+
+  }
+
+ else   this.bundler_wait_strategy=strategy;
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Creates and sets a new bundler. Type has to be either a bundler_type or the fully " + "qualified classname of a Bundler impl. Stops the current bundler (if running)") public <T extends TP>T bundler(String type){
+
+  Bundler new_bundler=createBundler(type);
+
+  String old_bundler_class=null;
+
+  if (bundler != null) {
+
+    bundler.stop();
+
+    old_bundler_class=bundler.getClass().getName();
+
+  }
+
+  new_bundler.init(this);
+
+  new_bundler.start();
+
+  bundler=new_bundler;
+
+  bundler_type=type;
+
+  if (old_bundler_class != null)   log.debug("%s: replaced bundler %s with %s",local_addr,old_bundler_class,bundler.getClass().getName());
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Clears the cache for messages from different clusters") public <T extends TP>T clearDifferentClusterCache(){
+
+  if (suppress_log_different_cluster != null)   suppress_log_different_cluster.getCache().clear();
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Clears the cache for messages from members with different versions") public <T extends TP>T clearDifferentVersionCache(){
+
+  if (suppress_log_different_version != null)   suppress_log_different_version.getCache().clear();
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Clears the cache. <em>Do not use, this is only for unit testing !</em> 
+
+ */
+
+@ManagedOperation(description="Clears the logical address cache; only used for testing") public void clearLogicalAddressCache(){
+
+  logical_addr_cache.clear(true);
+
+  fetchLocalAddresses();
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected Bundler createBundler(String type){
+
+  if (type == null)   throw new IllegalArgumentException("bundler type has to be non-null");
+
+switch (type) {
+
+case "transfer-queue":
+
+case "tq":
+
+    return new TransferQueueBundler(bundler_capacity);
+
+case "simplified-transfer-queue":
+
+case "stq":
+
+  return new SimplifiedTransferQueueBundler(bundler_capacity);
+
+case "sender-sends":
+
+case "ss":
+
+return new SenderSendsBundler();
+
+case "ring-buffer":
+
+case "rb":
+
+return new RingBufferBundler(bundler_capacity).numSpins(bundler_num_spins).waitStrategy(bundler_wait_strategy);
+
+case "ring-buffer-lockless":
+
+case "rbl":
+
+return new RingBufferBundlerLockless(bundler_capacity);
+
+case "ring-buffer-lockless2":
+
+case "rbl2":
+
+return new RingBufferBundlerLockless2(bundler_capacity);
+
+case "no-bundler":
+
+case "nb":
+
+return new NoBundler();
+
+case "async-no-bundler":
+
+case "anb":
+
+return new AsyncNoBundler();
+
+case "ab":
+
+case "alternating-bundler":
+
+return new AlternatingBundler();
+
+case "rqb":
+
+case "rq":
+
+case "remove-queue-bundler":
+
+case "remove-queue":
+
+return new RemoveQueueBundler();
+
+}
+
+try {
+
+Class<Bundler> clazz=Util.loadClass(type,getClass());
+
+return clazz.getDeclaredConstructor().newInstance();
+
+}
+
+ catch (Throwable t) {
+
+log.warn("failed creating instance of bundler %s: %s",type,t);
+
+}
+
+return new TransferQueueBundler(bundler_capacity);
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected DiagnosticsHandler createDiagnosticsHandler(){
+
+  return new DiagnosticsHandler(diagnostics_addr,diagnostics_port,diagnostics_bind_interfaces,diagnostics_ttl,log,getSocketFactory(),getThreadFactory(),diagnostics_passcode).transport(this).setDiagnosticsBindAddress(diagnostics_bind_addr).enableUdp(diag_enable_udp).enableTcp(diag_enable_tcp).setDiagnosticsPortRange(diagnostics_port_range);
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected static ExecutorService createThreadPool(int min_threads,int max_threads,long keep_alive_time,String rejection_policy,BlockingQueue<Runnable> queue,final ThreadFactory factory,Log log,boolean use_fork_join_pool,boolean use_common_fork_join_pool){
+
+  if (use_fork_join_pool) {
+
+    if (use_common_fork_join_pool)     return ForkJoinPool.commonPool();
+
+    int num_cores=Runtime.getRuntime().availableProcessors();
+
+    if (max_threads > num_cores)     log.warn("max_threads (%d) is higher than available cores (%d)",max_threads,num_cores);
+
+    return new ForkJoinPool(max_threads,ForkJoinPool.defaultForkJoinWorkerThreadFactory,null,true);
+
+  }
+
+  ThreadPoolExecutor pool=new ThreadPoolExecutor(min_threads,max_threads,keep_alive_time,TimeUnit.MILLISECONDS,queue,factory);
+
+  RejectedExecutionHandler handler=Util.parseRejectionPolicy(rejection_policy);
+
+  pool.setRejectedExecutionHandler(new ShutdownRejectedExecutionHandler(handler));
+
+  return pool;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T diagEnableTcp(boolean f){
+
+  diag_enable_tcp=f;
+
+  if (diag_handler != null)   diag_handler.enableTcp(f);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T diagEnableUdp(boolean f){
+
+  diag_enable_udp=f;
+
+  if (diag_handler != null)   diag_handler.enableUdp(f);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean diagTcpEnabled(){
+
+  return diag_enable_tcp;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Disables diagnostics and stops DiagnosticsHandler (if running)") public void disableDiagnostics(){
+
+  enable_diagnostics=false;
+
+  stopDiagnostics();
+
+}
+
+Location: TP.java
+
+Content: 
+
+public void doSend(byte[] buf,int offset,int length,Address dest) throws Exception {
+
+  if (stats) {
+
+    msg_stats.incrNumMsgsSent(1);
+
+    msg_stats.incrNumBytesSent(length);
+
+  }
+
+  if (dest == null)   sendMulticast(buf,offset,length);
+
+ else   sendToSingleMember(dest,buf,offset,length);
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="If enabled, the timer will run non-blocking tasks on its own (runner) thread, and " + "not submit them to the thread pool. Otherwise, all tasks are submitted to the thread pool. This attribute is " + "experimental and may be removed without notice.") public <T extends TP>T enableBlockingTimerTasks(boolean flag){
+
+  if (flag != this.timer_handle_non_blocking_tasks) {
+
+    this.timer_handle_non_blocking_tasks=flag;
+
+    timer.setNonBlockingTaskHandling(flag);
+
+  }
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Enables diagnostics and starts DiagnosticsHandler (if not running)") public void enableDiagnostics(){
+
+  enable_diagnostics=true;
+
+  try {
+
+    startDiagnostics();
+
+  }
+
+ catch (  Exception e) {
+
+    log.error(Util.getMessage("FailedStartingDiagnostics"),e);
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Evicts elements in the logical address cache which have expired") public void evictLogicalAddressCache(){
+
+  evictLogicalAddressCache(false);
+
+}
+
+Location: TP.java
+
+Content: 
+
+public void evictLogicalAddressCache(boolean force){
+
+  logical_addr_cache.removeMarkedElements(force);
+
+  fetchLocalAddresses();
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Grabs the local address (or addresses in the shared transport case) and registers them with the physical address in the transport's cache
+
+ */
+
+protected void fetchLocalAddresses(){
+
+  if (local_addr != null)   registerLocalAddress(local_addr);
+
+ else {
+
+    Address addr=(Address)up_prot.up(new Event(Event.GET_LOCAL_ADDRESS));
+
+    local_addr=addr;
+
+    registerLocalAddress(addr);
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void fetchPhysicalAddrs(List<Address> missing){
+
+  long current_time=0;
+
+  boolean do_send=false;
+
+synchronized (this) {
+
+    if (last_discovery_request == 0 || (current_time=timestamp()) - last_discovery_request >= MIN_WAIT_BETWEEN_DISCOVERIES) {
+
+      last_discovery_request=current_time == 0 ? timestamp() : current_time;
+
+      do_send=true;
+
+    }
+
+  }
+
+  if (do_send) {
+
+    missing.removeAll(logical_addr_cache.keySet());
+
+    if (!missing.isEmpty()) {
+
+      Responses rsps=fetchResponsesFromDiscoveryProtocol(missing);
+
+      rsps.done();
+
+    }
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected Responses fetchResponsesFromDiscoveryProtocol(List<Address> missing){
+
+  return (Responses)up_prot.up(new Event(Event.FIND_MBRS,missing));
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected Collection<PhysicalAddress> getAllPhysicalAddressesFromCache(){
+
+  return logical_addr_cache.nonRemovedValues();
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Returns the average batch size of received batches") public String getAvgBatchSize(){
+
+  return avg_batch_size.toString();
+
+}
+
+Location: TP.java
+
+Content: 
+
+public Bundler getBundler(){
+
+  return bundler;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute public int getBundlerBufferSize(){
+
+  if (bundler instanceof TransferQueueBundler)   return ((TransferQueueBundler)bundler).getBufferSize();
+
+  return bundler != null ? bundler.size() : 0;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public int getBundlerCapacity(){
+
+  return bundler_capacity;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Fully qualified classname of bundler") public String getBundlerClass(){
+
+  return bundler != null ? bundler.getClass().getName() : "null";
+
+}
+
+Location: TP.java
+
+Content: 
+
+public AsciiString getClusterNameAscii(){
+
+  return cluster_name;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public DiagnosticsHandler getDiagnosticsHandler(){
+
+  return diag_handler;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Number of messages from members in a different cluster") public int getDifferentClusterMessages(){
+
+  return suppress_log_different_cluster != null ? suppress_log_different_cluster.getCache().size() : 0;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Number of messages from members with a different JGroups version") public int getDifferentVersionMessages(){
+
+  return suppress_log_different_version != null ? suppress_log_different_version.getCache().size() : 0;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public Executor getInternalThreadPool(){
+
+  return internal_pool;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Current number of threads in the internal thread pool") public int getInternalThreadPoolSize(){
+
+  if (internal_pool instanceof ThreadPoolExecutor)   return ((ThreadPoolExecutor)internal_pool).getPoolSize();
+
+  return 0;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Largest number of threads in the internal thread pool") public int getInternalThreadPoolSizeLargest(){
+
+  if (internal_pool instanceof ThreadPoolExecutor)   return ((ThreadPoolExecutor)internal_pool).getLargestPoolSize();
+
+  return 0;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public ThreadFactory getInternalThreadPoolThreadFactory(){
+
+  return internal_thread_factory;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public Object[] getJmxObjects(){
+
+  return new Object[]{msg_stats,msg_processing_policy,bundler};
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="The physical address of the channel") public String getLocalPhysicalAddress(){
+
+  return local_physical_addr != null ? local_physical_addr.printIpAddress() : null;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean getLogDiscardMessagesVersion(){
+
+  return log_discard_msgs_version;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public final int getMaxBundleSize(){
+
+  return max_bundle_size;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public int getMessageProcessingMaxBufferSize(){
+
+  return msg_processing_max_buffer_size;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public MsgStats getMessageStats(){
+
+  return msg_stats;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public long getNumMessagesSent(){
+
+  return msg_stats.getNumMsgsSent();
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Returns the number of live threads in the JVM") public static int getNumThreads(){
+
+  return ManagementFactory.getThreadMXBean().getThreadCount();
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(name="timer_tasks",description="Number of timer tasks queued up for execution") public int getNumTimerTasks(){
+
+  return timer.size();
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected PhysicalAddress getPhysicalAddressFromCache(Address logical_addr){
+
+  return logical_addr != null ? logical_addr_cache.get(logical_addr) : null;
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Names the current thread. Valid values are "pcl": p: include the previous (original) name, e.g. "Incoming thread-1", "UDP ucast receiver" c: include the cluster name, e.g. "MyCluster" l: include the local address of the current member, e.g. "192.168.5.1:5678"
+
+ */
+
+public String getThreadNamingPattern(){
+
+  return thread_naming_pattern;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public Executor getThreadPool(){
+
+  return thread_pool;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public long getThreadPoolKeepAliveTime(){
+
+  return thread_pool_keep_alive_time;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public int getThreadPoolMaxThreads(){
+
+  return thread_pool_max_threads;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public int getThreadPoolMinThreads(){
+
+  return thread_pool_min_threads;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Current number of active threads in the thread pool") public int getThreadPoolSizeActive(){
+
+  if (thread_pool instanceof ThreadPoolExecutor)   return ((ThreadPoolExecutor)thread_pool).getActiveCount();
+
+  if (thread_pool instanceof ForkJoinPool)   return ((ForkJoinPool)thread_pool).getRunningThreadCount();
+
+  return 0;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Largest number of threads in the thread pool") public int getThreadPoolSizeLargest(){
+
+  if (thread_pool instanceof ThreadPoolExecutor)   return ((ThreadPoolExecutor)thread_pool).getLargestPoolSize();
+
+  return 0;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public ThreadFactory getThreadPoolThreadFactory(){
+
+  return thread_factory;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Class of the timer implementation") public String getTimerClass(){
+
+  return timer != null ? timer.getClass().getSimpleName() : "null";
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Number of threads currently in the pool") public int getTimerThreads(){
+
+  return timer.getCurrentThreads();
+
+}
+
+Location: TP.java
+
+Content: 
+
+public TimeService getTimeService(){
+
+  return time_service;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean getUseIpAddresses(){
+
+  return use_ip_addrs;
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void handleMessageBatch(DataInput in,boolean multicast){
+
+  try {
+
+    final MessageBatch[] batches=Util.readMessageBatch(in,multicast);
+
+    final MessageBatch batch=batches[0], oob_batch=batches[1], internal_batch_oob=batches[2], internal_batch=batches[3];
+
+    processBatch(oob_batch,true,false);
+
+    processBatch(batch,false,false);
+
+    processBatch(internal_batch_oob,true,true);
+
+    processBatch(internal_batch,false,true);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(String.format(Util.getMessage("IncomingMsgFailure"),local_addr),t);
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void handleSingleMessage(DataInput in,boolean multicast){
+
+  try {
+
+    Message msg=new Message(false);
+
+    msg.readFrom(in);
+
+    if (!multicast && unicastDestMismatch(msg.getDest()))     return;
+
+    boolean oob=msg.isFlagSet(Message.Flag.OOB), internal=msg.isFlagSet(Message.Flag.INTERNAL);
+
+    msg_processing_policy.process(msg,oob,internal);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error(String.format(Util.getMessage("IncomingMsgFailure"),local_addr),t);
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T incrBatchesSent(int delta){
+
+  if (stats)   msg_stats.incrNumBatchesSent(delta);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean isDiagnosticsEnabled(){
+
+  return enable_diagnostics;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Whether the diagnostics handler is running or not") public boolean isDiagnosticsRunning(){
+
+  return diag_handler != null && diag_handler.isRunning();
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean isDiagUdEnabled(){
+
+  return diag_handler != null && diag_handler.udpEnabled();
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Is the logical_addr_cache reaper task running") public boolean isLogicalAddressCacheReaperRunning(){
+
+  return logical_addr_cache_reaper != null && !logical_addr_cache_reaper.isDone();
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean isMulticastCapable(){
+
+  return supportsMulticasting();
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedAttribute(description="Type of logger used") public static String loggerType(){
+
+  return LogFactory.loggerType();
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void loopback(Message msg,final boolean multicast){
+
+  final Message copy=loopback_copy ? msg.copy() : msg;
+
+  if (is_trace)   log.trace("%s: looping back message %s, headers are %s",local_addr,copy,copy.printHeaders());
+
+  if (!loopback_separate_thread) {
+
+    passMessageUp(copy,null,false,multicast,false);
+
+    return;
+
+  }
+
+  boolean internal=msg.isFlagSet(Message.Flag.INTERNAL);
+
+  boolean oob=msg.isFlagSet(Message.Flag.OOB);
+
+  msg_processing_policy.loopback(msg,oob,internal);
+
+}
+
+Location: TP.java
+
+Content: 
+
+public void passBatchUp(MessageBatch batch,boolean perform_cluster_name_matching,boolean discard_own_mcast){
+
+  if (is_trace)   log.trace("%s: received message batch of %d messages from %s",local_addr,batch.size(),batch.sender());
+
+  if (up_prot == null)   return;
+
+  if (perform_cluster_name_matching && cluster_name != null && !cluster_name.equals(batch.clusterName())) {
+
+    if (log_discard_msgs && log.isWarnEnabled()) {
+
+      Address sender=batch.sender();
+
+      if (suppress_log_different_cluster != null)       suppress_log_different_cluster.log(SuppressLog.Level.warn,sender,suppress_time_different_cluster_warnings,batch.clusterName(),cluster_name,sender);
+
+ else       log.warn(Util.getMessage("BatchDroppedDiffCluster"),batch.clusterName(),cluster_name,sender);
+
+    }
+
+    return;
+
+  }
+
+  if (batch.multicast() && discard_own_mcast && local_addr != null && local_addr.equals(batch.sender()))   return;
+
+  up_prot.up(batch);
+
+}
+
+Location: TP.java
+
+Content: 
+
+public void passMessageUp(Message msg,byte[] cluster_name,boolean perform_cluster_name_matching,boolean multicast,boolean discard_own_mcast){
+
+  if (is_trace)   log.trace("%s: received %s, headers are %s",local_addr,msg,msg.printHeaders());
+
+  if (up_prot == null)   return;
+
+  if (multicast && discard_own_mcast && local_addr != null && local_addr.equals(msg.getSrc()))   return;
+
+  if (perform_cluster_name_matching && this.cluster_name != null && !this.cluster_name.equals(cluster_name)) {
+
+    if (log_discard_msgs && log.isWarnEnabled()) {
+
+      Address sender=msg.getSrc();
+
+      if (suppress_log_different_cluster != null)       suppress_log_different_cluster.log(SuppressLog.Level.warn,sender,suppress_time_different_cluster_warnings,new AsciiString(cluster_name),this.cluster_name,sender);
+
+ else       log.warn(Util.getMessage("MsgDroppedDiffCluster"),new AsciiString(cluster_name),this.cluster_name,sender);
+
+    }
+
+    return;
+
+  }
+
+  up_prot.up(msg);
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Dumps the contents of the logical address cache") public String printLogicalAddressCache(){
+
+  return logical_addr_cache.size() + " elements:\n" + logical_addr_cache.printCache(print_function);
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Prints the contents of the who-has cache") public String printWhoHasCache(){
+
+  return who_has_cache.toString();
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void processBatch(MessageBatch batch,boolean oob,boolean internal){
+
+  try {
+
+    if (batch != null && !batch.isEmpty())     msg_processing_policy.process(batch,oob,internal);
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error("processing batch failed",t);
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Associates the address with the physical address fetched from the cache
+
+ * @param addr
+
+ */
+
+protected void registerLocalAddress(Address addr){
+
+  PhysicalAddress physical_addr=getPhysicalAddress();
+
+  if (physical_addr == null)   return;
+
+  local_physical_addr=physical_addr;
+
+  if (addr != null) {
+
+    if (use_ip_addrs && local_addr instanceof IpAddressUUID)     addPhysicalAddressToCache(addr,(PhysicalAddress)local_addr,true);
+
+ else     addPhysicalAddressToCache(addr,physical_addr,true);
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T registerProbeHandler(DiagnosticsHandler.ProbeHandler handler){
+
+  if (diag_handler != null)   diag_handler.registerProbeHandler(handler);
+
+ else {
+
+synchronized (preregistered_probe_handlers) {
+
+      preregistered_probe_handlers.add(handler);
+
+    }
+
+  }
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Purges cancelled tasks from the timer queue") public void removeCancelledTimerTasks(){
+
+  timer.removeCancelledTasks();
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void removeLogicalAddressFromCache(Address logical_addr){
+
+  if (logical_addr != null) {
+
+    logical_addr_cache.remove(logical_addr);
+
+    fetchLocalAddresses();
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected boolean runInNewThread(Runnable task){
+
+  try {
+
+    Thread thread=thread_factory != null ? thread_factory.newThread(task,"jgroups-temp-thread") : new Thread(task,"jgroups-temp-thread");
+
+    thread.start();
+
+    return true;
+
+  }
+
+ catch (  Throwable t) {
+
+    log.error("failed spawning new thread",t);
+
+    return false;
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Fetches the physical addrs for mbrs and sends the msg to each physical address. Asks discovery for missing members' physical addresses if needed 
+
+ */
+
+protected void sendToMembers(Collection<Address> mbrs,byte[] buf,int offset,int length) throws Exception {
+
+  List<Address> missing=null;
+
+  if (mbrs == null || mbrs.isEmpty())   mbrs=logical_addr_cache.keySet();
+
+  for (  Address mbr : mbrs) {
+
+    PhysicalAddress target=mbr instanceof PhysicalAddress ? (PhysicalAddress)mbr : logical_addr_cache.get(mbr);
+
+    if (target == null) {
+
+      if (missing == null)       missing=new ArrayList<>(mbrs.size());
+
+      missing.add(mbr);
+
+      continue;
+
+    }
+
+    try {
+
+      if (!Objects.equals(local_physical_addr,target))       sendUnicast(target,buf,offset,length);
+
+    }
+
+ catch (    SocketException sock_ex) {
+
+      log.debug(Util.getMessage("FailureSendingToPhysAddr"),local_addr,mbr,sock_ex);
+
+    }
+
+catch (    Throwable t) {
+
+      log.error(Util.getMessage("FailureSendingToPhysAddr"),local_addr,mbr,t);
+
+    }
+
+  }
+
+  if (missing != null)   fetchPhysicalAddrs(missing);
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setBindToAllInterfaces(boolean f){
+
+  this.receive_on_all_interfaces=f;
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Installs a bundler. Needs to be done before the channel is connected 
+
+ */
+
+public <T extends TP>T setBundler(Bundler bundler){
+
+  if (bundler != null)   this.bundler=bundler;
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setDiagnosticsEnabled(boolean f){
+
+  enable_diagnostics=f;
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Sets a  {@link DiagnosticsHandler}. Should be set before the stack is started
+
+ * @param handler
+
+ */
+
+public <T extends TP>T setDiagnosticsHandler(DiagnosticsHandler handler) throws Exception {
+
+  if (handler != null) {
+
+    if (diag_handler != null)     diag_handler.stop();
+
+    diag_handler=handler;
+
+    if (diag_handler != null)     diag_handler.start();
+
+  }
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void setInAllThreadFactories(String cluster_name,Address local_address,String pattern){
+
+  ThreadFactory[] factories={thread_factory,internal_thread_factory};
+
+  for (  ThreadFactory factory : factories) {
+
+    if (pattern != null)     factory.setPattern(pattern);
+
+    if (cluster_name != null)     factory.setClusterName(cluster_name);
+
+    if (local_address != null)     factory.setAddress(local_address.toString());
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setInternalThreadPoolThreadFactory(ThreadFactory factory){
+
+  internal_thread_factory=factory;
+
+  if (internal_pool instanceof ThreadPoolExecutor)   ((ThreadPoolExecutor)internal_pool).setThreadFactory(factory);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setInternalThreadPool(Executor thread_pool){
+
+  if (this.internal_pool != null)   shutdownThreadPool(this.internal_pool);
+
+  this.internal_pool=thread_pool;
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setLogDiscardMessagesVersion(boolean f){
+
+  log_discard_msgs_version=f;
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+@ManagedOperation(description="Changes the message processing policy. The fully qualified name of a class " + "implementing MessageProcessingPolicy needs to be given") public void setMessageProcessingPolicy(String policy){
+
+  if (policy == null)   return;
+
+  if (policy.startsWith("submit")) {
+
+    msg_processing_policy=new SubmitToThreadPool();
+
+    msg_processing_policy.init(this);
+
+    return;
+
+  }
+
+ else   if (policy.startsWith("max")) {
+
+    msg_processing_policy=new MaxOneThreadPerSender();
+
+    msg_processing_policy.init(this);
+
+    return;
+
+  }
+
+  try {
+
+    Class<MessageProcessingPolicy> clazz=Util.loadClass(policy,getClass());
+
+    msg_processing_policy=clazz.getDeclaredConstructor().newInstance();
+
+    message_processing_policy=policy;
+
+    msg_processing_policy.init(this);
+
+  }
+
+ catch (  Exception e) {
+
+    log.error("failed setting message_processing_policy",e);
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * If the sender is null, set our own address. We cannot just go ahead and set the address anyway, as we might be sending a message on behalf of someone else ! E.g. in case of retransmission, when the original sender has crashed, or in a FLUSH protocol when we have to return all unstable messages with the FLUSH_OK response.
+
+ */
+
+protected void setSourceAddress(Message msg){
+
+  if (msg.getSrc() == null && local_addr != null)   msg.setSrc(local_addr);
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setThreadPoolKeepAliveTime(long time){
+
+  thread_pool_keep_alive_time=time;
+
+  if (thread_pool instanceof ThreadPoolExecutor)   ((ThreadPoolExecutor)thread_pool).setKeepAliveTime(time,TimeUnit.MILLISECONDS);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setThreadPoolMaxThreads(int size){
+
+  thread_pool_max_threads=size;
+
+  if (thread_pool instanceof ThreadPoolExecutor)   ((ThreadPoolExecutor)thread_pool).setMaximumPoolSize(size);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setThreadPoolMinThreads(int size){
+
+  thread_pool_min_threads=size;
+
+  if (thread_pool instanceof ThreadPoolExecutor)   ((ThreadPoolExecutor)thread_pool).setCorePoolSize(size);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setThreadPoolThreadFactory(ThreadFactory factory){
+
+  thread_factory=factory;
+
+  if (thread_pool instanceof ThreadPoolExecutor)   ((ThreadPoolExecutor)thread_pool).setThreadFactory(factory);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T setTimeService(TimeService ts){
+
+  if (ts == null)   return (T)this;
+
+  if (time_service != null)   time_service.stop();
+
+  time_service=ts;
+
+  time_service.start();
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected static void shutdownThreadPool(Executor thread_pool){
+
+  if (thread_pool instanceof ExecutorService) {
+
+    ExecutorService service=(ExecutorService)thread_pool;
+
+    service.shutdownNow();
+
+    try {
+
+      service.awaitTermination(Global.THREADPOOL_SHUTDOWN_WAIT_TIME,TimeUnit.MILLISECONDS);
+
+    }
+
+ catch (    InterruptedException e) {
+
+    }
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void startDiagnostics() throws Exception {
+
+  if (enable_diagnostics) {
+
+    if (diag_handler == null)     diag_handler=createDiagnosticsHandler();
+
+    diag_handler.registerProbeHandler(this);
+
+    diag_handler.start();
+
+synchronized (preregistered_probe_handlers) {
+
+      for (      DiagnosticsHandler.ProbeHandler handler : preregistered_probe_handlers)       diag_handler.registerProbeHandler(handler);
+
+    }
+
+  }
+
+synchronized (preregistered_probe_handlers) {
+
+    preregistered_probe_handlers.clear();
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void stopDiagnostics(){
+
+  if (diag_handler != null) {
+
+    diag_handler.unregisterProbeHandler(this);
+
+    diag_handler.stop();
+
+  }
+
+synchronized (preregistered_probe_handlers) {
+
+    preregistered_probe_handlers.clear();
+
+  }
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean submitToThreadPool(Executor pool,Runnable task,boolean spawn_thread_on_rejection,boolean forward_to_internal_pool){
+
+  try {
+
+    pool.execute(task);
+
+  }
+
+ catch (  RejectedExecutionException ex) {
+
+    if (!spawn_thread_on_rejection) {
+
+      msg_stats.incrNumRejectedMsgs(1);
+
+      return false;
+
+    }
+
+    if (forward_to_internal_pool && internal_pool != null)     return submitToThreadPool(internal_pool,task,true,false);
+
+ else {
+
+      msg_stats.incrNumThreadsSpawned(1);
+
+      return runInNewThread(task);
+
+    }
+
+  }
+
+catch (  Throwable t) {
+
+    log.error("failure submitting task to thread pool",t);
+
+    msg_stats.incrNumRejectedMsgs(1);
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean submitToThreadPool(Runnable task,boolean spawn_thread_on_rejection){
+
+  return submitToThreadPool(thread_pool,task,spawn_thread_on_rejection,true);
+
+}
+
+Location: TP.java
+
+Content: 
+
+/** 
+
+ * Creates the TP protocol, and initializes the state variables, does however not start any sockets or threads.
+
+ */
+
+protected TP(){
+
+}
+
+Location: TP.java
+
+Content: 
+
+public boolean unicastDestMismatch(Address dest){
+
+  return dest != null && !(Objects.equals(dest,local_addr) || Objects.equals(dest,local_physical_addr));
+
+}
+
+Location: TP.java
+
+Content: 
+
+public <T extends TP>T unregisterProbeHandler(DiagnosticsHandler.ProbeHandler handler){
+
+  if (diag_handler != null)   diag_handler.unregisterProbeHandler(handler);
+
+  return (T)this;
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected boolean versionMatch(short version,Address sender){
+
+  boolean match=Version.isBinaryCompatible(version);
+
+  if (!match && log_discard_msgs_version && log.isWarnEnabled()) {
+
+    if (suppress_log_different_version != null)     suppress_log_different_version.log(SuppressLog.Level.warn,sender,suppress_time_different_version_warnings,sender,Version.print(version),Version.printVersion());
+
+ else     log.warn(Util.getMessage("VersionMismatch"),sender,Version.print(version),Version.printVersion());
+
+  }
+
+  return match;
+
+}
+
+Location: TP.java
+
+Content: 
+
+protected void _send(Message msg,Address dest){
+
+  try {
+
+    send(msg);
+
+  }
+
+ catch (  InterruptedIOException iex) {
+
+  }
+
+catch (  InterruptedException interruptedEx) {
+
+    Thread.currentThread().interrupt();
+
+  }
+
+catch (  Throwable e) {
+
+    log.trace(Util.getMessage("SendFailure"),local_addr,(dest == null ? "cluster" : dest),msg.size(),e.toString(),msg.printHeaders());
+
+  }
+
+}
+

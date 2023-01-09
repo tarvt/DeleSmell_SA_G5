@@ -1,0 +1,818 @@
+Location: Locking.java
+
+Content: 
+
+public void addLockListener(LockNotification listener){
+
+  if (listener != null)   lock_listeners.add(listener);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected ClientLock createLock(String lock_name,Owner owner){
+
+  return new ClientLock(lock_name,owner);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected ClientLock getLock(String name){
+
+  return client_lock_table.getLock(name,getOwner(),true);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected ClientLock getLock(String name,boolean create_if_absent){
+
+  return client_lock_table.getLock(name,getOwner(),create_if_absent);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+@ManagedAttribute(description="Number of client locks") public int getNumClientLocks(){
+
+  return client_lock_table.numLocks();
+
+}
+
+Location: Locking.java
+
+Content: 
+
+@ManagedAttribute(description="Number of server locks (only on coord)") public int getNumServerLocks(){
+
+  return server_locks.size();
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleAwaitRequest(String lock_name,Owner owner){
+
+  Lock lock=_getLock(lock_name);
+
+  lock.lock();
+
+  try {
+
+    ServerLock server_lock=server_locks.get(lock_name);
+
+    if (server_lock != null)     server_lock.condition.addWaiter(owner);
+
+ else     log.error(Util.getMessage("ConditionAwaitWasReceivedButLockWasNotCreatedWaiterMayBlockForever"));
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleCreateAwaitingRequest(String lock_name,Owner owner){
+
+  Lock lock=_getLock(lock_name);
+
+  lock.lock();
+
+  try {
+
+    ServerLock server_lock=server_locks.get(lock_name);
+
+    if (server_lock == null) {
+
+      server_lock=new ServerLock(lock_name);
+
+      ServerLock tmp=server_locks.putIfAbsent(lock_name,server_lock);
+
+      if (tmp != null)       server_lock=tmp;
+
+    }
+
+    server_lock.condition.queue.add(owner);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleCreateLockRequest(String lock_name,Owner owner){
+
+  Lock lock=_getLock(lock_name);
+
+  lock.lock();
+
+  try {
+
+    server_locks.put(lock_name,new ServerLock(lock_name,owner));
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleDeleteAwaitingRequest(String lock_name,Owner owner){
+
+  Lock lock=_getLock(lock_name);
+
+  lock.lock();
+
+  try {
+
+    ServerLock server_lock=server_locks.get(lock_name);
+
+    if (server_lock != null) {
+
+      server_lock.condition.queue.remove(owner);
+
+      if (server_lock.condition.queue.isEmpty() && server_lock.owner == null) {
+
+        server_locks.remove(lock_name);
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleDeleteAwaitRequest(String lock_name,Owner owner){
+
+  Lock lock=_getLock(lock_name);
+
+  lock.lock();
+
+  try {
+
+    ServerLock server_lock=server_locks.get(lock_name);
+
+    if (server_lock != null)     server_lock.condition.removeWaiter(owner);
+
+ else     log.error(Util.getMessage("ConditionAwaitDeleteWasReceivedButLockWasGone"));
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleDeleteLockRequest(String lock_name){
+
+  Lock lock=_getLock(lock_name);
+
+  lock.lock();
+
+  try {
+
+    ServerLock server_lock=server_locks.get(lock_name);
+
+    if (server_lock == null)     return;
+
+    if (server_lock.condition.queue.isEmpty())     server_locks.remove(lock_name);
+
+ else     server_lock.owner=null;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleLockDeniedResponse(String lock_name,int lock_id,Owner owner){
+
+  ClientLock lock=client_lock_table.getLock(lock_name,owner,false);
+
+  if (lock != null)   lock.lockDenied(lock_id);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleLockGrantedResponse(String lock_name,int lock_id,Owner owner){
+
+  ClientLock lock=client_lock_table.getLock(lock_name,owner,false);
+
+  if (lock != null)   lock.handleLockGrantedResponse(lock_id);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleLockReleasedResponse(String lock_name,int lock_id,Owner owner){
+
+  ClientLock lock=client_lock_table.getLock(lock_name,owner,false);
+
+  if (lock != null)   lock.handleLockReleasedResponse(lock_id);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleLockRequest(Request req){
+
+  Response rsp=null;
+
+  Lock lock=_getLock(req.lock_name);
+
+  lock.lock();
+
+  try {
+
+    ServerLock server_lock=server_locks.get(req.lock_name);
+
+    if (server_lock == null) {
+
+      server_lock=new ServerLock(req.lock_name);
+
+      ServerLock tmp=server_locks.putIfAbsent(req.lock_name,server_lock);
+
+      if (tmp != null)       server_lock=tmp;
+
+ else       notifyLockCreated(req.lock_name);
+
+    }
+
+    rsp=server_lock.handleRequest(req);
+
+    if (server_lock.isEmpty() && server_lock.owner == null && server_lock.condition.queue.isEmpty())     server_locks.remove(req.lock_name);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+  if (rsp != null)   sendLockResponse(rsp.type,rsp.owner,rsp.lock_name,rsp.lock_id);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleRequest(Request req){
+
+  if (req == null)   return;
+
+switch (req.type) {
+
+case GRANT_LOCK:
+
+case RELEASE_LOCK:
+
+    handleLockRequest(req);
+
+  break;
+
+case LOCK_GRANTED:
+
+handleLockGrantedResponse(req.lock_name,req.lock_id,req.owner);
+
+break;
+
+case RELEASE_LOCK_OK:
+
+handleLockReleasedResponse(req.lock_name,req.lock_id,req.owner);
+
+break;
+
+case LOCK_DENIED:
+
+handleLockDeniedResponse(req.lock_name,req.lock_id,req.owner);
+
+break;
+
+case CREATE_LOCK:
+
+handleCreateLockRequest(req.lock_name,req.owner);
+
+break;
+
+case DELETE_LOCK:
+
+handleDeleteLockRequest(req.lock_name);
+
+break;
+
+case COND_SIG:
+
+case COND_SIG_ALL:
+
+handleSignalRequest(req);
+
+break;
+
+case LOCK_AWAIT:
+
+handleAwaitRequest(req.lock_name,req.owner);
+
+handleLockRequest(req);
+
+break;
+
+case DELETE_LOCK_AWAIT:
+
+handleDeleteAwaitRequest(req.lock_name,req.owner);
+
+break;
+
+case SIG_RET:
+
+handleSignalResponse(req.lock_name,req.owner);
+
+break;
+
+case CREATE_AWAITER:
+
+handleCreateAwaitingRequest(req.lock_name,req.owner);
+
+break;
+
+case DELETE_AWAITER:
+
+handleDeleteAwaitingRequest(req.lock_name,req.owner);
+
+break;
+
+case LOCK_INFO_REQ:
+
+handleLockInfoRequest(req.sender);
+
+break;
+
+case LOCK_INFO_RSP:
+
+handleLockInfoResponse(req.sender,req);
+
+break;
+
+case LOCK_REVOKED:
+
+handleLockRevoked(req);
+
+break;
+
+default :
+
+log.error("%s: request of type %s not known",local_addr,req.type);
+
+break;
+
+}
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleSignalRequest(Request req){
+
+  Response rsp=null;
+
+  Lock lock=_getLock(req.lock_name);
+
+  lock.lock();
+
+  try {
+
+    ServerLock server_lock=server_locks.get(req.lock_name);
+
+    if (server_lock != null)     rsp=server_lock.handleRequest(req);
+
+ else     log.error(Util.getMessage("ConditionSignalWasReceivedButLockWasNotCreatedCouldnTNotifyAnyone"));
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+  if (rsp != null)   sendLockResponse(rsp.type,rsp.owner,rsp.lock_name,rsp.lock_id);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void handleSignalResponse(String lock_name,Owner owner){
+
+  ClientLock lock=client_lock_table.getLock(lock_name,owner,false);
+
+  if (lock != null) {
+
+    lock.condition.signaled();
+
+  }
+
+ else {
+
+    log.error(Util.getMessage("ConditionResponseWasClientLockWasNotPresentIgnoredSignal"));
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+public Locking(){
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void notifyAwaited(String lock_name,Owner owner){
+
+  for (  LockNotification listener : lock_listeners) {
+
+    try {
+
+      listener.awaited(lock_name,owner);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("%s: failed notifying %s: %s",local_addr,listener,t.toString());
+
+    }
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void notifyAwaiting(String lock_name,Owner owner){
+
+  for (  LockNotification listener : lock_listeners) {
+
+    try {
+
+      listener.awaiting(lock_name,owner);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("%s: failed notifying %s: %s",local_addr,listener,t.toString());
+
+    }
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void notifyLockCreated(String lock_name){
+
+  for (  LockNotification listener : lock_listeners) {
+
+    try {
+
+      listener.lockCreated(lock_name);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("%s: failed notifying %s: %s",local_addr,listener,t.toString());
+
+    }
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void notifyLockDeleted(String lock_name){
+
+  for (  LockNotification listener : lock_listeners) {
+
+    try {
+
+      listener.lockDeleted(lock_name);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("%s: failed notifying %s: %s",local_addr,listener,t.toString());
+
+    }
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void notifyLocked(String lock_name,Owner owner){
+
+  for (  LockNotification listener : lock_listeners) {
+
+    try {
+
+      listener.locked(lock_name,owner);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("%s: failed notifying %s: %s",local_addr,listener,t.toString());
+
+    }
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void notifyLockRevoked(String lock_name,Owner current_owner){
+
+  for (  LockNotification listener : lock_listeners) {
+
+    try {
+
+      listener.lockRevoked(lock_name,current_owner);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("%s: failed notifying %s: %s",local_addr,listener,t.toString());
+
+    }
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void notifyUnlocked(String lock_name,Owner owner){
+
+  for (  LockNotification listener : lock_listeners) {
+
+    try {
+
+      listener.unlocked(lock_name,owner);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.error("%s: failed notifying %s: %s",local_addr,listener,t.toString());
+
+    }
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+@ManagedOperation(description="Dumps all locks") public String printLocks(){
+
+  StringBuilder sb=new StringBuilder();
+
+  Collection<ServerLock> values=server_locks.values();
+
+  if (values != null && !values.isEmpty()) {
+
+    sb.append("server locks: ");
+
+    for (    ServerLock sl : server_locks.values())     sb.append(sl).append("\n");
+
+  }
+
+  String client_locks=client_lock_table.printLocks();
+
+  if (client_locks != null && !client_locks.isEmpty())   sb.append("my locks: ").append(client_lock_table.printLocks());
+
+  return sb.toString();
+
+}
+
+Location: Locking.java
+
+Content: 
+
+@ManagedOperation(description="Dumps all server locks") public Object printServerLocks(){
+
+  return server_locks.values().stream().map(ServerLock::toString).collect(Collectors.joining(", "));
+
+}
+
+Location: Locking.java
+
+Content: 
+
+public void removeLockListener(LockNotification listener){
+
+  if (listener != null)   lock_listeners.remove(listener);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void sendLockResponse(Type type,Owner dest,String lock_name,int lock_id){
+
+  send(dest.getAddress(),new Request(type,lock_name,dest,0).lockId(lock_id));
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void sendRequest(Address dest,Type type,String lock_name,int lock_id,Owner owner,long timeout,boolean is_trylock){
+
+  send(dest,new Request(type,lock_name,owner,timeout,is_trylock).lockId(lock_id));
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void sendRequest(Address dest,Type type,String lock_name,Owner owner,long timeout,boolean is_trylock){
+
+  send(dest,new Request(type,lock_name,owner,timeout,is_trylock));
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void sendSignalResponse(Owner dest,String lock_name){
+
+  send(dest.getAddress(),new Request(Type.SIG_RET,lock_name,dest,0));
+
+}
+
+Location: Locking.java
+
+Content: 
+
+protected void send(Address dest,Request req){
+
+  Message msg=new Message(dest,Util.streamableToBuffer(req)).putHeader(id,new LockingHeader());
+
+  if (bypass_bundling)   msg.setFlag(Message.Flag.DONT_BUNDLE);
+
+  log.trace("%s --> %s: %s",local_addr,dest == null ? "ALL" : dest,req);
+
+  try {
+
+    down_prot.down(msg);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed sending %s request: %s",local_addr,req.type,ex);
+
+  }
+
+}
+
+Location: Locking.java
+
+Content: 
+
+@ManagedOperation(description="Unlocks all currently held locks") public void unlockAll(){
+
+  client_lock_table.unlockAll();
+
+}
+
+Location: Locking.java
+
+Content: 
+
+@ManagedOperation(description="Forcefully removes the client lock") public void unlockForce(String lock_name){
+
+  client_lock_table.unlockForce(lock_name);
+
+}
+
+Location: Locking.java
+
+Content: 
+
+/** 
+
+ * Gets a lock from locks based on the hash of the lock name 
+
+ */
+
+protected Lock _getLock(String lock_name){
+
+  int index=lock_name != null ? Math.abs(lock_name.hashCode() % lock_stripes.length) : 0;
+
+  return lock_stripes[index];
+
+}
+

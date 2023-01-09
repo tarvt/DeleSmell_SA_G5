@@ -1,0 +1,280 @@
+Location: TestStreamingStatus.java
+
+Content: 
+
+void buildExpectedJobOutput(){
+
+  if (expectedOutput == null) {
+
+    expectedOutput="";
+
+    for (int i=1500; i >= 1; i--) {
+
+      expectedOutput=expectedOutput.concat(Integer.toString(i) + " ");
+
+    }
+
+    expectedOutput=expectedOutput.trim();
+
+  }
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+public void clean(FileSystem fs){
+
+  deleteOutDir(fs);
+
+  try {
+
+    Path file=new Path(INPUT_FILE);
+
+    if (fs.exists(file)) {
+
+      fs.delete(file,false);
+
+    }
+
+    file=new Path(scriptFile);
+
+    if (fs.exists(file)) {
+
+      fs.delete(file,false);
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+  }
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+protected void createInputAndScript(boolean isEmptyInput,String script) throws IOException {
+
+  makeInput(fs,isEmptyInput ? "" : input);
+
+  DataOutputStream file=fs.create(new Path(scriptFileName));
+
+  file.writeBytes(script);
+
+  file.close();
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+protected void deleteOutDir(FileSystem fs){
+
+  try {
+
+    Path outDir=new Path(OUTPUT_DIR);
+
+    fs.delete(outDir,true);
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+protected String[] genArgs(int jobtrackerPort,String mapper,String reducer){
+
+  return new String[]{"-input",INPUT_FILE,"-output",OUTPUT_DIR,"-mapper",mapper,"-reducer",reducer,"-jobconf",MRJobConfig.NUM_MAPS + "=1","-jobconf",MRJobConfig.NUM_REDUCES + "=1","-jobconf",MRJobConfig.PRESERVE_FAILED_TASK_FILES + "=true","-jobconf","stream.tmpdir=" + new Path(TEST_ROOT_DIR).toUri().getPath(),"-jobconf",JTConfig.JT_IPC_ADDRESS + "=localhost:" + jobtrackerPort,"-jobconf","fs.default.name=file:///"};
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+public void makeInput(FileSystem fs,String input) throws IOException {
+
+  Path inFile=new Path(INPUT_FILE);
+
+  DataOutputStream file=fs.create(inFile);
+
+  file.writeBytes(input);
+
+  file.close();
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+void runStreamJob(TaskType type,boolean isEmptyInput) throws IOException {
+
+  boolean mayExit=false;
+
+  StreamJob job=new StreamJob(genArgs(mr.getJobTrackerPort(),map,reduce),mayExit);
+
+  int returnValue=job.go();
+
+  assertEquals(0,returnValue);
+
+  int expectedCounterValue=0;
+
+  if (type == TaskType.MAP || !isEmptyInput) {
+
+    validateTaskStatus(job,type);
+
+    validateJobOutput(job.getConf());
+
+    expectedCounterValue=2;
+
+  }
+
+  validateUserCounter(job,expectedCounterValue);
+
+  validateTaskStderr(job,type);
+
+  deleteOutDir(fs);
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+/** 
+
+ * Check if mapper/reducer with empty/nonempty input works properly if reporting is done using lines like "reporter:status:" and "reporter:counter:" before map()/reduce() method is called. Validate the task's log of STDERR if messages are written to stderr before map()/reduce() is called. Also validate job output.
+
+ * @throws IOException
+
+ */
+
+@Test public void testReporting() throws Exception {
+
+  testStreamJob(false);
+
+  testStreamJob(true);
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+/** 
+
+ * Run a streaming job with the given script as mapper and validate. Run another streaming job with the given script as reducer and validate.
+
+ * @param isEmptyInput Should the input to the script be empty ?
+
+ * @param script The content of the script that will run as the streaming task
+
+ */
+
+private void testStreamJob(boolean isEmptyInput) throws IOException {
+
+  createInputAndScript(isEmptyInput,script);
+
+  map=scriptFileName;
+
+  reduce="/bin/cat";
+
+  runStreamJob(TaskType.MAP,isEmptyInput);
+
+  deleteOutDir(fs);
+
+  map="/bin/cat";
+
+  reduce=scriptFileName;
+
+  runStreamJob(TaskType.REDUCE,isEmptyInput);
+
+  clean(fs);
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+void validateJobOutput(Configuration conf) throws IOException {
+
+  String output=MapReduceTestUtil.readOutput(new Path(OUTPUT_DIR),conf).trim();
+
+  assertTrue(output.equals(expectedOutput));
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+void validateTaskStatus(StreamJob job,TaskType type) throws IOException {
+
+  String finalPhaseInTask;
+
+  TaskReport[] reports;
+
+  if (type == TaskType.MAP) {
+
+    reports=job.jc_.getMapTaskReports(job.jobId_);
+
+    finalPhaseInTask="sort";
+
+  }
+
+ else {
+
+    reports=job.jc_.getReduceTaskReports(job.jobId_);
+
+    finalPhaseInTask="reduce";
+
+  }
+
+  assertEquals(1,reports.length);
+
+  assertEquals(expectedStatus + " > " + finalPhaseInTask,reports[0].getState());
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+void validateTaskStderr(StreamJob job,TaskType type) throws IOException {
+
+  TaskAttemptID attemptId=new TaskAttemptID(new TaskID(job.jobId_,type,0),0);
+
+  String log=MapReduceTestUtil.readTaskLog(TaskLog.LogName.STDERR,attemptId,false);
+
+  assertTrue(log.equals(expectedStderr.trim()));
+
+}
+
+Location: TestStreamingStatus.java
+
+Content: 
+
+void validateUserCounter(StreamJob job,int expectedCounterValue) throws IOException {
+
+  Counters counters=job.running_.getCounters();
+
+  assertEquals(expectedCounterValue,counters.findCounter("myOwnCounterGroup","myOwnCounter").getValue());
+
+}
+

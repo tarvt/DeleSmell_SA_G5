@@ -1,0 +1,232 @@
+Location: VerticaOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Test check specs (don't connect to db)
+
+ * @param context
+
+ * @param test true if testing
+
+ * @throws IOException
+
+ */
+
+public void checkOutputSpecs(JobContext context,boolean test) throws IOException {
+
+  VerticaUtil.checkOutputSpecs(context.getConfiguration());
+
+  VerticaConfiguration vtconfig=new VerticaConfiguration(context.getConfiguration());
+
+  delimiter=vtconfig.getOutputDelimiter();
+
+  terminator=vtconfig.getOutputRecordTerminator();
+
+}
+
+Location: VerticaOutputFormat.java
+
+Content: 
+
+public static VerticaRecord getValue(Configuration conf) throws Exception {
+
+  VerticaConfiguration config=new VerticaConfiguration(conf);
+
+  String table=config.getOutputTableName();
+
+  Connection conn=config.getConnection(true);
+
+  return (new VerticaRecordWriter(conn,"",table,config.getOutputDelimiter(),config.getOutputRecordTerminator())).getValue();
+
+}
+
+Location: VerticaOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Optionally called at the end of a job to optimize any newly created and loaded tables. Useful for new tables with more than 100k records.
+
+ * @param conf
+
+ * @throws Exception
+
+ */
+
+public static void optimize(Configuration conf) throws Exception {
+
+  VerticaConfiguration vtconfig=new VerticaConfiguration(conf);
+
+  Connection conn=vtconfig.getConnection(true);
+
+  String tableName=vtconfig.getOutputTableName();
+
+  Statement stmt=conn.createStatement();
+
+  ResultSet rs=null;
+
+  StringBuffer designTables=new StringBuffer(tableName);
+
+  HashSet<String> tablesWithTemp=new HashSet<String>();
+
+  if (tableName.indexOf(".") == -1) {
+
+    tableName="public." + tableName;
+
+  }
+
+  tablesWithTemp.add(tableName);
+
+  HashMap<String,Collection<String>> tableProj=new HashMap<String,Collection<String>>();
+
+  rs=stmt.executeQuery("select schemaname, anchortablename, projname from vt_projection;");
+
+  while (rs.next()) {
+
+    String ptable=rs.getString(1) + "." + rs.getString(2);
+
+    if (!tableProj.containsKey(ptable)) {
+
+      tableProj.put(ptable,new HashSet<String>());
+
+    }
+
+    tableProj.get(ptable).add(rs.getString(3));
+
+  }
+
+  for (  String table : tablesWithTemp) {
+
+    if (!tableProj.containsKey(table)) {
+
+      throw new RuntimeException("Cannot optimize table with no data: " + table);
+
+    }
+
+  }
+
+  String designName=(new Integer(conn.hashCode())).toString();
+
+  stmt.execute("select create_projection_design('" + designName + "', '', '"+ designTables.toString()+ "')");
+
+  if (VerticaUtil.verticaVersion(conf,true) >= VerticaConfiguration.VERSION_3_5) {
+
+    stmt.execute("select deploy_design('" + designName + "', '"+ designName+ "')");
+
+  }
+
+ else {
+
+    rs=stmt.executeQuery("select get_design_script('" + designName + "', '"+ designName+ "')");
+
+    rs.next();
+
+    String[] projSet=rs.getString(1).split(";");
+
+    for (    String proj : projSet) {
+
+      stmt.execute(proj);
+
+    }
+
+    stmt.execute("select start_refresh()");
+
+    boolean refreshing=true;
+
+    Long timeout=vtconfig.getOptimizePollTimeout();
+
+    while (refreshing) {
+
+      refreshing=false;
+
+      rs=stmt.executeQuery("select table_name, status from vt_projection_refresh");
+
+      while (rs.next()) {
+
+        String table=rs.getString(1);
+
+        String stat=rs.getString(2);
+
+        if (stat.equals("refreshing") && tablesWithTemp.contains(table))         refreshing=true;
+
+      }
+
+      rs.close();
+
+      Thread.sleep(timeout);
+
+    }
+
+    stmt.execute("select make_ahm_now()");
+
+    for (    String table : tablesWithTemp) {
+
+      for (      String proj : tableProj.get(table)) {
+
+        stmt.execute("DROP PROJECTION " + proj);
+
+      }
+
+    }
+
+    stmt.close();
+
+  }
+
+}
+
+Location: VerticaOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Set the output table and whether to drop it before loading
+
+ * @param job
+
+ * @param tableName
+
+ * @param dropTable
+
+ */
+
+public static void setOutput(Job job,String tableName,boolean dropTable){
+
+  setOutput(job,tableName,dropTable,(String[])null);
+
+}
+
+Location: VerticaOutputFormat.java
+
+Content: 
+
+/** 
+
+ * Set the output table, whether to drop it before loading and the create table specification if it doesn't exist
+
+ * @param job
+
+ * @param tableName
+
+ * @param dropTable
+
+ * @param tableDef list of column definitions such as "foo int", "bar varchar(10)"
+
+ */
+
+public static void setOutput(Job job,String tableName,boolean dropTable,String... tableDef){
+
+  VerticaConfiguration vtconfig=new VerticaConfiguration(job.getConfiguration());
+
+  vtconfig.setOutputTableName(tableName);
+
+  vtconfig.setOutputTableDef(tableDef);
+
+  vtconfig.setDropTable(dropTable);
+
+}
+

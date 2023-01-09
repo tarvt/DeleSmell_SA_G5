@@ -1,0 +1,650 @@
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Retrieves the thread name to be used  when this object is the Runnable object of a Thread.
+
+ * @return the thread name to be used  whenthis object is the Runnable object of a Thread.
+
+ */
+
+String getConnectionThreadName(){
+
+  return "HSQLDB HTTP Connection @" + Integer.toString(hashCode(),16);
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Retrieves an HTTP protocol header given the supplied arguments.
+
+ * @param responseCodeString the HTTP response code
+
+ * @param addInfo true if additional header info is to be added
+
+ * @param mimeType the Content-Type field value
+
+ * @param length the Content-Length field value
+
+ * @return an HTTP protocol header
+
+ */
+
+String getHead(String responseCodeString,boolean addInfo,String mimeType,int length){
+
+  StringBuffer sb=new StringBuffer(128);
+
+  sb.append(responseCodeString).append("\r\n");
+
+  if (addInfo) {
+
+    sb.append("Allow: GET, HEAD, POST\nMIME-Version: 1.0\r\n");
+
+    sb.append("Server: ").append(HsqlDatabaseProperties.PRODUCT_NAME).append("\r\n");
+
+  }
+
+  if (mimeType != null) {
+
+    sb.append("Cache-Control: no-cache\r\n");
+
+    sb.append("Content-Type: ").append(mimeType).append("\r\n");
+
+  }
+
+  sb.append("\r\n");
+
+  return sb.toString();
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Retrieves a best-guess mime-type string using the file extension of the name argument.
+
+ * @return a best-guess mime-type string using the file extensionof the name argument.
+
+ */
+
+private String getMimeTypeString(String name){
+
+  int pos;
+
+  String key;
+
+  String mimeType;
+
+  if (name == null) {
+
+    return ServerConstants.SC_DEFAULT_WEB_MIME;
+
+  }
+
+  pos=name.lastIndexOf('.');
+
+  key=null;
+
+  mimeType=null;
+
+  if (pos >= 0) {
+
+    key=name.substring(pos).toLowerCase();
+
+    mimeType=server.serverProperties.getProperty(key);
+
+  }
+
+  if (mimeType == null && key.length() > 1) {
+
+    mimeType=ResourceBundleHandler.getString(hnd_content_types,key.substring(1));
+
+  }
+
+  return mimeType == null ? ServerConstants.SC_DEFAULT_WEB_MIME : mimeType;
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Processes an HTTP error condition, sending an error response to the client.
+
+ * @param code the error condition code
+
+ */
+
+private void processError(int code){
+
+  String msg;
+
+  server.printWithThread("processError " + code);
+
+switch (code) {
+
+case HttpURLConnection.HTTP_BAD_REQUEST:
+
+    msg=getHead(HEADER_BAD_REQUEST,false,null,0);
+
+  msg+=ResourceBundleHandler.getString(WebServer.webBundleHandle,"BAD_REQUEST");
+
+break;
+
+case HttpURLConnection.HTTP_FORBIDDEN:
+
+msg=getHead(HEADER_FORBIDDEN,false,null,0);
+
+msg+=ResourceBundleHandler.getString(WebServer.webBundleHandle,"FORBIDDEN");
+
+break;
+
+case HttpURLConnection.HTTP_NOT_FOUND:
+
+default :
+
+msg=getHead(HEADER_NOT_FOUND,false,null,0);
+
+msg+=ResourceBundleHandler.getString(WebServer.webBundleHandle,"NOT_FOUND");
+
+break;
+
+}
+
+try {
+
+OutputStream os=new BufferedOutputStream(socket.getOutputStream());
+
+os.write(msg.getBytes(ENCODING));
+
+os.flush();
+
+os.close();
+
+}
+
+ catch (Exception e) {
+
+server.printError("processError: " + e.toString());
+
+server.printStackTrace(e);
+
+}
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Processes an HTTP GET request
+
+ * @param name the name of the content to get
+
+ * @param send whether to send the content as well, or just the header
+
+ */
+
+private void processGet(String name,boolean send){
+
+  try {
+
+    String hdr;
+
+    OutputStream os;
+
+    InputStream is;
+
+    int b;
+
+    if (name.endsWith("/")) {
+
+      name+=server.getDefaultWebPage();
+
+    }
+
+    if (name.indexOf("..") != -1) {
+
+      processError(HttpURLConnection.HTTP_FORBIDDEN);
+
+      return;
+
+    }
+
+    name=server.getWebRoot() + name;
+
+    if (File.separatorChar != '/') {
+
+      name=name.replace('/',File.separatorChar);
+
+    }
+
+    is=null;
+
+    server.printWithThread("GET " + name);
+
+    try {
+
+      File file=new File(name);
+
+      is=new DataInputStream(new FileInputStream(file));
+
+      hdr=getHead(HEADER_OK,true,getMimeTypeString(name),(int)file.length());
+
+    }
+
+ catch (    IOException e) {
+
+      processError(HttpURLConnection.HTTP_NOT_FOUND);
+
+      if (is != null) {
+
+        is.close();
+
+      }
+
+      return;
+
+    }
+
+    os=new BufferedOutputStream(socket.getOutputStream());
+
+    os.write(hdr.getBytes(ENCODING));
+
+    if (send) {
+
+      while ((b=is.read()) != -1) {
+
+        os.write(b);
+
+      }
+
+    }
+
+    os.flush();
+
+    os.close();
+
+    is.close();
+
+  }
+
+ catch (  Exception e) {
+
+    server.printError("processGet: " + e.toString());
+
+    server.printStackTrace(e);
+
+  }
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * POST is used only for database access. So we can assume the strings are those generated by ClientConnectionHTTP
+
+ */
+
+private void processPost(InputStream inStream,String name) throws IOException {
+
+  try {
+
+    int readLineLength;
+
+    do {
+
+      readLineLength=InOutUtil.readLine(inStream,rowOut);
+
+    }
+
+ while (readLineLength > 2);
+
+    String requestHeader=iso_8859_1_decoder.decode(ByteBuffer.wrap(rowOut.toByteArray())).toString();
+
+    if (requestHeader.indexOf("Content-Type: application/octet-stream") < 0) {
+
+      throw new Exception();
+
+    }
+
+  }
+
+ catch (  Exception e) {
+
+    processError(HttpURLConnection.HTTP_BAD_REQUEST);
+
+    return;
+
+  }
+
+  processQuery(inStream);
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Processes a database query in HSQL protocol that has been tunneled over HTTP protocol.
+
+ * @param inStream the incoming byte stream representing the HSQL protocoldatabase query
+
+ */
+
+void processQuery(InputStream inStream){
+
+  try {
+
+    DataInputStream dataIn=new DataInputStream(inStream);
+
+    int databaseID=dataIn.readInt();
+
+    long sessionID=dataIn.readLong();
+
+    int mode=dataIn.readByte();
+
+    Session session=DatabaseManager.getSession(databaseID,sessionID);
+
+    Result resultIn=Result.newResult(session,mode,dataIn,rowIn);
+
+    resultIn.setDatabaseId(databaseID);
+
+    resultIn.setSessionId(sessionID);
+
+    Result resultOut;
+
+    int type=resultIn.getType();
+
+    if (type == ResultConstants.CONNECT) {
+
+      try {
+
+        String databaseName=resultIn.getDatabaseName();
+
+        int dbIndex=server.getDBIndex(databaseName);
+
+        int dbID=server.dbID[dbIndex];
+
+        session=DatabaseManager.newSession(dbID,resultIn.getMainString(),resultIn.getSubString(),resultIn.getZoneString(),resultIn.getUpdateCount());
+
+        resultOut=Result.newConnectionAcknowledgeResponse(session);
+
+      }
+
+ catch (      HsqlException e) {
+
+        resultOut=Result.newErrorResult(e);
+
+      }
+
+catch (      RuntimeException e) {
+
+        resultOut=Result.newErrorResult(e);
+
+      }
+
+    }
+
+ else {
+
+      if (session == null) {
+
+        resultOut=Result.newErrorResult(Error.error(ErrorCode.SERVER_DATABASE_DISCONNECTED));
+
+      }
+
+ else {
+
+        resultIn.setSession(session);
+
+        resultIn.readLobResults(session,dataIn,rowIn);
+
+        if (type == ResultConstants.SQLCANCEL) {
+
+          resultOut=session.cancel(resultIn);
+
+        }
+
+ else {
+
+          resultOut=session.execute(resultIn);
+
+        }
+
+      }
+
+    }
+
+    if (type == ResultConstants.DISCONNECT || type == ResultConstants.RESETSESSION) {
+
+      DataOutputStream dataOut=new DataOutputStream(socket.getOutputStream());
+
+      String header=getHead(HEADER_OK,false,"application/octet-stream",6);
+
+      dataOut.write(header.getBytes(ENCODING));
+
+      dataOut.writeByte(ResultConstants.DISCONNECT);
+
+      dataOut.writeInt(4);
+
+      dataOut.writeByte(ResultConstants.NONE);
+
+      dataOut.close();
+
+      return;
+
+    }
+
+    HsqlByteArrayOutputStream memStream=new HsqlByteArrayOutputStream();
+
+    DataOutputStream tempOutput=new DataOutputStream(memStream);
+
+    resultOut.write(session,tempOutput,rowOut);
+
+    DataOutputStream dataOut=new DataOutputStream(socket.getOutputStream());
+
+    String header=getHead(HEADER_OK,false,"application/octet-stream",memStream.size());
+
+    dataOut.write(header.getBytes(ENCODING));
+
+    memStream.writeTo(dataOut);
+
+    dataOut.close();
+
+  }
+
+ catch (  IOException e) {
+
+    server.printStackTrace(e);
+
+  }
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Causes this WebServerConnection to process its HTTP request in a blocking fashion until the request is fully processed or an exception occurs internally. This method reads the Request line then delegates action to subroutines.
+
+ */
+
+public void run(){
+
+  DataInputStream inStream=null;
+
+  try {
+
+    inStream=new DataInputStream(socket.getInputStream());
+
+    int count;
+
+    String name=null;
+
+    int method=REQUEST_TYPE_BAD;
+
+    do {
+
+      count=InOutUtil.readLine(inStream,rowOut);
+
+      if (count == 0) {
+
+        throw new Exception();
+
+      }
+
+    }
+
+ while (count < 2);
+
+    byte[] byteArray=rowOut.toByteArray();
+
+    int offset=rowOut.size() - count;
+
+    if (ArrayUtil.containsAt(byteArray,offset,BYTES_POST)) {
+
+      method=REQUEST_TYPE_POST;
+
+      offset+=BYTES_POST.length;
+
+    }
+
+ else     if (ArrayUtil.containsAt(byteArray,offset,BYTES_GET)) {
+
+      method=REQUEST_TYPE_GET;
+
+      offset+=BYTES_GET.length;
+
+    }
+
+ else     if (ArrayUtil.containsAt(byteArray,offset,BYTES_HEAD)) {
+
+      method=REQUEST_TYPE_HEAD;
+
+      offset+=BYTES_HEAD.length;
+
+    }
+
+ else {
+
+      method=REQUEST_TYPE_BAD;
+
+    }
+
+    count=ArrayUtil.countStartElementsAt(byteArray,offset,BYTES_WHITESPACE);
+
+    if (count == 0) {
+
+      method=REQUEST_TYPE_BAD;
+
+    }
+
+    offset+=count;
+
+    count=ArrayUtil.countNonStartElementsAt(byteArray,offset,BYTES_WHITESPACE);
+
+    name=new String(byteArray,offset,count,ENCODING);
+
+switch (method) {
+
+case REQUEST_TYPE_POST:
+
+      processPost(inStream,name);
+
+    break;
+
+case REQUEST_TYPE_BAD:
+
+  processError(REQUEST_TYPE_BAD);
+
+break;
+
+case REQUEST_TYPE_GET:
+
+processGet(name,true);
+
+break;
+
+case REQUEST_TYPE_HEAD:
+
+processGet(name,false);
+
+break;
+
+}
+
+}
+
+ catch (Exception e) {
+
+server.printStackTrace(e);
+
+}
+
+ finally {
+
+try {
+
+if (inStream != null) {
+
+inStream.close();
+
+}
+
+socket.close();
+
+}
+
+ catch (IOException ioe) {
+
+server.printStackTrace(ioe);
+
+}
+
+}
+
+}
+
+Location: WebServerConnection.java
+
+Content: 
+
+/** 
+
+ * Creates a new WebServerConnection to the specified WebServer on the specified socket.
+
+ * @param socket the network socket on which WebServer communicationtakes place
+
+ * @param server the WebServer instance to which the objectrepresents a connection
+
+ */
+
+WebServerConnection(Socket socket,WebServer server){
+
+  this.server=server;
+
+  this.socket=socket;
+
+}
+

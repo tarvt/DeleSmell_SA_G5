@@ -1,0 +1,230 @@
+Location: MultiDOM.java
+
+Content: 
+
+public int addDOMAdapter(DOMAdapter adapter){
+
+  return addDOMAdapter(adapter,true);
+
+}
+
+Location: MultiDOM.java
+
+Content: 
+
+private int addDOMAdapter(DOMAdapter adapter,boolean indexByURI){
+
+  DOM dom=adapter.getDOMImpl();
+
+  int domNo=1;
+
+  int dtmSize=1;
+
+  SuballocatedIntVector dtmIds=null;
+
+  if (dom instanceof DTMDefaultBase) {
+
+    DTMDefaultBase dtmdb=(DTMDefaultBase)dom;
+
+    dtmIds=dtmdb.getDTMIDs();
+
+    dtmSize=dtmIds.size();
+
+    domNo=dtmIds.elementAt(dtmSize - 1) >>> DTMManager.IDENT_DTM_NODE_BITS;
+
+  }
+
+ else   if (dom instanceof SimpleResultTreeImpl) {
+
+    SimpleResultTreeImpl simpleRTF=(SimpleResultTreeImpl)dom;
+
+    domNo=simpleRTF.getDocument() >>> DTMManager.IDENT_DTM_NODE_BITS;
+
+  }
+
+  if (domNo >= _size) {
+
+    int oldSize=_size;
+
+    do {
+
+      _size*=2;
+
+    }
+
+ while (_size <= domNo);
+
+    final DOMAdapter[] newArray=new DOMAdapter[_size];
+
+    System.arraycopy(_adapters,0,newArray,0,oldSize);
+
+    _adapters=newArray;
+
+  }
+
+  _free=domNo + 1;
+
+  if (dtmSize == 1) {
+
+    _adapters[domNo]=adapter;
+
+  }
+
+ else   if (dtmIds != null) {
+
+    int domPos=0;
+
+    for (int i=dtmSize - 1; i >= 0; i--) {
+
+      domPos=dtmIds.elementAt(i) >>> DTMManager.IDENT_DTM_NODE_BITS;
+
+      _adapters[domPos]=adapter;
+
+    }
+
+    domNo=domPos;
+
+  }
+
+  if (indexByURI) {
+
+    String uri=adapter.getDocumentURI(0);
+
+    _documents.put(uri,new Integer(domNo));
+
+  }
+
+  if (dom instanceof AdaptiveResultTreeImpl) {
+
+    AdaptiveResultTreeImpl adaptiveRTF=(AdaptiveResultTreeImpl)dom;
+
+    DOM nestedDom=adaptiveRTF.getNestedDOM();
+
+    if (nestedDom != null) {
+
+      DOMAdapter newAdapter=new DOMAdapter(nestedDom,adapter.getNamesArray(),adapter.getUrisArray(),adapter.getTypesArray(),adapter.getNamespaceArray());
+
+      addDOMAdapter(newAdapter);
+
+    }
+
+  }
+
+  return domNo;
+
+}
+
+Location: MultiDOM.java
+
+Content: 
+
+public int getDocumentMask(String uri){
+
+  Integer domIdx=(Integer)_documents.get(uri);
+
+  if (domIdx == null) {
+
+    return (-1);
+
+  }
+
+ else {
+
+    return domIdx.intValue();
+
+  }
+
+}
+
+Location: MultiDOM.java
+
+Content: 
+
+public DOM getDOMAdapter(String uri){
+
+  Integer domIdx=(Integer)_documents.get(uri);
+
+  if (domIdx == null) {
+
+    return (null);
+
+  }
+
+ else {
+
+    return (_adapters[domIdx.intValue()]);
+
+  }
+
+}
+
+Location: MultiDOM.java
+
+Content: 
+
+public int getDTMId(int nodeHandle){
+
+  if (nodeHandle == DTM.NULL)   return 0;
+
+  int id=nodeHandle >>> DTMManager.IDENT_DTM_NODE_BITS;
+
+  while (id >= 2 && _adapters[id] == _adapters[id - 1]) {
+
+    id--;
+
+  }
+
+  return id;
+
+}
+
+Location: MultiDOM.java
+
+Content: 
+
+public DOM getMain(){
+
+  return _main;
+
+}
+
+Location: MultiDOM.java
+
+Content: 
+
+public MultiDOM(DOM main){
+
+  _size=INITIAL_SIZE;
+
+  _free=1;
+
+  _adapters=new DOM[INITIAL_SIZE];
+
+  DOMAdapter adapter=(DOMAdapter)main;
+
+  _adapters[0]=adapter;
+
+  _main=adapter;
+
+  DOM dom=adapter.getDOMImpl();
+
+  if (dom instanceof DTMDefaultBase) {
+
+    _dtmManager=((DTMDefaultBase)dom).getManager();
+
+  }
+
+  addDOMAdapter(adapter,false);
+
+}
+
+Location: MultiDOM.java
+
+Content: 
+
+public int nextMask(){
+
+  return _free;
+
+}
+

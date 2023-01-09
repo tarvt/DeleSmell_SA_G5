@@ -1,0 +1,314 @@
+Location: ExecutionService.java
+
+Content: 
+
+@Override public boolean awaitTermination(long timeout,TimeUnit unit) throws InterruptedException {
+
+  long nanoTimeWait=unit.toNanos(timeout);
+
+  _unfinishedLock.lock();
+
+  try {
+
+    while (!_unfinishedFutures.isEmpty()) {
+
+      if ((nanoTimeWait=_unfinishedCondition.awaitNanos(nanoTimeWait)) <= 0) {
+
+        return false;
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    _unfinishedLock.unlock();
+
+  }
+
+  return true;
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+/** 
+
+ * the main mechanics of invokeAny. This was essentially copied from  {@link AbstractExecutorService} doInvokeAny except that we replaced the  {@link ExecutorCompletionService}with an  {@link ExecutionCompletionService}.
+
+ */
+
+private <T>T doInvokeAny(Collection<? extends Callable<T>> tasks,boolean timed,long nanos) throws InterruptedException, ExecutionException, TimeoutException {
+
+  if (tasks == null)   throw new NullPointerException();
+
+  int ntasks=tasks.size();
+
+  if (ntasks == 0)   throw new IllegalArgumentException();
+
+  List<Future<T>> futures=new ArrayList<>(ntasks);
+
+  CompletionService<T> ecs=new ExecutionCompletionService<>(this);
+
+  try {
+
+    ExecutionException ee=null;
+
+    long lastTime=(timed) ? System.nanoTime() : 0;
+
+    Iterator<? extends Callable<T>> it=tasks.iterator();
+
+    futures.add(ecs.submit(it.next()));
+
+    --ntasks;
+
+    int active=1;
+
+    for (; ; ) {
+
+      Future<T> f=ecs.poll();
+
+      if (f == null) {
+
+        if (ntasks > 0) {
+
+          --ntasks;
+
+          futures.add(ecs.submit(it.next()));
+
+          ++active;
+
+        }
+
+ else         if (active == 0)         break;
+
+ else         if (timed) {
+
+          f=ecs.poll(nanos,TimeUnit.NANOSECONDS);
+
+          if (f == null)           throw new TimeoutException();
+
+          long now=System.nanoTime();
+
+          nanos-=now - lastTime;
+
+          lastTime=now;
+
+        }
+
+ else         f=ecs.take();
+
+      }
+
+      if (f != null) {
+
+        --active;
+
+        try {
+
+          return f.get();
+
+        }
+
+ catch (        InterruptedException ie) {
+
+          throw ie;
+
+        }
+
+catch (        ExecutionException eex) {
+
+          ee=eex;
+
+        }
+
+catch (        RuntimeException rex) {
+
+          ee=new ExecutionException(rex);
+
+        }
+
+      }
+
+    }
+
+    if (ee == null)     ee=new ExecutionException(){
+
+      private static final long serialVersionUID=200818694545553992L;
+
+    }
+
+;
+
+    throw ee;
+
+  }
+
+  finally {
+
+    for (    Future<T> f : futures)     f.cancel(true);
+
+  }
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+public ExecutionService(){
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+public ExecutionService(JChannel ch){
+
+  setChannel(ch);
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override public <T>T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException {
+
+  try {
+
+    return doInvokeAny(tasks,false,0);
+
+  }
+
+ catch (  TimeoutException cannotHappen) {
+
+    assert false;
+
+    return null;
+
+  }
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override public <T>T invokeAny(Collection<? extends Callable<T>> tasks,long timeout,TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+
+  return doInvokeAny(tasks,true,unit.toNanos(timeout));
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override public boolean isTerminated(){
+
+  if (_shutdown.get()) {
+
+    _unfinishedLock.lock();
+
+    try {
+
+      return _unfinishedFutures.isEmpty();
+
+    }
+
+  finally {
+
+      _unfinishedLock.unlock();
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override protected <T>RunnableFuture<T> newTaskFor(Callable<T> callable){
+
+  return new DistributedFuture<>(ch,_unfinishedLock,_unfinishedCondition,_unfinishedFutures,callable);
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override protected <T>RunnableFuture<T> newTaskFor(Runnable runnable,T value){
+
+  return new DistributedFuture<>(ch,_unfinishedLock,_unfinishedCondition,_unfinishedFutures,runnable,value);
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override public void shutdown(){
+
+  _realShutdown(false);
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override public List<Runnable> shutdownNow(){
+
+  return _realShutdown(true);
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@Override public <T>NotifyingFuture<T> submit(Runnable task,T result){
+
+  return (NotifyingFuture<T>)super.submit(task,result);
+
+}
+
+Location: ExecutionService.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private List<Runnable> _realShutdown(boolean interrupt){
+
+  _shutdown.set(true);
+
+  _unfinishedLock.lock();
+
+  Set<Future<?>> futures;
+
+  try {
+
+    futures=new HashSet<>(_unfinishedFutures);
+
+  }
+
+  finally {
+
+    _unfinishedLock.unlock();
+
+  }
+
+  return (List<Runnable>)ch.down(new ExecutorEvent(ExecutorEvent.ALL_TASK_CANCEL,new Object[]{futures,interrupt}));
+
+}
+

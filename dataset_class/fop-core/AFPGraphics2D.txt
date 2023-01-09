@@ -1,0 +1,364 @@
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Copy Constructor
+
+ * @param g2d a AFPGraphics2D whose properties should be copied
+
+ */
+
+public AFPGraphics2D(AFPGraphics2D g2d){
+
+  super(g2d);
+
+  this.paintingState=g2d.paintingState;
+
+  this.resourceManager=g2d.resourceManager;
+
+  this.resourceInfo=g2d.resourceInfo;
+
+  this.fontInfo=g2d.fontInfo;
+
+  this.graphicsObj=g2d.graphicsObj;
+
+  this.fallbackTextHandler=g2d.fallbackTextHandler;
+
+  this.customTextHandler=g2d.customTextHandler;
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param textAsShapes if true, all text is turned into shapes in the convertion. No text is output.
+
+ * @param paintingState painting state
+
+ * @param resourceManager resource manager
+
+ * @param resourceInfo resource info
+
+ * @param fontInfo font info
+
+ */
+
+public AFPGraphics2D(boolean textAsShapes,AFPPaintingState paintingState,AFPResourceManager resourceManager,AFPResourceInfo resourceInfo,FontInfo fontInfo){
+
+  super(textAsShapes);
+
+  setPaintingState(paintingState);
+
+  setResourceManager(resourceManager);
+
+  setResourceInfo(resourceInfo);
+
+  setFontInfo(fontInfo);
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+public void clearRect(int x,int y,int width,int height){
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Converts a length value to an absolute value. Please note that this only uses the "ScaleY" factor, so this will result in a bad value should "ScaleX" and "ScaleY" be different.
+
+ * @param length the length
+
+ * @return the absolute length
+
+ */
+
+public double convertToAbsoluteLength(double length){
+
+  AffineTransform current=getTransform();
+
+  double mult=getResolution() / (double)UnitConv.IN2PT;
+
+  double factor=-current.getScaleY() / mult;
+
+  return length * factor;
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Handle the Batik drawing event
+
+ * @param shape the shape to draw
+
+ * @param fill true if the shape is to be drawn filled
+
+ */
+
+private void doDrawing(Shape shape,boolean fill){
+
+  if (!fill) {
+
+    graphicsObj.newSegment();
+
+  }
+
+  graphicsObj.setColor(gc.getColor());
+
+  applyPaint(gc.getPaint(),fill);
+
+  if (fill) {
+
+    graphicsObj.beginArea();
+
+  }
+
+ else {
+
+    applyStroke(gc.getStroke());
+
+  }
+
+  AffineTransform trans=gc.getTransform();
+
+  PathIterator iter=shape.getPathIterator(trans);
+
+  if (shape instanceof Line2D) {
+
+    double[] dstPts=new double[6];
+
+    iter.currentSegment(dstPts);
+
+    int[] coords=new int[4];
+
+    coords[X1]=(int)Math.round(dstPts[X]);
+
+    coords[Y1]=(int)Math.round(dstPts[Y]);
+
+    iter.next();
+
+    iter.currentSegment(dstPts);
+
+    coords[X2]=(int)Math.round(dstPts[X]);
+
+    coords[Y2]=(int)Math.round(dstPts[Y]);
+
+    graphicsObj.addLine(coords);
+
+  }
+
+ else   if (shape instanceof Rectangle2D) {
+
+    double[] dstPts=new double[6];
+
+    iter.currentSegment(dstPts);
+
+    int[] coords=new int[4];
+
+    coords[X2]=(int)Math.round(dstPts[X]);
+
+    coords[Y2]=(int)Math.round(dstPts[Y]);
+
+    iter.next();
+
+    iter.next();
+
+    iter.currentSegment(dstPts);
+
+    coords[X1]=(int)Math.round(dstPts[X]);
+
+    coords[Y1]=(int)Math.round(dstPts[Y]);
+
+    graphicsObj.addBox(coords);
+
+  }
+
+ else   if (shape instanceof Ellipse2D) {
+
+    double[] dstPts=new double[6];
+
+    Ellipse2D elip=(Ellipse2D)shape;
+
+    double scale=trans.getScaleX();
+
+    double radiusWidth=elip.getWidth() / 2;
+
+    double radiusHeight=elip.getHeight() / 2;
+
+    graphicsObj.setArcParams((int)Math.round(radiusWidth * scale),(int)Math.round(radiusHeight * scale),0,0);
+
+    double[] srcPts=new double[]{elip.getCenterX(),elip.getCenterY()};
+
+    trans.transform(srcPts,0,dstPts,0,1);
+
+    final int mh=1;
+
+    final int mhr=0;
+
+    graphicsObj.addFullArc((int)Math.round(dstPts[X]),(int)Math.round(dstPts[Y]),mh,mhr);
+
+  }
+
+ else {
+
+    processPathIterator(iter);
+
+  }
+
+  if (fill) {
+
+    graphicsObj.endArea();
+
+  }
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Draws an AWT image into a BufferedImage using an AWT Graphics2D implementation
+
+ * @param img the AWT image
+
+ * @param bufferedImage the AWT buffered image
+
+ * @param width the image width
+
+ * @param height the image height
+
+ * @param observer the image observer
+
+ * @return true if the image was drawn
+
+ */
+
+private boolean drawBufferedImage(Image img,BufferedImage bufferedImage,int width,int height,ImageObserver observer){
+
+  java.awt.Graphics2D g2d=bufferedImage.createGraphics();
+
+  try {
+
+    g2d.setComposite(AlphaComposite.SrcOver);
+
+    Color color=new Color(1,1,1,0);
+
+    g2d.setBackground(color);
+
+    g2d.setPaint(color);
+
+    g2d.fillRect(0,0,width,height);
+
+    int imageWidth=bufferedImage.getWidth();
+
+    int imageHeight=bufferedImage.getHeight();
+
+    Rectangle clipRect=new Rectangle(0,0,imageWidth,imageHeight);
+
+    g2d.clip(clipRect);
+
+    g2d.setComposite(gc.getComposite());
+
+    return g2d.drawImage(img,0,0,imageWidth,imageHeight,observer);
+
+  }
+
+  finally {
+
+    g2d.dispose();
+
+  }
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override public FontMetrics getFontMetrics(Font f){
+
+  LOG.debug("getFontMetrics() NYI: f=" + f);
+
+  return null;
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Returns the GOCA graphics object
+
+ * @return the GOCA graphics object
+
+ */
+
+public GraphicsObject getGraphicsObject(){
+
+  return this.graphicsObj;
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Sets a custom TextHandler implementation that is responsible for painting text. The default TextHandler paints all text as shapes. A custom implementation can implement text painting using text painting operators.
+
+ * @param handler the custom TextHandler implementation
+
+ */
+
+public void setCustomTextHandler(TextHandler handler){
+
+  this.customTextHandler=handler;
+
+}
+
+Location: AFPGraphics2D.java
+
+Content: 
+
+/** 
+
+ * Sets the GOCA graphics object
+
+ * @param obj the GOCA graphics object
+
+ */
+
+public void setGraphicsObject(GraphicsObject obj){
+
+  this.graphicsObj=obj;
+
+}
+

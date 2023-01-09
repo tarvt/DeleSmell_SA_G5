@@ -1,0 +1,112 @@
+Location: TestJobHistoryParsing.java
+
+Content: 
+
+public void testHistoryParsing() throws IOException {
+
+  Path historyDir=new Path(System.getProperty("test.build.data","."),"history");
+
+  JobConf conf=new JobConf();
+
+  conf.set("hadoop.job.history.location",historyDir.toString());
+
+  FileSystem fs=FileSystem.getLocal(new JobConf());
+
+  String username="user";
+
+  String weirdJob="Value has \n new line \n and " + "dot followed by new line .\n in it +" + "ends with escape\\";
+
+  String weirdPath="Value has characters: " + "`1234567890-=qwertyuiop[]\\asdfghjkl;'zxcvbnm,./" + "~!@#$%^&*()_+QWERTYUIOP{}|ASDFGHJKL:\"'ZXCVBNM<>?"+ "\t\b\n\f\"\n in it";
+
+  String weirdJobQueueName="my\njob\nQueue\\";
+
+  conf.setUser(username);
+
+  MiniMRCluster mr=null;
+
+  mr=new MiniMRCluster(2,"file:///",3,null,null,conf);
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  JobHistory jh=jt.getJobHistory();
+
+  jh.init(jt,conf,"localhost",1234);
+
+  JobID jobId=JobID.forName("job_200809171136_0001");
+
+  jh.setupEventWriter(jobId,conf);
+
+  Map<JobACL,AccessControlList> jobACLs=new HashMap<JobACL,AccessControlList>();
+
+  AccessControlList viewJobACL=new AccessControlList("user1,user2 group1,group2");
+
+  AccessControlList modifyJobACL=new AccessControlList("user3,user4 group3, group4");
+
+  jobACLs.put(JobACL.VIEW_JOB,viewJobACL);
+
+  jobACLs.put(JobACL.MODIFY_JOB,modifyJobACL);
+
+  JobSubmittedEvent jse=new JobSubmittedEvent(jobId,weirdJob,username,12345,weirdPath,jobACLs,weirdJobQueueName);
+
+  jh.logEvent(jse,jobId);
+
+  JobFinishedEvent jfe=new JobFinishedEvent(jobId,12346,1,1,0,0,new Counters(),new Counters(),new Counters());
+
+  jh.logEvent(jfe,jobId);
+
+  jh.closeWriter(jobId);
+
+  TaskID tid=TaskID.forName("task_200809171136_0001_m_000002");
+
+  TaskFinishedEvent tfe=new TaskFinishedEvent(tid,0,TaskType.MAP,"",null);
+
+  boolean caughtException=false;
+
+  try {
+
+    jh.logEvent(tfe,jobId);
+
+  }
+
+ catch (  Exception e) {
+
+    caughtException=true;
+
+  }
+
+  assertFalse("Writing an event after closing event writer is not handled",caughtException);
+
+  String historyFileName=jobId.toString() + "_" + username;
+
+  Path historyFilePath=new Path(historyDir.toString(),historyFileName);
+
+  System.out.println("History File is " + historyFilePath.toString());
+
+  JobHistoryParser parser=new JobHistoryParser(fs,historyFilePath);
+
+  JobHistoryParser.JobInfo jobInfo=parser.parse();
+
+  assertTrue(jobInfo.getUsername().equals(username));
+
+  assertTrue(jobInfo.getJobname().equals(weirdJob));
+
+  assertTrue(jobInfo.getJobQueueName().equals(weirdJobQueueName));
+
+  assertTrue(jobInfo.getJobConfPath().equals(weirdPath));
+
+  Map<JobACL,AccessControlList> parsedACLs=jobInfo.getJobACLs();
+
+  assertEquals(2,parsedACLs.size());
+
+  assertTrue(parsedACLs.get(JobACL.VIEW_JOB).toString().equals(viewJobACL.toString()));
+
+  assertTrue(parsedACLs.get(JobACL.MODIFY_JOB).toString().equals(modifyJobACL.toString()));
+
+  if (mr != null) {
+
+    mr.shutdown();
+
+  }
+
+}
+

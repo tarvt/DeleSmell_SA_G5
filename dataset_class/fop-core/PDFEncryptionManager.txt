@@ -1,0 +1,206 @@
+Location: PDFEncryptionManager.java
+
+Content: 
+
+/** 
+
+ * Checks whether the necessary algorithms are available.
+
+ * @return boolean True if all necessary algorithms are present
+
+ */
+
+public static boolean checkAvailableAlgorithms(){
+
+  if (!isJCEAvailable()) {
+
+    return false;
+
+  }
+
+ else {
+
+    Provider[] providers;
+
+    providers=Security.getProviders("Cipher.RC4");
+
+    if (providers == null) {
+
+      LOG.warn("Cipher provider for RC4 not available.");
+
+      return false;
+
+    }
+
+    providers=Security.getProviders("MessageDigest.MD5");
+
+    if (providers == null) {
+
+      LOG.warn("MessageDigest provider for MD5 not available.");
+
+      return false;
+
+    }
+
+    return true;
+
+  }
+
+}
+
+Location: PDFEncryptionManager.java
+
+Content: 
+
+/** 
+
+ * Indicates whether JCE is available.
+
+ * @return boolean true if JCE is present
+
+ */
+
+public static boolean isJCEAvailable(){
+
+  try {
+
+    Class.forName("javax.crypto.Cipher");
+
+    return true;
+
+  }
+
+ catch (  ClassNotFoundException e) {
+
+    return false;
+
+  }
+
+}
+
+Location: PDFEncryptionManager.java
+
+Content: 
+
+/** 
+
+ * Creates a new PDFEncryption instance if PDF encryption is available.
+
+ * @param params PDF encryption parameters
+
+ * @param pdf the PDF document to encrypt
+
+ * @return PDFEncryption the newly created instance, null if PDF encryptionis unavailable.
+
+ */
+
+public static PDFEncryption newInstance(PDFEncryptionParams params,PDFDocument pdf){
+
+  try {
+
+    PDFObjectNumber pdfObjectNumber=new PDFObjectNumber();
+
+    pdfObjectNumber.setDocument(pdf);
+
+    Class<?> clazz=Class.forName("org.apache.fop.pdf.PDFEncryptionJCE");
+
+    Method makeMethod=clazz.getMethod("make",new Class[]{PDFObjectNumber.class,PDFEncryptionParams.class,PDFDocument.class});
+
+    Object obj=makeMethod.invoke(null,new Object[]{pdfObjectNumber,params,pdf});
+
+    return (PDFEncryption)obj;
+
+  }
+
+ catch (  ClassNotFoundException e) {
+
+    if (checkAvailableAlgorithms()) {
+
+      LOG.warn("JCE and algorithms available, but the " + "implementation class unavailable. Please do a full " + "rebuild.");
+
+    }
+
+    return null;
+
+  }
+
+catch (  NoSuchMethodException e) {
+
+    LOG.error(e);
+
+    return null;
+
+  }
+
+catch (  IllegalAccessException e) {
+
+    LOG.error(e);
+
+    return null;
+
+  }
+
+catch (  InvocationTargetException e) {
+
+    LOG.error(e);
+
+    return null;
+
+  }
+
+}
+
+Location: PDFEncryptionManager.java
+
+Content: 
+
+private PDFEncryptionManager(){
+
+}
+
+Location: PDFEncryptionManager.java
+
+Content: 
+
+/** 
+
+ * Sets up PDF encryption if PDF encryption is requested by registering a <code>PDFEncryptionParams</code> object with the user agent and if the necessary cryptographic support is available.
+
+ * @param params the PDF encryption params or null to disable encryption
+
+ * @param pdf the PDF document to setup encryption for
+
+ */
+
+public static void setupPDFEncryption(PDFEncryptionParams params,PDFDocument pdf){
+
+  if (pdf == null) {
+
+    throw new NullPointerException("PDF document must not be null");
+
+  }
+
+  if (params != null) {
+
+    if (!checkAvailableAlgorithms()) {
+
+      if (isJCEAvailable()) {
+
+        LOG.warn("PDF encryption has been requested, JCE is " + "available but there's no " + "JCE provider available that provides the "+ "necessary algorithms. The PDF won't be "+ "encrypted.");
+
+      }
+
+ else {
+
+        LOG.warn("PDF encryption has been requested but JCE is " + "unavailable! The PDF won't be encrypted.");
+
+      }
+
+    }
+
+    pdf.setEncryption(params);
+
+  }
+
+}
+

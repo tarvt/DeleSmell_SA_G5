@@ -1,0 +1,132 @@
+Location: TestNodeHealthService.java
+
+Content: 
+
+private Configuration getConfForNodeHealthScript(){
+
+  Configuration conf=new Configuration();
+
+  conf.set(NodeHealthCheckerService.HEALTH_CHECK_SCRIPT_PROPERTY,nodeHealthscriptFile.getAbsolutePath());
+
+  conf.setLong(NodeHealthCheckerService.HEALTH_CHECK_INTERVAL_PROPERTY,500);
+
+  conf.setLong(NodeHealthCheckerService.HEALTH_CHECK_FAILURE_INTERVAL_PROPERTY,1000);
+
+  return conf;
+
+}
+
+Location: TestNodeHealthService.java
+
+Content: 
+
+public void testNodeHealthScript() throws Exception {
+
+  TaskTrackerHealthStatus healthStatus=new TaskTrackerHealthStatus();
+
+  String errorScript="echo ERROR\n echo \"Tracker not healthy\"";
+
+  String normalScript="echo \"I am all fine\"";
+
+  String timeOutScript="sleep 4\n echo\"I am fine\"";
+
+  Configuration conf=getConfForNodeHealthScript();
+
+  conf.writeXml(new FileOutputStream(nodeHealthConfigFile));
+
+  NodeHealthCheckerService nodeHealthChecker=new NodeHealthCheckerService(conf);
+
+  TimerTask timer=nodeHealthChecker.getTimer();
+
+  writeNodeHealthScriptFile(normalScript,true);
+
+  timer.run();
+
+  nodeHealthChecker.setHealthStatus(healthStatus);
+
+  LOG.info("Checking initial healthy condition");
+
+  assertTrue("Node health status reported unhealthy",healthStatus.isNodeHealthy());
+
+  assertTrue("Node health status reported unhealthy",healthStatus.getHealthReport().isEmpty());
+
+  writeNodeHealthScriptFile(errorScript,true);
+
+  timer.run();
+
+  nodeHealthChecker.setHealthStatus(healthStatus);
+
+  LOG.info("Checking Healthy--->Unhealthy");
+
+  assertFalse("Node health status reported healthy",healthStatus.isNodeHealthy());
+
+  assertFalse("Node health status reported healthy",healthStatus.getHealthReport().isEmpty());
+
+  writeNodeHealthScriptFile(normalScript,true);
+
+  timer.run();
+
+  nodeHealthChecker.setHealthStatus(healthStatus);
+
+  LOG.info("Checking UnHealthy--->healthy");
+
+  assertTrue("Node health status reported unhealthy",healthStatus.isNodeHealthy());
+
+  assertTrue("Node health status reported unhealthy",healthStatus.getHealthReport().isEmpty());
+
+  writeNodeHealthScriptFile(timeOutScript,true);
+
+  timer.run();
+
+  nodeHealthChecker.setHealthStatus(healthStatus);
+
+  LOG.info("Checking Healthy--->timeout");
+
+  assertFalse("Node health status reported healthy even after timeout",healthStatus.isNodeHealthy());
+
+  assertEquals("Node time out message not propogated",healthStatus.getHealthReport(),NodeHealthCheckerService.NODE_HEALTH_SCRIPT_TIMED_OUT_MSG);
+
+}
+
+Location: TestNodeHealthService.java
+
+Content: 
+
+public void testNodeHealthScriptShouldRun() throws IOException {
+
+  assertFalse("Health checker should not have started",NodeHealthCheckerService.shouldRun(new Configuration()));
+
+  Configuration conf=getConfForNodeHealthScript();
+
+  assertFalse("Node health script should start",NodeHealthCheckerService.shouldRun(conf));
+
+  conf.writeXml(new FileOutputStream(nodeHealthConfigFile));
+
+  writeNodeHealthScriptFile("",false);
+
+  assertFalse("Node health script should start",NodeHealthCheckerService.shouldRun(conf));
+
+  writeNodeHealthScriptFile("",true);
+
+  assertTrue("Node health script should start",NodeHealthCheckerService.shouldRun(conf));
+
+}
+
+Location: TestNodeHealthService.java
+
+Content: 
+
+private void writeNodeHealthScriptFile(String scriptStr,boolean setExecutable) throws IOException {
+
+  PrintWriter pw=new PrintWriter(new FileOutputStream(nodeHealthscriptFile));
+
+  pw.println(scriptStr);
+
+  pw.flush();
+
+  pw.close();
+
+  nodeHealthscriptFile.setExecutable(setExecutable);
+
+}
+

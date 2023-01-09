@@ -1,0 +1,380 @@
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * Creates an XMP document based on the settings on the PDF Document.
+
+ * @param pdfDoc the PDF Document
+
+ * @return the requested XMP metadata
+
+ */
+
+public static Metadata createXMPFromPDFDocument(PDFDocument pdfDoc){
+
+  Metadata meta=new Metadata();
+
+  PDFInfo info=pdfDoc.getInfo();
+
+  PDFRoot root=pdfDoc.getRoot();
+
+  if (info.getCreationDate() == null) {
+
+    Date d=new Date();
+
+    info.setCreationDate(d);
+
+  }
+
+  DublinCoreAdapter dc=DublinCoreSchema.getAdapter(meta);
+
+  PDFAMode pdfaMode=pdfDoc.getProfile().getPDFAMode();
+
+  dc.setCompact(pdfaMode.getPart() != 3);
+
+  if (info.getAuthor() != null) {
+
+    dc.addCreator(info.getAuthor());
+
+  }
+
+  if (info.getTitle() != null) {
+
+    dc.setTitle(info.getTitle());
+
+  }
+
+  if (info.getSubject() != null) {
+
+    dc.setDescription(null,info.getSubject());
+
+  }
+
+  if (root.getLanguage() != null) {
+
+    dc.addLanguage(root.getLanguage());
+
+  }
+
+  dc.addDate(info.getCreationDate());
+
+  dc.setFormat("application/pdf");
+
+  PDFUAMode pdfuaMode=pdfDoc.getProfile().getPDFUAMode();
+
+  if (pdfuaMode.isEnabled()) {
+
+    PDFUAAdapter pdfua=PDFUAXMPSchema.getAdapter(meta);
+
+    pdfua.setPart(pdfuaMode.getPart());
+
+  }
+
+  if (pdfaMode.isEnabled()) {
+
+    PDFAAdapter pdfa=PDFAXMPSchema.getAdapter(meta);
+
+    pdfa.setPart(pdfaMode.getPart());
+
+    pdfa.setConformance(String.valueOf(pdfaMode.getConformanceLevel()));
+
+  }
+
+  AdobePDFAdapter adobePDF=AdobePDFSchema.getAdapter(meta);
+
+  PDFXMode pdfxMode=pdfDoc.getProfile().getPDFXMode();
+
+  if (pdfxMode != PDFXMode.DISABLED) {
+
+    PDFXAdapter pdfx=PDFXXMPSchema.getAdapter(meta);
+
+    pdfx.setVersion(pdfxMode.getName());
+
+    XAPMMAdapter xapmm=XAPMMXMPSchema.getAdapter(meta);
+
+    xapmm.setVersion("1");
+
+    xapmm.setDocumentID("uuid:" + UUID.randomUUID().toString());
+
+    xapmm.setInstanceID("uuid:" + UUID.randomUUID().toString());
+
+    xapmm.setRenditionClass("default");
+
+    adobePDF.setTrapped("False");
+
+  }
+
+  PDFProfile profile=pdfDoc.getProfile();
+
+  PDFVTMode pdfvtMode=profile.getPDFVTMode();
+
+  if (pdfvtMode != PDFVTMode.DISABLED) {
+
+    PDFVTAdapter pdfvt=PDFVTXMPSchema.getAdapter(meta);
+
+    pdfvt.setVersion("PDF/VT-1");
+
+    if (info.getModDate() != null) {
+
+      pdfvt.setModifyDate(info.getModDate());
+
+    }
+
+ else     if (profile.isModDateRequired()) {
+
+      pdfvt.setModifyDate(info.getCreationDate());
+
+    }
+
+  }
+
+  XMPBasicAdapter xmpBasic=XMPBasicSchema.getAdapter(meta);
+
+  xmpBasic.setCreateDate(info.getCreationDate());
+
+  if (info.getModDate() != null) {
+
+    xmpBasic.setModifyDate(info.getModDate());
+
+  }
+
+ else   if (profile.isModDateRequired()) {
+
+    xmpBasic.setModifyDate(info.getCreationDate());
+
+  }
+
+  if (info.getCreator() != null) {
+
+    xmpBasic.setCreatorTool(info.getCreator());
+
+  }
+
+  if (info.getKeywords() != null) {
+
+    adobePDF.setKeywords(info.getKeywords());
+
+  }
+
+  if (info.getProducer() != null) {
+
+    adobePDF.setProducer(info.getProducer());
+
+  }
+
+  adobePDF.setPDFVersion(pdfDoc.getPDFVersionString());
+
+  return meta;
+
+}
+
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected String getDefaultFilterName(){
+
+  return PDFFilterList.METADATA_FILTER;
+
+}
+
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * @return the XMP metadata
+
+ */
+
+public Metadata getMetadata(){
+
+  return this.xmpMetadata;
+
+}
+
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected void outputRawStreamData(OutputStream out) throws IOException {
+
+  try {
+
+    XMPSerializer.writeXMPPacket(xmpMetadata,out,this.readOnly);
+
+  }
+
+ catch (  TransformerConfigurationException tce) {
+
+    throw new IOException("Error setting up Transformer for XMP stream serialization: " + tce.getMessage());
+
+  }
+
+catch (  SAXException saxe) {
+
+    throw new IOException("Error while serializing XMP stream: " + saxe.getMessage());
+
+  }
+
+}
+
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * overload the base object method so we don't have to copy byte arrays around so much {@inheritDoc}
+
+ */
+
+public int output(java.io.OutputStream stream) throws java.io.IOException {
+
+  int length=super.output(stream);
+
+  this.xmpMetadata=null;
+
+  return length;
+
+}
+
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * @param xmp xmp metadata
+
+ * @param readOnly true if read only
+
+ * @see org.apache.fop.pdf.PDFObject#PDFObject()
+
+ */
+
+public PDFMetadata(Metadata xmp,boolean readOnly){
+
+  super();
+
+  if (xmp == null) {
+
+    throw new NullPointerException("The parameter for the XMP Document must not be null");
+
+  }
+
+  this.xmpMetadata=xmp;
+
+  this.readOnly=readOnly;
+
+}
+
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+protected void populateStreamDict(Object lengthEntry){
+
+  final String filterEntry=getFilterList().buildFilterDictEntries();
+
+  if (getDocumentSafely().getProfile().getPDFAMode().isPart1() && filterEntry != null && filterEntry.length() > 0) {
+
+    throw new PDFConformanceException("The Filter key is prohibited when PDF/A-1 is active");
+
+  }
+
+  put("Type",new PDFName("Metadata"));
+
+  put("Subtype",new PDFName("XML"));
+
+  super.populateStreamDict(lengthEntry);
+
+}
+
+Location: PDFMetadata.java
+
+Content: 
+
+/** 
+
+ * Updates the values in the Info object from the XMP metadata according to the rules defined in PDF/A-1 (ISO 19005-1:2005)
+
+ * @param meta the metadata
+
+ * @param info the Info object
+
+ */
+
+public static void updateInfoFromMetadata(Metadata meta,PDFInfo info){
+
+  DublinCoreAdapter dc=DublinCoreSchema.getAdapter(meta);
+
+  info.setTitle(dc.getTitle());
+
+  String[] creators=dc.getCreators();
+
+  if (creators != null && creators.length > 0) {
+
+    info.setAuthor(creators[0]);
+
+  }
+
+ else {
+
+    info.setAuthor(null);
+
+  }
+
+  info.setSubject(dc.getDescription());
+
+  AdobePDFAdapter pdf=AdobePDFSchema.getAdapter(meta);
+
+  info.setKeywords(pdf.getKeywords());
+
+  info.setProducer(pdf.getProducer());
+
+  XMPBasicAdapter xmpBasic=XMPBasicSchema.getAdapter(meta);
+
+  info.setCreator(xmpBasic.getCreatorTool());
+
+  Date d;
+
+  d=xmpBasic.getCreateDate();
+
+  xmpBasic.setCreateDate(d);
+
+  info.setCreationDate(d);
+
+  d=xmpBasic.getModifyDate();
+
+  if (d != null) {
+
+    xmpBasic.setModifyDate(d);
+
+    info.setModDate(d);
+
+  }
+
+}
+

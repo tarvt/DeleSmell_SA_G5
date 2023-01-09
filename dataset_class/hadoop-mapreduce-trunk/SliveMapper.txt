@@ -1,0 +1,138 @@
+Location: SliveMapper.java
+
+Content: 
+
+@Override public void map(Object key,Object value,OutputCollector<Text,Text> output,Reporter reporter) throws IOException {
+
+  logAndSetStatus(reporter,"Running slive mapper for dummy key " + key + " and dummy value "+ value);
+
+  long startTime=Timer.now();
+
+  long opAm=0;
+
+  long sleepOps=0;
+
+  int duration=getConfig().getDurationMilliseconds();
+
+  Range<Long> sleepRange=getConfig().getSleepRange();
+
+  Operation sleeper=null;
+
+  if (sleepRange != null) {
+
+    sleeper=new SleepOp(getConfig(),rnd);
+
+  }
+
+  WeightSelector selector=getSelector();
+
+  while (Timer.elapsed(startTime) < duration) {
+
+    try {
+
+      logAndSetStatus(reporter,"Attempting to select operation #" + (opAm + 1));
+
+      int currElapsed=(int)(Timer.elapsed(startTime));
+
+      Operation op=selector.select(currElapsed,duration);
+
+      if (op == null) {
+
+        break;
+
+      }
+
+ else {
+
+        ++opAm;
+
+        runOperation(op,reporter,output,opAm);
+
+      }
+
+      if (sleeper != null) {
+
+        ++sleepOps;
+
+        runOperation(sleeper,reporter,output,sleepOps);
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+      logAndSetStatus(reporter,"Failed at running due to " + StringUtils.stringifyException(e));
+
+      if (getConfig().shouldExitOnFirstError()) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+{
+
+    long timeTaken=Timer.elapsed(startTime);
+
+    OperationOutput opCount=new OperationOutput(OutputType.LONG,OP_TYPE,ReportWriter.OP_COUNT,opAm);
+
+    output.collect(opCount.getKey(),opCount.getOutputValue());
+
+    OperationOutput overallTime=new OperationOutput(OutputType.LONG,OP_TYPE,ReportWriter.OK_TIME_TAKEN,timeTaken);
+
+    output.collect(overallTime.getKey(),overallTime.getOutputValue());
+
+    logAndSetStatus(reporter,"Finished " + opAm + " operations in "+ timeTaken+ " milliseconds");
+
+  }
+
+}
+
+Location: SliveMapper.java
+
+Content: 
+
+/** 
+
+ * Runs the given operation and reports on its results
+
+ * @param op the operation to run
+
+ * @param reporter the status reporter to notify
+
+ * @param output the output to write to
+
+ * @throws IOException
+
+ */
+
+private void runOperation(Operation op,Reporter reporter,OutputCollector<Text,Text> output,long opNum) throws IOException {
+
+  if (op == null) {
+
+    return;
+
+  }
+
+  logAndSetStatus(reporter,"Running operation #" + opNum + " ("+ op+ ")");
+
+  List<OperationOutput> opOut=op.run(filesystem);
+
+  logAndSetStatus(reporter,"Finished operation #" + opNum + " ("+ op+ ")");
+
+  if (opOut != null && !opOut.isEmpty()) {
+
+    for (    OperationOutput outData : opOut) {
+
+      output.collect(outData.getKey(),outData.getOutputValue());
+
+    }
+
+  }
+
+}
+

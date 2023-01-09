@@ -1,0 +1,280 @@
+Location: TestFileOutputCommitter.java
+
+Content: 
+
+private void setConfForFileOutputCommitter(JobConf job){
+
+  job.set(JobContext.TASK_ATTEMPT_ID,attempt);
+
+  job.setOutputCommitter(FileOutputCommitter.class);
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+}
+
+Location: TestFileOutputCommitter.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public void testAbort() throws IOException, InterruptedException {
+
+  Job job=Job.getInstance();
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  Configuration conf=job.getConfiguration();
+
+  conf.set(MRJobConfig.TASK_ATTEMPT_ID,attempt);
+
+  JobContext jContext=new JobContextImpl(conf,taskID.getJobID());
+
+  TaskAttemptContext tContext=new TaskAttemptContextImpl(conf,taskID);
+
+  FileOutputCommitter committer=new FileOutputCommitter(outDir,tContext);
+
+  committer.setupJob(jContext);
+
+  committer.setupTask(tContext);
+
+  TextOutputFormat theOutputFormat=new TextOutputFormat();
+
+  RecordWriter theRecordWriter=theOutputFormat.getRecordWriter(tContext);
+
+  writeOutput(theRecordWriter,tContext);
+
+  committer.abortTask(tContext);
+
+  File expectedFile=new File(new Path(committer.getWorkPath(),partFile).toString());
+
+  assertFalse("task temp dir still exists",expectedFile.exists());
+
+  committer.abortJob(jContext,JobStatus.State.FAILED);
+
+  expectedFile=new File(new Path(outDir,FileOutputCommitter.TEMP_DIR_NAME).toString());
+
+  assertFalse("job temp dir still exists",expectedFile.exists());
+
+  assertEquals("Output directory not empty",0,new File(outDir.toString()).listFiles().length);
+
+  FileUtil.fullyDelete(new File(outDir.toString()));
+
+}
+
+Location: TestFileOutputCommitter.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public void testCommitter() throws Exception {
+
+  Job job=Job.getInstance();
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  Configuration conf=job.getConfiguration();
+
+  conf.set(MRJobConfig.TASK_ATTEMPT_ID,attempt);
+
+  JobContext jContext=new JobContextImpl(conf,taskID.getJobID());
+
+  TaskAttemptContext tContext=new TaskAttemptContextImpl(conf,taskID);
+
+  FileOutputCommitter committer=new FileOutputCommitter(outDir,tContext);
+
+  committer.setupJob(jContext);
+
+  committer.setupTask(tContext);
+
+  TextOutputFormat theOutputFormat=new TextOutputFormat();
+
+  RecordWriter theRecordWriter=theOutputFormat.getRecordWriter(tContext);
+
+  writeOutput(theRecordWriter,tContext);
+
+  committer.commitTask(tContext);
+
+  committer.commitJob(jContext);
+
+  File expectedFile=new File(new Path(outDir,partFile).toString());
+
+  StringBuffer expectedOutput=new StringBuffer();
+
+  expectedOutput.append(key1).append('\t').append(val1).append("\n");
+
+  expectedOutput.append(val1).append("\n");
+
+  expectedOutput.append(val2).append("\n");
+
+  expectedOutput.append(key2).append("\n");
+
+  expectedOutput.append(key1).append("\n");
+
+  expectedOutput.append(key2).append('\t').append(val2).append("\n");
+
+  String output=UtilsForTests.slurp(expectedFile);
+
+  assertEquals(output,expectedOutput.toString());
+
+  FileUtil.fullyDelete(new File(outDir.toString()));
+
+}
+
+Location: TestFileOutputCommitter.java
+
+Content: 
+
+@SuppressWarnings("unchecked") public void testFailAbort() throws IOException, InterruptedException {
+
+  Job job=Job.getInstance();
+
+  Configuration conf=job.getConfiguration();
+
+  conf.set(FileSystem.FS_DEFAULT_NAME_KEY,"faildel:///");
+
+  conf.setClass("fs.faildel.impl",FakeFileSystem.class,FileSystem.class);
+
+  conf.set(MRJobConfig.TASK_ATTEMPT_ID,attempt);
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  JobContext jContext=new JobContextImpl(conf,taskID.getJobID());
+
+  TaskAttemptContext tContext=new TaskAttemptContextImpl(conf,taskID);
+
+  FileOutputCommitter committer=new FileOutputCommitter(outDir,tContext);
+
+  committer.setupJob(jContext);
+
+  committer.setupTask(tContext);
+
+  TextOutputFormat<?,?> theOutputFormat=new TextOutputFormat();
+
+  RecordWriter<?,?> theRecordWriter=theOutputFormat.getRecordWriter(tContext);
+
+  writeOutput(theRecordWriter,tContext);
+
+  Throwable th=null;
+
+  try {
+
+    committer.abortTask(tContext);
+
+  }
+
+ catch (  IOException ie) {
+
+    th=ie;
+
+  }
+
+  assertNotNull(th);
+
+  assertTrue(th instanceof IOException);
+
+  assertTrue(th.getMessage().contains("fake delete failed"));
+
+  File jobTmpDir=new File(new Path(outDir,FileOutputCommitter.TEMP_DIR_NAME).toString());
+
+  File taskTmpDir=new File(jobTmpDir,"_" + taskID);
+
+  File expectedFile=new File(taskTmpDir,partFile);
+
+  assertTrue(expectedFile + " does not exists",expectedFile.exists());
+
+  th=null;
+
+  try {
+
+    committer.abortJob(jContext,JobStatus.State.FAILED);
+
+  }
+
+ catch (  IOException ie) {
+
+    th=ie;
+
+  }
+
+  assertNotNull(th);
+
+  assertTrue(th instanceof IOException);
+
+  assertTrue(th.getMessage().contains("fake delete failed"));
+
+  assertTrue("job temp dir does not exists",jobTmpDir.exists());
+
+  FileUtil.fullyDelete(new File(outDir.toString()));
+
+}
+
+Location: TestFileOutputCommitter.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private void writeOutput(RecordWriter theRecordWriter,Reporter reporter) throws IOException {
+
+  NullWritable nullWritable=NullWritable.get();
+
+  try {
+
+    theRecordWriter.write(key1,val1);
+
+    theRecordWriter.write(null,nullWritable);
+
+    theRecordWriter.write(null,val1);
+
+    theRecordWriter.write(nullWritable,val2);
+
+    theRecordWriter.write(key2,nullWritable);
+
+    theRecordWriter.write(key1,null);
+
+    theRecordWriter.write(null,null);
+
+    theRecordWriter.write(key2,val2);
+
+  }
+
+  finally {
+
+    theRecordWriter.close(reporter);
+
+  }
+
+}
+
+Location: TestFileOutputCommitter.java
+
+Content: 
+
+@SuppressWarnings("unchecked") private void writeOutput(RecordWriter theRecordWriter,TaskAttemptContext context) throws IOException, InterruptedException {
+
+  NullWritable nullWritable=NullWritable.get();
+
+  try {
+
+    theRecordWriter.write(key1,val1);
+
+    theRecordWriter.write(null,nullWritable);
+
+    theRecordWriter.write(null,val1);
+
+    theRecordWriter.write(nullWritable,val2);
+
+    theRecordWriter.write(key2,nullWritable);
+
+    theRecordWriter.write(key1,null);
+
+    theRecordWriter.write(null,null);
+
+    theRecordWriter.write(key2,val2);
+
+  }
+
+  finally {
+
+    theRecordWriter.close(context);
+
+  }
+
+}
+

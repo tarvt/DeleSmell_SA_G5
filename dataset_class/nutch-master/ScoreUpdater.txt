@@ -1,0 +1,116 @@
+Location: ScoreUpdater.java
+
+Content: 
+
+/** 
+
+ * Updates the inlink score in the web graph node databsae into the crawl database.
+
+ * @param crawlDb The crawl database to update
+
+ * @param webGraphDb The webgraph database to use.
+
+ * @throws IOException If an error occurs while updating the scores.
+
+ * @throws InterruptedException if the Job is interrupted during execution
+
+ * @throws ClassNotFoundException if classes required to run the Job cannot be located
+
+ */
+
+public void update(Path crawlDb,Path webGraphDb) throws IOException, ClassNotFoundException, InterruptedException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("ScoreUpdater: starting at " + sdf.format(start));
+
+  Configuration conf=getConf();
+
+  LOG.info("Running crawldb update " + crawlDb);
+
+  Path nodeDb=new Path(webGraphDb,WebGraph.NODE_DIR);
+
+  Path crawlDbCurrent=new Path(crawlDb,CrawlDb.CURRENT_NAME);
+
+  Path newCrawlDb=new Path(crawlDb,Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Job updater=NutchJob.getInstance(conf);
+
+  updater.setJobName("Update CrawlDb from WebGraph");
+
+  FileInputFormat.addInputPath(updater,crawlDbCurrent);
+
+  FileInputFormat.addInputPath(updater,nodeDb);
+
+  FileOutputFormat.setOutputPath(updater,newCrawlDb);
+
+  updater.setInputFormatClass(SequenceFileInputFormat.class);
+
+  updater.setJarByClass(ScoreUpdater.class);
+
+  updater.setMapperClass(ScoreUpdater.ScoreUpdaterMapper.class);
+
+  updater.setReducerClass(ScoreUpdater.ScoreUpdaterReducer.class);
+
+  updater.setMapOutputKeyClass(Text.class);
+
+  updater.setMapOutputValueClass(ObjectWritable.class);
+
+  updater.setOutputKeyClass(Text.class);
+
+  updater.setOutputValueClass(CrawlDatum.class);
+
+  updater.setOutputFormatClass(MapFileOutputFormat.class);
+
+  try {
+
+    boolean success=updater.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="Update CrawlDb from WebGraph job did not succeed, job status:" + updater.getStatus().getState() + ", reason: "+ updater.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      FileSystem fs=newCrawlDb.getFileSystem(conf);
+
+      if (fs.exists(newCrawlDb)) {
+
+        fs.delete(newCrawlDb,true);
+
+      }
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|ClassNotFoundException|InterruptedException e) {
+
+    LOG.error("Update CrawlDb from WebGraph:",e);
+
+    FileSystem fs=newCrawlDb.getFileSystem(conf);
+
+    if (fs.exists(newCrawlDb)) {
+
+      fs.delete(newCrawlDb,true);
+
+    }
+
+    throw e;
+
+  }
+
+  LOG.info("ScoreUpdater: installing new crawldb " + crawlDb);
+
+  CrawlDb.install(updater,crawlDb);
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("ScoreUpdater: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+}
+

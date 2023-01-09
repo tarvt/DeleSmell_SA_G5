@@ -1,0 +1,498 @@
+Location: PDFPainter.java
+
+Content: 
+
+private void addStructTreeBBox(Rectangle rect){
+
+  if (accessEnabled && getDocumentHandler().getPDFDocument().getProfile().getPDFUAMode().isEnabled()) {
+
+    PDFStructElem structElem=(PDFStructElem)getContext().getStructureTreeElement();
+
+    if (structElem != null) {
+
+      PDFDictionary d=new PDFDictionary();
+
+      int x=rect.x / 1000;
+
+      int y=rect.y / 1000;
+
+      int w=rect.width / 1000;
+
+      int h=rect.height / 1000;
+
+      d.put("BBox",new PDFArray(x,y,w,h));
+
+      d.put("O",new PDFName("Layout"));
+
+      structElem.put("A",d);
+
+    }
+
+  }
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+@Override protected void drawImageUsingURI(String uri,Rectangle rect){
+
+  ImageManager manager=getUserAgent().getImageManager();
+
+  ImageInfo info=null;
+
+  try {
+
+    ImageSessionContext sessionContext=getUserAgent().getImageSessionContext();
+
+    info=manager.getImageInfo(uri,sessionContext);
+
+    if (accessEnabled) {
+
+      PDFStructElem structElem=(PDFStructElem)getContext().getStructureTreeElement();
+
+      String mimeType=info.getMimeType();
+
+      if (!mimeType.equalsIgnoreCase("application/pdf")) {
+
+        prepareImageMCID(structElem);
+
+      }
+
+    }
+
+    drawImageUsingImageHandler(info,rect);
+
+  }
+
+ catch (  ImageException ie) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageError(this,(info != null ? info.toString() : uri),ie,null);
+
+  }
+
+catch (  FileNotFoundException fe) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageNotFound(this,(info != null ? info.toString() : uri),fe,null);
+
+  }
+
+catch (  IOException ioe) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageIOError(this,(info != null ? info.toString() : uri),ioe,null);
+
+  }
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+private void drawTextWithDP(int x,int y,String text,FontTriplet triplet,int letterSpacing,int wordSpacing,int[][] dp){
+
+  assert text != null;
+
+  assert triplet != null;
+
+  assert dp != null;
+
+  String fk=getFontInfo().getInternalFontKey(triplet);
+
+  Typeface tf=getTypeface(fk);
+
+  if (tf.isMultiByte() || tf.isCID()) {
+
+    int fs=state.getFontSize();
+
+    float fsPoints=fs / 1000f;
+
+    Font f=getFontInfo().getFontInstance(triplet,fs);
+
+    PDFTextUtil tu=generator.getTextUtil();
+
+    double xc=0f;
+
+    double yc=0f;
+
+    double xoLast=0f;
+
+    double yoLast=0f;
+
+    double wox=wordSpacing;
+
+    boolean simulateStyle=tf instanceof CustomFont && ((CustomFont)tf).getSimulateStyle();
+
+    double shear=0;
+
+    if (simulateStyle) {
+
+      if (triplet.getWeight() == 700) {
+
+        generator.add("q\n");
+
+        generator.add("2 Tr 0.31543 w\n");
+
+      }
+
+      if (triplet.getStyle().equals("italic")) {
+
+        shear=0.3333;
+
+      }
+
+    }
+
+    tu.writeTextMatrix(new AffineTransform(1,0,shear,-1,x / 1000f,y / 1000f));
+
+    tu.updateTf(fk,fsPoints,tf.isMultiByte(),true);
+
+    generator.updateCharacterSpacing(letterSpacing / 1000f);
+
+    for (int i=0, n=text.length(); i < n; i++) {
+
+      char ch=text.charAt(i);
+
+      int[] pa=((i >= dp.length) || (dp[i] == null)) ? paZero : dp[i];
+
+      double xo=xc + pa[0];
+
+      double yo=yc + pa[1];
+
+      double xa=f.getCharWidth(ch) + maybeWordOffsetX(wox,ch,null);
+
+      double ya=0;
+
+      double xd=(xo - xoLast) / 1000f;
+
+      double yd=(yo - yoLast) / 1000f;
+
+      tu.writeTd(xd,yd);
+
+      tu.writeTj(f.mapChar(ch),tf.isMultiByte(),true);
+
+      xc+=xa + pa[2];
+
+      yc+=ya + pa[3];
+
+      xoLast=xo;
+
+      yoLast=yo;
+
+    }
+
+  }
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+private void drawTextWithDX(int x,int y,String text,FontTriplet triplet,int letterSpacing,int wordSpacing,int[] dx) throws IFException {
+
+  String fontKey=getFontKey(triplet);
+
+  int sizeMillipoints=state.getFontSize();
+
+  float fontSize=sizeMillipoints / 1000f;
+
+  Typeface tf=getTypeface(fontKey);
+
+  Font font=getFontInfo().getFontInstance(triplet,sizeMillipoints);
+
+  String fontName=font.getFontName();
+
+  PDFTextUtil textutil=generator.getTextUtil();
+
+  textutil.updateTf(fontKey,fontSize,tf.isMultiByte(),tf.isCID());
+
+  double shear=0;
+
+  boolean simulateStyle=tf instanceof CustomFont && ((CustomFont)tf).getSimulateStyle();
+
+  if (simulateStyle) {
+
+    if (triplet.getWeight() == 700) {
+
+      generator.add("q\n");
+
+      generator.add("2 Tr 0.31543 w\n");
+
+    }
+
+    if (triplet.getStyle().equals("italic")) {
+
+      shear=0.3333;
+
+    }
+
+  }
+
+  generator.updateCharacterSpacing(letterSpacing / 1000f);
+
+  textutil.writeTextMatrix(new AffineTransform(1,0,shear,-1,x / 1000f,y / 1000f));
+
+  int l=text.length();
+
+  int dxl=(dx != null ? dx.length : 0);
+
+  if (dx != null && dxl > 0 && dx[0] != 0) {
+
+    textutil.adjustGlyphTJ(-dx[0] / fontSize);
+
+  }
+
+  for (int i=0; i < l; i++) {
+
+    int orgChar=text.charAt(i);
+
+    int ch;
+
+    if (CharUtilities.containsSurrogatePairAt(text,i)) {
+
+      orgChar=Character.toCodePoint((char)orgChar,text.charAt(++i));
+
+    }
+
+    float glyphAdjust=0;
+
+    if (font.hasCodePoint(orgChar)) {
+
+      ch=font.mapCodePoint(orgChar);
+
+      ch=selectAndMapSingleByteFont(tf,fontName,fontSize,textutil,ch);
+
+      if ((wordSpacing != 0) && CharUtilities.isAdjustableSpace(orgChar)) {
+
+        glyphAdjust+=wordSpacing;
+
+      }
+
+    }
+
+ else {
+
+      if (CharUtilities.isFixedWidthSpace(orgChar)) {
+
+        ch=font.mapChar(CharUtilities.SPACE);
+
+        int spaceDiff=font.getCharWidth(CharUtilities.SPACE) - font.getCharWidth(orgChar);
+
+        glyphAdjust=-spaceDiff;
+
+      }
+
+ else {
+
+        ch=font.mapCodePoint(orgChar);
+
+        if ((wordSpacing != 0) && CharUtilities.isAdjustableSpace(orgChar)) {
+
+          glyphAdjust+=wordSpacing;
+
+        }
+
+      }
+
+      ch=selectAndMapSingleByteFont(tf,fontName,fontSize,textutil,ch);
+
+    }
+
+    textutil.writeTJMappedCodePoint(ch);
+
+    if (dx != null && i < dxl - 1) {
+
+      glyphAdjust+=dx[i + 1];
+
+    }
+
+    if (glyphAdjust != 0) {
+
+      textutil.adjustGlyphTJ(-glyphAdjust / fontSize);
+
+    }
+
+  }
+
+  textutil.writeTJ();
+
+  if (simulateStyle && triplet.getWeight() == 700) {
+
+    generator.add("Q\n");
+
+  }
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+public void drawText(int x,int y,int letterSpacing,int wordSpacing,int[][] dp,String text,boolean nextIsSpace) throws IFException {
+
+  if (accessEnabled && nextIsSpace) {
+
+    text+=' ';
+
+  }
+
+  drawText(x,y,letterSpacing,wordSpacing,dp,text);
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+private double maybeWordOffsetX(double wox,char ch,Direction dir){
+
+  if ((wox != 0) && CharUtilities.isAdjustableSpace(ch) && ((dir == null) || dir.isHorizontal())) {
+
+    return wox;
+
+  }
+
+ else {
+
+    return 0;
+
+  }
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+/** 
+
+ * Default constructor.
+
+ * @param documentHandler the parent document handler
+
+ * @param logicalStructureHandler the logical structure handler
+
+ */
+
+public PDFPainter(PDFDocumentHandler documentHandler,PDFLogicalStructureHandler logicalStructureHandler){
+
+  super(documentHandler);
+
+  this.logicalStructureHandler=logicalStructureHandler;
+
+  this.generator=documentHandler.getGenerator();
+
+  this.graphicsPainter=new PDFGraphicsPainter(this.generator);
+
+  this.borderPainter=new BorderPainter(this.graphicsPainter);
+
+  this.state=IFState.create();
+
+  accessEnabled=this.getUserAgent().isAccessibilityEnabled();
+
+  languageAvailabilityChecker=accessEnabled ? new LanguageAvailabilityChecker(documentHandler.getContext()) : null;
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+/** 
+
+ * Places a previously registered image at a certain place on the page - Accessibility version
+
+ * @param rect the rectangle for the image
+
+ * @param xobj the image XObject
+
+ */
+
+private void placeImageAccess(Rectangle rect,PDFXObject xobj){
+
+  generator.saveGraphicsState(imageMCI.tag,imageMCI.mcid);
+
+  generator.add(format(rect.width) + " 0 0 " + format(-rect.height)+ " "+ format(rect.x)+ " "+ format(rect.y + rect.height)+ " cm "+ xobj.getName()+ " Do\n");
+
+  generator.restoreGraphicsStateAccess();
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+/** 
+
+ * Places a previously registered image at a certain place on the page.
+
+ * @param rect the rectangle for the image
+
+ * @param xobj the image XObject
+
+ */
+
+private void placeImage(Rectangle rect,PDFXObject xobj){
+
+  generator.saveGraphicsState();
+
+  generator.add(format(rect.width) + " 0 0 " + format(-rect.height)+ " "+ format(rect.x)+ " "+ format(rect.y + rect.height)+ " cm "+ xobj.getName()+ " Do\n");
+
+  generator.restoreGraphicsState();
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+private void prepareImageMCID(PDFStructElem structElem){
+
+  imageMCI=logicalStructureHandler.addImageContentItem(structElem);
+
+  if (structElem != null) {
+
+    languageAvailabilityChecker.checkLanguageAvailability((String)structElem.get("Alt"));
+
+  }
+
+}
+
+Location: PDFPainter.java
+
+Content: 
+
+private int selectAndMapSingleByteFont(Typeface tf,String fontName,float fontSize,PDFTextUtil textutil,int ch){
+
+  if ((tf instanceof SingleByteFont && ((SingleByteFont)tf).hasAdditionalEncodings()) || tf.isCID()) {
+
+    int encoding=ch / 256;
+
+    if (encoding == 0) {
+
+      textutil.updateTf(fontName,fontSize,tf.isMultiByte(),tf.isCID());
+
+    }
+
+ else {
+
+      textutil.updateTf(fontName + "_" + Integer.toString(encoding),fontSize,tf.isMultiByte(),tf.isCID());
+
+      ch=(char)(ch % 256);
+
+    }
+
+  }
+
+  return ch;
+
+}
+

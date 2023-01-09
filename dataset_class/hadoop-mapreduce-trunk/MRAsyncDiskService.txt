@@ -1,0 +1,384 @@
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Wait for the termination of the thread pools.
+
+ * @param milliseconds  The number of milliseconds to wait
+
+ * @return   true if all thread pools are terminated within time limit
+
+ * @throws InterruptedException 
+
+ */
+
+public synchronized boolean awaitTermination(long milliseconds) throws InterruptedException {
+
+  return asyncDiskService.awaitTermination(milliseconds);
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Move all files/directories inside volume into TOBEDELETED, and then delete them.  The TOBEDELETED directory itself is ignored.
+
+ */
+
+public void cleanupAllVolumes() throws IOException {
+
+  for (int v=0; v < volumes.length; v++) {
+
+    FileStatus[] files=null;
+
+    try {
+
+      files=localFileSystem.listStatus(new Path(volumes[v]));
+
+    }
+
+ catch (    Exception e) {
+
+    }
+
+    if (files != null) {
+
+      for (int f=0; f < files.length; f++) {
+
+        String entryName=files[f].getPath().getName();
+
+        if (!TOBEDELETED.equals(entryName)) {
+
+          moveAndDeleteRelativePath(volumes[v],entryName);
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Execute the task sometime in the future, using ThreadPools.
+
+ */
+
+synchronized void execute(String root,Runnable task){
+
+  asyncDiskService.execute(root,task);
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Get the relative path name with respect to the root of the volume.
+
+ * @param absolutePathName The absolute path name
+
+ * @param volume Root of the volume.
+
+ * @return null if the absolute path name is outside of the volume.
+
+ */
+
+private String getRelativePathName(String absolutePathName,String volume){
+
+  absolutePathName=normalizePath(absolutePathName);
+
+  if (!absolutePathName.startsWith(volume)) {
+
+    return null;
+
+  }
+
+  String fileName=absolutePathName.substring(volume.length());
+
+  if (fileName.charAt(0) == Path.SEPARATOR_CHAR) {
+
+    fileName=fileName.substring(1);
+
+  }
+
+  return fileName;
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Move the path name to a temporary location and then delete it. Note that if there is no volume that contains this path, the path will stay as it is, and the function will return false. This functions returns when the moves are done, but not necessarily all deletions are done. This is usually good enough because applications  won't see the path name under the old name anyway after the move. 
+
+ * @param absolutePathName    The path name from root "/"
+
+ * @throws IOException        If the move failed
+
+ * @return   false if we are unable to move the path name
+
+ */
+
+public boolean moveAndDeleteAbsolutePath(String absolutePathName) throws IOException {
+
+  for (int v=0; v < volumes.length; v++) {
+
+    String relative=getRelativePathName(absolutePathName,volumes[v]);
+
+    if (relative != null) {
+
+      return moveAndDeleteRelativePath(volumes[v],relative);
+
+    }
+
+  }
+
+  throw new IOException("Cannot delete " + absolutePathName + " because it's outside of all volumes.");
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Move the path name on each volume to a temporary location and then  delete them. This functions returns when the moves are done, but not necessarily all deletions are done. This is usually good enough because applications  won't see the path name under the old name anyway after the move. 
+
+ * @param pathName     The path name relative to each volume root
+
+ * @throws IOException If any of the move failed 
+
+ * @return   false     If any of the target pathName did not exist,note that the operation is still done on all volumes.
+
+ */
+
+public boolean moveAndDeleteFromEachVolume(String pathName) throws IOException {
+
+  boolean result=true;
+
+  for (int i=0; i < volumes.length; i++) {
+
+    result=result && moveAndDeleteRelativePath(volumes[i],pathName);
+
+  }
+
+  return result;
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Move the path name on one volume to a temporary location and then  delete them. This functions returns when the moves are done, but not necessarily all deletions are done. This is usually good enough because applications  won't see the path name under the old name anyway after the move. 
+
+ * @param volume       The disk volume
+
+ * @param pathName     The path name relative to volume root.
+
+ * @throws IOException If the move failed 
+
+ * @return   false     if the file is not found
+
+ */
+
+public boolean moveAndDeleteRelativePath(String volume,String pathName) throws IOException {
+
+  volume=normalizePath(volume);
+
+  String newPathName=format.format(new Date()) + "_" + uniqueId.getAndIncrement();
+
+  newPathName=TOBEDELETED + Path.SEPARATOR_CHAR + newPathName;
+
+  Path source=new Path(volume,pathName);
+
+  Path target=new Path(volume,newPathName);
+
+  try {
+
+    if (!localFileSystem.rename(source,target)) {
+
+      if (!localFileSystem.exists(source)) {
+
+        return false;
+
+      }
+
+      if (!localFileSystem.mkdirs(new Path(volume,TOBEDELETED))) {
+
+        throw new IOException("Cannot create " + TOBEDELETED + " under "+ volume);
+
+      }
+
+      if (!localFileSystem.rename(source,target)) {
+
+        throw new IOException("Cannot rename " + source + " to "+ target);
+
+      }
+
+    }
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+    return false;
+
+  }
+
+  DeleteTask task=new DeleteTask(volume,pathName,newPathName);
+
+  execute(volume,task);
+
+  return true;
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Create a AsyncDiskServices with a set of volumes (specified by their root directories). The AsyncDiskServices uses one ThreadPool per volume to do the async disk operations.
+
+ * @param localFileSystem The localFileSystem used for deletions.
+
+ * @param nonCanonicalVols The roots of the file system volumes, which maybe absolte paths, or paths relative to the ${user.dir} system property ("cwd").
+
+ */
+
+public MRAsyncDiskService(FileSystem localFileSystem,String... nonCanonicalVols) throws IOException {
+
+  this.localFileSystem=localFileSystem;
+
+  this.volumes=new String[nonCanonicalVols.length];
+
+  for (int v=0; v < nonCanonicalVols.length; v++) {
+
+    this.volumes[v]=normalizePath(nonCanonicalVols[v]);
+
+    LOG.debug("Normalized volume: " + nonCanonicalVols[v] + " -> "+ this.volumes[v]);
+
+  }
+
+  asyncDiskService=new AsyncDiskService(this.volumes);
+
+  for (int v=0; v < volumes.length; v++) {
+
+    Path absoluteSubdir=new Path(volumes[v],TOBEDELETED);
+
+    if (!localFileSystem.mkdirs(absoluteSubdir)) {
+
+      LOG.warn("Cannot create " + TOBEDELETED + " in "+ volumes[v]+ ". Ignored.");
+
+    }
+
+  }
+
+  for (int v=0; v < volumes.length; v++) {
+
+    Path absoluteSubdir=new Path(volumes[v],TOBEDELETED);
+
+    FileStatus[] files=null;
+
+    try {
+
+      files=localFileSystem.listStatus(absoluteSubdir);
+
+    }
+
+ catch (    Exception e) {
+
+    }
+
+    if (files != null) {
+
+      for (int f=0; f < files.length; f++) {
+
+        String absoluteFilename=files[f].getPath().toUri().getPath();
+
+        String relative=TOBEDELETED + Path.SEPARATOR_CHAR + files[f].getPath().getName();
+
+        DeleteTask task=new DeleteTask(volumes[v],absoluteFilename,relative);
+
+        execute(volumes[v],task);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Initialize MRAsyncDiskService based on conf.
+
+ * @param conf  local file system and local dirs will be read from conf 
+
+ */
+
+public MRAsyncDiskService(JobConf conf) throws IOException {
+
+  this(FileSystem.getLocal(conf),conf.getLocalDirs());
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Returns the normalized path of a path.
+
+ */
+
+private String normalizePath(String path){
+
+  return (new Path(path)).makeQualified(this.localFileSystem).toUri().getPath();
+
+}
+
+Location: MRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Shut down all ThreadPools immediately.
+
+ */
+
+public synchronized List<Runnable> shutdownNow(){
+
+  return asyncDiskService.shutdownNow();
+
+}
+

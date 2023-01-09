@@ -1,0 +1,428 @@
+Location: AbstractDOMParser.java
+
+Content: 
+
+/** 
+
+ * Default constructor. 
+
+ */
+
+protected AbstractDOMParser(XMLParserConfiguration config){
+
+  super(config);
+
+  fConfiguration.addRecognizedFeatures(RECOGNIZED_FEATURES);
+
+  fConfiguration.setFeature(CREATE_ENTITY_REF_NODES,true);
+
+  fConfiguration.setFeature(INCLUDE_IGNORABLE_WHITESPACE,true);
+
+  fConfiguration.setFeature(DEFER_NODE_EXPANSION,true);
+
+  fConfiguration.setFeature(INCLUDE_COMMENTS_FEATURE,true);
+
+  fConfiguration.setFeature(CREATE_CDATA_NODES_FEATURE,true);
+
+  fConfiguration.addRecognizedProperties(RECOGNIZED_PROPERTIES);
+
+  fConfiguration.setProperty(DOCUMENT_CLASS_NAME,DEFAULT_DOCUMENT_CLASS_NAME);
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+protected Attr createAttrNode(QName attrQName){
+
+  Attr attr=null;
+
+  if (fNamespaceAware) {
+
+    if (fDocumentImpl != null) {
+
+      attr=fDocumentImpl.createAttributeNS(attrQName.uri,attrQName.rawname,attrQName.localpart);
+
+    }
+
+ else {
+
+      attr=fDocument.createAttributeNS(attrQName.uri,attrQName.rawname);
+
+    }
+
+  }
+
+ else {
+
+    attr=fDocument.createAttribute(attrQName.rawname);
+
+  }
+
+  return attr;
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+protected Element createElementNode(QName element){
+
+  Element el=null;
+
+  if (fNamespaceAware) {
+
+    if (fDocumentImpl != null) {
+
+      el=fDocumentImpl.createElementNS(element.uri,element.rawname,element.localpart);
+
+    }
+
+ else {
+
+      el=fDocument.createElementNS(element.uri,element.rawname);
+
+    }
+
+  }
+
+ else {
+
+    el=fDocument.createElement(element.rawname);
+
+  }
+
+  return el;
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+/** 
+
+ * Drops all references to the last DOM which was built by this parser.
+
+ */
+
+public final void dropDocumentReferences(){
+
+  fDocument=null;
+
+  fDocumentImpl=null;
+
+  fDeferredDocumentImpl=null;
+
+  fDocumentType=null;
+
+  fCurrentNode=null;
+
+  fCurrentCDATASection=null;
+
+  fCurrentEntityDecl=null;
+
+  fRoot=null;
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+/** 
+
+ * This method retreives the name of current document class.
+
+ */
+
+protected String getDocumentClassName(){
+
+  return fDocumentClassName;
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+/** 
+
+ * Record baseURI information for the Element (by adding xml:base attribute) or for the ProcessingInstruction (by setting a baseURI field) Deferred DOM.
+
+ * @param node
+
+ */
+
+protected final void handleBaseURI(int node){
+
+  short nodeType=fDeferredDocumentImpl.getNodeType(node,false);
+
+  if (nodeType == Node.ELEMENT_NODE) {
+
+    String baseURI=fDeferredDocumentImpl.getNodeValueString(fCurrentNodeIndex,false);
+
+    if (baseURI == null) {
+
+      baseURI=fDeferredDocumentImpl.getDeferredEntityBaseURI(fDeferredEntityDecl);
+
+    }
+
+    if (baseURI != null && !baseURI.equals(fDeferredDocumentImpl.getDocumentURI())) {
+
+      fDeferredDocumentImpl.setDeferredAttribute(node,"xml:base","http://www.w3.org/XML/1998/namespace",baseURI,true);
+
+    }
+
+  }
+
+ else   if (nodeType == Node.PROCESSING_INSTRUCTION_NODE) {
+
+    String baseURI=fDeferredDocumentImpl.getNodeValueString(fCurrentNodeIndex,false);
+
+    if (baseURI == null) {
+
+      baseURI=fDeferredDocumentImpl.getDeferredEntityBaseURI(fDeferredEntityDecl);
+
+    }
+
+    if (baseURI != null && fErrorHandler != null) {
+
+      DOMErrorImpl error=new DOMErrorImpl();
+
+      error.fType="pi-base-uri-not-preserved";
+
+      error.fRelatedData=baseURI;
+
+      error.fSeverity=DOMError.SEVERITY_WARNING;
+
+      fErrorHandler.getErrorHandler().handleError(error);
+
+    }
+
+  }
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+/** 
+
+ * Record baseURI information for the Element (by adding xml:base attribute) or for the ProcessingInstruction (by setting a baseURI field) Non deferred DOM.
+
+ * @param node
+
+ */
+
+protected final void handleBaseURI(Node node){
+
+  if (fDocumentImpl != null) {
+
+    String baseURI=null;
+
+    short nodeType=node.getNodeType();
+
+    if (nodeType == Node.ELEMENT_NODE) {
+
+      if (fNamespaceAware) {
+
+        if (((Element)node).getAttributeNodeNS("http://www.w3.org/XML/1998/namespace","base") != null) {
+
+          return;
+
+        }
+
+      }
+
+ else       if (((Element)node).getAttributeNode("xml:base") != null) {
+
+        return;
+
+      }
+
+      baseURI=((EntityReferenceImpl)fCurrentNode).getBaseURI();
+
+      if (baseURI != null && !baseURI.equals(fDocumentImpl.getDocumentURI())) {
+
+        if (fNamespaceAware) {
+
+          ((Element)node).setAttributeNS("http://www.w3.org/XML/1998/namespace","xml:base",baseURI);
+
+        }
+
+ else {
+
+          ((Element)node).setAttribute("xml:base",baseURI);
+
+        }
+
+      }
+
+    }
+
+ else     if (nodeType == Node.PROCESSING_INSTRUCTION_NODE) {
+
+      baseURI=((EntityReferenceImpl)fCurrentNode).getBaseURI();
+
+      if (baseURI != null && fErrorHandler != null) {
+
+        DOMErrorImpl error=new DOMErrorImpl();
+
+        error.fType="pi-base-uri-not-preserved";
+
+        error.fRelatedData=baseURI;
+
+        error.fSeverity=DOMError.SEVERITY_WARNING;
+
+        fErrorHandler.getErrorHandler().handleError(error);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+protected void setCharacterData(boolean sawChars){
+
+  fFirstChunk=sawChars;
+
+  Node child=fCurrentNode.getLastChild();
+
+  if (child != null) {
+
+    if (fStringBuffer.length() > 0) {
+
+      if (child.getNodeType() == Node.TEXT_NODE) {
+
+        if (fDocumentImpl != null) {
+
+          ((TextImpl)child).replaceData(fStringBuffer.toString());
+
+        }
+
+ else {
+
+          ((Text)child).setData(fStringBuffer.toString());
+
+        }
+
+      }
+
+      fStringBuffer.setLength(0);
+
+    }
+
+    if (fDOMFilter != null && !fInEntityRef) {
+
+      if ((child.getNodeType() == Node.TEXT_NODE) && ((fDOMFilter.getWhatToShow() & NodeFilter.SHOW_TEXT) != 0)) {
+
+        short code=fDOMFilter.acceptNode(child);
+
+switch (code) {
+
+case LSParserFilter.FILTER_INTERRUPT:
+
+{
+
+            throw Abort.INSTANCE;
+
+          }
+
+case LSParserFilter.FILTER_REJECT:
+
+{
+
+        }
+
+case LSParserFilter.FILTER_SKIP:
+
+{
+
+        fCurrentNode.removeChild(child);
+
+        return;
+
+      }
+
+default :
+
+{
+
+    }
+
+}
+
+}
+
+}
+
+}
+
+}
+
+Location: AbstractDOMParser.java
+
+Content: 
+
+/** 
+
+ * This method allows the programmer to decide which document factory to use when constructing the DOM tree. However, doing so will lose the functionality of the default factory. Also, a document class other than the default will lose the ability to defer node expansion on the DOM tree produced.
+
+ * @param documentClassName The fully qualified class name of thedocument factory to use when constructing the DOM tree.
+
+ * @see #getDocumentClassName
+
+ * @see #DEFAULT_DOCUMENT_CLASS_NAME
+
+ */
+
+protected void setDocumentClassName(String documentClassName){
+
+  if (documentClassName == null) {
+
+    documentClassName=DEFAULT_DOCUMENT_CLASS_NAME;
+
+  }
+
+  if (!documentClassName.equals(DEFAULT_DOCUMENT_CLASS_NAME) && !documentClassName.equals(PSVI_DOCUMENT_CLASS_NAME)) {
+
+    try {
+
+      Class _class=ObjectFactory.findProviderClass(documentClassName,ObjectFactory.findClassLoader(),true);
+
+      if (!Document.class.isAssignableFrom(_class)) {
+
+        throw new IllegalArgumentException(DOMMessageFormatter.formatMessage(DOMMessageFormatter.DOM_DOMAIN,"InvalidDocumentClassName",new Object[]{documentClassName}));
+
+      }
+
+    }
+
+ catch (    ClassNotFoundException e) {
+
+      throw new IllegalArgumentException(DOMMessageFormatter.formatMessage(DOMMessageFormatter.DOM_DOMAIN,"MissingDocumentClassName",new Object[]{documentClassName}));
+
+    }
+
+  }
+
+  fDocumentClassName=documentClassName;
+
+  if (!documentClassName.equals(DEFAULT_DOCUMENT_CLASS_NAME)) {
+
+    fDeferNodeExpansion=false;
+
+  }
+
+}
+

@@ -1,0 +1,254 @@
+Location: DelimitedTextRange.java
+
+Content: 
+
+/** 
+
+ * Append interval using character C.
+
+ * @param c character
+
+ * @param fn node that generates interval being appended
+
+ */
+
+public void append(char c,FONode fn){
+
+  if (c != 0) {
+
+    int s=buffer.length();
+
+    int e=s + 1;
+
+    buffer.append(c);
+
+    intervals.add(new TextInterval(fn,s,e));
+
+  }
+
+}
+
+Location: DelimitedTextRange.java
+
+Content: 
+
+/** 
+
+ * Append interval using characters from character iterator IT.
+
+ * @param it character iterator
+
+ * @param fn node that generates interval being appended
+
+ */
+
+public void append(CharIterator it,FONode fn){
+
+  if (it != null) {
+
+    int s=buffer.length();
+
+    int e=s;
+
+    while (it.hasNext()) {
+
+      char c=it.nextChar();
+
+      buffer.append(c);
+
+      e++;
+
+    }
+
+    intervals.add(new TextInterval(fn,s,e));
+
+  }
+
+}
+
+Location: DelimitedTextRange.java
+
+Content: 
+
+private void assignBlockLevel(Direction paragraphEmbeddingLevel){
+
+  int defaultLevel=(paragraphEmbeddingLevel == Direction.RL) ? 1 : 0;
+
+  for (  Object interval : intervals) {
+
+    TextInterval ti=(TextInterval)interval;
+
+    assignBlockLevel(ti.getNode(),defaultLevel);
+
+  }
+
+}
+
+Location: DelimitedTextRange.java
+
+Content: 
+
+private void assignBlockLevel(FONode node,int defaultLevel){
+
+  for (FONode fn=node; fn != null; fn=fn.getParent()) {
+
+    if (fn instanceof FObj) {
+
+      FObj fo=(FObj)fn;
+
+      if (fo.isBidiRangeBlockItem()) {
+
+        if (fo.getBidiLevel() < 0) {
+
+          fo.setBidiLevel(defaultLevel);
+
+        }
+
+        break;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: DelimitedTextRange.java
+
+Content: 
+
+/** 
+
+ * <p>Assign resolved levels to all text intervals of this delimited text range.</p> <p>Has a possible side effect of replacing the intervals array with a new array containing new text intervals, such that each text interval is associated with a single level run.</p>
+
+ * @param levels array of levels each corresponding to each index of the delimitedtext range
+
+ */
+
+private void assignLevels(int[] levels){
+
+  Vector intervalsNew=new Vector(intervals.size());
+
+  for (  Object interval : intervals) {
+
+    TextInterval ti=(TextInterval)interval;
+
+    intervalsNew.addAll(assignLevels(ti,levels));
+
+  }
+
+  if (!intervalsNew.equals(intervals)) {
+
+    intervals=intervalsNew;
+
+  }
+
+}
+
+Location: DelimitedTextRange.java
+
+Content: 
+
+private List assignLevels(TextInterval ti,int[] levels){
+
+  Vector tiv=new Vector();
+
+  FONode fn=ti.getNode();
+
+  int fnStart=ti.getStart();
+
+  for (int i=fnStart, n=ti.getEnd(); i < n; ) {
+
+    int s=i;
+
+    int e=s;
+
+    int l=levels[s];
+
+    while (e < n) {
+
+      if (levels[e] != l) {
+
+        break;
+
+      }
+
+ else {
+
+        e++;
+
+      }
+
+    }
+
+    if ((ti.getStart() == s) && (ti.getEnd() == e)) {
+
+      ti.setLevel(l);
+
+    }
+
+ else {
+
+      ti=new TextInterval(fn,fnStart,s,e,l);
+
+    }
+
+    if (log.isDebugEnabled()) {
+
+      log.debug("AL(" + l + "): "+ ti);
+
+    }
+
+    tiv.add(ti);
+
+    i=e;
+
+  }
+
+  return tiv;
+
+}
+
+Location: DelimitedTextRange.java
+
+Content: 
+
+/** 
+
+ * Primary constructor.
+
+ * @param fn node that generates this text range
+
+ */
+
+public DelimitedTextRange(FONode fn){
+
+  this.fn=fn;
+
+  this.buffer=new StringBuffer();
+
+  this.intervals=new Vector();
+
+}
+
+Location: DelimitedTextRange.java
+
+Content: 
+
+private void resolve(Direction paragraphEmbeddingLevel){
+
+  int[] levels;
+
+  if ((levels=UnicodeBidiAlgorithm.resolveLevels(buffer,paragraphEmbeddingLevel)) != null) {
+
+    assignLevels(levels);
+
+    assignBlockLevel(paragraphEmbeddingLevel);
+
+    assignTextLevels();
+
+  }
+
+}
+

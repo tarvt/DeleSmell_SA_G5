@@ -1,0 +1,408 @@
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+private void makeSureCleanedUp(String[] vols,MRAsyncDiskService service) throws Throwable {
+
+  service.shutdown();
+
+  if (!service.awaitTermination(5000)) {
+
+    fail("MRAsyncDiskService is still not shutdown in 5 seconds!");
+
+  }
+
+  for (int i=0; i < vols.length; i++) {
+
+    File subDir=new File(vols[0]);
+
+    String[] subDirContent=subDir.list();
+
+    assertEquals("Volume should contain a single child: " + MRAsyncDiskService.TOBEDELETED,1,subDirContent.length);
+
+    File toBeDeletedDir=new File(vols[0],MRAsyncDiskService.TOBEDELETED);
+
+    String[] content=toBeDeletedDir.list();
+
+    assertNotNull("Cannot find " + toBeDeletedDir,content);
+
+    assertEquals("" + toBeDeletedDir + " should be empty now.",0,content.length);
+
+  }
+
+}
+
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * Given 'pathname', compute an equivalent path relative to the cwd.
+
+ * @param pathname the path to a directory.
+
+ * @return the path to that same directory, relative to ${user.dir}.
+
+ */
+
+private String relativeToWorking(String pathname){
+
+  String cwd=System.getProperty("user.dir","/");
+
+  pathname=(new Path(pathname)).toUri().getPath();
+
+  cwd=(new Path(cwd)).toUri().getPath();
+
+  String[] cwdParts=cwd.split(File.separator);
+
+  String[] pathParts=pathname.split(File.separator);
+
+  if (cwd.equals(pathname)) {
+
+    LOG.info("relative to working: " + pathname + " -> .");
+
+    return ".";
+
+  }
+
+  int common=0;
+
+  for (int i=0; i < Math.min(cwdParts.length,pathParts.length); i++) {
+
+    if (cwdParts[i].equals(pathParts[i])) {
+
+      common++;
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+  StringBuilder sb=new StringBuilder();
+
+  int parentDirsRequired=cwdParts.length - common;
+
+  for (int i=0; i < parentDirsRequired; i++) {
+
+    sb.append("..");
+
+    sb.append(File.separator);
+
+  }
+
+  for (int i=common; i < pathParts.length; i++) {
+
+    sb.append(pathParts[i]);
+
+    sb.append(File.separator);
+
+  }
+
+  String s=sb.toString();
+
+  if (s.endsWith(File.separator)) {
+
+    s=s.substring(0,s.length() - 1);
+
+  }
+
+  LOG.info("relative to working: " + pathname + " -> "+ s);
+
+  return s;
+
+}
+
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * This test creates some directories and then removes them through  MRAsyncDiskService. 
+
+ */
+
+@Test public void testMRAsyncDiskService() throws Throwable {
+
+  FileSystem localFileSystem=FileSystem.getLocal(new Configuration());
+
+  String[] vols=new String[]{TEST_ROOT_DIR + "/0",TEST_ROOT_DIR + "/1"};
+
+  MRAsyncDiskService service=new MRAsyncDiskService(localFileSystem,vols);
+
+  String a="a";
+
+  String b="b";
+
+  String c="b/c";
+
+  String d="d";
+
+  File fa=new File(vols[0],a);
+
+  File fb=new File(vols[1],b);
+
+  File fc=new File(vols[1],c);
+
+  File fd=new File(vols[1],d);
+
+  fa.mkdirs();
+
+  fb.mkdirs();
+
+  fc.mkdirs();
+
+  fd.mkdirs();
+
+  assertTrue(fa.exists());
+
+  assertTrue(fb.exists());
+
+  assertTrue(fc.exists());
+
+  assertTrue(fd.exists());
+
+  service.moveAndDeleteRelativePath(vols[0],a);
+
+  assertFalse(fa.exists());
+
+  service.moveAndDeleteRelativePath(vols[1],b);
+
+  assertFalse(fb.exists());
+
+  assertFalse(fc.exists());
+
+  assertFalse(service.moveAndDeleteRelativePath(vols[1],"not_exists"));
+
+  IOException ee=null;
+
+  try {
+
+    service.moveAndDeleteAbsolutePath(TEST_ROOT_DIR + "/2");
+
+  }
+
+ catch (  IOException e) {
+
+    ee=e;
+
+  }
+
+  assertNotNull("asyncDiskService should not be able to delete files " + "outside all volumes",ee);
+
+  assertTrue(service.moveAndDeleteAbsolutePath(vols[1] + Path.SEPARATOR_CHAR + d));
+
+  makeSureCleanedUp(vols,service);
+
+}
+
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * This test creates some directories inside the volume roots, and then  call asyncDiskService.MoveAndDeleteAllVolumes. We should be able to delete all files/dirs inside the volumes except the toBeDeleted directory.
+
+ */
+
+@Test public void testMRAsyncDiskServiceMoveAndDeleteAllVolumes() throws Throwable {
+
+  FileSystem localFileSystem=FileSystem.getLocal(new Configuration());
+
+  String[] vols=new String[]{TEST_ROOT_DIR + "/0",TEST_ROOT_DIR + "/1"};
+
+  MRAsyncDiskService service=new MRAsyncDiskService(localFileSystem,vols);
+
+  String a="a";
+
+  String b="b";
+
+  String c="b/c";
+
+  String d="d";
+
+  File fa=new File(vols[0],a);
+
+  File fb=new File(vols[1],b);
+
+  File fc=new File(vols[1],c);
+
+  File fd=new File(vols[1],d);
+
+  fa.mkdirs();
+
+  fb.mkdirs();
+
+  fc.mkdirs();
+
+  fd.mkdirs();
+
+  assertTrue(fa.exists());
+
+  assertTrue(fb.exists());
+
+  assertTrue(fc.exists());
+
+  assertTrue(fd.exists());
+
+  service.cleanupAllVolumes();
+
+  assertFalse(fa.exists());
+
+  assertFalse(fb.exists());
+
+  assertFalse(fc.exists());
+
+  assertFalse(fd.exists());
+
+  makeSureCleanedUp(vols,service);
+
+}
+
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+/** 
+
+ * This test creates some directories inside the toBeDeleted directory and then start the asyncDiskService. AsyncDiskService will create tasks to delete the content inside the toBeDeleted directories.
+
+ */
+
+@Test public void testMRAsyncDiskServiceStartupCleaning() throws Throwable {
+
+  FileSystem localFileSystem=FileSystem.getLocal(new Configuration());
+
+  String[] vols=new String[]{TEST_ROOT_DIR + "/0",TEST_ROOT_DIR + "/1"};
+
+  String a="a";
+
+  String b="b";
+
+  String c="b/c";
+
+  String d="d";
+
+  String suffix=Path.SEPARATOR_CHAR + MRAsyncDiskService.TOBEDELETED;
+
+  File fa=new File(vols[0] + suffix,a);
+
+  File fb=new File(vols[1] + suffix,b);
+
+  File fc=new File(vols[1] + suffix,c);
+
+  File fd=new File(vols[1] + suffix,d);
+
+  fa.mkdirs();
+
+  fb.mkdirs();
+
+  fc.mkdirs();
+
+  fd.mkdirs();
+
+  assertTrue(fa.exists());
+
+  assertTrue(fb.exists());
+
+  assertTrue(fc.exists());
+
+  assertTrue(fd.exists());
+
+  MRAsyncDiskService service=new MRAsyncDiskService(localFileSystem,vols);
+
+  makeSureCleanedUp(vols,service);
+
+}
+
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+@Test public void testRelativeToWorking(){
+
+  assertEquals(".",relativeToWorking(System.getProperty("user.dir",".")));
+
+  String cwd=System.getProperty("user.dir",".");
+
+  Path cwdPath=new Path(cwd);
+
+  Path subdir=new Path(cwdPath,"foo");
+
+  assertEquals("foo",relativeToWorking(subdir.toUri().getPath()));
+
+  Path subsubdir=new Path(subdir,"bar");
+
+  assertEquals("foo/bar",relativeToWorking(subsubdir.toUri().getPath()));
+
+  Path parent=new Path(cwdPath,"..");
+
+  assertEquals("..",relativeToWorking(parent.toUri().getPath()));
+
+  Path sideways=new Path(parent,"baz");
+
+  assertEquals("../baz",relativeToWorking(sideways.toUri().getPath()));
+
+}
+
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+@Test public void testToleratesSomeUnwritableVolumes() throws Throwable {
+
+  FileSystem localFileSystem=FileSystem.getLocal(new Configuration());
+
+  String[] vols=new String[]{TEST_ROOT_DIR + "/0",TEST_ROOT_DIR + "/1"};
+
+  assertTrue(new File(vols[0]).mkdirs());
+
+  assertEquals(0,FileUtil.chmod(vols[0],"400"));
+
+  try {
+
+    new MRAsyncDiskService(localFileSystem,vols);
+
+  }
+
+  finally {
+
+    FileUtil.chmod(vols[0],"755");
+
+  }
+
+}
+
+Location: TestMRAsyncDiskService.java
+
+Content: 
+
+@Test public void testVolumeNormalization() throws Throwable {
+
+  LOG.info("TEST_ROOT_DIR is " + TEST_ROOT_DIR);
+
+  String relativeTestRoot=relativeToWorking(TEST_ROOT_DIR);
+
+  FileSystem localFileSystem=FileSystem.getLocal(new Configuration());
+
+  String[] vols=new String[]{relativeTestRoot + "/0",relativeTestRoot + "/1"};
+
+  Path delDir=new Path(vols[0],MRAsyncDiskService.TOBEDELETED);
+
+  localFileSystem.mkdirs(delDir);
+
+  localFileSystem.create(new Path(delDir,"foo")).close();
+
+  MRAsyncDiskService service=new MRAsyncDiskService(localFileSystem,vols);
+
+  makeSureCleanedUp(vols,service);
+
+}
+

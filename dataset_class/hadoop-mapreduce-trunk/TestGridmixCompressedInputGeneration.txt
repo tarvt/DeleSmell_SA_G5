@@ -1,0 +1,204 @@
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+private long getInputDataSizeInMB(Configuration conf,Path inputDir) throws IOException {
+
+  FileSystem fs=inputDir.getFileSystem(conf);
+
+  ContentSummary csmry=fs.getContentSummary(inputDir);
+
+  long dataSize=csmry.getLength();
+
+  dataSize=dataSize / (1024 * 1024);
+
+  return dataSize;
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+private List<String> getInputFiles(Configuration conf,Path inputDir) throws IOException {
+
+  FileSystem fs=inputDir.getFileSystem(conf);
+
+  FileStatus[] listStatus=fs.listStatus(inputDir);
+
+  List<String> files=new ArrayList<String>();
+
+  for (  FileStatus fileStat : listStatus) {
+
+    files.add(getInputFile(fileStat,conf));
+
+  }
+
+  return files;
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+private String getInputFile(FileStatus fstatus,Configuration conf) throws IOException {
+
+  String fileName=null;
+
+  if (!fstatus.isDirectory()) {
+
+    fileName=fstatus.getPath().getName();
+
+  }
+
+ else {
+
+    FileSystem fs=fstatus.getPath().getFileSystem(conf);
+
+    FileStatus[] listStatus=fs.listStatus(fstatus.getPath());
+
+    for (    FileStatus fileStat : listStatus) {
+
+      return getInputFile(fileStat,conf);
+
+    }
+
+  }
+
+  return fileName;
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+private void runAndVerify(boolean isCompressed,long INPUT_SIZE,String[] runtimeValues,String[] otherArgs) throws Exception {
+
+  int exitCode=UtilsForGridmix.runGridmixJob(gridmixDir,conf,GridMixRunMode.DATA_GENERATION.getValue(),runtimeValues,otherArgs);
+
+  Assert.assertEquals("Data generation has failed.",0,exitCode);
+
+  verifyJobStatus();
+
+  verifyInputDataSize(INPUT_SIZE);
+
+  verifyInputFiles(isCompressed);
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+/** 
+
+ * Generate input data and verify whether input files are compressed or not.
+
+ * @throws Exception - if an error occurs.
+
+ */
+
+@Test public void testGridmixCompressionInputGeneration() throws Exception {
+
+  final long inputSizeInMB=1024 * 7;
+
+  final String[] runtimeValues={"LOADJOB",SubmitterUserResolver.class.getName(),"STRESS",inputSizeInMB + "m","file:///dev/null"};
+
+  final String[] otherArgs={"-D",GridMixConfig.GRIDMIX_DISTCACHE_ENABLE + "=false","-D",GridMixConfig.GRIDMIX_COMPRESSION_ENABLE + "=true"};
+
+  LOG.info("Verify the generated compressed input data.");
+
+  runAndVerify(true,inputSizeInMB,runtimeValues,otherArgs);
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+/** 
+
+ * Disable compression emulation and verify whether input files are  compressed or not.
+
+ * @throws Exception
+
+ */
+
+@Test public void testGridmixInputGenerationWithoutCompressionEnable() throws Exception {
+
+  UtilsForGridmix.cleanup(gridmixDir,rtClient.getDaemonConf());
+
+  final long inputSizeInMB=1024 * 6;
+
+  final String[] runtimeValues={"LOADJOB",SubmitterUserResolver.class.getName(),"STRESS",inputSizeInMB + "m","file:///dev/null"};
+
+  final String[] otherArgs={"-D",GridMixConfig.GRIDMIX_DISTCACHE_ENABLE + "=false","-D",GridMixConfig.GRIDMIX_COMPRESSION_ENABLE + "=false"};
+
+  LOG.info("Verify the generated uncompressed input data.");
+
+  runAndVerify(false,inputSizeInMB,runtimeValues,otherArgs);
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+private void verifyInputDataSize(long INPUT_SIZE) throws IOException {
+
+  long actDataSize=getInputDataSizeInMB(conf,Gridmix.getGridmixInputDataPath(gridmixDir));
+
+  double ratio=((double)actDataSize) / INPUT_SIZE;
+
+  long expDataSize=(long)(INPUT_SIZE * ratio);
+
+  Assert.assertEquals("Generated data has not matched with given size.",expDataSize,actDataSize);
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+private void verifyInputFiles(boolean isCompressed) throws IOException {
+
+  List<String> inputFiles=getInputFiles(conf,Gridmix.getGridmixInputDataPath(gridmixDir));
+
+  for (  String inputFile : inputFiles) {
+
+    boolean fileStatus=(inputFile.contains(".gz") || inputFile.contains(".tgz")) ? true : false;
+
+    if (isCompressed) {
+
+      Assert.assertTrue("Compressed input split file was not found.",fileStatus);
+
+    }
+
+ else {
+
+      Assert.assertFalse("Uncompressed input split file was not found.",fileStatus);
+
+    }
+
+  }
+
+}
+
+Location: TestGridmixCompressedInputGeneration.java
+
+Content: 
+
+private void verifyJobStatus() throws IOException {
+
+  JobClient jobClient=jtClient.getClient();
+
+  int len=jobClient.getAllJobs().length;
+
+  LOG.info("Verify the job status after completion of job...");
+
+  Assert.assertEquals("Job has not succeeded.",JobStatus.SUCCEEDED,jobClient.getAllJobs()[len - 1].getRunState());
+
+}
+

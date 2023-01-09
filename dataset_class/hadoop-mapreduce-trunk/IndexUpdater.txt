@@ -1,0 +1,130 @@
+Location: IndexUpdater.java
+
+Content: 
+
+JobConf createJob(Configuration conf,Path[] inputPaths,Path outputPath,int numMapTasks,Shard[] shards) throws IOException {
+
+  setShardGeneration(conf,shards);
+
+  IndexUpdateConfiguration iconf=new IndexUpdateConfiguration(conf);
+
+  Shard.setIndexShards(iconf,shards);
+
+  iconf.setIOSortMB(iconf.getIOSortMB() / 2);
+
+  JobConf jobConf=new JobConf(conf,IndexUpdater.class);
+
+  jobConf.setJobName(this.getClass().getName() + "_" + System.currentTimeMillis());
+
+  FileInputFormat.setInputPaths(jobConf,inputPaths);
+
+  FileOutputFormat.setOutputPath(jobConf,outputPath);
+
+  jobConf.setNumMapTasks(numMapTasks);
+
+  jobConf.setNumReduceTasks(shards.length);
+
+  jobConf.setInputFormat(iconf.getIndexInputFormatClass());
+
+  Path[] inputs=FileInputFormat.getInputPaths(jobConf);
+
+  StringBuilder buffer=new StringBuilder(inputs[0].toString());
+
+  for (int i=1; i < inputs.length; i++) {
+
+    buffer.append(",");
+
+    buffer.append(inputs[i].toString());
+
+  }
+
+  LOG.info("mapred.input.dir = " + buffer.toString());
+
+  LOG.info("mapreduce.output.fileoutputformat.outputdir = " + FileOutputFormat.getOutputPath(jobConf).toString());
+
+  LOG.info("mapreduce.job.maps = " + jobConf.getNumMapTasks());
+
+  LOG.info("mapreduce.job.reduces = " + jobConf.getNumReduceTasks());
+
+  LOG.info(shards.length + " shards = " + iconf.getIndexShards());
+
+  LOG.info("mapred.input.format.class = " + jobConf.getInputFormat().getClass().getName());
+
+  jobConf.setMapOutputKeyClass(IndexUpdateMapper.getMapOutputKeyClass());
+
+  jobConf.setMapOutputValueClass(IndexUpdateMapper.getMapOutputValueClass());
+
+  jobConf.setOutputKeyClass(IndexUpdateReducer.getOutputKeyClass());
+
+  jobConf.setOutputValueClass(IndexUpdateReducer.getOutputValueClass());
+
+  jobConf.setMapperClass(IndexUpdateMapper.class);
+
+  jobConf.setPartitionerClass(IndexUpdatePartitioner.class);
+
+  jobConf.setCombinerClass(IndexUpdateCombiner.class);
+
+  jobConf.setReducerClass(IndexUpdateReducer.class);
+
+  jobConf.setOutputFormat(IndexUpdateOutputFormat.class);
+
+  return jobConf;
+
+}
+
+Location: IndexUpdater.java
+
+Content: 
+
+public IndexUpdater(){
+
+}
+
+Location: IndexUpdater.java
+
+Content: 
+
+void setShardGeneration(Configuration conf,Shard[] shards) throws IOException {
+
+  FileSystem fs=FileSystem.get(conf);
+
+  for (int i=0; i < shards.length; i++) {
+
+    Path path=new Path(shards[i].getDirectory());
+
+    long generation=-1;
+
+    if (fs.exists(path)) {
+
+      FileSystemDirectory dir=null;
+
+      try {
+
+        dir=new FileSystemDirectory(fs,path,false,conf);
+
+        generation=LuceneUtil.getCurrentSegmentGeneration(dir);
+
+      }
+
+  finally {
+
+        if (dir != null) {
+
+          dir.close();
+
+        }
+
+      }
+
+    }
+
+    if (generation != shards[i].getGeneration()) {
+
+      shards[i]=new Shard(shards[i].getVersion(),shards[i].getDirectory(),generation);
+
+    }
+
+  }
+
+}
+

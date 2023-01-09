@@ -1,0 +1,490 @@
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * Close test out file.
+
+ */
+
+public void closeTestOut(){
+
+  testOut.flush();
+
+  testOut.close();
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * Creates a SAX parser using JAXP
+
+ * @return the created SAX parser
+
+ */
+
+static XMLReader createParser(){
+
+  try {
+
+    SAXParserFactory factory=SAXParserFactory.newInstance();
+
+    factory.setNamespaceAware(true);
+
+    return factory.newSAXParser().getXMLReader();
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException("Couldn't create XMLReader: " + e.getMessage());
+
+  }
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+private String getExceptionWord(ArrayList ex){
+
+  StringBuffer res=new StringBuffer();
+
+  for (  Object item : ex) {
+
+    if (item instanceof String) {
+
+      res.append((String)item);
+
+    }
+
+ else {
+
+      if (((Hyphen)item).noBreak != null) {
+
+        res.append(((Hyphen)item).noBreak);
+
+      }
+
+    }
+
+  }
+
+  return res.toString();
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * @throws SAXException if not caught 
+
+ */
+
+protected void getExternalClasses() throws SAXException {
+
+  XMLReader mainParser=parser;
+
+  parser=createParser();
+
+  parser.setContentHandler(this);
+
+  parser.setErrorHandler(this);
+
+  InputStream stream=PatternParser.class.getResourceAsStream("classes.xml");
+
+  InputSource source=new InputSource(stream);
+
+  try {
+
+    parser.parse(source);
+
+  }
+
+ catch (  IOException ioe) {
+
+    throw new SAXException(ioe.getMessage());
+
+  }
+
+ finally {
+
+    parser=mainParser;
+
+  }
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+private static String getInterletterValues(String pat){
+
+  StringBuffer il=new StringBuffer();
+
+  String word=pat + "a";
+
+  int len=word.length();
+
+  for (int i=0; i < len; i++) {
+
+    char c=word.charAt(i);
+
+    if (Character.isDigit(c)) {
+
+      il.append(c);
+
+      i++;
+
+    }
+
+ else {
+
+      il.append('0');
+
+    }
+
+  }
+
+  return il.toString();
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * Returns a string of the location.
+
+ */
+
+private String getLocationString(SAXParseException ex){
+
+  StringBuffer str=new StringBuffer();
+
+  String systemId=ex.getSystemId();
+
+  if (systemId != null) {
+
+    int index=systemId.lastIndexOf('/');
+
+    if (index != -1) {
+
+      systemId=systemId.substring(index + 1);
+
+    }
+
+    str.append(systemId);
+
+  }
+
+  str.append(':');
+
+  str.append(ex.getLineNumber());
+
+  str.append(':');
+
+  str.append(ex.getColumnNumber());
+
+  return str.toString();
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+private static String getPattern(String word){
+
+  StringBuffer pat=new StringBuffer();
+
+  int len=word.length();
+
+  for (int i=0; i < len; i++) {
+
+    if (!Character.isDigit(word.charAt(i))) {
+
+      pat.append(word.charAt(i));
+
+    }
+
+  }
+
+  return pat.toString();
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+private ArrayList normalizeException(ArrayList ex){
+
+  ArrayList res=new ArrayList();
+
+  for (  Object item : ex) {
+
+    if (item instanceof String) {
+
+      String str=(String)item;
+
+      StringBuffer buf=new StringBuffer();
+
+      for (int j=0; j < str.length(); j++) {
+
+        char c=str.charAt(j);
+
+        if (c != hyphenChar) {
+
+          buf.append(c);
+
+        }
+
+ else {
+
+          res.add(buf.toString());
+
+          buf.setLength(0);
+
+          char[] h=new char[1];
+
+          h[0]=hyphenChar;
+
+          res.add(new Hyphen(new String(h),null,null));
+
+        }
+
+      }
+
+      if (buf.length() > 0) {
+
+        res.add(buf.toString());
+
+      }
+
+    }
+
+ else {
+
+      res.add(item);
+
+    }
+
+  }
+
+  return res;
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * Parses a hyphenation pattern file.
+
+ * @param source the InputSource for the file
+
+ * @throws HyphenationException In case of an exception while parsing
+
+ */
+
+public void parse(InputSource source) throws HyphenationException {
+
+  try {
+
+    parser.parse(source);
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    throw new HyphenationException("File not found: " + fnfe.getMessage());
+
+  }
+
+catch (  IOException ioe) {
+
+    throw new HyphenationException(ioe.getMessage());
+
+  }
+
+catch (  SAXException e) {
+
+    throw new HyphenationException(errMsg);
+
+  }
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * Construct a pattern parser.
+
+ * @throws HyphenationException if a hyphenation exception is raised
+
+ */
+
+public PatternParser() throws HyphenationException {
+
+  this.consumer=this;
+
+  token=new StringBuffer();
+
+  parser=createParser();
+
+  parser.setContentHandler(this);
+
+  parser.setErrorHandler(this);
+
+  hyphenChar='-';
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * Construct a pattern parser.
+
+ * @param consumer a pattern consumer
+
+ * @throws HyphenationException if a hyphenation exception is raised
+
+ */
+
+public PatternParser(PatternConsumer consumer) throws HyphenationException {
+
+  this();
+
+  this.consumer=consumer;
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+private String readToken(StringBuffer chars){
+
+  String word;
+
+  boolean space=false;
+
+  int i;
+
+  for (i=0; i < chars.length(); i++) {
+
+    if (Character.isWhitespace(chars.charAt(i))) {
+
+      space=true;
+
+    }
+
+ else {
+
+      break;
+
+    }
+
+  }
+
+  if (space) {
+
+    for (int countr=i; countr < chars.length(); countr++) {
+
+      chars.setCharAt(countr - i,chars.charAt(countr));
+
+    }
+
+    chars.setLength(chars.length() - i);
+
+    if (token.length() > 0) {
+
+      word=token.toString();
+
+      token.setLength(0);
+
+      return word;
+
+    }
+
+  }
+
+  space=false;
+
+  for (i=0; i < chars.length(); i++) {
+
+    if (Character.isWhitespace(chars.charAt(i))) {
+
+      space=true;
+
+      break;
+
+    }
+
+  }
+
+  token.append(chars.toString().substring(0,i));
+
+  for (int countr=i; countr < chars.length(); countr++) {
+
+    chars.setCharAt(countr - i,chars.charAt(countr));
+
+  }
+
+  chars.setLength(chars.length() - i);
+
+  if (space) {
+
+    word=token.toString();
+
+    token.setLength(0);
+
+    return word;
+
+  }
+
+  token.append(chars);
+
+  return null;
+
+}
+
+Location: PatternParser.java
+
+Content: 
+
+/** 
+
+ * Set test out stream.
+
+ * @param testOut the testOut to set
+
+ */
+
+public void setTestOut(PrintStream testOut){
+
+  this.testOut=testOut;
+
+}
+

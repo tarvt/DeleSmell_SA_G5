@@ -1,0 +1,72 @@
+Location: TestTrackerBlacklistAcrossJobs.java
+
+Content: 
+
+public void testBlacklistAcrossJobs() throws IOException {
+
+  MiniMRCluster mr=null;
+
+  FileSystem fileSys=null;
+
+  Configuration conf=new Configuration();
+
+  fileSys=FileSystem.get(conf);
+
+  JobConf jtConf=new JobConf();
+
+  jtConf.setInt(JTConfig.JT_MAX_TRACKER_BLACKLISTS,1);
+
+  mr=new MiniMRCluster(3,fileSys.getUri().toString(),1,null,hosts,jtConf);
+
+  JobConf mrConf=mr.createJobConf();
+
+  JobConf job=new JobConf(mrConf);
+
+  job.setInt(JobContext.MAX_TASK_FAILURES_PER_TRACKER,1);
+
+  job.setNumMapTasks(6);
+
+  job.setNumReduceTasks(0);
+
+  job.setMapperClass(FailOnHostMapper.class);
+
+  job.setMapOutputKeyClass(NullWritable.class);
+
+  job.setMapOutputValueClass(NullWritable.class);
+
+  job.setOutputFormat(NullOutputFormat.class);
+
+  job.setInputFormat(TestReduceFetchFromPartialMem.FakeIF.class);
+
+  JobClient jc=new JobClient(mrConf);
+
+  RunningJob running=JobClient.runJob(job);
+
+  assertEquals("Job failed",JobStatus.SUCCEEDED,running.getJobState());
+
+  assertEquals("Did not blacklist the host",1,jc.getClusterStatus().getBlacklistedTrackers());
+
+  assertEquals("Fault count should be 1",1,mr.getFaultCount(hosts[0]));
+
+  running=JobClient.runJob(job);
+
+  assertEquals("Job failed",JobStatus.SUCCEEDED,running.getJobState());
+
+  assertEquals("Didn't blacklist the host",1,jc.getClusterStatus().getBlacklistedTrackers());
+
+  assertEquals("Fault count should be 1",1,mr.getFaultCount(hosts[0]));
+
+  if (fileSys != null) {
+
+    fileSys.close();
+
+  }
+
+  if (mr != null) {
+
+    mr.shutdown();
+
+  }
+
+}
+

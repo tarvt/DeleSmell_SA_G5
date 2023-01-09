@@ -1,0 +1,456 @@
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Create a single split from the list of blocks specified in validBlocks Add this new split into splitList.
+
+ */
+
+private void addCreatedSplit(List<InputSplit> splitList,Collection<String> locations,ArrayList<OneBlockInfo> validBlocks){
+
+  Path[] fl=new Path[validBlocks.size()];
+
+  long[] offset=new long[validBlocks.size()];
+
+  long[] length=new long[validBlocks.size()];
+
+  for (int i=0; i < validBlocks.size(); i++) {
+
+    fl[i]=validBlocks.get(i).onepath;
+
+    offset[i]=validBlocks.get(i).offset;
+
+    length[i]=validBlocks.get(i).length;
+
+  }
+
+  CombineFileSplit thissplit=new CombineFileSplit(fl,offset,length,locations.toArray(new String[0]));
+
+  splitList.add(thissplit);
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+private static void addHostToRack(HashMap<String,Set<String>> rackToNodes,String rack,String host){
+
+  Set<String> hosts=rackToNodes.get(rack);
+
+  if (hosts == null) {
+
+    hosts=new HashSet<String>();
+
+    rackToNodes.put(rack,hosts);
+
+  }
+
+  hosts.add(host);
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * default constructor
+
+ */
+
+public CombineFileInputFormat(){
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Create a new pool and add the filters to it. A split cannot have files from different pools.
+
+ * @deprecated Use {@link #createPool(List)}.
+
+ */
+
+@Deprecated protected void createPool(JobConf conf,List<PathFilter> filters){
+
+  createPool(filters);
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Create a new pool and add the filters to it.  A pathname can satisfy any one of the specified filters. A split cannot have files from different pools.
+
+ * @deprecated Use {@link #createPool(PathFilter)}.
+
+ */
+
+@Deprecated protected void createPool(JobConf conf,PathFilter... filters){
+
+  createPool(filters);
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Create a new pool and add the filters to it. A split cannot have files from different pools.
+
+ */
+
+protected void createPool(List<PathFilter> filters){
+
+  pools.add(new MultiPathFilter(filters));
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Create a new pool and add the filters to it.  A pathname can satisfy any one of the specified filters. A split cannot have files from different pools.
+
+ */
+
+protected void createPool(PathFilter... filters){
+
+  MultiPathFilter multi=new MultiPathFilter();
+
+  for (  PathFilter f : filters) {
+
+    multi.add(f);
+
+  }
+
+  pools.add(multi);
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+public org.apache.hadoop.mapreduce.RecordReader<K,V> createRecordReader(org.apache.hadoop.mapreduce.InputSplit split,TaskAttemptContext context) throws IOException {
+
+  return null;
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+protected BlockLocation[] getFileBlockLocations(FileSystem fs,FileStatus stat) throws IOException {
+
+  return fs.getFileBlockLocations(stat,0,stat.getLen());
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+private Set<String> getHosts(Set<String> racks){
+
+  Set<String> hosts=new HashSet<String>();
+
+  for (  String rack : racks) {
+
+    if (rackToNodes.containsKey(rack)) {
+
+      hosts.addAll(rackToNodes.get(rack));
+
+    }
+
+  }
+
+  return hosts;
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Return all the splits in the specified set of paths
+
+ */
+
+private void getMoreSplits(JobContext job,Path[] paths,long maxSize,long minSizeNode,long minSizeRack,List<InputSplit> splits) throws IOException {
+
+  Configuration conf=job.getConfiguration();
+
+  OneFileInfo[] files;
+
+  HashMap<String,List<OneBlockInfo>> rackToBlocks=new HashMap<String,List<OneBlockInfo>>();
+
+  HashMap<OneBlockInfo,String[]> blockToNodes=new HashMap<OneBlockInfo,String[]>();
+
+  HashMap<String,List<OneBlockInfo>> nodeToBlocks=new HashMap<String,List<OneBlockInfo>>();
+
+  files=new OneFileInfo[paths.length];
+
+  if (paths.length == 0) {
+
+    return;
+
+  }
+
+  long totLength=0;
+
+  for (int i=0; i < paths.length; i++) {
+
+    files[i]=new OneFileInfo(paths[i],conf,isSplitable(job,paths[i]),rackToBlocks,blockToNodes,nodeToBlocks,rackToNodes,maxSize);
+
+    totLength+=files[i].getLength();
+
+  }
+
+  ArrayList<OneBlockInfo> validBlocks=new ArrayList<OneBlockInfo>();
+
+  Set<String> nodes=new HashSet<String>();
+
+  long curSplitSize=0;
+
+  for (Iterator<Map.Entry<String,List<OneBlockInfo>>> iter=nodeToBlocks.entrySet().iterator(); iter.hasNext(); ) {
+
+    Map.Entry<String,List<OneBlockInfo>> one=iter.next();
+
+    nodes.add(one.getKey());
+
+    List<OneBlockInfo> blocksInNode=one.getValue();
+
+    for (    OneBlockInfo oneblock : blocksInNode) {
+
+      if (blockToNodes.containsKey(oneblock)) {
+
+        validBlocks.add(oneblock);
+
+        blockToNodes.remove(oneblock);
+
+        curSplitSize+=oneblock.length;
+
+        if (maxSize != 0 && curSplitSize >= maxSize) {
+
+          addCreatedSplit(splits,nodes,validBlocks);
+
+          curSplitSize=0;
+
+          validBlocks.clear();
+
+        }
+
+      }
+
+    }
+
+    if (minSizeNode != 0 && curSplitSize >= minSizeNode) {
+
+      addCreatedSplit(splits,nodes,validBlocks);
+
+    }
+
+ else {
+
+      for (      OneBlockInfo oneblock : validBlocks) {
+
+        blockToNodes.put(oneblock,oneblock.hosts);
+
+      }
+
+    }
+
+    validBlocks.clear();
+
+    nodes.clear();
+
+    curSplitSize=0;
+
+  }
+
+  ArrayList<OneBlockInfo> overflowBlocks=new ArrayList<OneBlockInfo>();
+
+  Set<String> racks=new HashSet<String>();
+
+  while (blockToNodes.size() > 0) {
+
+    for (Iterator<Map.Entry<String,List<OneBlockInfo>>> iter=rackToBlocks.entrySet().iterator(); iter.hasNext(); ) {
+
+      Map.Entry<String,List<OneBlockInfo>> one=iter.next();
+
+      racks.add(one.getKey());
+
+      List<OneBlockInfo> blocks=one.getValue();
+
+      boolean createdSplit=false;
+
+      for (      OneBlockInfo oneblock : blocks) {
+
+        if (blockToNodes.containsKey(oneblock)) {
+
+          validBlocks.add(oneblock);
+
+          blockToNodes.remove(oneblock);
+
+          curSplitSize+=oneblock.length;
+
+          if (maxSize != 0 && curSplitSize >= maxSize) {
+
+            addCreatedSplit(splits,getHosts(racks),validBlocks);
+
+            createdSplit=true;
+
+            break;
+
+          }
+
+        }
+
+      }
+
+      if (createdSplit) {
+
+        curSplitSize=0;
+
+        validBlocks.clear();
+
+        racks.clear();
+
+        continue;
+
+      }
+
+      if (!validBlocks.isEmpty()) {
+
+        if (minSizeRack != 0 && curSplitSize >= minSizeRack) {
+
+          addCreatedSplit(splits,getHosts(racks),validBlocks);
+
+        }
+
+ else {
+
+          overflowBlocks.addAll(validBlocks);
+
+        }
+
+      }
+
+      curSplitSize=0;
+
+      validBlocks.clear();
+
+      racks.clear();
+
+    }
+
+  }
+
+  assert blockToNodes.isEmpty();
+
+  assert curSplitSize == 0;
+
+  assert validBlocks.isEmpty();
+
+  assert racks.isEmpty();
+
+  for (  OneBlockInfo oneblock : overflowBlocks) {
+
+    validBlocks.add(oneblock);
+
+    curSplitSize+=oneblock.length;
+
+    for (int i=0; i < oneblock.racks.length; i++) {
+
+      racks.add(oneblock.racks[i]);
+
+    }
+
+    if (maxSize != 0 && curSplitSize >= maxSize) {
+
+      addCreatedSplit(splits,getHosts(racks),validBlocks);
+
+      curSplitSize=0;
+
+      validBlocks.clear();
+
+      racks.clear();
+
+    }
+
+  }
+
+  if (!validBlocks.isEmpty()) {
+
+    addCreatedSplit(splits,getHosts(racks),validBlocks);
+
+  }
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Specify the maximum size (in bytes) of each split. Each split is approximately equal to the specified size.
+
+ */
+
+protected void setMaxSplitSize(long maxSplitSize){
+
+  this.maxSplitSize=maxSplitSize;
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Specify the minimum size (in bytes) of each split per node. This applies to data that is left over after combining data on a single node into splits that are of maximum size specified by maxSplitSize. This leftover data will be combined into its own split if its size exceeds minSplitSizeNode.
+
+ */
+
+protected void setMinSplitSizeNode(long minSplitSizeNode){
+
+  this.minSplitSizeNode=minSplitSizeNode;
+
+}
+
+Location: CombineFileInputFormat.java
+
+Content: 
+
+/** 
+
+ * Specify the minimum size (in bytes) of each split per rack. This applies to data that is left over after combining data on a single rack into splits that are of maximum size specified by maxSplitSize. This leftover data will be combined into its own split if its size exceeds minSplitSizeRack.
+
+ */
+
+protected void setMinSplitSizeRack(long minSplitSizeRack){
+
+  this.minSplitSizeRack=minSplitSizeRack;
+
+}
+

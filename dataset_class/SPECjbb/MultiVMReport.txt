@@ -1,0 +1,290 @@
+Location: MultiVMReport.java
+
+Content: 
+
+public boolean accept(File dir,String name){
+
+  return ((name.startsWith(filePrefix)) && ((name.substring(fileSuffixStart).equals(fileSuffix))));
+
+}
+
+Location: MultiVMReport.java
+
+Content: 
+
+public void generateSingleRawFile(){
+
+  Enumeration propNames;
+
+  PrintStream outRawFile;
+
+  ReportProps totalProps=new ReportProps();
+
+  String name, value;
+
+  String singleRawFileName=output_directory + File.separator + "SPECjbb.raw";
+
+  File singleRawFile=new File(singleRawFileName);
+
+  if (singleRawFile.exists()) {
+
+    singleRawFile.delete();
+
+  }
+
+  for (Enumeration e=results[0].propertyNames(); e.hasMoreElements(); ) {
+
+    name=(String)e.nextElement();
+
+    if (!name.startsWith("result.")) {
+
+      value=results[0].get(name);
+
+      totalProps.put("global." + name,value);
+
+    }
+
+  }
+
+  for (int i=0; i < results.length; i++) {
+
+    for (Enumeration e=results[i].propertyNames(); e.hasMoreElements(); ) {
+
+      name=(String)e.nextElement();
+
+      value=results[i].get(name);
+
+      if (name.startsWith("result.")) {
+
+        totalProps.put((i + 1) + "." + name,value);
+
+      }
+
+    }
+
+  }
+
+  try {
+
+    outRawFile=new PrintStream(singleRawFileName);
+
+    Set keys=totalProps.keySet();
+
+    Vector keyvec=new Vector(keys);
+
+    Collections.sort(keyvec);
+
+    for (int i=0; i < keyvec.size(); i++) {
+
+      String propsKey=(String)keyvec.elementAt(i);
+
+      String svalue=totalProps.getProperty(propsKey);
+
+      outRawFile.println(propsKey + "=" + svalue);
+
+    }
+
+  }
+
+ catch (  FileNotFoundException e) {
+
+    JBButil.getLog().log(Level.WARNING,"ERROR: file not found " + singleRawFileName,e);
+
+    System.exit(1);
+
+  }
+
+}
+
+Location: MultiVMReport.java
+
+Content: 
+
+public JBBReportFilenameFilter(String prefix,String suffix){
+
+  filePrefix=prefix;
+
+  filePrefixLen=filePrefix.length();
+
+  fileSuffix=suffix;
+
+  fileSuffixStart=filePrefixLen + 3;
+
+}
+
+Location: MultiVMReport.java
+
+Content: 
+
+public MultiVMReport(String output_directory,boolean SPECInternalUse,String newsletter,boolean useHtml,boolean echoRaw){
+
+  this(output_directory,SPECInternalUse,newsletter,useHtml,echoRaw,"000","SPECjbb.");
+
+}
+
+Location: MultiVMReport.java
+
+Content: 
+
+public MultiVMReport(String output_directory,boolean SPECInternalUse,String newsletter,boolean useHtml,boolean echoRaw,String labelImg,String prefix){
+
+  this.SPECInternalUse=SPECInternalUse;
+
+  this.issue=newsletter;
+
+  this.output_directory=output_directory;
+
+  this.labelImg=labelImg;
+
+  String suffix;
+
+  File dir=new File(output_directory);
+
+  if (!dir.exists()) {
+
+    System.out.println("Error: file " + output_directory + " doesn't exist.");
+
+    System.exit(1);
+
+  }
+
+  if (!dir.isDirectory()) {
+
+    System.out.println("Error: file " + output_directory + " is not a directory.");
+
+    System.exit(1);
+
+  }
+
+  suffix=".raw";
+
+  FilenameFilter filter=new JBBReportFilenameFilter(prefix,suffix);
+
+  File[] resultFiles=dir.listFiles(filter);
+
+  instances=resultFiles.length;
+
+  suffix=".html";
+
+  filter=new JBBReportFilenameFilter(prefix,suffix);
+
+  htmlFiles=dir.listFiles(filter);
+
+  results=new ReportProps[resultFiles.length];
+
+  metrics=new Metrics[resultFiles.length];
+
+  graphTable=new String[resultFiles.length];
+
+  metric=new String[resultFiles.length];
+
+  label=new String[resultFiles.length];
+
+  try {
+
+    StringReader tis=new StringReader(new Title().getTitleString());
+
+    titles.load(tis);
+
+  }
+
+ catch (  IOException e) {
+
+    JBButil.getLog().log(Level.WARNING,"Error loading titles for report\n",e);
+
+    System.exit(1);
+
+  }
+
+  double sum=0;
+
+  long rampup_millis=0;
+
+  long rampdown_millis=0;
+
+  boolean isMetricsDouble=true;
+
+  for (int i=0; i < resultFiles.length; i++) {
+
+    results[i]=new ReportProps();
+
+    label[i]=resultFiles[i].getName().substring(prefix.length(),prefix.length() + 3);
+
+    if (SPECInternalUse) {
+
+      label[i]=prefix + label[i];
+
+    }
+
+    try {
+
+      results[i].load(resultFiles[i].getPath());
+
+    }
+
+ catch (    IOException e) {
+
+      JBButil.getLog().log(Level.WARNING,"Error reading results file " + resultFiles[i] + ": "+ e,e);
+
+      System.exit(1);
+
+    }
+
+    metrics[i]=new Metrics(results[i],SPECInternalUse);
+
+    graphTable[i]=metrics[i].tableAndGraph(label[i],useHtml,output_directory);
+
+    metric[i]=metrics[i].metric();
+
+    try {
+
+      sum+=Double.parseDouble(metric[i]);
+
+    }
+
+ catch (    NumberFormatException e) {
+
+      isMetricsDouble=false;
+
+      metric1="n/a";
+
+      metric2="n/a";
+
+    }
+
+    try {
+
+    }
+
+ catch (    NumberFormatException e) {
+
+      isMetricsDouble=false;
+
+      metric1="n/a";
+
+      metric2="n/a";
+
+    }
+
+  }
+
+  checkInstanceTiming();
+
+  if (isMetricsDouble) {
+
+    metric1=Metrics.format(sum);
+
+    metric2=Metrics.format(sum / metrics.length);
+
+  }
+
+  this.name=results[0].get("input.suite");
+
+  this.hardware=results[0].get("config.hw.vendor") + " " + results[0].get("config.hw.model");
+
+  this.software=results[0].get("config.sw.vendor") + " " + results[0].get("config.sw.JVM");
+
+  generateSingleRawFile();
+
+}
+

@@ -1,0 +1,176 @@
+Location: CachedRenderPagesModel.java
+
+Content: 
+
+/** 
+
+ * Main Constructor
+
+ * @param userAgent FOUserAgent object for process
+
+ * @param outputFormat the MIME type of the output format to use (ex. "application/pdf").
+
+ * @param fontInfo FontInfo object
+
+ * @param stream OutputStream
+
+ * @throws FOPException if the renderer cannot be properly initialized
+
+ */
+
+public CachedRenderPagesModel(FOUserAgent userAgent,String outputFormat,FontInfo fontInfo,OutputStream stream) throws FOPException {
+
+  super(userAgent,outputFormat,fontInfo,stream);
+
+  tempBaseURI=TEMP_URI_GENERATOR.generate();
+
+}
+
+Location: CachedRenderPagesModel.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+@Override protected boolean checkPreparedPages(PageViewport newpage,boolean renderUnresolved){
+
+  for (Iterator iter=prepared.iterator(); iter.hasNext(); ) {
+
+    PageViewport pageViewport=(PageViewport)iter.next();
+
+    if (pageViewport.isResolved() || renderUnresolved) {
+
+      if (pageViewport != newpage) {
+
+        try {
+
+          URI tempURI=pageMap.get(pageViewport);
+
+          log.debug("Loading page from: " + tempURI);
+
+          InputStream inStream=renderer.getUserAgent().getResourceResolver().getResource(tempURI);
+
+          ObjectInputStream in=new ObjectInputStream(new BufferedInputStream(inStream));
+
+          try {
+
+            pageViewport.loadPage(in);
+
+          }
+
+  finally {
+
+            IOUtils.closeQuietly(inStream);
+
+            IOUtils.closeQuietly(in);
+
+          }
+
+          pageMap.remove(pageViewport);
+
+        }
+
+ catch (        Exception e) {
+
+          AreaEventProducer eventProducer=AreaEventProducer.Provider.get(renderer.getUserAgent().getEventBroadcaster());
+
+          eventProducer.pageLoadError(this,pageViewport.getPageNumberString(),e);
+
+        }
+
+      }
+
+      renderPage(pageViewport);
+
+      pageViewport.clear();
+
+      iter.remove();
+
+    }
+
+ else {
+
+      if (!renderer.supportsOutOfOrder()) {
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  if (newpage != null && newpage.getPage() != null) {
+
+    savePage(newpage);
+
+    newpage.clear();
+
+  }
+
+  return renderer.supportsOutOfOrder() || prepared.isEmpty();
+
+}
+
+Location: CachedRenderPagesModel.java
+
+Content: 
+
+/** 
+
+ * Save a page. It saves the contents of the page to a file.
+
+ * @param page the page to prepare
+
+ */
+
+protected void savePage(PageViewport page){
+
+  try {
+
+    ObjectOutputStream tempstream;
+
+    String fname="/fop-page-" + page.getPageIndex() + ".ser";
+
+    URI tempURI=URI.create(tempBaseURI + fname);
+
+    OutputStream outStream=renderer.getUserAgent().getResourceResolver().getOutputStream(tempURI);
+
+    tempstream=new ObjectOutputStream(new BufferedOutputStream(outStream));
+
+    try {
+
+      page.savePage(tempstream);
+
+    }
+
+  finally {
+
+      IOUtils.closeQuietly(tempstream);
+
+    }
+
+    pageMap.put(page,tempURI);
+
+    if (log.isDebugEnabled()) {
+
+      log.debug("Page saved to temporary file: " + tempURI);
+
+    }
+
+  }
+
+ catch (  IOException ioe) {
+
+    AreaEventProducer eventProducer=AreaEventProducer.Provider.get(renderer.getUserAgent().getEventBroadcaster());
+
+    eventProducer.pageSaveError(this,page.getPageNumberString(),ioe);
+
+  }
+
+}
+

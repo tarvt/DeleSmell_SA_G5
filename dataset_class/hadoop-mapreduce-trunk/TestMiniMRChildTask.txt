@@ -1,0 +1,358 @@
+Location: TestMiniMRChildTask.java
+
+Content: 
+
+private static void checkEnv(String envName,String expValue,String mode){
+
+  String envValue=System.getenv(envName).trim();
+
+  if ("append".equals(mode)) {
+
+    if (envValue == null || !envValue.contains(":")) {
+
+      throw new RuntimeException("Missing env variable");
+
+    }
+
+ else {
+
+      String parts[]=envValue.split(":");
+
+      if (!parts[parts.length - 1].equals(expValue)) {
+
+        throw new RuntimeException("Wrong env variable in append mode");
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    if (envValue == null || !envValue.equals(expValue)) {
+
+      throw new RuntimeException("Wrong env variable in noappend mode");
+
+    }
+
+  }
+
+}
+
+Location: TestMiniMRChildTask.java
+
+Content: 
+
+private void configure(JobConf conf,Path inDir,Path outDir,String input,Class<? extends Mapper> map,Class<? extends Reducer> reduce) throws IOException {
+
+  FileSystem inFs=inDir.getFileSystem(conf);
+
+  FileSystem outFs=outDir.getFileSystem(conf);
+
+  outFs.delete(outDir,true);
+
+  if (!inFs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+{
+
+    DataOutputStream file=inFs.create(new Path(inDir,"part-0"));
+
+    file.writeBytes(input);
+
+    file.close();
+
+  }
+
+  conf.setJobName("testmap");
+
+  conf.setMapperClass(map);
+
+  conf.setReducerClass(reduce);
+
+  conf.setNumMapTasks(1);
+
+  conf.setNumReduceTasks(0);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  String TEST_ROOT_DIR=new Path(System.getProperty("test.build.data","/tmp")).toString().replace(' ','+');
+
+  conf.set("test.build.data",TEST_ROOT_DIR);
+
+}
+
+Location: TestMiniMRChildTask.java
+
+Content: 
+
+/** 
+
+ * Launch tests 
+
+ * @param conf Configuration of the mapreduce job.
+
+ * @param inDir input path
+
+ * @param outDir output path
+
+ * @param input Input text
+
+ * @throws IOException
+
+ */
+
+public void launchTest(JobConf conf,Path inDir,Path outDir,String input) throws IOException {
+
+  configure(conf,inDir,outDir,input,MapClass.class,IdentityReducer.class);
+
+  FileSystem outFs=outDir.getFileSystem(conf);
+
+  JobClient.runJob(conf);
+
+  outFs.delete(outDir,true);
+
+  final String DEFAULT_ABS_TMP_PATH="/tmp";
+
+  final String DEFAULT_REL_TMP_PATH="../temp";
+
+  String absoluteTempPath=null;
+
+  String relativeTempPath=null;
+
+  for (  String key : new String[]{"test.temp.dir","test.tmp.dir"}) {
+
+    String p=conf.get(key);
+
+    if (p == null || p.isEmpty()) {
+
+      continue;
+
+    }
+
+    if (new Path(p).isAbsolute()) {
+
+      if (absoluteTempPath == null) {
+
+        absoluteTempPath=p;
+
+      }
+
+    }
+
+ else {
+
+      if (relativeTempPath == null) {
+
+        relativeTempPath=p;
+
+      }
+
+    }
+
+  }
+
+  if (absoluteTempPath == null) {
+
+    absoluteTempPath=DEFAULT_ABS_TMP_PATH;
+
+  }
+
+  if (relativeTempPath == null) {
+
+    relativeTempPath=DEFAULT_REL_TMP_PATH;
+
+  }
+
+  LOG.info("Testing with relative temp dir = " + relativeTempPath);
+
+  conf.set("mapred.child.tmp",relativeTempPath);
+
+  JobClient.runJob(conf);
+
+  outFs.delete(outDir,true);
+
+  LOG.info("Testing with absolute temp dir = " + absoluteTempPath);
+
+  conf.set("mapred.child.tmp",absoluteTempPath);
+
+  JobClient.runJob(conf);
+
+  outFs.delete(outDir,true);
+
+}
+
+Location: TestMiniMRChildTask.java
+
+Content: 
+
+void runTestTaskEnv(JobConf conf,Path inDir,Path outDir,boolean oldConfigs) throws IOException {
+
+  String input="The input";
+
+  configure(conf,inDir,outDir,input,EnvCheckMapper.class,EnvCheckReducer.class);
+
+  String mapTaskEnvKey=JobConf.MAPRED_MAP_TASK_ENV;
+
+  String reduceTaskEnvKey=JobConf.MAPRED_MAP_TASK_ENV;
+
+  String mapTaskJavaOptsKey=JobConf.MAPRED_MAP_TASK_JAVA_OPTS;
+
+  String reduceTaskJavaOptsKey=JobConf.MAPRED_REDUCE_TASK_JAVA_OPTS;
+
+  String mapTaskJavaOpts=MAP_OPTS_VAL;
+
+  String reduceTaskJavaOpts=REDUCE_OPTS_VAL;
+
+  conf.setBoolean(OLD_CONFIGS,oldConfigs);
+
+  if (oldConfigs) {
+
+    mapTaskEnvKey=reduceTaskEnvKey=JobConf.MAPRED_TASK_ENV;
+
+    mapTaskJavaOptsKey=reduceTaskJavaOptsKey=JobConf.MAPRED_TASK_JAVA_OPTS;
+
+    mapTaskJavaOpts=reduceTaskJavaOpts=TASK_OPTS_VAL;
+
+  }
+
+  conf.set(mapTaskEnvKey,"MY_PATH=/tmp,HOME=/tmp,LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/tmp," + "PATH=$PATH:/tmp,NEW_PATH=$NEW_PATH:/tmp");
+
+  conf.set(reduceTaskEnvKey,"MY_PATH=/tmp,HOME=/tmp,LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/tmp," + "PATH=$PATH:/tmp,NEW_PATH=$NEW_PATH:/tmp");
+
+  conf.set("path",System.getenv("PATH"));
+
+  conf.set(mapTaskJavaOptsKey,mapTaskJavaOpts);
+
+  conf.set(reduceTaskJavaOptsKey,reduceTaskJavaOpts);
+
+  RunningJob job=JobClient.runJob(conf);
+
+  assertTrue("The environment checker job failed.",job.isSuccessful());
+
+}
+
+Location: TestMiniMRChildTask.java
+
+Content: 
+
+/** 
+
+ * Test to test if the user set env variables reflect in the child processes. Mainly - x=y (x can be a already existing env variable or a new variable) - x=$x:y (replace $x with the current value of x)
+
+ */
+
+public void testTaskEnv(){
+
+  try {
+
+    JobConf conf=mr.createJobConf();
+
+    Path inDir=new Path("testing/wc/input1");
+
+    Path outDir=new Path("testing/wc/output1");
+
+    FileSystem outFs=outDir.getFileSystem(conf);
+
+    runTestTaskEnv(conf,inDir,outDir,false);
+
+    outFs.delete(outDir,true);
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+    fail("Exception in testing child env");
+
+    tearDown();
+
+  }
+
+}
+
+Location: TestMiniMRChildTask.java
+
+Content: 
+
+/** 
+
+ * Test to test if the user set *old* env variables reflect in the child processes. Mainly - x=y (x can be a already existing env variable or a new variable) - x=$x:y (replace $x with the current value of x)
+
+ */
+
+public void testTaskOldEnv(){
+
+  try {
+
+    JobConf conf=mr.createJobConf();
+
+    Path inDir=new Path("testing/wc/input1");
+
+    Path outDir=new Path("testing/wc/output1");
+
+    FileSystem outFs=outDir.getFileSystem(conf);
+
+    runTestTaskEnv(conf,inDir,outDir,true);
+
+    outFs.delete(outDir,true);
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+    fail("Exception in testing child env");
+
+    tearDown();
+
+  }
+
+}
+
+Location: TestMiniMRChildTask.java
+
+Content: 
+
+/** 
+
+ * Tests task's temp directory. In this test, we give different values to mapreduce.task.tmp.dir both relative and absolute. And check whether the temp directory  is created. We also check whether java.io.tmpdir value is same as  the directory specified. We create a temp file and check if is is  created in the directory specified.
+
+ */
+
+public void testTaskTempDir(){
+
+  try {
+
+    JobConf conf=mr.createJobConf();
+
+    Path inDir=new Path("testing/wc/input");
+
+    Path outDir=new Path("testing/wc/output");
+
+    String input="The input";
+
+    launchTest(conf,inDir,outDir,input);
+
+  }
+
+ catch (  Exception e) {
+
+    e.printStackTrace();
+
+    fail("Exception in testing temp dir");
+
+    tearDown();
+
+  }
+
+}
+

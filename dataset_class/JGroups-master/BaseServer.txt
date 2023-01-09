@@ -1,0 +1,660 @@
+Location: BaseServer.java
+
+Content: 
+
+public synchronized void addConnectionListener(ConnectionListener cml){
+
+  if (cml != null && !conn_listeners.contains(cml))   conn_listeners.add(cml);
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public synchronized void addConnection(Address peer_addr,Connection conn) throws Exception {
+
+  boolean conn_exists=hasConnection(peer_addr), replace=conn_exists && local_addr.compareTo(peer_addr) < 0;
+
+  if (!conn_exists || replace) {
+
+    replaceConnection(peer_addr,conn);
+
+    conn.start();
+
+  }
+
+ else {
+
+    log.trace("%s: rejected connection from %s %s",local_addr,peer_addr,explanation(conn_exists,replace));
+
+    Util.close(conn);
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+protected BaseServer(ThreadFactory f,SocketFactory sf){
+
+  this.factory=f;
+
+  if (sf != null)   this.socket_factory=sf;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public InetAddress clientBindAddress(){
+
+  return client_bind_addr;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer clientBindAddress(InetAddress addr){
+
+  this.client_bind_addr=addr;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public int clientBindPort(){
+
+  return client_bind_port;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer clientBindPort(int port){
+
+  this.client_bind_port=port;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public void closeConnection(Connection conn,Throwable ex){
+
+  Util.close(conn);
+
+  notifyConnectionClosed(conn,ex.toString());
+
+  removeConnectionIfPresent(conn != null ? conn.peerAddress() : null,conn);
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public synchronized boolean connectionEstablishedTo(Address address){
+
+  Connection conn=conns.get(address);
+
+  return conn != null && conn.isConnected();
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public long connExpireTime(){
+
+  return conn_expire_time;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer connExpireTimeout(long t){
+
+  conn_expire_time=TimeUnit.NANOSECONDS.convert(t,TimeUnit.MILLISECONDS);
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public boolean deferClientBinding(){
+
+  return defer_client_binding;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer deferClientBinding(boolean defer){
+
+  this.defer_client_binding=defer;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+protected static String explanation(boolean connection_existed,boolean replace){
+
+  StringBuilder sb=new StringBuilder();
+
+  if (connection_existed) {
+
+    sb.append(" (connection existed");
+
+    if (replace)     sb.append(" but was replaced because my address is lower)");
+
+ else     sb.append(" and my address won as it's higher)");
+
+  }
+
+ else   sb.append(" (connection didn't exist)");
+
+  return sb.toString();
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+/** 
+
+ * Creates a new connection to dest, or returns an existing one 
+
+ */
+
+public Connection getConnection(Address dest) throws Exception {
+
+  Connection conn;
+
+synchronized (this) {
+
+    if ((conn=conns.get(dest)) != null && (conn.isConnected() || conn.isConnectionPending()))     return conn;
+
+  }
+
+  Exception connect_exception=null;
+
+  sock_creation_lock.lockInterruptibly();
+
+  try {
+
+synchronized (this) {
+
+      conn=conns.get(dest);
+
+      if (conn != null && (conn.isConnected() || conn.isConnectionPending()))       return conn;
+
+      conn=createConnection(dest);
+
+      replaceConnection(dest,conn);
+
+    }
+
+    try {
+
+      log.trace("%s: connecting to %s",local_addr,dest);
+
+      conn.connect(dest);
+
+      notifyConnectionEstablished(conn);
+
+      conn.start();
+
+    }
+
+ catch (    Exception connect_ex) {
+
+      connect_exception=connect_ex;
+
+    }
+
+synchronized (this) {
+
+      Connection existing_conn=conns.get(dest);
+
+      if (existing_conn != null && (existing_conn.isConnected() || existing_conn.isConnectionPending()) && existing_conn != conn) {
+
+        log.trace("%s: found existing connection to %s, using it and deleting own conn-stub",local_addr,dest);
+
+        Util.close(conn);
+
+        return existing_conn;
+
+      }
+
+      if (connect_exception != null) {
+
+        log.trace("%s: failed connecting to %s: %s",local_addr,dest,connect_exception);
+
+        removeConnectionIfPresent(dest,conn);
+
+        throw connect_exception;
+
+      }
+
+      return conn;
+
+    }
+
+  }
+
+  finally {
+
+    sock_creation_lock.unlock();
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+@ManagedAttribute(description="Number of currently open connections") public synchronized int getNumOpenConnections(){
+
+  int retval=0;
+
+  for (  Connection conn : conns.values())   if (conn.isOpen())   retval++;
+
+  return retval;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public synchronized boolean hasConnection(Address address){
+
+  return conns.containsKey(address);
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public int linger(){
+
+  return linger;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer linger(int linger){
+
+  this.linger=linger;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+protected static org.jgroups.Address localAddress(InetAddress bind_addr,int local_port,InetAddress external_addr,int external_port){
+
+  if (external_addr != null)   return new IpAddress(external_addr,external_port > 0 ? external_port : local_port);
+
+  return bind_addr != null ? new IpAddress(bind_addr,local_port) : new IpAddress(local_port);
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public void notifyConnectionClosed(Connection conn,String cause){
+
+  for (  ConnectionListener l : conn_listeners) {
+
+    try {
+
+      l.connectionClosed(conn,cause);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.warn("failed notifying listener %s of connection close: %s",l,t);
+
+    }
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public void notifyConnectionEstablished(Connection conn){
+
+  for (  ConnectionListener l : conn_listeners) {
+
+    try {
+
+      l.connectionEstablished(conn);
+
+    }
+
+ catch (    Throwable t) {
+
+      log.warn("failed notifying listener %s of connection establishment: %s",l,t);
+
+    }
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public long reaperInterval(){
+
+  return reaperInterval;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public int receiveBufferSize(){
+
+  return recv_buf_size;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer receiveBufferSize(int recv_buf_size){
+
+  this.recv_buf_size=recv_buf_size;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer receiver(Receiver r){
+
+  this.receiver=r;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public void receive(Address sender,DataInput in,int len) throws Exception {
+
+  if (this.receiver != null)   this.receiver.receive(sender,in);
+
+ else {
+
+    byte[] buf=new byte[len];
+
+    in.readFully(buf,0,len);
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+/** 
+
+ * Only removes the connection if conns.get(address) == conn 
+
+ */
+
+public void removeConnectionIfPresent(Address address,Connection conn){
+
+  if (address == null || conn == null)   return;
+
+  Connection tmp=null;
+
+synchronized (this) {
+
+    Connection existing=conns.get(address);
+
+    if (conn == existing) {
+
+      tmp=conns.remove(address);
+
+    }
+
+  }
+
+  if (tmp != null) {
+
+    log.trace("%s: removed connection to %s",local_addr,address);
+
+    Util.close(tmp);
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public synchronized void removeConnectionListener(ConnectionListener cml){
+
+  if (cml != null)   conn_listeners.remove(cml);
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+@GuardedBy("this") public void replaceConnection(Address address,Connection conn){
+
+  Connection previous=conns.put(address,conn);
+
+  Util.close(previous);
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public int sendBufferSize(){
+
+  return send_buf_size;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer sendBufferSize(int send_buf_size){
+
+  this.send_buf_size=send_buf_size;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+protected void sendToAll(ByteBuffer data){
+
+  for (  Map.Entry<Address,Connection> entry : conns.entrySet()) {
+
+    Connection conn=entry.getValue();
+
+    try {
+
+      conn.send(data.duplicate());
+
+    }
+
+ catch (    Throwable ex) {
+
+      Address dest=entry.getKey();
+
+      removeConnectionIfPresent(dest,conn);
+
+      log.error("failed sending data to %s: %s",dest,ex);
+
+    }
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+protected void sendToAll(byte[] data,int offset,int length){
+
+  for (  Map.Entry<Address,Connection> entry : conns.entrySet()) {
+
+    Connection conn=entry.getValue();
+
+    try {
+
+      conn.send(data,offset,length);
+
+    }
+
+ catch (    Throwable ex) {
+
+      Address dest=entry.getKey();
+
+      removeConnectionIfPresent(dest,conn);
+
+      log.error("failed sending data to %s: %s",dest,ex);
+
+    }
+
+  }
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public TimeService timeService(){
+
+  return time_service;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer timeService(TimeService ts){
+
+  this.time_service=ts;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public boolean usePeerConnections(){
+
+  return use_peer_connections;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+public BaseServer usePeerConnections(boolean flag){
+
+  this.use_peer_connections=flag;
+
+  return this;
+
+}
+
+Location: BaseServer.java
+
+Content: 
+
+protected <T>boolean validateArgs(Address dest,T buffer){
+
+  if (buffer == null) {
+
+    log.warn("%s: data is null; discarding message to %s",local_addr,dest);
+
+    return false;
+
+  }
+
+  if (!running.get()) {
+
+    log.trace("%s: server is not running, discarding message to %s",local_addr,dest);
+
+    return false;
+
+  }
+
+  return true;
+
+}
+

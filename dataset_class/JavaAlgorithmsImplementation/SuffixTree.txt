@@ -1,0 +1,404 @@
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Add prefix at index.
+
+ * @param index to add prefix at.
+
+ */
+
+private void addPrefix(int index){
+
+  int parentNodeIndex=0;
+
+  int lastParentIndex=-1;
+
+  while (true) {
+
+    Edge<C> edge=null;
+
+    parentNodeIndex=currentNode;
+
+    if (isExplicit()) {
+
+      edge=Edge.find(this,currentNode,characters[index]);
+
+      if (edge != null) {
+
+        break;
+
+      }
+
+    }
+
+ else {
+
+      edge=Edge.find(this,currentNode,characters[firstCharIndex]);
+
+      int span=lastCharIndex - firstCharIndex;
+
+      if (characters[edge.firstCharIndex + span + 1] == characters[index]) {
+
+        break;
+
+      }
+
+      parentNodeIndex=edge.split(currentNode,firstCharIndex,lastCharIndex);
+
+    }
+
+    edge=new Edge<C>(this,index,characters.length - 1,parentNodeIndex);
+
+    if (lastParentIndex > 0) {
+
+      linksMap.get(lastParentIndex).suffixNode=parentNodeIndex;
+
+    }
+
+    lastParentIndex=parentNodeIndex;
+
+    if (currentNode == 0) {
+
+      firstCharIndex++;
+
+    }
+
+ else {
+
+      currentNode=linksMap.get(currentNode).suffixNode;
+
+    }
+
+    if (!isExplicit())     canonize();
+
+  }
+
+  if (lastParentIndex > 0) {
+
+    linksMap.get(lastParentIndex).suffixNode=parentNodeIndex;
+
+  }
+
+  lastParentIndex=parentNodeIndex;
+
+  lastCharIndex++;
+
+  if (!isExplicit())   canonize();
+
+}
+
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Canonize the tree.
+
+ */
+
+private void canonize(){
+
+  Edge<C> edge=Edge.find(this,currentNode,characters[firstCharIndex]);
+
+  int edgeSpan=edge.lastCharIndex - edge.firstCharIndex;
+
+  while (edgeSpan <= (lastCharIndex - firstCharIndex)) {
+
+    firstCharIndex=firstCharIndex + edgeSpan + 1;
+
+    currentNode=edge.endNode;
+
+    if (firstCharIndex <= lastCharIndex) {
+
+      edge=Edge.find(this,edge.endNode,characters[firstCharIndex]);
+
+      edgeSpan=edge.lastCharIndex - edge.firstCharIndex;
+
+    }
+
+  }
+
+}
+
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Get all edges in the table
+
+ * @return debug string.
+
+ */
+
+public String getEdgesTable(){
+
+  StringBuilder builder=new StringBuilder();
+
+  if (edgeMap.size() > 0) {
+
+    int charsLength=characters.length;
+
+    builder.append("Edge\tStart\tEnd\tSuf\tfirst\tlast\tString\n");
+
+    for (    int key : edgeMap.keySet()) {
+
+      Edge<C> e=edgeMap.get(key);
+
+      Link link=linksMap.get(e.endNode);
+
+      int suffix=(link != null) ? link.suffixNode : -1;
+
+      builder.append("\t" + e.startNode + "\t"+ e.endNode+ "\t"+ suffix+ "\t"+ e.firstCharIndex+ "\t"+ e.lastCharIndex+ "\t");
+
+      int begin=e.firstCharIndex;
+
+      int end=(charsLength < e.lastCharIndex) ? charsLength : e.lastCharIndex;
+
+      builder.append(string.substring(begin,end + 1));
+
+      builder.append("\n");
+
+    }
+
+    builder.append("Link\tStart\tEnd\n");
+
+    for (    int key : linksMap.keySet()) {
+
+      Link link=linksMap.get(key);
+
+      builder.append("\t" + link.node + "\t"+ link.suffixNode+ "\n");
+
+    }
+
+  }
+
+  return builder.toString();
+
+}
+
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Get all suffixes at starting node.
+
+ * @param start node.
+
+ * @return set of suffixes in the tree at start node.
+
+ */
+
+private Set<String> getSuffixes(int start){
+
+  Set<String> set=new TreeSet<String>();
+
+  for (  int key : edgeMap.keySet()) {
+
+    Edge<C> e=edgeMap.get(key);
+
+    if (e == null)     continue;
+
+    if (e.startNode != start)     continue;
+
+    String s=(string.substring(e.firstCharIndex,e.lastCharIndex + 1));
+
+    Link n=linksMap.get(e.endNode);
+
+    if (n == null) {
+
+      int index=s.indexOf(endSeqChar);
+
+      if (index >= 0)       s=s.substring(0,index);
+
+      set.add(s);
+
+    }
+
+ else {
+
+      Set<String> set2=getSuffixes(e.endNode);
+
+      for (      String s2 : set2) {
+
+        int index=s2.indexOf(endSeqChar);
+
+        if (index >= 0)         s2=s2.substring(0,index);
+
+        set.add(s + s2);
+
+      }
+
+    }
+
+  }
+
+  return set;
+
+}
+
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Is the tree explicit
+
+ * @return True if explicit.
+
+ */
+
+private boolean isExplicit(){
+
+  return firstCharIndex > lastCharIndex;
+
+}
+
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Returns a two element int array who's 0th index is the start index and 1th is the end index.
+
+ */
+
+private int[] searchEdges(char[] query){
+
+  int startNode=0;
+
+  int queryPosition=0;
+
+  int startIndex=-1;
+
+  int endIndex=-1;
+
+  boolean stop=false;
+
+  while (!stop && queryPosition < query.length) {
+
+    Edge<C> edge=Edge.find(this,startNode,query[queryPosition]);
+
+    if (edge == null) {
+
+      stop=true;
+
+      break;
+
+    }
+
+    if (startNode == 0)     startIndex=edge.firstCharIndex;
+
+    for (int i=edge.firstCharIndex; i <= edge.lastCharIndex; i++) {
+
+      if (queryPosition >= query.length) {
+
+        stop=true;
+
+        break;
+
+      }
+
+ else       if (query[queryPosition] == characters[i]) {
+
+        queryPosition++;
+
+        endIndex=i;
+
+      }
+
+ else {
+
+        stop=true;
+
+        break;
+
+      }
+
+    }
+
+    if (!stop) {
+
+      startNode=edge.endNode;
+
+      if (startNode == -1)       stop=true;
+
+    }
+
+  }
+
+  return (new int[]{startIndex,endIndex});
+
+}
+
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Create suffix tree with sequence and default end sequence.
+
+ * @param seq to create a suffix tree with.
+
+ */
+
+public SuffixTree(C seq){
+
+  this(seq,DEFAULT_END_SEQ_CHAR);
+
+}
+
+Location: SuffixTree.java
+
+Content: 
+
+/** 
+
+ * Create suffix tree with sequence and end sequence parameter.
+
+ * @param seq to create a suffix tree with.
+
+ * @param endSeq which defines the end of a sequence.
+
+ */
+
+public SuffixTree(C seq,char endSeq){
+
+  endSeqChar=endSeq;
+
+  StringBuilder builder=new StringBuilder(seq);
+
+  if (builder.indexOf(String.valueOf(endSeqChar)) < 0)   builder.append(endSeqChar);
+
+  string=builder.toString();
+
+  int length=string.length();
+
+  characters=new char[length];
+
+  for (int i=0; i < length; i++) {
+
+    char c=string.charAt(i);
+
+    characters[i]=c;
+
+  }
+
+  for (int j=0; j < length; j++) {
+
+    addPrefix(j);
+
+  }
+
+}
+

@@ -1,0 +1,282 @@
+Location: CommandRunner.java
+
+Content: 
+
+public void evaluate() throws IOException {
+
+  this.exec();
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+/** 
+
+ * Execute the command
+
+ * @return process exit value (return code) or -1 if timed out.
+
+ * @throws IOException if there is a fatal error interfacing with the environment in which the application is running. 
+
+ */
+
+public int exec() throws IOException {
+
+  Process proc=Runtime.getRuntime().exec(_command);
+
+  _barrier=new CyclicBarrier(3 + ((_stdin != null) ? 1 : 0));
+
+  PullerThread so=new PullerThread("STDOUT",proc.getInputStream(),_stdout);
+
+  so.setDaemon(true);
+
+  so.start();
+
+  PullerThread se=new PullerThread("STDERR",proc.getErrorStream(),_stderr);
+
+  se.setDaemon(true);
+
+  se.start();
+
+  PusherThread si=null;
+
+  if (_stdin != null) {
+
+    si=new PusherThread("STDIN",_stdin,proc.getOutputStream());
+
+    si.setDaemon(true);
+
+    si.start();
+
+  }
+
+  boolean _timedout=false;
+
+  long end=System.currentTimeMillis() + _timeout * 1000;
+
+  try {
+
+    if (_timeout == 0) {
+
+      _barrier.await();
+
+    }
+
+ else {
+
+      _barrier.await(_timeout,TimeUnit.SECONDS);
+
+    }
+
+  }
+
+ catch (  TimeoutException ex) {
+
+    _timedout=true;
+
+  }
+
+catch (  BrokenBarrierException bbe) {
+
+  }
+
+catch (  InterruptedException e) {
+
+  }
+
+  if (si != null) {
+
+    si.interrupt();
+
+  }
+
+  so.interrupt();
+
+  se.interrupt();
+
+  _xit=-1;
+
+  if (!_timedout) {
+
+    if (_waitForExit) {
+
+      do {
+
+        try {
+
+          Thread.sleep(1000);
+
+          _xit=proc.exitValue();
+
+        }
+
+ catch (        InterruptedException ie) {
+
+          if (Thread.interrupted()) {
+
+            break;
+
+          }
+
+ else {
+
+            continue;
+
+          }
+
+        }
+
+catch (        IllegalThreadStateException iltse) {
+
+          continue;
+
+        }
+
+        break;
+
+      }
+
+ while (!(_timedout=(System.currentTimeMillis() > end)));
+
+    }
+
+ else {
+
+      try {
+
+        _xit=proc.exitValue();
+
+      }
+
+ catch (      IllegalThreadStateException iltse) {
+
+        _timedout=true;
+
+      }
+
+    }
+
+  }
+
+  if (_waitForExit) {
+
+    proc.destroy();
+
+  }
+
+  return _xit;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public String getCommand(){
+
+  return _command;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public int getExitValue(){
+
+  return _xit;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public Throwable getThrownError(){
+
+  return _thrownError;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public int getTimeout(){
+
+  return _timeout;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public boolean getWaitForExit(){
+
+  return _waitForExit;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public void setCommand(String s){
+
+  _command=s;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public void setInputStream(InputStream is){
+
+  _stdin=is;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public void setStdErrorStream(OutputStream os){
+
+  _stderr=os;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public void setStdOutputStream(OutputStream os){
+
+  _stdout=os;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public void setTimeout(int timeout){
+
+  _timeout=timeout;
+
+}
+
+Location: CommandRunner.java
+
+Content: 
+
+public void setWaitForExit(boolean waitForExit){
+
+  _waitForExit=waitForExit;
+
+}
+

@@ -1,0 +1,650 @@
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Protected constructor can only be used by derived class. Must initialize the serializer before serializing any document, by calling  {@link #setOutputCharStream} or {@link #setOutputByteStream}first
+
+ */
+
+protected BaseMarkupSerializer(OutputFormat format){
+
+  int i;
+
+  _elementStates=new ElementState[10];
+
+  for (i=0; i < _elementStates.length; ++i)   _elementStates[i]=new ElementState();
+
+  _format=format;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+protected void cleanup(){
+
+  fCurrentNode=null;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Clears document state. 
+
+ */
+
+final void clearDocumentState(){
+
+  _elementStateCount=0;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+public void endNonEscaping(){
+
+  ElementState state;
+
+  state=getElementState();
+
+  state.unescaped=false;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+public void endPreserving(){
+
+  ElementState state;
+
+  state=getElementState();
+
+  state.preserveSpace=false;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Enter a new element state for the specified element. Tag name and space preserving is specified, element state is initially empty.
+
+ * @return Current element state, or null
+
+ */
+
+protected ElementState enterElementState(String namespaceURI,String localName,String rawName,boolean preserveSpace){
+
+  ElementState state;
+
+  if (_elementStateCount + 1 == _elementStates.length) {
+
+    ElementState[] newStates;
+
+    newStates=new ElementState[_elementStates.length + 10];
+
+    for (int i=0; i < _elementStates.length; ++i)     newStates[i]=_elementStates[i];
+
+    for (int i=_elementStates.length; i < newStates.length; ++i)     newStates[i]=new ElementState();
+
+    _elementStates=newStates;
+
+  }
+
+  ++_elementStateCount;
+
+  state=_elementStates[_elementStateCount];
+
+  state.namespaceURI=namespaceURI;
+
+  state.localName=localName;
+
+  state.rawName=rawName;
+
+  state.preserveSpace=preserveSpace;
+
+  state.empty=true;
+
+  state.afterElement=false;
+
+  state.afterComment=false;
+
+  state.doCData=state.inCData=false;
+
+  state.unescaped=false;
+
+  state.prefixes=_prefixes;
+
+  _prefixes=null;
+
+  return state;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+protected void fatalError(String message) throws IOException {
+
+  if (fDOMErrorHandler != null) {
+
+    modifyDOMError(message,DOMError.SEVERITY_FATAL_ERROR,null,fCurrentNode);
+
+    fDOMErrorHandler.handleError(fDOMError);
+
+  }
+
+ else {
+
+    throw new IOException(message);
+
+  }
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Return the state of the current element.
+
+ * @return Current element state
+
+ */
+
+protected ElementState getElementState(){
+
+  return _elementStates[_elementStateCount];
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Returns true if in the state of the document. Returns true before entering any element and after leaving the root element.
+
+ * @return True if in the state of the document
+
+ */
+
+protected boolean isDocumentState(){
+
+  return _elementStateCount == 0;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Leave the current element state and return to the state of the parent element. If this was the root element, return to the state of the document.
+
+ * @return Previous element state
+
+ */
+
+protected ElementState leaveElementState(){
+
+  if (_elementStateCount > 0) {
+
+    _prefixes=null;
+
+    --_elementStateCount;
+
+    return _elementStates[_elementStateCount];
+
+  }
+
+  String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.SERIALIZER_DOMAIN,"Internal",null);
+
+  throw new IllegalStateException(msg);
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * The method modifies global DOM error object
+
+ * @param message
+
+ * @param severity
+
+ * @param type
+
+ * @return a DOMError
+
+ */
+
+protected DOMError modifyDOMError(String message,short severity,String type,Node node){
+
+  fDOMError.reset();
+
+  fDOMError.fMessage=message;
+
+  fDOMError.fType=type;
+
+  fDOMError.fSeverity=severity;
+
+  fDOMError.fLocator=new DOMLocatorImpl(-1,-1,-1,node,null);
+
+  return fDOMError;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+protected void prepare() throws IOException {
+
+  if (_prepared)   return;
+
+  if (_writer == null && _output == null) {
+
+    String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.SERIALIZER_DOMAIN,"NoWriterSupplied",null);
+
+    throw new IOException(msg);
+
+  }
+
+  _encodingInfo=_format.getEncodingInfo();
+
+  if (_output != null) {
+
+    _writer=_encodingInfo.getWriter(_output);
+
+  }
+
+  if (_format.getIndenting()) {
+
+    _indenting=true;
+
+    _printer=new IndentPrinter(_writer,_format);
+
+  }
+
+ else {
+
+    _indenting=false;
+
+    _printer=new Printer(_writer,_format);
+
+  }
+
+  ElementState state;
+
+  _elementStateCount=0;
+
+  state=_elementStates[0];
+
+  state.namespaceURI=null;
+
+  state.localName=null;
+
+  state.rawName=null;
+
+  state.preserveSpace=_format.getPreserveSpace();
+
+  state.empty=true;
+
+  state.afterElement=false;
+
+  state.afterComment=false;
+
+  state.doCData=state.inCData=false;
+
+  state.prefixes=null;
+
+  _docTypePublicId=_format.getDoctypePublic();
+
+  _docTypeSystemId=_format.getDoctypeSystem();
+
+  _started=false;
+
+  _prepared=true;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+protected void printCDATAText(String text) throws IOException {
+
+  int length=text.length();
+
+  char ch;
+
+  for (int index=0; index < length; ++index) {
+
+    ch=text.charAt(index);
+
+    if (ch == ']' && index + 2 < length && text.charAt(index + 1) == ']' && text.charAt(index + 2) == '>') {
+
+      if (fDOMErrorHandler != null) {
+
+        if ((features & DOMSerializerImpl.SPLITCDATA) == 0) {
+
+          String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.SERIALIZER_DOMAIN,"EndingCDATA",null);
+
+          if ((features & DOMSerializerImpl.WELLFORMED) != 0) {
+
+            modifyDOMError(msg,DOMError.SEVERITY_FATAL_ERROR,"wf-invalid-character",fCurrentNode);
+
+            fDOMErrorHandler.handleError(fDOMError);
+
+            throw new LSException(LSException.SERIALIZE_ERR,msg);
+
+          }
+
+          modifyDOMError(msg,DOMError.SEVERITY_ERROR,"cdata-section-not-splitted",fCurrentNode);
+
+          if (!fDOMErrorHandler.handleError(fDOMError)) {
+
+            throw new LSException(LSException.SERIALIZE_ERR,msg);
+
+          }
+
+        }
+
+ else {
+
+          String msg=DOMMessageFormatter.formatMessage(DOMMessageFormatter.SERIALIZER_DOMAIN,"SplittingCDATA",null);
+
+          modifyDOMError(msg,DOMError.SEVERITY_WARNING,null,fCurrentNode);
+
+          fDOMErrorHandler.handleError(fDOMError);
+
+        }
+
+      }
+
+      _printer.printText("]]]]><![CDATA[>");
+
+      index+=2;
+
+      continue;
+
+    }
+
+    if (!XMLChar.isValid(ch)) {
+
+      if (++index < length) {
+
+        surrogates(ch,text.charAt(index),true);
+
+      }
+
+ else {
+
+        fatalError("The character '" + ch + "' is an invalid XML character");
+
+      }
+
+      continue;
+
+    }
+
+    if ((ch >= ' ' && _encodingInfo.isPrintable(ch) && ch != 0x7F) || ch == '\n' || ch == '\r' || ch == '\t') {
+
+      _printer.printText(ch);
+
+    }
+
+ else {
+
+      _printer.printText("]]>&#x");
+
+      _printer.printText(Integer.toHexString(ch));
+
+      _printer.printText(";<![CDATA[");
+
+    }
+
+  }
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Print a document type public or system identifier URL. Encapsulates the URL in double quotes, escapes non-printing characters and print it equivalent to  {@link #printText}.
+
+ * @param url The document type url to print
+
+ */
+
+protected void printDoctypeURL(String url) throws IOException {
+
+  int i;
+
+  _printer.printText('"');
+
+  for (i=0; i < url.length(); ++i) {
+
+    if (url.charAt(i) == '"' || url.charAt(i) < 0x20 || url.charAt(i) > 0x7F) {
+
+      _printer.printText('%');
+
+      _printer.printText(Integer.toHexString(url.charAt(i)));
+
+    }
+
+ else     _printer.printText(url.charAt(i));
+
+  }
+
+  _printer.printText('"');
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+protected void printEscaped(int ch) throws IOException {
+
+  String charRef;
+
+  charRef=getEntityRef(ch);
+
+  if (charRef != null) {
+
+    _printer.printText('&');
+
+    _printer.printText(charRef);
+
+    _printer.printText(';');
+
+  }
+
+ else   if ((ch >= ' ' && _encodingInfo.isPrintable((char)ch) && ch != 0x7F) || ch == '\n' || ch == '\r' || ch == '\t') {
+
+    if (ch < 0x10000) {
+
+      _printer.printText((char)ch);
+
+    }
+
+ else {
+
+      _printer.printText((char)(((ch - 0x10000) >> 10) + 0xd800));
+
+      _printer.printText((char)(((ch - 0x10000) & 0x3ff) + 0xdc00));
+
+    }
+
+  }
+
+ else {
+
+    printHex(ch);
+
+  }
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Escapes chars
+
+ */
+
+final void printHex(int ch) throws IOException {
+
+  _printer.printText("&#x");
+
+  _printer.printText(Integer.toHexString(ch));
+
+  _printer.printText(';');
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+/** 
+
+ * Comments and PIs cannot be serialized before the root element, because the root element serializes the document type, which generally comes first. Instead such PIs and comments are accumulated inside a vector and serialized by calling this method. Will be called when the root element is serialized and when the document finished serializing.
+
+ * @throws IOException An I/O exception occured whileserializing
+
+ */
+
+protected void serializePreRoot() throws IOException {
+
+  int i;
+
+  if (_preRoot != null) {
+
+    for (i=0; i < _preRoot.size(); ++i) {
+
+      printText((String)_preRoot.elementAt(i),true,true);
+
+      if (_indenting)       _printer.breakLine();
+
+    }
+
+    _preRoot.removeAllElements();
+
+  }
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+public void startNonEscaping(){
+
+  ElementState state;
+
+  state=getElementState();
+
+  state.unescaped=true;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+public void startPreserving(){
+
+  ElementState state;
+
+  state=getElementState();
+
+  state.preserveSpace=true;
+
+}
+
+Location: BaseMarkupSerializer.java
+
+Content: 
+
+protected void surrogates(int high,int low,boolean inContent) throws IOException {
+
+  if (XMLChar.isHighSurrogate(high)) {
+
+    if (!XMLChar.isLowSurrogate(low)) {
+
+      fatalError("The character '" + (char)low + "' is an invalid XML character");
+
+    }
+
+ else {
+
+      int supplemental=XMLChar.supplemental((char)high,(char)low);
+
+      if (!XMLChar.isValid(supplemental)) {
+
+        fatalError("The character '" + (char)supplemental + "' is an invalid XML character");
+
+      }
+
+ else {
+
+        if (inContent && content().inCData) {
+
+          _printer.printText("]]>&#x");
+
+          _printer.printText(Integer.toHexString(supplemental));
+
+          _printer.printText(";<![CDATA[");
+
+        }
+
+ else {
+
+          printHex(supplemental);
+
+        }
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    fatalError("The character '" + (char)high + "' is an invalid XML character");
+
+  }
+
+}
+

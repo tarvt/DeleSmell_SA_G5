@@ -1,0 +1,82 @@
+Location: TestMapProgress.java
+
+Content: 
+
+private void createInputFile(Path rootDir) throws IOException {
+
+  if (fs.exists(rootDir)) {
+
+    fs.delete(rootDir,true);
+
+  }
+
+  String str="The quick brown fox\n" + "The brown quick fox\n" + "The fox brown quick\n";
+
+  DataOutputStream inpFile=fs.create(new Path(rootDir,"part-0"));
+
+  inpFile.writeBytes(str);
+
+  inpFile.close();
+
+}
+
+Location: TestMapProgress.java
+
+Content: 
+
+/** 
+
+ * Validates map phase progress after each record is processed by map task using custom task reporter.
+
+ */
+
+public void testMapProgress() throws Exception {
+
+  JobConf job=new JobConf();
+
+  fs=FileSystem.getLocal(job);
+
+  Path rootDir=new Path(TEST_ROOT_DIR);
+
+  createInputFile(rootDir);
+
+  job.setNumReduceTasks(0);
+
+  TaskAttemptID taskId=TaskAttemptID.forName("attempt_200907082313_0424_m_000000_0");
+
+  job.setClass("mapreduce.job.outputformat.class",NullOutputFormat.class,OutputFormat.class);
+
+  job.set(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.INPUT_DIR,TEST_ROOT_DIR);
+
+  jobId=taskId.getJobID();
+
+  JobContext jContext=new JobContextImpl(job,jobId);
+
+  InputFormat<?,?> input=ReflectionUtils.newInstance(jContext.getInputFormatClass(),job);
+
+  List<InputSplit> splits=input.getSplits(jContext);
+
+  JobSplitWriter.createSplitFiles(new Path(TEST_ROOT_DIR),job,new Path(TEST_ROOT_DIR).getFileSystem(job),splits);
+
+  TaskSplitMetaInfo[] splitMetaInfo=SplitMetaInfoReader.readSplitMetaInfo(jobId,fs,job,new Path(TEST_ROOT_DIR));
+
+  job.setUseNewMapper(true);
+
+  for (int i=0; i < splitMetaInfo.length; i++) {
+
+    map=new TestMapTask(job.get(JTConfig.JT_SYSTEM_DIR,"/tmp/hadoop/mapred/system") + jobId + "job.xml",taskId,i,splitMetaInfo[i].getSplitIndex(),1);
+
+    JobConf localConf=new JobConf(job);
+
+    map.localizeConfiguration(localConf);
+
+    map.setConf(localConf);
+
+    map.run(localConf,fakeUmbilical);
+
+  }
+
+  fs.delete(rootDir,true);
+
+}
+

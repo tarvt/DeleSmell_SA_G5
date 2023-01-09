@@ -1,0 +1,240 @@
+Location: JobEndNotifier.java
+
+Content: 
+
+private static JobEndStatusInfo createNotification(JobConf conf,JobStatus status){
+
+  JobEndStatusInfo notification=null;
+
+  String uri=conf.getJobEndNotificationURI();
+
+  if (uri != null) {
+
+    int retryAttempts=conf.getInt(JobContext.END_NOTIFICATION_RETRIES,0) + 1;
+
+    long retryInterval=conf.getInt(JobContext.END_NOTIFICATION_RETRIE_INTERVAL,30000);
+
+    if (uri.contains("$jobId")) {
+
+      uri=uri.replace("$jobId",status.getJobID().toString());
+
+    }
+
+    if (uri.contains("$jobStatus")) {
+
+      String statusStr=(status.getRunState() == JobStatus.SUCCEEDED) ? "SUCCEEDED" : (status.getRunState() == JobStatus.FAILED) ? "FAILED" : "KILLED";
+
+      uri=uri.replace("$jobStatus",statusStr);
+
+    }
+
+    notification=new JobEndStatusInfo(uri,retryAttempts,retryInterval);
+
+  }
+
+  return notification;
+
+}
+
+Location: JobEndNotifier.java
+
+Content: 
+
+private static int httpNotification(String uri) throws IOException {
+
+  URI url=new URI(uri,false);
+
+  HttpClient m_client=new HttpClient();
+
+  HttpMethod method=new GetMethod(url.getEscapedURI());
+
+  method.setRequestHeader("Accept","*/*");
+
+  return m_client.executeMethod(method);
+
+}
+
+Location: JobEndNotifier.java
+
+Content: 
+
+public static void localRunnerNotification(JobConf conf,JobStatus status){
+
+  JobEndStatusInfo notification=createNotification(conf,status);
+
+  if (notification != null) {
+
+    while (notification.configureForRetry()) {
+
+      try {
+
+        int code=httpNotification(notification.getUri());
+
+        if (code != 200) {
+
+          throw new IOException("Invalid response status code: " + code);
+
+        }
+
+ else {
+
+          break;
+
+        }
+
+      }
+
+ catch (      IOException ioex) {
+
+        LOG.error("Notification error [" + notification.getUri() + "]",ioex);
+
+      }
+
+catch (      Exception ex) {
+
+        LOG.error("Notification error [" + notification.getUri() + "]",ex);
+
+      }
+
+      try {
+
+        Thread.sleep(notification.getRetryInterval());
+
+      }
+
+ catch (      InterruptedException iex) {
+
+        LOG.error("Notification retry error [" + notification + "]",iex);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: JobEndNotifier.java
+
+Content: 
+
+public static void registerNotification(JobConf jobConf,JobStatus status){
+
+  JobEndStatusInfo notification=createNotification(jobConf,status);
+
+  if (notification != null) {
+
+    try {
+
+      queue.put(notification);
+
+    }
+
+ catch (    InterruptedException iex) {
+
+      LOG.error("Notification queuing failure [" + notification + "]",iex);
+
+    }
+
+  }
+
+}
+
+Location: JobEndNotifier.java
+
+Content: 
+
+public static void startNotifier(){
+
+  running=true;
+
+  thread=new Thread(new Runnable(){
+
+    public void run(){
+
+      try {
+
+        while (running) {
+
+          sendNotification(queue.take());
+
+        }
+
+      }
+
+ catch (      InterruptedException irex) {
+
+        if (running) {
+
+          LOG.error("Thread has ended unexpectedly",irex);
+
+        }
+
+      }
+
+    }
+
+    private void sendNotification(    JobEndStatusInfo notification){
+
+      try {
+
+        int code=httpNotification(notification.getUri());
+
+        if (code != 200) {
+
+          throw new IOException("Invalid response status code: " + code);
+
+        }
+
+      }
+
+ catch (      IOException ioex) {
+
+        LOG.error("Notification failure [" + notification + "]",ioex);
+
+        if (notification.configureForRetry()) {
+
+          try {
+
+            queue.put(notification);
+
+          }
+
+ catch (          InterruptedException iex) {
+
+            LOG.error("Notification queuing error [" + notification + "]",iex);
+
+          }
+
+        }
+
+      }
+
+catch (      Exception ex) {
+
+        LOG.error("Notification failure [" + notification + "]",ex);
+
+      }
+
+    }
+
+  }
+
+);
+
+  thread.start();
+
+}
+
+Location: JobEndNotifier.java
+
+Content: 
+
+public static void stopNotifier(){
+
+  running=false;
+
+  thread.interrupt();
+
+}
+

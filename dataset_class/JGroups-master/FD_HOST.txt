@@ -1,0 +1,290 @@
+Location: FD_HOST.java
+
+Content: 
+
+/** 
+
+ * Returns the age (in secs) of the given host 
+
+ */
+
+protected long getAgeOf(InetAddress host){
+
+  Long ts=timestamps.get(host);
+
+  return ts != null ? TimeUnit.SECONDS.convert(getTimestamp() - ts,TimeUnit.NANOSECONDS) : -1;
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected InetAddress getHostFor(Address mbr){
+
+  PhysicalAddress phys_addr=getPhysicalAddress(mbr);
+
+  return phys_addr instanceof IpAddress ? ((IpAddress)phys_addr).getIpAddress() : null;
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected PhysicalAddress getPhysicalAddress(Address logical_addr){
+
+  return (PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS,logical_addr));
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected long getTimestamp(){
+
+  return use_time_service && time_service != null ? time_service.timestamp() : System.nanoTime();
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+@ManagedOperation(description="Checks whether the given host is alive") public boolean isAlive(String host) throws Exception {
+
+  return ping_command != null && ping_command.isAlive(InetAddress.getByName(host),check_timeout);
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+@ManagedAttribute(description="Whether the ping task is running") public boolean isPingerRunning(){
+
+  Future<?> future=ping_task_future;
+
+  return future != null && !future.isDone();
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected boolean isPinger(Address mbr){
+
+  InetAddress host=getHostFor(mbr);
+
+  if (host == null)   return false;
+
+  List<Address> mbrs=hosts.get(host);
+
+  return mbrs != null && !mbrs.isEmpty() && mbrs.get(0).equals(mbr);
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+public FD_HOST pingCommand(PingCommand cmd){
+
+  this.ping_command=cmd;
+
+  return this;
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+@ManagedOperation(description="Prints the hosts and their associated cluster members") public String printHosts(){
+
+  StringBuilder sb=new StringBuilder();
+
+synchronized (hosts) {
+
+    for (    Map.Entry<InetAddress,List<Address>> entry : hosts.entrySet()) {
+
+      sb.append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+@ManagedOperation(description="Prints history of suspected hosts") public String printSuspectHistory(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Tuple<InetAddress,Long> tmp : suspect_history) {
+
+    sb.append(new Date(tmp.getVal2())).append(": ").append(tmp.getVal1()).append("\n");
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+@ManagedOperation(description="Prints timestamps") public String printTimestamps(){
+
+  return _printTimestamps();
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+public void setCommand(String command){
+
+  this.cmd=command;
+
+  ping_command=this.cmd != null ? new ExternalPingCommand(cmd) : new IsReachablePingCommand();
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected void startPingerTask(){
+
+  if (ping_task_future == null || ping_task_future.isDone())   ping_task_future=timer.scheduleAtFixedRate(new PingTask(),interval,interval,TimeUnit.MILLISECONDS);
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected void stopPingerTask(){
+
+  if (ping_task_future != null) {
+
+    ping_task_future.cancel(false);
+
+    ping_task_future=null;
+
+  }
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+/** 
+
+ * Called by ping task; will result in all members of host getting suspected 
+
+ */
+
+protected void suspect(InetAddress host){
+
+  List<Address> suspects;
+
+  suspect_history.add(new Tuple<>(host,System.currentTimeMillis()));
+
+synchronized (hosts) {
+
+    List<Address> tmp=hosts.get(host);
+
+    suspects=tmp != null ? new ArrayList<>(tmp) : null;
+
+  }
+
+  if (suspects != null) {
+
+    log.debug("%s: suspecting host %s; suspected members: %s",local_addr,host,Util.printListWithDelimiter(suspects,","));
+
+    suspect(suspects);
+
+  }
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected void suspect(List<Address> suspects){
+
+  if (suspects == null || suspects.isEmpty())   return;
+
+  num_suspect_events+=suspects.size();
+
+  final List<Address> eligible_mbrs=new ArrayList<>();
+
+synchronized (this) {
+
+    suspected_mbrs.addAll(suspects);
+
+    eligible_mbrs.addAll(members);
+
+    eligible_mbrs.removeAll(suspected_mbrs);
+
+    has_suspected_mbrs=!suspected_mbrs.isEmpty();
+
+  }
+
+  if (local_addr != null && !eligible_mbrs.isEmpty() && local_addr.equals(eligible_mbrs.get(0))) {
+
+    log.debug("%s: suspecting %s",local_addr,suspects);
+
+    up_prot.up(new Event(Event.SUSPECT,suspects));
+
+    down_prot.down(new Event(Event.SUSPECT,suspects));
+
+  }
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected void updateTimestampFor(InetAddress host){
+
+  timestamps.put(host,getTimestamp());
+
+}
+
+Location: FD_HOST.java
+
+Content: 
+
+protected String _printTimestamps(){
+
+  StringBuilder sb=new StringBuilder();
+
+  long current_time=getTimestamp();
+
+  for (  Map.Entry<InetAddress,Long> entry : timestamps.entrySet()) {
+
+    sb.append(entry.getKey()).append(": ");
+
+    sb.append(TimeUnit.SECONDS.convert(current_time - entry.getValue(),TimeUnit.NANOSECONDS)).append(" secs old\n");
+
+  }
+
+  return sb.toString();
+
+}
+

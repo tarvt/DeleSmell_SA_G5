@@ -1,0 +1,98 @@
+Location: LoadJob.java
+
+Content: 
+
+@Override void buildSplits(FilePool inputDir) throws IOException {
+
+  long mapInputBytesTotal=0L;
+
+  long mapOutputBytesTotal=0L;
+
+  long mapOutputRecordsTotal=0L;
+
+  final JobStory jobdesc=getJobDesc();
+
+  if (null == jobdesc) {
+
+    return;
+
+  }
+
+  final int maps=jobdesc.getNumberMaps();
+
+  final int reds=jobdesc.getNumberReduces();
+
+  for (int i=0; i < maps; ++i) {
+
+    final TaskInfo info=jobdesc.getTaskInfo(TaskType.MAP,i);
+
+    mapInputBytesTotal+=info.getInputBytes();
+
+    mapOutputBytesTotal+=info.getOutputBytes();
+
+    mapOutputRecordsTotal+=info.getOutputRecords();
+
+  }
+
+  final double[] reduceRecordRatio=new double[reds];
+
+  final double[] reduceByteRatio=new double[reds];
+
+  for (int i=0; i < reds; ++i) {
+
+    final TaskInfo info=jobdesc.getTaskInfo(TaskType.REDUCE,i);
+
+    reduceByteRatio[i]=info.getInputBytes() / (1.0 * mapOutputBytesTotal);
+
+    reduceRecordRatio[i]=info.getInputRecords() / (1.0 * mapOutputRecordsTotal);
+
+  }
+
+  final InputStriper striper=new InputStriper(inputDir,mapInputBytesTotal);
+
+  final List<InputSplit> splits=new ArrayList<InputSplit>();
+
+  for (int i=0; i < maps; ++i) {
+
+    final int nSpec=reds / maps + ((reds % maps) > i ? 1 : 0);
+
+    final long[] specBytes=new long[nSpec];
+
+    final long[] specRecords=new long[nSpec];
+
+    for (int j=0; j < nSpec; ++j) {
+
+      final TaskInfo info=jobdesc.getTaskInfo(TaskType.REDUCE,i + j * maps);
+
+      specBytes[j]=info.getOutputBytes();
+
+      specRecords[j]=info.getOutputRecords();
+
+      if (LOG.isDebugEnabled()) {
+
+        LOG.debug(String.format("SPEC(%d) %d -> %d %d %d",id(),i,i + j * maps,info.getOutputRecords(),info.getOutputBytes()));
+
+      }
+
+    }
+
+    final TaskInfo info=jobdesc.getTaskInfo(TaskType.MAP,i);
+
+    splits.add(new LoadSplit(striper.splitFor(inputDir,info.getInputBytes(),3),maps,i,info.getInputBytes(),info.getInputRecords(),info.getOutputBytes(),info.getOutputRecords(),reduceByteRatio,reduceRecordRatio,specBytes,specRecords));
+
+  }
+
+  pushDescription(id(),splits);
+
+}
+
+Location: LoadJob.java
+
+Content: 
+
+public LoadJob(final Configuration conf,long submissionMillis,final JobStory jobdesc,Path outRoot,UserGroupInformation ugi,final int seq) throws IOException {
+
+  super(conf,submissionMillis,jobdesc,outRoot,ugi,seq);
+
+}
+

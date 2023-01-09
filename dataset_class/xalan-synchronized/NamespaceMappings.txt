@@ -1,0 +1,332 @@
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * A more type-safe way of saving stacks under the m_namespaces Hashtable.
+
+ */
+
+private Stack createPrefixStack(String prefix){
+
+  Stack fs=new Stack();
+
+  m_namespaces.put(prefix,fs);
+
+  return fs;
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * Generate a new namespace prefix ( ns0, ns1 ...) not used before
+
+ * @return String a new namespace prefix ( ns0, ns1, ns2 ...)
+
+ */
+
+public String generateNextPrefix(){
+
+  return "ns" + (count++);
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+MappingRecord getMappingFromPrefix(String prefix){
+
+  final Stack stack=(Stack)m_namespaces.get(prefix);
+
+  return stack != null && !stack.isEmpty() ? ((MappingRecord)stack.peek()) : null;
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+MappingRecord getMappingFromURI(String uri){
+
+  MappingRecord foundMap=null;
+
+  Enumeration prefixes=m_namespaces.keys();
+
+  while (prefixes.hasMoreElements()) {
+
+    String prefix=(String)prefixes.nextElement();
+
+    MappingRecord map2=getMappingFromPrefix(prefix);
+
+    if (map2 != null && (map2.m_uri).equals(uri)) {
+
+      foundMap=map2;
+
+      break;
+
+    }
+
+  }
+
+  return foundMap;
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * A more type-safe way to get a stack of prefix mappings from the Hashtable m_namespaces (this is the only method that does the type cast).
+
+ */
+
+private Stack getPrefixStack(String prefix){
+
+  Stack fs=(Stack)m_namespaces.get(prefix);
+
+  return fs;
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * This method initializes the namespace object with appropriate stacks and predefines a few prefix/uri pairs which always exist.
+
+ */
+
+private void initNamespaces(){
+
+  Stack stack;
+
+  MappingRecord nn;
+
+  nn=new MappingRecord(EMPTYSTRING,EMPTYSTRING,-1);
+
+  stack=createPrefixStack(EMPTYSTRING);
+
+  stack.push(nn);
+
+  nn=new MappingRecord(XML_PREFIX,"http://www.w3.org/XML/1998/namespace",-1);
+
+  stack=createPrefixStack(XML_PREFIX);
+
+  stack.push(nn);
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * Given a namespace uri, get all prefixes bound to the Namespace URI in the current scope.
+
+ * @param uri the namespace URI to be search for
+
+ * @return An array of Strings which are all prefixes bound to the namespace URIin the current scope. An array of zero elements is returned if no prefixes map to the given namespace URI.
+
+ */
+
+public String[] lookupAllPrefixes(String uri){
+
+  java.util.ArrayList foundPrefixes=new java.util.ArrayList();
+
+  Enumeration prefixes=m_namespaces.keys();
+
+  while (prefixes.hasMoreElements()) {
+
+    String prefix=(String)prefixes.nextElement();
+
+    String uri2=lookupNamespace(prefix);
+
+    if (uri2 != null && uri2.equals(uri)) {
+
+      foundPrefixes.add(prefix);
+
+    }
+
+  }
+
+  String[] prefixArray=new String[foundPrefixes.size()];
+
+  foundPrefixes.toArray(prefixArray);
+
+  return prefixArray;
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * Use a namespace prefix to lookup a namespace URI.
+
+ * @param prefix String the prefix of the namespace
+
+ * @return the URI corresponding to the prefix, returns "" if there is novisible mapping.
+
+ */
+
+public String lookupNamespace(String prefix){
+
+  String uri=null;
+
+  final Stack stack=getPrefixStack(prefix);
+
+  if (stack != null && !stack.isEmpty()) {
+
+    uri=((MappingRecord)stack.peek()).m_uri;
+
+  }
+
+  if (uri == null)   uri=EMPTYSTRING;
+
+  return uri;
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * Default constructor
+
+ * @see java.lang.Object#Object()
+
+ */
+
+public NamespaceMappings(){
+
+  initNamespaces();
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * Pop, or undeclare all namespace definitions that are currently declared at the given element depth, or deepter.
+
+ * @param elemDepth  the element depth for which mappings declared at this depthor deeper will no longer be valid
+
+ * @param saxHandler The ContentHandler to notify of any endPrefixMapping()calls. This parameter can be null.
+
+ */
+
+void popNamespaces(int elemDepth,ContentHandler saxHandler){
+
+  while (true) {
+
+    if (m_nodeStack.isEmpty())     return;
+
+    MappingRecord map=(MappingRecord)(m_nodeStack.peek());
+
+    int depth=map.m_declarationDepth;
+
+    if (elemDepth < 1 || map.m_declarationDepth < elemDepth)     break;
+
+    MappingRecord nm1=(MappingRecord)m_nodeStack.pop();
+
+    String prefix=map.m_prefix;
+
+    Stack prefixStack=getPrefixStack(prefix);
+
+    MappingRecord nm2=(MappingRecord)prefixStack.peek();
+
+    if (nm1 == nm2) {
+
+      prefixStack.pop();
+
+      if (saxHandler != null) {
+
+        try {
+
+          saxHandler.endPrefixMapping(prefix);
+
+        }
+
+ catch (        SAXException e) {
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: NamespaceMappings.java
+
+Content: 
+
+/** 
+
+ * Declare a mapping of a prefix to namespace URI at the given element depth.
+
+ * @param prefix    a String with the prefix for a qualified name
+
+ * @param uri       a String with the uri to which the prefix is to map
+
+ * @param elemDepth the depth of current declaration
+
+ */
+
+public boolean pushNamespace(String prefix,String uri,int elemDepth){
+
+  if (prefix.startsWith(XML_PREFIX)) {
+
+    return false;
+
+  }
+
+  Stack stack;
+
+  if ((stack=(Stack)m_namespaces.get(prefix)) == null) {
+
+    m_namespaces.put(prefix,stack=new Stack());
+
+  }
+
+  if (!stack.empty()) {
+
+    MappingRecord mr=(MappingRecord)stack.peek();
+
+    if (uri.equals(mr.m_uri) || elemDepth == mr.m_declarationDepth) {
+
+      return false;
+
+    }
+
+  }
+
+  MappingRecord map=new MappingRecord(prefix,uri,elemDepth);
+
+  stack.push(map);
+
+  m_nodeStack.push(map);
+
+  return true;
+
+}
+

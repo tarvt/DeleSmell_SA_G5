@@ -1,0 +1,458 @@
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Default constructor.
+
+ */
+
+public AbstractIFPainter(T documentHandler){
+
+  this.documentHandler=documentHandler;
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+private AffineTransform combine(AffineTransform[] transforms){
+
+  AffineTransform at=new AffineTransform();
+
+  for (  AffineTransform transform : transforms) {
+
+    at.concatenate(transform);
+
+  }
+
+  return at;
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Default drawing method for handling a foreign object in the form of a DOM document.
+
+ * @param doc the DOM document containing the foreign object
+
+ * @param rect the rectangle in which to paint the image
+
+ */
+
+protected void drawImageUsingDocument(Document doc,Rectangle rect){
+
+  ImageManager manager=getUserAgent().getImageManager();
+
+  ImageInfo info=null;
+
+  try {
+
+    info=manager.preloadImage(null,new DOMSource(doc));
+
+    drawImageUsingImageHandler(info,rect);
+
+  }
+
+ catch (  ImageException ie) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageError(this,(info != null ? info.toString() : INSTREAM_OBJECT_URI),ie,null);
+
+  }
+
+catch (  FileNotFoundException fe) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageNotFound(this,(info != null ? info.toString() : INSTREAM_OBJECT_URI),fe,null);
+
+  }
+
+catch (  IOException ioe) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageIOError(this,(info != null ? info.toString() : INSTREAM_OBJECT_URI),ioe,null);
+
+  }
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Draws an image using a suitable image handler.
+
+ * @param image the image to be painted (it needs to of a supported image flavor)
+
+ * @param rect the rectangle in which to paint the image
+
+ * @param context a suitable rendering context
+
+ * @throws IOException in case of an I/O error while handling/writing the image
+
+ * @throws ImageException if an error occurs while converting the image to a suitable format
+
+ */
+
+protected void drawImage(Image image,Rectangle rect,RenderingContext context) throws IOException, ImageException {
+
+  drawImage(image,rect,context,false,null);
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Draws an image using a suitable image handler.
+
+ * @param image the image to be painted (it needs to of a supported image flavor)
+
+ * @param rect the rectangle in which to paint the image
+
+ * @param context a suitable rendering context
+
+ * @param convert true to run the image through image conversion if that is necessary
+
+ * @param additionalHints additional image processing hints
+
+ * @throws IOException in case of an I/O error while handling/writing the image
+
+ * @throws ImageException if an error occurs while converting the image to a suitable format
+
+ */
+
+protected void drawImage(Image image,Rectangle rect,RenderingContext context,boolean convert,Map additionalHints) throws IOException, ImageException {
+
+  ImageManager manager=getUserAgent().getImageManager();
+
+  ImageHandlerRegistry imageHandlerRegistry=getUserAgent().getImageHandlerRegistry();
+
+  Image effImage;
+
+  context.putHints(additionalHints);
+
+  if (convert) {
+
+    Map hints=createDefaultImageProcessingHints(getUserAgent().getImageSessionContext());
+
+    if (additionalHints != null) {
+
+      hints.putAll(additionalHints);
+
+    }
+
+    effImage=manager.convertImage(image,imageHandlerRegistry.getSupportedFlavors(context),hints);
+
+  }
+
+ else {
+
+    effImage=image;
+
+  }
+
+  ImageHandler handler=imageHandlerRegistry.getHandler(context,effImage);
+
+  if (handler == null) {
+
+    throw new UnsupportedOperationException("No ImageHandler available for image: " + effImage.getInfo() + " ("+ effImage.getClass().getName()+ ")");
+
+  }
+
+  if (log.isTraceEnabled()) {
+
+    log.trace("Using ImageHandler: " + handler.getClass().getName());
+
+  }
+
+  context.putHint("fontinfo",getFontInfo());
+
+  handler.handleImage(context,effImage,rect);
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+protected T getDocumentHandler(){
+
+  return documentHandler;
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+protected String getFontKey(FontTriplet triplet) throws IFException {
+
+  String key=getFontInfo().getInternalFontKey(triplet);
+
+  if (key == null) {
+
+    throw new IFException("The font triplet is not available: \"" + triplet + "\" "+ "for the MIME type: \""+ documentHandler.getMimeType()+ "\"");
+
+  }
+
+  return key;
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Returns an ImageInfo instance for the given URI. If there's an error, null is returned. The caller can assume that any exceptions have already been handled properly. The caller simply skips painting anything in this case.
+
+ * @param uri the URI identifying the image
+
+ * @return the ImageInfo instance or null if there has been an error.
+
+ */
+
+protected ImageInfo getImageInfo(String uri){
+
+  ImageManager manager=getUserAgent().getImageManager();
+
+  try {
+
+    ImageSessionContext sessionContext=getUserAgent().getImageSessionContext();
+
+    return manager.getImageInfo(uri,sessionContext);
+
+  }
+
+ catch (  ImageException ie) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageError(this,uri,ie,null);
+
+  }
+
+catch (  FileNotFoundException fe) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageNotFound(this,uri,fe,null);
+
+  }
+
+catch (  IOException ioe) {
+
+    ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(getUserAgent().getEventBroadcaster());
+
+    eventProducer.imageIOError(this,uri,ioe,null);
+
+  }
+
+  return null;
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Calculates the bounding box for a line. Currently, only horizontal and vertical lines are needed and supported.
+
+ * @param start the starting point of the line (coordinates in mpt)
+
+ * @param end the ending point of the line (coordinates in mpt)
+
+ * @param width the line width (in mpt)
+
+ * @return the bounding box (coordinates in mpt)
+
+ */
+
+protected Rectangle getLineBoundingBox(Point start,Point end,int width){
+
+  if (start.y == end.y) {
+
+    int topy=start.y - width / 2;
+
+    return new Rectangle(start.x,topy,end.x - start.x,width);
+
+  }
+
+ else   if (start.x == end.y) {
+
+    int leftx=start.x - width / 2;
+
+    return new Rectangle(leftx,start.x,width,end.y - start.y);
+
+  }
+
+ else {
+
+    throw new IllegalArgumentException("Only horizontal or vertical lines are supported at the moment.");
+
+  }
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Indicates whether the given border segments (if present) have only solid borders, i.e. could be painted in a simplified fashion keeping the output file smaller.
+
+ * @param top the border segment on the top edge
+
+ * @param bottom the border segment on the bottom edge
+
+ * @param left the border segment on the left edge
+
+ * @param right the border segment on the right edge
+
+ * @return true if any border segment has a non-solid border style
+
+ */
+
+protected boolean hasOnlySolidBorders(BorderProps top,BorderProps bottom,BorderProps left,BorderProps right){
+
+  if (top != null && top.style != Constants.EN_SOLID) {
+
+    return false;
+
+  }
+
+  if (bottom != null && bottom.style != Constants.EN_SOLID) {
+
+    return false;
+
+  }
+
+  if (left != null && left.style != Constants.EN_SOLID) {
+
+    return false;
+
+  }
+
+  if (right != null && right.style != Constants.EN_SOLID) {
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public boolean isBackgroundRequired(BorderProps bpsBefore,BorderProps bpsAfter,BorderProps bpsStart,BorderProps bpsEnd){
+
+  return true;
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public void setFont(String family,String style,Integer weight,String variant,Integer size,Color color) throws IFException {
+
+  if (family != null) {
+
+    state.setFontFamily(family);
+
+  }
+
+  if (style != null) {
+
+    state.setFontStyle(style);
+
+  }
+
+  if (weight != null) {
+
+    state.setFontWeight(weight);
+
+  }
+
+  if (variant != null) {
+
+    state.setFontVariant(variant);
+
+  }
+
+  if (size != null) {
+
+    state.setFontSize(size);
+
+  }
+
+  if (color != null) {
+
+    state.setTextColor(color);
+
+  }
+
+}
+
+Location: AbstractIFPainter.java
+
+Content: 
+
+/** 
+
+ * Converts a transformation matrix from millipoints to points.
+
+ * @param transform the transformation matrix (in millipoints)
+
+ * @return the converted transformation matrix (in points)
+
+ */
+
+public static AffineTransform toPoints(AffineTransform transform){
+
+  final double[] matrix=new double[6];
+
+  transform.getMatrix(matrix);
+
+  matrix[4]/=1000;
+
+  matrix[5]/=1000;
+
+  return new AffineTransform(matrix);
+
+}
+

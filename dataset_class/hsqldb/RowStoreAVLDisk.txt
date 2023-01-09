@@ -1,0 +1,268 @@
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void delete(Session session,Row row){
+
+  writeLock();
+
+  try {
+
+    super.delete(session,row);
+
+  }
+
+  finally {
+
+    writeUnlock();
+
+  }
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+long getStorageSizeEstimate(){
+
+  if (elementCount.get() == 0) {
+
+    return 0;
+
+  }
+
+  CachedObject accessor=getAccessor(indexList[0]);
+
+  CachedObject row=get(accessor.getPos());
+
+  return row.getStorageSize() * elementCount.get();
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void moveDataToSpace(DataFileCache targetCache,LongLookup pointerLookup){
+
+  int spaceId=table.getSpaceID();
+
+  TableSpaceManager targetSpace=targetCache.spaceManager.getTableSpace(spaceId);
+
+  RowIterator it=indexList[0].firstRow(this);
+
+  while (it.next()) {
+
+    CachedObject row=it.getCurrentRow();
+
+    pointerLookup.addUnsorted(row.getPos(),row.getStorageSize());
+
+  }
+
+  pointerLookup.sort();
+
+  for (int i=0; i < pointerLookup.size(); i++) {
+
+    long newPos=targetSpace.getFilePosition((int)pointerLookup.getLongValue(i),false);
+
+    pointerLookup.setLongValue(i,newPos);
+
+  }
+
+  it=indexList[0].firstRow(this);
+
+  while (it.next()) {
+
+    CachedObject row=it.getCurrentRow();
+
+    long newPos=pointerLookup.lookup(row.getPos());
+
+    targetCache.rowOut.reset();
+
+    row.write(targetCache.rowOut,pointerLookup);
+
+    targetCache.saveRowOutput(newPos);
+
+  }
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void moveDataToSpace(Session session){
+
+  Table table=(Table)this.table;
+
+  long rowCount=elementCount();
+
+  if (rowCount == 0) {
+
+    return;
+
+  }
+
+  if (rowCount > Integer.MAX_VALUE) {
+
+    return;
+
+  }
+
+  DoubleIntIndex pointerLookup=new DoubleIntIndex((int)rowCount);
+
+  writeLock();
+
+  try {
+
+    moveDataToSpace(cache,pointerLookup);
+
+    CachedObject[] newAccessorList=new CachedObject[accessorList.length];
+
+    for (int i=0; i < accessorList.length; i++) {
+
+      long pos=pointerLookup.lookup(accessorList[i].getPos());
+
+      newAccessorList[i]=cache.get(pos,this,false);
+
+    }
+
+    RowIterator it=rowIterator();
+
+    while (it.next()) {
+
+      Row row=it.getCurrentRow();
+
+      cache.remove(row);
+
+      tableSpace.release(row.getPos(),row.getStorageSize());
+
+    }
+
+    accessorList=newAccessorList;
+
+  }
+
+  finally {
+
+    writeUnlock();
+
+  }
+
+  database.logger.logDetailEvent("table written " + table.getName().name);
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void readLock(){
+
+  readLock.lock();
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void readUnlock(){
+
+  readLock.unlock();
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public RowStoreAVLDisk(DataFileCache cache,Table table){
+
+  this(table);
+
+  this.cache=cache;
+
+  rowOut=cache.rowOut.duplicate();
+
+  cache.adjustStoreCount(1);
+
+  largeData=database.logger.propLargeData;
+
+  tableSpace=cache.spaceManager.getTableSpace(table.getSpaceID());
+
+  lock=new ReentrantReadWriteLock();
+
+  readLock=lock.readLock();
+
+  writeLock=lock.writeLock();
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+protected RowStoreAVLDisk(Table table){
+
+  this.database=table.database;
+
+  this.table=table;
+
+  this.indexList=table.getIndexList();
+
+  this.accessorList=new CachedObject[indexList.length];
+
+  largeData=database.logger.getDataFileFactor() > 1;
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void setAccessor(Index key,long accessor){
+
+  CachedObject object=get(accessor,false);
+
+  if (object != null) {
+
+    NodeAVL node=((RowAVL)object).getNode(key.getPosition());
+
+    object=node;
+
+  }
+
+  setAccessor(key,object);
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void setReadOnly(boolean readOnly){
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void writeLock(){
+
+  writeLock.lock();
+
+}
+
+Location: RowStoreAVLDisk.java
+
+Content: 
+
+public void writeUnlock(){
+
+  writeLock.unlock();
+
+}
+

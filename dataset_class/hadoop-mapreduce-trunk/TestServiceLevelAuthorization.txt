@@ -1,0 +1,214 @@
+Location: TestServiceLevelAuthorization.java
+
+Content: 
+
+private void refreshPolicy(Configuration conf) throws IOException {
+
+  DFSAdmin dfsAdmin=new DFSAdmin(conf);
+
+  dfsAdmin.refreshServiceAcl();
+
+}
+
+Location: TestServiceLevelAuthorization.java
+
+Content: 
+
+private void rewriteHadoopPolicyFile(File policyFile) throws IOException {
+
+  FileWriter fos=new FileWriter(policyFile);
+
+  PolicyProvider policyProvider=new HDFSPolicyProvider();
+
+  fos.write("<configuration>\n");
+
+  for (  Service service : policyProvider.getServices()) {
+
+    String key=service.getServiceKey();
+
+    String value="*";
+
+    if (key.equals("security.refresh.policy.protocol.acl")) {
+
+      value=DUMMY_ACL;
+
+    }
+
+    fos.write("<property><name>" + key + "</name><value>"+ value+ "</value></property>\n");
+
+    System.err.println("<property><name>" + key + "</name><value>"+ value+ "</value></property>\n");
+
+  }
+
+  fos.write("</configuration>\n");
+
+  fos.close();
+
+}
+
+Location: TestServiceLevelAuthorization.java
+
+Content: 
+
+public void testRefresh() throws Exception {
+
+  MiniDFSCluster dfs=null;
+
+  try {
+
+    final int slaves=4;
+
+    final Configuration conf=new Configuration();
+
+    conf.setClass(PolicyProvider.POLICY_PROVIDER_CONFIG,HDFSPolicyProvider.class,PolicyProvider.class);
+
+    conf.setBoolean(ServiceAuthorizationManager.SERVICE_AUTHORIZATION_CONFIG,true);
+
+    dfs=new MiniDFSCluster(conf,slaves,true,null);
+
+    refreshPolicy(conf);
+
+    String confDir=System.getProperty("test.build.extraconf","build/test/extraconf");
+
+    String HADOOP_POLICY_FILE=System.getProperty("hadoop.policy.file");
+
+    File policyFile=new File(confDir,HADOOP_POLICY_FILE);
+
+    String policyFileCopy=HADOOP_POLICY_FILE + ".orig";
+
+    FileUtil.copy(policyFile,FileSystem.getLocal(conf),new Path(confDir,policyFileCopy),false,conf);
+
+    rewriteHadoopPolicyFile(new File(confDir,HADOOP_POLICY_FILE));
+
+    refreshPolicy(conf);
+
+    try {
+
+      UserGroupInformation unknownUser=UserGroupInformation.createRemoteUser("unknown");
+
+      unknownUser.doAs(new PrivilegedExceptionAction<Void>(){
+
+        public Void run() throws IOException {
+
+          refreshPolicy(conf);
+
+          return null;
+
+        }
+
+      }
+
+);
+
+      fail("Refresh of NameNode's policy file cannot be successful!");
+
+    }
+
+ catch (    Exception re) {
+
+      System.out.println("Good, refresh worked... refresh failed with: " + StringUtils.stringifyException(re));
+
+    }
+
+ finally {
+
+      FileUtil.fullyDelete(new File(confDir,HADOOP_POLICY_FILE));
+
+      FileUtil.replaceFile(new File(confDir,policyFileCopy),new File(confDir,HADOOP_POLICY_FILE));
+
+    }
+
+  }
+
+  finally {
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestServiceLevelAuthorization.java
+
+Content: 
+
+public void testServiceLevelAuthorization() throws Exception {
+
+  MiniDFSCluster dfs=null;
+
+  MiniMRCluster mr=null;
+
+  FileSystem fileSys=null;
+
+  try {
+
+    final int slaves=4;
+
+    Configuration conf=new Configuration();
+
+    conf.setClass(PolicyProvider.POLICY_PROVIDER_CONFIG,HadoopPolicyProvider.class,PolicyProvider.class);
+
+    conf.setBoolean(ServiceAuthorizationManager.SERVICE_AUTHORIZATION_CONFIG,true);
+
+    dfs=new MiniDFSCluster(conf,slaves,true,null);
+
+    Set<Class<?>> protocolsWithAcls=NameNodeAdapter.getRpcServer(dfs.getNameNode()).getServiceAuthorizationManager().getProtocolsWithAcls();
+
+    Service[] hdfsServices=new HDFSPolicyProvider().getServices();
+
+    for (    Service service : hdfsServices) {
+
+      if (!protocolsWithAcls.contains(service.getProtocol()))       fail("service authorization manager has no entry for protocol " + service.getProtocol());
+
+    }
+
+    if (hdfsServices.length != protocolsWithAcls.size())     fail("there should be an entry for every HDFS service in the protocols with ACLs map");
+
+    fileSys=dfs.getFileSystem();
+
+    JobConf mrConf=new JobConf(conf);
+
+    mr=new MiniMRCluster(slaves,fileSys.getUri().toString(),1,null,null,mrConf);
+
+    protocolsWithAcls=NameNodeAdapter.getRpcServer(dfs.getNameNode()).getServiceAuthorizationManager().getProtocolsWithAcls();
+
+    hdfsServices=new HDFSPolicyProvider().getServices();
+
+    for (    Service service : hdfsServices) {
+
+      if (!protocolsWithAcls.contains(service.getProtocol()))       fail("service authorization manager has no entry for protocol " + service.getProtocol());
+
+    }
+
+    if (hdfsServices.length != protocolsWithAcls.size())     fail("there should be an entry for every HDFS service in the protocols with ACLs map");
+
+    mr.setInlineCleanupThreads();
+
+    TestMiniMRWithDFS.runPI(mr,mr.createJobConf(mrConf));
+
+    TestMiniMRWithDFS.runWordCount(mr,mr.createJobConf(mrConf));
+
+  }
+
+  finally {
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+

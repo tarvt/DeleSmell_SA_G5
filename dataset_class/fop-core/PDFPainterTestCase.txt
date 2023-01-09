@@ -1,0 +1,362 @@
+Location: PDFPainterTestCase.java
+
+Content: 
+
+private PDFDocument createMockPDFDocument(){
+
+  PDFDocument pdfDoc=mock(PDFDocument.class);
+
+  when(pdfContentGenerator.getDocument()).thenReturn(pdfDoc);
+
+  when(pdfDocumentHandler.getPDFDocument()).thenReturn(pdfDoc);
+
+  when(pdfDoc.getProfile()).thenReturn(new PDFProfile(pdfDoc));
+
+  return pdfDoc;
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+private void createPDFPainter(boolean accessibility){
+
+  mockFOUserAgent(accessibility);
+
+  mockPDFContentGenerator();
+
+  mockPDFDocumentHandler();
+
+  PDFLogicalStructureHandler handler=mock(PDFLogicalStructureHandler.class);
+
+  pdfPainter=new PDFPainter(pdfDocumentHandler,handler);
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+private String drawImage(PDFDocument doc,PDFPainter pdfPainter,IFContext ifContext) throws IOException, IFException {
+
+  PDFStructElem structElem=new PDFStructElem(doc.getRoot(),StandardStructureTypes.InlineLevelStructure.NOTE);
+
+  structElem.setDocument(doc);
+
+  ifContext.setStructureTreeElement(structElem);
+
+  pdfPainter.drawImage("test/resources/images/cmyk.jpg",new Rectangle());
+
+  ByteArrayOutputStream bos=new ByteArrayOutputStream();
+
+  structElem.output(bos);
+
+  return bos.toString();
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+private PDFDocumentHandler makePDFDocumentHandler(final StringBuilder sb) throws IFException {
+
+  FopFactory fopFactory=FopFactory.newInstance(new File(".").toURI());
+
+  foUserAgent=fopFactory.newFOUserAgent();
+
+  mockPDFContentGenerator();
+
+  PDFTextUtil pdfTextUtil=new PDFTextUtil(){
+
+    protected void write(    String code){
+
+      sb.append(code);
+
+    }
+
+    protected void write(    StringBuffer code){
+
+      sb.append(code);
+
+    }
+
+  }
+
+;
+
+  pdfTextUtil.beginTextObject();
+
+  when(pdfContentGenerator.getTextUtil()).thenReturn(pdfTextUtil);
+
+  PDFDocumentHandler pdfDocumentHandler=new PDFDocumentHandler(new IFContext(foUserAgent)){
+
+    PDFContentGenerator getGenerator(){
+
+      return pdfContentGenerator;
+
+    }
+
+  }
+
+;
+
+  pdfDocumentHandler.setResult(new StreamResult(new ByteArrayOutputStream()));
+
+  pdfDocumentHandler.startDocument();
+
+  pdfDocumentHandler.startPage(0,"","",new Dimension());
+
+  return pdfDocumentHandler;
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+private void mockFOUserAgent(boolean accessibility){
+
+  foUserAgent=mock(FOUserAgent.class);
+
+  when(foUserAgent.isAccessibilityEnabled()).thenReturn(accessibility);
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+private void mockPDFContentGenerator(){
+
+  pdfContentGenerator=mock(PDFContentGenerator.class);
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+private void mockPDFDocumentHandler(){
+
+  pdfDocumentHandler=mock(PDFDocumentHandler.class);
+
+  when(pdfDocumentHandler.getGenerator()).thenReturn(pdfContentGenerator);
+
+  IFContext ifContext=mock(IFContext.class);
+
+  when(ifContext.getUserAgent()).thenReturn(foUserAgent);
+
+  when(pdfDocumentHandler.getContext()).thenReturn(ifContext);
+
+  when(ifContext.getStructureTreeElement()).thenReturn(elem);
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+@Test public void testDrawTextWithMultiByteFont() throws IFException {
+
+  StringBuilder output=new StringBuilder();
+
+  PDFDocumentHandler pdfDocumentHandler=makePDFDocumentHandler(output);
+
+  String text="Hello Mock!\uD83D\uDCA9";
+
+  String expectedHex="00480065006C006C006F0020004D006F0063006B002101F4A9";
+
+  MultiByteFont font=spy(new MultiByteFont(null,null));
+
+  when(font.mapCodePoint(anyInt())).thenAnswer(new FontMapCodepointAnswer());
+
+  FontInfo fi=new FontInfo();
+
+  fi.addFontProperties("f1",new FontTriplet("a","normal",400));
+
+  fi.addMetrics("f1",font);
+
+  pdfDocumentHandler.setFontInfo(fi);
+
+  MyPDFPainter pdfPainter=new MyPDFPainter(pdfDocumentHandler,null);
+
+  pdfPainter.setFont("a","normal",400,null,12,null);
+
+  pdfPainter.drawText(0,0,0,0,null,text);
+
+  assertEquals("BT\n/f1 0.012 Tf\n1 0 0 -1 0 0 Tm [<" + expectedHex + ">] TJ\n",output.toString());
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+@Test public void testFooterText() throws IFException, IOException {
+
+  FopFactory fopFactory=FopFactory.newInstance(new File(".").toURI());
+
+  foUserAgent=fopFactory.newFOUserAgent();
+
+  foUserAgent.setAccessibility(true);
+
+  PDFDocumentHandler pdfDocumentHandler=new PDFDocumentHandler(new IFContext(foUserAgent));
+
+  pdfDocumentHandler.getStructureTreeEventHandler();
+
+  pdfDocumentHandler.setResult(new StreamResult(new ByteArrayOutputStream()));
+
+  pdfDocumentHandler.startDocument();
+
+  pdfDocumentHandler.startPage(0,"","",new Dimension());
+
+  FontInfo fi=new FontInfo();
+
+  fi.addFontProperties("f1",new FontTriplet("a","italic",700));
+
+  MultiByteFont font=new MultiByteFont(null,null);
+
+  font.setWidthArray(new int[1]);
+
+  fi.addMetrics("f1",font);
+
+  pdfDocumentHandler.setFontInfo(fi);
+
+  PDFDocument doc=pdfDocumentHandler.getPDFDocument();
+
+  PDFLogicalStructureHandler structureHandler=new PDFLogicalStructureHandler(doc);
+
+  MyPDFPainter pdfPainter=new MyPDFPainter(pdfDocumentHandler,structureHandler);
+
+  pdfPainter.getContext().setRegionType(Constants.FO_REGION_AFTER);
+
+  pdfPainter.setFont("a","italic",700,null,12,null);
+
+  pdfPainter.drawText(0,0,0,0,null,"test");
+
+  ByteArrayOutputStream bos=new ByteArrayOutputStream();
+
+  PDFFilterList filters=pdfPainter.generator.getStream().getFilterList();
+
+  filters.setDisableAllFilters(true);
+
+  pdfPainter.generator.getStream().output(bos);
+
+  Assert.assertEquals(bos.toString(),"<< /Length 1 0 R >>\n" + "stream\n" + "q\n"+ "1 0 0 -1 0 0 cm\n"+ "/Artifact\n"+ "<</Type /Pagination\n"+ "/Subtype /Footer>>\n"+ "BDC\n"+ "BT\n"+ "/f1 0.012 Tf\n"+ "1 0 0 -1 0 0 Tm [<0000000000000000>] TJ\n"+ "\n"+ "endstream");
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+@Test public void testPageNumber() throws IFException {
+
+  FopFactory fopFactory=FopFactory.newInstance(new File(".").toURI());
+
+  foUserAgent=fopFactory.newFOUserAgent();
+
+  pdfDocumentHandler=new PDFDocumentHandler(new IFContext(foUserAgent));
+
+  pdfDocumentHandler.setResult(new StreamResult(new ByteArrayOutputStream()));
+
+  pdfDocumentHandler.startDocument();
+
+  pdfDocumentHandler.startPage(0,"","",new Dimension());
+
+  pdfDocumentHandler.getContext().setPageNumber(3);
+
+  MyPDFPainter pdfPainter=new MyPDFPainter(pdfDocumentHandler,null);
+
+  pdfPainter.drawImage("test/resources/images/cmyk.jpg",new Rectangle());
+
+  assertEquals(pdfPainter.renderingContext.getHints().get("page-number"),3);
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+@Test public void testPDFUAImage() throws IFException, IOException {
+
+  FopFactory fopFactory=FopFactory.newInstance(new File(".").toURI());
+
+  foUserAgent=fopFactory.newFOUserAgent();
+
+  foUserAgent.setAccessibility(true);
+
+  IFContext ifContext=new IFContext(foUserAgent);
+
+  pdfDocumentHandler=new PDFDocumentHandler(ifContext);
+
+  pdfDocumentHandler.getStructureTreeEventHandler();
+
+  pdfDocumentHandler.setResult(new StreamResult(new ByteArrayOutputStream()));
+
+  pdfDocumentHandler.startDocument();
+
+  pdfDocumentHandler.startPage(0,"","",new Dimension());
+
+  PDFDocument doc=pdfDocumentHandler.getPDFDocument();
+
+  doc.getProfile().setPDFUAMode(PDFUAMode.PDFUA_1);
+
+  doc.getInfo().setTitle("a");
+
+  PDFLogicalStructureHandler structureHandler=new PDFLogicalStructureHandler(doc);
+
+  structureHandler.startPage(new PDFPage(new PDFResources(doc),0,new Rectangle(),new Rectangle(),new Rectangle(),new Rectangle()));
+
+  PDFPainter pdfPainter=new PDFPainter(pdfDocumentHandler,structureHandler);
+
+  ifContext.setLanguage(Locale.US);
+
+  drawImage(doc,pdfPainter,ifContext);
+
+  String output=drawImage(doc,pdfPainter,ifContext);
+
+  Assert.assertTrue(output,output.contains("/BBox [0 0 0 0]"));
+
+}
+
+Location: PDFPainterTestCase.java
+
+Content: 
+
+@Test public void testSimulateStyle() throws IFException {
+
+  final StringBuilder sb=new StringBuilder();
+
+  pdfDocumentHandler=makePDFDocumentHandler(sb);
+
+  FontInfo fi=new FontInfo();
+
+  fi.addFontProperties("f1",new FontTriplet("a","italic",700));
+
+  MultiByteFont font=new MultiByteFont(null,null);
+
+  font.setSimulateStyle(true);
+
+  fi.addMetrics("f1",font);
+
+  pdfDocumentHandler.setFontInfo(fi);
+
+  MyPDFPainter pdfPainter=new MyPDFPainter(pdfDocumentHandler,null);
+
+  pdfPainter.setFont("a","italic",700,null,12,null);
+
+  pdfPainter.drawText(0,0,0,0,null,"test");
+
+  assertEquals(sb.toString(),"BT\n/f1 0.012 Tf\n1 0 0.3333 -1 0 0 Tm [<0000000000000000>] TJ\n");
+
+  verify(pdfContentGenerator).add("q\n");
+
+  verify(pdfContentGenerator).add("2 Tr 0.31543 w\n");
+
+  verify(pdfContentGenerator).add("Q\n");
+
+}
+

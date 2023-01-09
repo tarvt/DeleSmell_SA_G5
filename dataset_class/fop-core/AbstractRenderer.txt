@@ -1,0 +1,796 @@
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * @param userAgent the user agent that contains configuration details. This cannot be null.
+
+ */
+
+public AbstractRenderer(FOUserAgent userAgent){
+
+  this.userAgent=userAgent;
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Utility method to convert a page sequence title to a string. Some renderers may only be able to use a string title. A title is a sequence of inline areas that this method attempts to convert to an equivalent string.
+
+ * @param title  The Title to convert
+
+ * @return       An expanded string representing the title
+
+ */
+
+protected String convertTitleToString(LineArea title){
+
+  List children=title.getInlineAreas();
+
+  String str=convertToString(children);
+
+  return str.trim();
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+private String convertToString(List children){
+
+  StringBuffer sb=new StringBuffer();
+
+  for (  Object aChildren : children) {
+
+    InlineArea inline=(InlineArea)aChildren;
+
+    if (inline instanceof TextArea) {
+
+      sb.append(((TextArea)inline).getText());
+
+    }
+
+ else     if (inline instanceof InlineParent) {
+
+      sb.append(convertToString(((InlineParent)inline).getChildAreas()));
+
+    }
+
+ else {
+
+      sb.append(" ");
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Draws all change bars associated with an area.
+
+ * @param area The area to draw change bars for
+
+ * @param changeBarList The list of change bars affecting the area
+
+ */
+
+protected void drawChangeBars(Area area,List<ChangeBar> changeBarList){
+
+  if (area.getTraitAsBoolean(Trait.IS_REFERENCE_AREA)) {
+
+    return;
+
+  }
+
+  Block changeBarArea;
+
+  int saveIP=currentIPPosition;
+
+  int saveBP=currentBPPosition;
+
+  int currentColumnStartIP=columnStartIPPosition;
+
+  int currentColumnEndIP=columnEndIPPosition;
+
+  int currentColumnLeftIP=columnLeftIPPosition;
+
+  int currentColumnRightIP=columnRightIPPosition;
+
+  for (  ChangeBar changeBar : changeBarList) {
+
+    boolean isLeftToRight=(inlineProgressionDirection == null) || (inlineProgressionDirection.getEnumValue() == Constants.EN_LR);
+
+    changeBarArea=new Block();
+
+    currentIPPosition=0;
+
+    currentBPPosition=saveBP;
+
+    int changeBarWidth=changeBar.getWidth().getValue();
+
+    int changeBarOffset=changeBar.getOffset().getValue();
+
+    if (isLeftToRight) {
+
+      currentColumnStartIP=columnStartIPPosition - changeBarWidth;
+
+      currentColumnLeftIP=columnLeftIPPosition - changeBarWidth;
+
+    }
+
+ else {
+
+      currentColumnEndIP=columnEndIPPosition - changeBarWidth;
+
+      currentColumnLeftIP=columnLeftIPPosition - changeBarWidth;
+
+    }
+
+    int xOffset=currentColumnStartIP;
+
+    int xScale=-1;
+
+switch (changeBar.getPlacement()) {
+
+case EN_START:
+
+      xOffset=currentColumnStartIP;
+
+    xScale=-1;
+
+  break;
+
+case EN_END:
+
+xOffset=currentColumnEndIP;
+
+xScale=1;
+
+break;
+
+case EN_LEFT:
+
+xOffset=currentColumnLeftIP;
+
+xScale=(isLeftToRight) ? -1 : 1;
+
+break;
+
+case EN_RIGHT:
+
+xOffset=currentColumnRightIP;
+
+xScale=(isLeftToRight) ? 1 : -1;
+
+break;
+
+case EN_INSIDE:
+
+if (bindingOnStartEdge) {
+
+xOffset=currentColumnStartIP;
+
+xScale=-1;
+
+}
+
+ else if (bindingOnEndEdge) {
+
+xOffset=currentColumnEndIP;
+
+xScale=1;
+
+}
+
+ else {
+
+xOffset=currentColumnStartIP;
+
+xScale=-1;
+
+}
+
+break;
+
+case EN_OUTSIDE:
+
+if (bindingOnStartEdge) {
+
+xOffset=columnEndIPPosition;
+
+xScale=1;
+
+}
+
+ else if (bindingOnEndEdge) {
+
+xOffset=columnStartIPPosition;
+
+xScale=-1;
+
+}
+
+ else {
+
+xOffset=columnStartIPPosition;
+
+xScale=-1;
+
+}
+
+break;
+
+case EN_ALTERNATE:
+
+if (columnCount == 2) {
+
+if (columnIndex == 0) {
+
+xOffset=columnStartIPPosition;
+
+xScale=-1;
+
+}
+
+ else {
+
+xOffset=columnEndIPPosition;
+
+xScale=1;
+
+}
+
+}
+
+ else {
+
+if (bindingOnStartEdge) {
+
+xOffset=columnEndIPPosition;
+
+xScale=1;
+
+}
+
+ else if (bindingOnEndEdge) {
+
+xOffset=columnStartIPPosition;
+
+xScale=-1;
+
+}
+
+ else {
+
+xOffset=columnStartIPPosition;
+
+xScale=-1;
+
+}
+
+}
+
+break;
+
+default :
+
+break;
+
+}
+
+if (isLeftToRight) {
+
+xOffset+=xScale * changeBarOffset;
+
+}
+
+ else {
+
+xOffset-=xScale * changeBarOffset;
+
+}
+
+xOffset+=getBeginOffset();
+
+changeBarArea.setAreaClass(Area.CLASS_ABSOLUTE);
+
+changeBarArea.setIPD(0);
+
+BorderProps props=BorderProps.makeRectangular(changeBar.getStyle(),changeBarWidth,changeBar.getColor(),BorderProps.Mode.SEPARATE);
+
+changeBarArea.addTrait(Trait.BORDER_START,props);
+
+changeBarArea.addTrait(Trait.BORDER_END,props);
+
+changeBarArea.setXOffset(xOffset);
+
+int areaHeight=area.getAllocBPD();
+
+if (area instanceof BlockParent) {
+
+changeBarArea.setBPD(areaHeight);
+
+changeBarArea.setYOffset(((BlockParent)area).getYOffset());
+
+renderBlock(changeBarArea);
+
+}
+
+ else {
+
+if (areaHeight > 0) {
+
+Property p=changeBar.getLineHeight().getOptimum(DummyPercentBaseContext.getInstance());
+
+int lineHeight=p.getLength().getValue();
+
+changeBarArea.setBPD(lineHeight);
+
+changeBarArea.setYOffset(areaHeight - lineHeight);
+
+}
+
+renderInlineBlock(new InlineBlock(changeBarArea));
+
+}
+
+currentIPPosition=saveIP;
+
+currentBPPosition=saveBP;
+
+}
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Returns the begin offset of the inline begin (changes by reference area transforms).
+
+ * @return the offset from current coordinate system 0 that the IP begin isat
+
+ */
+
+protected int getBeginOffset(){
+
+  return beginOffset;
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * @return the current PageViewport or null, if none is active 
+
+ */
+
+protected PageViewport getCurrentPageViewport(){
+
+  return this.currentPageViewport;
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc} 
+
+ */
+
+public ImageAdapter getImageAdapter(){
+
+  return null;
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Handle block traits. This method is called when the correct ip and bp posiiton is set. This should be overridden to draw border and background traits for the block area.
+
+ * @param block the block area
+
+ */
+
+protected void handleBlockTraits(Block block){
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Handle the traits for a region This is used to draw the traits for the given page region. (See Sect. 6.4.1.2 of XSL-FO spec.)
+
+ * @param rv the RegionViewport whose region is to be drawn
+
+ */
+
+protected void handleRegionTraits(RegionViewport rv){
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+protected void maybeEndLayer(Area area,boolean inNewLayer){
+
+  if (inNewLayer) {
+
+    assert layers != null;
+
+    assert !layers.empty();
+
+    String layer=(String)area.getTrait(Trait.LAYER);
+
+    assert layer != null;
+
+    assert layers.peek().equals(layer);
+
+    endLayer();
+
+    layers.pop();
+
+  }
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+protected boolean maybeStartLayer(Area area){
+
+  String layer=(String)area.getTrait(Trait.LAYER);
+
+  if (layer != null) {
+
+    if (layers == null) {
+
+      layers=new Stack<String>();
+
+    }
+
+    if (layers.empty() || !layers.peek().equals(layer)) {
+
+      layers.push(layer);
+
+      startLayer(layer);
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Renders a list of block areas.
+
+ * @param parent  the parent block if the parent is a block, otherwisea null value.
+
+ * @param blocks  The block areas
+
+ */
+
+protected void renderBlocks(Block parent,List blocks){
+
+  int saveIP=currentIPPosition;
+
+  if (parent != null && !parent.getTraitAsBoolean(Trait.IS_VIEWPORT_AREA)) {
+
+    currentBPPosition+=parent.getBorderAndPaddingWidthBefore();
+
+  }
+
+  int contBP=currentBPPosition;
+
+  int contIP=currentIPPosition;
+
+  containingBPPosition=currentBPPosition;
+
+  containingIPPosition=currentIPPosition;
+
+  for (  Object obj : blocks) {
+
+    if (obj instanceof Block) {
+
+      currentIPPosition=contIP;
+
+      containingBPPosition=contBP;
+
+      containingIPPosition=contIP;
+
+      renderBlock((Block)obj);
+
+      containingBPPosition=contBP;
+
+      containingIPPosition=contIP;
+
+    }
+
+ else     if (obj instanceof LineArea) {
+
+      LineArea line=(LineArea)obj;
+
+      if (parent != null) {
+
+        int level=parent.getBidiLevel();
+
+        if ((level == -1) || ((level & 1) == 0)) {
+
+          currentIPPosition+=parent.getStartIndent();
+
+        }
+
+ else {
+
+          currentIPPosition+=parent.getEndIndent();
+
+        }
+
+      }
+
+      renderLineArea(line);
+
+      currentBPPosition+=line.getAllocBPD();
+
+    }
+
+    currentIPPosition=saveIP;
+
+  }
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Renders a body region area.
+
+ * @param region  The body region
+
+ */
+
+protected void renderBodyRegion(BodyRegion region){
+
+  BeforeFloat bf=region.getBeforeFloat();
+
+  if (bf != null) {
+
+    renderBeforeFloat(bf);
+
+  }
+
+  MainReference mr=region.getMainReference();
+
+  if (mr != null) {
+
+    renderMainReference(mr);
+
+  }
+
+  Footnote foot=region.getFootnote();
+
+  if (foot != null) {
+
+    renderFootnote(foot);
+
+  }
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Renders page areas.
+
+ * @param page  The page whos page areas are to be rendered
+
+ */
+
+protected void renderPageAreas(Page page){
+
+  RegionViewport viewport;
+
+  viewport=page.getRegionViewport(FO_REGION_BEFORE);
+
+  if (viewport != null) {
+
+    renderRegionViewport(viewport);
+
+  }
+
+  viewport=page.getRegionViewport(FO_REGION_START);
+
+  if (viewport != null) {
+
+    renderRegionViewport(viewport);
+
+  }
+
+  viewport=page.getRegionViewport(FO_REGION_BODY);
+
+  if (viewport != null) {
+
+    renderRegionViewport(viewport);
+
+  }
+
+  viewport=page.getRegionViewport(FO_REGION_END);
+
+  if (viewport != null) {
+
+    renderRegionViewport(viewport);
+
+  }
+
+  viewport=page.getRegionViewport(FO_REGION_AFTER);
+
+  if (viewport != null) {
+
+    renderRegionViewport(viewport);
+
+  }
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Renders a region reference area.
+
+ * @param region  The region reference area
+
+ */
+
+protected void renderRegion(RegionReference region){
+
+  renderBlocks(null,region.getBlocks());
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Render the xml document with the given xml namespace. The Render Context is by the handle to render into the current rendering target.
+
+ * @param ctx rendering context
+
+ * @param doc DOM Document containing the source document
+
+ * @param namespace Namespace URI of the document
+
+ */
+
+public void renderXML(RendererContext ctx,Document doc,String namespace){
+
+  XMLHandler handler=userAgent.getXMLHandlerRegistry().getXMLHandler(this,namespace);
+
+  if (handler != null) {
+
+    try {
+
+      XMLHandlerConfigurator configurator=new XMLHandlerConfigurator(userAgent);
+
+      configurator.configure(ctx,namespace);
+
+      handler.handleXML(ctx,doc,namespace);
+
+    }
+
+ catch (    Exception e) {
+
+      ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(ctx.getUserAgent().getEventBroadcaster());
+
+      eventProducer.foreignXMLProcessingError(this,doc,namespace,e);
+
+    }
+
+  }
+
+ else {
+
+    if (warnedXMLHandlers == null) {
+
+      warnedXMLHandlers=new java.util.HashSet();
+
+    }
+
+    if (!warnedXMLHandlers.contains(namespace)) {
+
+      warnedXMLHandlers.add(namespace);
+
+      ResourceEventProducer eventProducer=ResourceEventProducer.Provider.get(ctx.getUserAgent().getEventBroadcaster());
+
+      eventProducer.foreignXMLNoHandler(this,doc,namespace);
+
+    }
+
+  }
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * Sets the begin offset for inline progression begin (changes by reference area tranforms).
+
+ * @param offset the new offset from IPP 0 that true IP start is at
+
+ */
+
+protected void setBeginOffset(int offset){
+
+  beginOffset=offset;
+
+}
+
+Location: AbstractRenderer.java
+
+Content: 
+
+/** 
+
+ * {@inheritDoc}
+
+ * @deprecated
+
+ */
+
+public void startPageSequence(LineArea seqTitle){
+
+}
+

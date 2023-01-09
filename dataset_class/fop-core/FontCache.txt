@@ -1,0 +1,676 @@
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Adds a font info to cache
+
+ * @param fontInfo font info
+
+ */
+
+public void addFont(EmbedFontInfo fontInfo,InternalResourceResolver resourceResolver){
+
+  String cacheKey=getCacheKey(fontInfo);
+
+synchronized (changeLock) {
+
+    CachedFontFile cachedFontFile;
+
+    if (containsFont(cacheKey)) {
+
+      cachedFontFile=getFontFileMap().get(cacheKey);
+
+      if (!cachedFontFile.containsFont(fontInfo)) {
+
+        cachedFontFile.put(fontInfo);
+
+      }
+
+    }
+
+ else {
+
+      URI fontUri=resourceResolver.resolveFromBase(fontInfo.getEmbedURI());
+
+      long lastModified=getLastModified(fontUri);
+
+      cachedFontFile=new CachedFontFile(lastModified);
+
+      if (log.isTraceEnabled()) {
+
+        log.trace("Font added to cache: " + cacheKey);
+
+      }
+
+      cachedFontFile.put(fontInfo);
+
+      getFontFileMap().put(cacheKey,cachedFontFile);
+
+      changed=true;
+
+    }
+
+  }
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * is this font info in the cache?
+
+ * @param fontInfo font info
+
+ * @return font
+
+ */
+
+public boolean containsFont(EmbedFontInfo fontInfo){
+
+  return (fontInfo != null && getFontFileMap().containsKey(getCacheKey(fontInfo)));
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * is this font in the cache?
+
+ * @param embedUrl font info
+
+ * @return boolean
+
+ */
+
+public boolean containsFont(String embedUrl){
+
+  return (embedUrl != null && getFontFileMap().containsKey(embedUrl));
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * creates a key given a font info for the font mapping
+
+ * @param fontInfo font info
+
+ * @return font cache key
+
+ */
+
+protected static String getCacheKey(EmbedFontInfo fontInfo){
+
+  if (fontInfo != null) {
+
+    URI embedFile=fontInfo.getEmbedURI();
+
+    URI metricsFile=fontInfo.getMetricsURI();
+
+    return (embedFile != null) ? embedFile.toASCIIString() : metricsFile.toASCIIString();
+
+  }
+
+  return null;
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Returns the default font cache file.
+
+ * @param forWriting true if the user directory should be created
+
+ * @return the default font cache file
+
+ */
+
+public static File getDefaultCacheFile(boolean forWriting){
+
+  File userHome=getUserHome();
+
+  if (userHome != null) {
+
+    File fopUserDir=new File(userHome,FOP_USER_DIR);
+
+    if (forWriting) {
+
+      boolean writable=fopUserDir.canWrite();
+
+      if (!fopUserDir.exists()) {
+
+        writable=fopUserDir.mkdir();
+
+      }
+
+      if (!writable) {
+
+        userHome=getTempDirectory();
+
+        fopUserDir=new File(userHome,FOP_USER_DIR);
+
+        fopUserDir.mkdir();
+
+      }
+
+    }
+
+    return new File(fopUserDir,DEFAULT_CACHE_FILENAME);
+
+  }
+
+  return new File(FOP_USER_DIR);
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+private Map<String,Long> getFailedFontMap(){
+
+  if (failedFontMap == null) {
+
+    failedFontMap=new HashMap<String,Long>();
+
+  }
+
+  return failedFontMap;
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Tries to identify a File instance from an array of URLs. If there's no file URL in the array, the method returns null.
+
+ * @param urls array of possible font urls
+
+ * @return file font file
+
+ */
+
+public static File getFileFromUrls(String[] urls){
+
+  for (  String urlStr : urls) {
+
+    if (urlStr != null) {
+
+      File fontFile=null;
+
+      if (urlStr.startsWith("file:")) {
+
+        try {
+
+          URL url=new URL(urlStr);
+
+          fontFile=FileUtils.toFile(url);
+
+        }
+
+ catch (        MalformedURLException mfue) {
+
+        }
+
+      }
+
+      if (fontFile == null) {
+
+        fontFile=new File(urlStr);
+
+      }
+
+      if (fontFile.exists() && fontFile.canRead()) {
+
+        return fontFile;
+
+      }
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+private Map<String,CachedFontFile> getFontFileMap(){
+
+  if (fontfileMap == null) {
+
+    fontfileMap=new HashMap<String,CachedFontFile>();
+
+  }
+
+  return fontfileMap;
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Returns a font from the cache.
+
+ * @param embedUrl font info
+
+ * @return CachedFontFile object
+
+ */
+
+public CachedFontFile getFontFile(String embedUrl){
+
+  return containsFont(embedUrl) ? getFontFileMap().get(embedUrl) : null;
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Returns the EmbedFontInfo instances belonging to a font file. If the font file was modified since it was cached the entry is removed and null is returned.
+
+ * @param embedUrl the font URL
+
+ * @param lastModified the last modified date/time of the font file
+
+ * @return the EmbedFontInfo instances or null if there's no cached entry orif it is outdated
+
+ */
+
+public EmbedFontInfo[] getFontInfos(String embedUrl,long lastModified){
+
+  CachedFontFile cff=getFontFile(embedUrl);
+
+  if (cff.lastModified() == lastModified) {
+
+    return cff.getEmbedFontInfos();
+
+  }
+
+ else {
+
+    removeFont(embedUrl);
+
+    return null;
+
+  }
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Retrieve the last modified date/time of a URI.
+
+ * @param uri the URI
+
+ * @return the last modified date/time
+
+ */
+
+public static long getLastModified(URI uri){
+
+  try {
+
+    URL url=uri.toURL();
+
+    URLConnection conn=url.openConnection();
+
+    try {
+
+      return conn.getLastModified();
+
+    }
+
+  finally {
+
+      IOUtils.closeQuietly(conn.getInputStream());
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    log.debug("IOError: " + e.getMessage());
+
+    return 0;
+
+  }
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+private static File getTempDirectory(){
+
+  return toDirectory(System.getProperty("java.io.tmpdir"));
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+private static File getUserHome(){
+
+  return toDirectory(System.getProperty("user.home"));
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * cache has been updated since it was read
+
+ * @return if this cache has changed
+
+ */
+
+public boolean hasChanged(){
+
+  return this.changed;
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * has this font previously failed to load?
+
+ * @param embedUrl embed url
+
+ * @param lastModified last modified
+
+ * @return whether this is a failed font
+
+ */
+
+public boolean isFailedFont(String embedUrl,long lastModified){
+
+synchronized (changeLock) {
+
+    if (getFailedFontMap().containsKey(embedUrl)) {
+
+      long failedLastModified=getFailedFontMap().get(embedUrl);
+
+      if (lastModified != failedLastModified) {
+
+        getFailedFontMap().remove(embedUrl);
+
+        changed=true;
+
+      }
+
+      return true;
+
+    }
+
+ else {
+
+      return false;
+
+    }
+
+  }
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Reads a font cache file and returns its contents.
+
+ * @param cacheFile the cache file
+
+ * @return the font cache deserialized from the file (or null if no cachefile exists or if it could not be read)
+
+ */
+
+public static FontCache loadFrom(File cacheFile){
+
+  if (cacheFile.exists()) {
+
+    try {
+
+      if (log.isTraceEnabled()) {
+
+        log.trace("Loading font cache from " + cacheFile.getCanonicalPath());
+
+      }
+
+      InputStream in=new BufferedInputStream(new FileInputStream(cacheFile));
+
+      ObjectInputStream oin=new ObjectInputStream(in);
+
+      try {
+
+        return (FontCache)oin.readObject();
+
+      }
+
+  finally {
+
+        IOUtils.closeQuietly(oin);
+
+      }
+
+    }
+
+ catch (    ClassNotFoundException e) {
+
+      log.warn("Could not read font cache. Discarding font cache file. Reason: " + e.getMessage());
+
+    }
+
+catch (    IOException ioe) {
+
+      log.warn("I/O exception while reading font cache (" + ioe.getMessage() + "). Discarding font cache file.");
+
+      try {
+
+        cacheFile.delete();
+
+      }
+
+ catch (      SecurityException ex) {
+
+        log.warn("Failed to delete font cache file: " + cacheFile.getAbsolutePath());
+
+      }
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Registers a failed font with the cache
+
+ * @param embedUrl embed url
+
+ * @param lastModified time last modified
+
+ */
+
+public void registerFailedFont(String embedUrl,long lastModified){
+
+synchronized (changeLock) {
+
+    if (!getFailedFontMap().containsKey(embedUrl)) {
+
+      getFailedFontMap().put(embedUrl,lastModified);
+
+      changed=true;
+
+    }
+
+  }
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * removes font from cache
+
+ * @param embedUrl embed url
+
+ */
+
+public void removeFont(String embedUrl){
+
+synchronized (changeLock) {
+
+    if (containsFont(embedUrl)) {
+
+      if (log.isTraceEnabled()) {
+
+        log.trace("Font removed from cache: " + embedUrl);
+
+      }
+
+      getFontFileMap().remove(embedUrl);
+
+      changed=true;
+
+    }
+
+  }
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+/** 
+
+ * Writes the font cache to disk.
+
+ * @param cacheFile the file to write to
+
+ * @throws FOPException fop exception
+
+ */
+
+public void saveTo(File cacheFile) throws FOPException {
+
+synchronized (changeLock) {
+
+    if (changed) {
+
+      try {
+
+        log.trace("Writing font cache to " + cacheFile.getCanonicalPath());
+
+        OutputStream out=new java.io.FileOutputStream(cacheFile);
+
+        out=new java.io.BufferedOutputStream(out);
+
+        ObjectOutputStream oout=new ObjectOutputStream(out);
+
+        try {
+
+          oout.writeObject(this);
+
+        }
+
+  finally {
+
+          IOUtils.closeQuietly(oout);
+
+        }
+
+      }
+
+ catch (      IOException ioe) {
+
+        LogUtil.handleException(log,ioe,true);
+
+      }
+
+      changed=false;
+
+      log.trace("Cache file written.");
+
+    }
+
+  }
+
+}
+
+Location: FontCache.java
+
+Content: 
+
+private static File toDirectory(String path){
+
+  if (path != null) {
+
+    File dir=new File(path);
+
+    if (dir.exists()) {
+
+      return dir;
+
+    }
+
+  }
+
+  return null;
+
+}
+

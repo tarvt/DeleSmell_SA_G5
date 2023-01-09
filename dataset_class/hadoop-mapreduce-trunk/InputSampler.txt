@@ -1,0 +1,94 @@
+Location: InputSampler.java
+
+Content: 
+
+public InputSampler(Configuration conf){
+
+  setConf(conf);
+
+}
+
+Location: InputSampler.java
+
+Content: 
+
+public InputSampler(JobConf conf){
+
+  super(conf);
+
+}
+
+Location: InputSampler.java
+
+Content: 
+
+public static <K,V>void writePartitionFile(JobConf job,Sampler<K,V> sampler) throws IOException, ClassNotFoundException, InterruptedException {
+
+  writePartitionFile(new Job(job),sampler);
+
+}
+
+Location: InputSampler.java
+
+Content: 
+
+/** 
+
+ * Write a partition file for the given job, using the Sampler provided. Queries the sampler for a sample keyset, sorts by the output key comparator, selects the keys for each rank, and writes to the destination returned from  {@link TotalOrderPartitioner#getPartitionFile}.
+
+ */
+
+@SuppressWarnings("unchecked") public static <K,V>void writePartitionFile(Job job,Sampler<K,V> sampler) throws IOException, ClassNotFoundException, InterruptedException {
+
+  Configuration conf=job.getConfiguration();
+
+  final InputFormat inf=ReflectionUtils.newInstance(job.getInputFormatClass(),conf);
+
+  int numPartitions=job.getNumReduceTasks();
+
+  K[] samples=sampler.getSample(inf,job);
+
+  LOG.info("Using " + samples.length + " samples");
+
+  RawComparator<K> comparator=(RawComparator<K>)job.getSortComparator();
+
+  Arrays.sort(samples,comparator);
+
+  Path dst=new Path(TotalOrderPartitioner.getPartitionFile(conf));
+
+  FileSystem fs=dst.getFileSystem(conf);
+
+  if (fs.exists(dst)) {
+
+    fs.delete(dst,false);
+
+  }
+
+  SequenceFile.Writer writer=SequenceFile.createWriter(fs,conf,dst,job.getMapOutputKeyClass(),NullWritable.class);
+
+  NullWritable nullValue=NullWritable.get();
+
+  float stepSize=samples.length / (float)numPartitions;
+
+  int last=-1;
+
+  for (int i=1; i < numPartitions; ++i) {
+
+    int k=Math.round(stepSize * i);
+
+    while (last >= k && comparator.compare(samples[last],samples[k]) == 0) {
+
+      ++k;
+
+    }
+
+    writer.append(samples[k],nullValue);
+
+    last=k;
+
+  }
+
+  writer.close();
+
+}
+

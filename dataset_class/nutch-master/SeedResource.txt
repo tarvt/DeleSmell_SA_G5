@@ -1,0 +1,122 @@
+Location: SeedResource.java
+
+Content: 
+
+/** 
+
+ * Method creates seed list file and returns temporary directory path
+
+ * @param seedList a populated {@link SeedList}
+
+ * @return path to seedfile
+
+ */
+
+@POST @Path("/create") @Consumes(MediaType.APPLICATION_JSON) @Produces(MediaType.TEXT_PLAIN) public Response createSeedFile(SeedList seedList){
+
+  try {
+
+    if (seedList == null) {
+
+      return Response.status(Status.BAD_REQUEST).entity("Seed list cannot be empty!").build();
+
+    }
+
+    Collection<SeedUrl> seedUrls=seedList.getSeedUrls();
+
+    String seedFilePath=writeToSeedFile(seedUrls);
+
+    seedList.setSeedFilePath(seedFilePath);
+
+    NutchServer.getInstance().getSeedManager().setSeedList(seedList.getName(),seedList);
+
+    return Response.ok().entity(seedFilePath).build();
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.warn("Error while creating seed : {}",e.getMessage());
+
+  }
+
+  return Response.serverError().build();
+
+}
+
+Location: SeedResource.java
+
+Content: 
+
+/** 
+
+ * Gets the list of seedFiles already created 
+
+ * @return {@link Map} of &lt;String, SeedList&gt;
+
+ */
+
+@GET @Path("/") @Produces(MediaType.APPLICATION_JSON) public Response getSeedLists(){
+
+  Map<String,SeedList> seeds=NutchServer.getInstance().getSeedManager().getSeeds();
+
+  if (seeds != null) {
+
+    return Response.ok(seeds).build();
+
+  }
+
+ else {
+
+    return Response.ok().build();
+
+  }
+
+}
+
+Location: SeedResource.java
+
+Content: 
+
+private String writeToSeedFile(Collection<SeedUrl> seedUrls) throws Exception {
+
+  String seedFilePath="seedFiles/seed-" + System.currentTimeMillis();
+
+  org.apache.hadoop.fs.Path seedFolder=new org.apache.hadoop.fs.Path(seedFilePath);
+
+  FileSystem fs=FileSystem.get(new Configuration());
+
+  if (!fs.exists(seedFolder)) {
+
+    if (!fs.mkdirs(seedFolder)) {
+
+      throw new Exception("Could not create seed folder at : " + seedFolder);
+
+    }
+
+  }
+
+  String filename=seedFilePath + System.getProperty("file.separator") + "urls";
+
+  org.apache.hadoop.fs.Path seedPath=new org.apache.hadoop.fs.Path(filename);
+
+  OutputStream os=fs.create(seedPath);
+
+  if (CollectionUtils.isNotEmpty(seedUrls)) {
+
+    for (    SeedUrl seedUrl : seedUrls) {
+
+      os.write(seedUrl.getUrl().getBytes());
+
+      os.write("\n".getBytes());
+
+    }
+
+  }
+
+  os.close();
+
+  return seedPath.getParent().toString();
+
+}
+

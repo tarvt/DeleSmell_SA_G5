@@ -1,0 +1,556 @@
+Location: RequestTable.java
+
+Content: 
+
+@GuardedBy("lock") protected void advanceLow(){
+
+  while (low < high) {
+
+    int index=index(low);
+
+    if (buffer[index] != null)     break;
+
+    low++;
+
+  }
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+/** 
+
+ * Checks if there is at least buffer.length/2 contiguous space in range [low+1 .. high-1] available
+
+ */
+
+public boolean contiguousSpaceAvailable(){
+
+  lock.lock();
+
+  try {
+
+    return _contiguousSpaceAvailable(buffer.length >> 1);
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public String dumpContents(){
+
+  StringBuilder sb=new StringBuilder();
+
+  lock.lock();
+
+  try {
+
+    int new_cap=buffer.length >> 1;
+
+    for (long i=low, num_iterations=0; i < high && num_iterations < buffer.length; i++, num_iterations++) {
+
+      int index=index(i);
+
+      T el=buffer[index];
+
+      if (el != null) {
+
+        long hash=el.hashCode();
+
+        int small_idx=index(i,new_cap);
+
+        sb.append(String.format("seqno %d: index: %d val: %d, index in %d-buffer: %d\n",i,index,hash,new_cap,small_idx));
+
+      }
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+/** 
+
+ * Non-blocking alternative to  {@link #forEach(Visitor)}: iteration is performed on the array that exists at the time of this call. Changes to the underlying array will not be reflected in the iteration.
+
+ * @param visitor the {@link Visitor}.
+
+ */
+
+public RequestTable<T> forEachNonBlocking(Visitor<T> visitor){
+
+  if (visitor == null)   return null;
+
+  T[] buf;
+
+  long lo, hi;
+
+  lock.lock();
+
+  try {
+
+    buf=this.buffer;
+
+    lo=this.low;
+
+    hi=this.high;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+  for (long i=lo, num_iterations=0; i < hi && num_iterations < buf.length; i++, num_iterations++) {
+
+    int index=index(i);
+
+    T el=buf[index];
+
+    if (!visitor.visit(el))     break;
+
+  }
+
+  return this;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public RequestTable<T> forEach(Visitor<T> visitor){
+
+  if (visitor == null)   return null;
+
+  lock.lock();
+
+  try {
+
+    for (long i=low, num_iterations=0; i < high && num_iterations < buffer.length; i++, num_iterations++) {
+
+      int index=index(i);
+
+      T el=buffer[index];
+
+      if (!visitor.visit(el))       break;
+
+    }
+
+    return this;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+/** 
+
+ * Grows the array to at least new_capacity. This method is mainly used for testing and is not typically called directly, but indirectly when adding elements and the underlying array has no space left.
+
+ * @param new_capacity the new capacity of the underlying array. Will be rounded up to the nearest power of 2 value.A value smaller than the current capacity is ignored.
+
+ */
+
+public RequestTable<T> grow(int new_capacity){
+
+  lock.lock();
+
+  try {
+
+    _grow(new_capacity);
+
+    return this;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public long high(){
+
+  return high;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+protected int highestContiguousSpaceAvailable(){
+
+  int size_of_current_contiguous_area=0;
+
+  int highest=0;
+
+  for (long i=low + 1; i < high; i++) {
+
+    int index=index(i);
+
+    if (this.buffer[index] == null)     size_of_current_contiguous_area++;
+
+ else {
+
+      highest=Math.max(highest,size_of_current_contiguous_area);
+
+      size_of_current_contiguous_area=0;
+
+    }
+
+  }
+
+  return Math.max(highest,size_of_current_contiguous_area);
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+protected static int index(long seqno,int length){
+
+  return (int)((seqno) & length - 1);
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public long low(){
+
+  return low;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+/** 
+
+ * Removes all elements in the stream. Calls the consumer (if not null) on non-null elements
+
+ */
+
+public RequestTable<T> removeMany(LongStream seqnos,Consumer<T> consumer){
+
+  if (seqnos == null)   return this;
+
+  AtomicBoolean advance=new AtomicBoolean(false);
+
+  seqnos.forEach(seqno -> {
+
+    T element=null;
+
+    lock.lock();
+
+    try {
+
+      if (seqno < low || seqno > high)       return;
+
+      int index=index(seqno);
+
+      if ((element=buffer[index]) != null && removes_till_compaction > 0)       num_removes++;
+
+      buffer[index]=null;
+
+      if (seqno == low)       advance.set(true);
+
+    }
+
+  finally {
+
+      lock.unlock();
+
+    }
+
+    if (consumer != null)     consumer.accept(element);
+
+  }
+
+);
+
+  lock.lock();
+
+  try {
+
+    if (advance.get())     advanceLow();
+
+    if (removes_till_compaction > 0 && num_removes >= removes_till_compaction) {
+
+      hongshuai();
+
+      int new_cap=buffer.length >> 1;
+
+      boolean compactable=this.buffer.length > 0 && high - low <= new_cap;
+
+      if (!compactable)       return false;
+
+      _copy(new_cap);
+
+      num_removes=0;
+
+    }
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+  return this;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public int removesTillCompaction(){
+
+  return removes_till_compaction;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public RequestTable<T> removesTillCompaction(int rems){
+
+  this.removes_till_compaction=rems;
+
+  return this;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+/** 
+
+ * Removes the element at the index matching seqno. If seqno == low, tries to advance low until a non-null element is encountered, up to high
+
+ * @param seqno
+
+ * @return
+
+ */
+
+public T remove(long seqno){
+
+  lock.lock();
+
+  try {
+
+    if (seqno < low || seqno > high)     return null;
+
+    int index=index(seqno);
+
+    T retval=buffer[index];
+
+    if (retval != null && removes_till_compaction > 0)     num_removes++;
+
+    buffer[index]=null;
+
+    if (seqno == low)     advanceLow();
+
+    if (removes_till_compaction > 0 && num_removes >= removes_till_compaction) {
+
+      hongshuai();
+
+      int new_cap=buffer.length >> 1;
+
+      boolean compactable=this.buffer.length > 0 && high - low <= new_cap;
+
+      if (!compactable)       return false;
+
+      _copy(new_cap);
+
+      num_removes=0;
+
+    }
+
+    return retval;
+
+  }
+
+  finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public RequestTable(final int capacity){
+
+  this(capacity,0,0);
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+public RequestTable(final int capacity,long low,long high){
+
+  int len=Util.getNextHigherPowerOfTwo(capacity);
+
+  this.buffer=(T[])new Object[len];
+
+  this.low=low;
+
+  this.high=high;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+/** 
+
+ * Check if we have at least space_needed contiguous free slots available in range [low+1 .. high-1]
+
+ * @param space_needed the number of contiguous free slots required to do compaction, usually half of the currentbuffer size
+
+ * @return true if a contiguous space was found, false otherwise
+
+ */
+
+@GuardedBy("lock") protected boolean _contiguousSpaceAvailable(int space_needed){
+
+  int num_slots_scanned=0;
+
+  int size_of_contiguous_area=0;
+
+  if (high - low - 1 < space_needed)   return false;
+
+  for (long i=low + 1; i < high; i++) {
+
+    num_slots_scanned++;
+
+    int index=index(i);
+
+    if (this.buffer[index] == null) {
+
+      if (++size_of_contiguous_area >= space_needed)       return true;
+
+    }
+
+ else {
+
+      size_of_contiguous_area=0;
+
+      if (num_slots_scanned > space_needed || high - i - 1 < space_needed)       return false;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+/** 
+
+ * Copies elements from old into new array 
+
+ */
+
+protected void _copy(int new_cap){
+
+  T[] new_buf=(T[])new Object[new_cap];
+
+  int new_len=new_buf.length;
+
+  int old_len=this.buffer.length;
+
+  for (long i=low, num_iterations=0; i < high && num_iterations < old_len; i++, num_iterations++) {
+
+    int old_index=index(i,old_len);
+
+    if (this.buffer[old_index] != null) {
+
+      int new_index=index(i,new_len);
+
+      new_buf[new_index]=this.buffer[old_index];
+
+    }
+
+  }
+
+  this.buffer=new_buf;
+
+}
+
+Location: RequestTable.java
+
+Content: 
+
+@GuardedBy("lock") protected void _grow(long new_capacity){
+
+  int new_cap=Util.getNextHigherPowerOfTwo((int)Math.max(buffer.length,new_capacity));
+
+  if (new_cap == buffer.length)   return;
+
+  _copy(new_cap);
+
+}
+

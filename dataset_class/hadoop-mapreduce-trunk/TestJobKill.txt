@@ -1,0 +1,154 @@
+Location: TestJobKill.java
+
+Content: 
+
+private void checkCleanup(JobConf conf) throws Exception {
+
+  if (outDir != null) {
+
+    if (fs.exists(outDir)) {
+
+      Path filePath=new Path(outDir,FileOutputCommitter.SUCCEEDED_FILE_NAME);
+
+      Assert.assertTrue("The success file is present when the job failed",!fs.exists(filePath));
+
+    }
+
+  }
+
+}
+
+Location: TestJobKill.java
+
+Content: 
+
+private void deleteOutputDir() throws Exception {
+
+  if (fs != null) {
+
+    fs.delete(outDir,true);
+
+  }
+
+}
+
+Location: TestJobKill.java
+
+Content: 
+
+private void failJob(Configuration conf,Class<? extends OutputCommitter> theClass,String confName,Class<? extends Mapper> mapClass,Class<? extends Reducer> redClass,boolean isUserKill) throws Exception {
+
+  Job job=new Job(conf,confName);
+
+  job.setJarByClass(JobKillCommitter.class);
+
+  job.setMapperClass(mapClass);
+
+  job.setCombinerClass(redClass);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(Text.class);
+
+  job.setReducerClass(redClass);
+
+  job.setNumReduceTasks(1);
+
+  FileInputFormat.addInputPath(job,inDir);
+
+  FileOutputFormat.setOutputPath(job,outDir);
+
+  JobConf jconf=new JobConf(job.getConfiguration(),JobKillCommitter.class);
+
+  jconf.setOutputCommitter(theClass);
+
+  if (!isUserKill) {
+
+    RunningJob rJob=cluster.getJTClient().getClient().submitJob(jconf);
+
+    JobID id=rJob.getID();
+
+    JobInfo jInfo=wovenClient.getJobInfo(id);
+
+    Assert.assertTrue("Job is not in PREP state",jInfo.getStatus().getRunState() == JobStatus.PREP);
+
+  }
+
+ else {
+
+    RunningJob rJob=cluster.getJTClient().getClient().submitJob(jconf);
+
+    JobInfo info=wovenClient.getJobInfo(rJob.getID());
+
+    Assert.assertNotNull("Job Info is null",info);
+
+    JobID id=rJob.getID();
+
+    while (info.runningMaps() != 1) {
+
+      Thread.sleep(1000);
+
+      info=wovenClient.getJobInfo(id);
+
+    }
+
+    rJob.killJob();
+
+  }
+
+  checkCleanup(jconf);
+
+  deleteOutputDir();
+
+}
+
+Location: TestJobKill.java
+
+Content: 
+
+@Test public void testSystemJobKill() throws Exception {
+
+  wovenClient=cluster.getJTClient().getProxy();
+
+  Configuration conf=new Configuration(cluster.getConf());
+
+  conf.set(MRJobConfig.MAP_MAX_ATTEMPTS,"1");
+
+  conf.set(MRJobConfig.REDUCE_MAX_ATTEMPTS,"1");
+
+  failJob(conf,JobKillCommitter.CommitterWithNoError.class,"JobMapperFail",JobKillCommitter.MapperFail.class,JobKillCommitter.ReducerPass.class,false);
+
+  failJob(conf,JobKillCommitter.CommitterWithNoError.class,"JobReducerFail",JobKillCommitter.MapperPass.class,JobKillCommitter.ReducerFail.class,false);
+
+  failJob(conf,JobKillCommitter.CommitterWithFailSetup.class,"JobSetupFail",JobKillCommitter.MapperPass.class,JobKillCommitter.ReducerPass.class,false);
+
+  failJob(conf,JobKillCommitter.CommitterWithFailCleanup.class,"JobCleanupFail",JobKillCommitter.MapperPass.class,JobKillCommitter.ReducerPass.class,false);
+
+}
+
+Location: TestJobKill.java
+
+Content: 
+
+/** 
+
+ * This test is used to kill the job by explicity calling the kill api and making sure the clean up happens
+
+ * @throws Exception
+
+ */
+
+@Test public void testUserJobKill() throws Exception {
+
+  wovenClient=cluster.getJTClient().getProxy();
+
+  Configuration conf=new Configuration(cluster.getConf());
+
+  conf.set(MRJobConfig.MAP_MAX_ATTEMPTS,"1");
+
+  conf.set(MRJobConfig.REDUCE_MAX_ATTEMPTS,"1");
+
+  failJob(conf,JobKillCommitter.CommitterWithNoError.class,"JobUserKill",JobKillCommitter.MapperPassSleep.class,JobKillCommitter.ReducerPass.class,true);
+
+}
+

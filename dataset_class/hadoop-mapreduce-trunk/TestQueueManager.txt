@@ -1,0 +1,586 @@
+Location: TestQueueManager.java
+
+Content: 
+
+private void checkHierarchy(Queue queue,QueueManager queueManager){
+
+  JobQueueInfo jobQueueInfo=queueManager.getJobQueueInfo(queue.getName());
+
+  assertEquals(queue.getName(),jobQueueInfo.getQueueName());
+
+  assertEquals(queue.getState(),jobQueueInfo.getState());
+
+  if (queue.getChildren() != null && queue.getChildren().size() > 0) {
+
+    for (    Queue childQueue : queue.getChildren()) {
+
+      checkHierarchy(childQueue,queueManager);
+
+    }
+
+  }
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+private UserGroupInformation createUGI(String userName){
+
+  return UserGroupInformation.createUserForTesting(userName,new String[]{"myGroup"});
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testDefault() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  QueueManager qm=new QueueManager();
+
+  Queue root=qm.getRoot();
+
+  assertEquals(root.getChildren().size(),1);
+
+  assertEquals(root.getChildren().iterator().next().getName(),"default");
+
+  assertNull(root.getChildren().iterator().next().getChildren());
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+/** 
+
+ * checks the format of the dump in JSON format when  QueueManager.dumpConfiguration(Writer) is called.
+
+ * @throws Exception
+
+ */
+
+@Test public void testDumpConfiguration() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  createSimpleDocument(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  StringWriter out=new StringWriter();
+
+  Configuration conf=new Configuration(false);
+
+  conf.setBoolean(MRConfig.MR_ACLS_ENABLED,true);
+
+  QueueManager.dumpConfiguration(out,QUEUES_CONFIG_FILE_PATH,conf);
+
+  ObjectMapper mapper=new ObjectMapper();
+
+  JsonQueueTree queueTree=mapper.readValue(out.toString(),JsonQueueTree.class);
+
+  assertEquals(2,queueTree.getQueues().length);
+
+  HashMap<String,JsonQueue> topQueues=new HashMap<String,JsonQueue>();
+
+  for (  JsonQueue topQueue : queueTree.getQueues()) {
+
+    topQueues.put(topQueue.getName(),topQueue);
+
+  }
+
+  assertEquals(2,topQueues.get("p1").getChildren().length);
+
+  HashMap<String,JsonQueue> childQueues=new HashMap<String,JsonQueue>();
+
+  for (  JsonQueue child : topQueues.get("p1").getChildren()) {
+
+    childQueues.put(child.getName(),child);
+
+  }
+
+  assertEquals("stopped",childQueues.get("p1:p12").getState());
+
+  HashMap<String,JsonProperty> q1_properties=new HashMap<String,JsonProperty>();
+
+  for (  JsonProperty prop : topQueues.get("q1").getProperties()) {
+
+    q1_properties.put(prop.getKey(),prop);
+
+  }
+
+  assertEquals("10",q1_properties.get("capacity").getValue());
+
+  assertEquals("35",q1_properties.get("maxCapacity").getValue());
+
+  assertEquals("u1 ",childQueues.get("p1:p12").getAcl_submit_job());
+
+  assertEquals("u2 ",childQueues.get("p1:p12").getAcl_administer_jobs());
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testEmptyFile() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  try {
+
+    new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+    fail("Should throw an exception as configuration is wrong ");
+
+  }
+
+ catch (  Exception re) {
+
+    re.printStackTrace();
+
+    LOG.info(re.getMessage());
+
+  }
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testEmptyProperties() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  Element queues=createQueuesNode(doc);
+
+  Element q1=createQueue(doc,"q1");
+
+  Element p=createProperties(doc,null);
+
+  q1.appendChild(p);
+
+  queues.appendChild(q1);
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testhasAccess() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  createSimpleDocumentWithAcls(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  QueueManager qm=new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+  UserGroupInformation ugi;
+
+  ugi=createUGI("u1");
+
+  assertTrue(qm.hasAccess("p1" + NAME_SEPARATOR + "p12",QueueACL.SUBMIT_JOB,ugi));
+
+  ugi=createUGI("u2");
+
+  assertTrue(qm.hasAccess("p1" + NAME_SEPARATOR + "p12",QueueACL.ADMINISTER_JOBS,ugi));
+
+  ugi=createUGI("u1");
+
+  assertTrue(qm.hasAccess("p1" + NAME_SEPARATOR + "p11",QueueACL.SUBMIT_JOB,ugi));
+
+  ugi=createUGI("u2");
+
+  assertTrue(qm.hasAccess("p1" + NAME_SEPARATOR + "p11",QueueACL.ADMINISTER_JOBS,ugi));
+
+  ugi=createUGI("u1");
+
+  assertFalse(qm.hasAccess("p1" + NAME_SEPARATOR + "p13",QueueACL.SUBMIT_JOB,ugi));
+
+  ugi=createUGI("u2");
+
+  assertFalse(qm.hasAccess("p1" + NAME_SEPARATOR + "p13",QueueACL.ADMINISTER_JOBS,ugi));
+
+  assertTrue(qm.isRunning("p1" + NAME_SEPARATOR + "p13"));
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testhasAccessForParent() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  createSimpleDocument(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  QueueManager qm=new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+  UserGroupInformation ugi=createUGI("u1");
+
+  assertFalse(qm.hasAccess("p1",QueueACL.SUBMIT_JOB,ugi));
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testInvalidName() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  Element queues=createQueuesNode(doc);
+
+  Element q1=createQueue(doc,"");
+
+  queues.appendChild(q1);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  try {
+
+    new QueueManager(QUEUES_CONFIG_FILE_PATH,false);
+
+    fail("Should throw an exception as configuration is wrong ");
+
+  }
+
+ catch (  Exception re) {
+
+    re.printStackTrace();
+
+    LOG.info(re.getMessage());
+
+  }
+
+  deleteQueuesConfigFile();
+
+  doc=createDocument();
+
+  queues=createQueuesNode(doc);
+
+  q1=doc.createElement("queue");
+
+  queues.appendChild(q1);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  try {
+
+    new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+    fail("Should throw an exception as configuration is wrong ");
+
+  }
+
+ catch (  RuntimeException re) {
+
+    re.printStackTrace();
+
+    LOG.info(re.getMessage());
+
+  }
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testJobQueueInfoGeneration() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  createSimpleDocument(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  QueueManager qm=new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+  List<JobQueueInfo> rootQueues=qm.getRoot().getJobQueueInfo().getChildren();
+
+  assertEquals(rootQueues.size(),2);
+
+  List<String> names=new ArrayList<String>();
+
+  for (  JobQueueInfo q : rootQueues) {
+
+    names.add(q.getQueueName());
+
+    if (q.getQueueName().equals("q1")) {
+
+      Properties p=q.getProperties();
+
+      assertEquals(p.getProperty("capacity"),"10");
+
+      assertEquals(p.getProperty("maxCapacity"),"35");
+
+      assertTrue(q.getChildren().isEmpty());
+
+    }
+
+ else     if (q.getQueueName().equals("p1")) {
+
+      List<JobQueueInfo> children=q.getChildren();
+
+      assertEquals(children.size(),2);
+
+      for (      JobQueueInfo child : children) {
+
+        if (child.getQueueName().equals("p1" + NAME_SEPARATOR + "p12")) {
+
+          assertEquals(child.getQueueState(),QueueState.STOPPED.getStateName());
+
+        }
+
+ else         if (child.getQueueName().equals("p1" + NAME_SEPARATOR + "p11")) {
+
+          assertEquals(child.getQueueState(),QueueState.RUNNING.getStateName());
+
+        }
+
+ else {
+
+          fail("Only 2 children");
+
+        }
+
+      }
+
+    }
+
+ else {
+
+      fail("Only 2 queues with q1 and p1 ");
+
+    }
+
+  }
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testMissingConfigFile() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  try {
+
+    new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+    fail("Should throw an exception for missing file when " + "explicitly passed.");
+
+  }
+
+ catch (  RuntimeException re) {
+
+  }
+
+  QueueManager qm=new QueueManager();
+
+  List<JobQueueInfo> rootQueues=qm.getRoot().getJobQueueInfo().getChildren();
+
+  assertEquals(1,rootQueues.size());
+
+  assertEquals("default",rootQueues.get(0).getQueueName());
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testQueueView() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  createSimpleDocument(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  QueueManager qm=new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+  for (  Queue queue : qm.getRoot().getChildren()) {
+
+    checkHierarchy(queue,qm);
+
+  }
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testRefreshWithInvalidFile() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  createSimpleDocument(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  QueueManager qm=new QueueManager(QUEUES_CONFIG_FILE_PATH,false);
+
+  deleteQueuesConfigFile();
+
+  doc=createDocument();
+
+  Element queues=createQueuesNode(doc);
+
+  Element q1=createQueue(doc,"");
+
+  queues.appendChild(q1);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  try {
+
+    QueueConfigurationParser cp=new QueueConfigurationParser(QUEUES_CONFIG_FILE_PATH,false);
+
+    fail("Should throw an exception as configuration is wrong ");
+
+  }
+
+ catch (  Throwable re) {
+
+    re.printStackTrace();
+
+    LOG.info(re.getMessage());
+
+  }
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testValidation() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  Element queues=createQueuesNode(doc);
+
+  Element q1=createQueue(doc,"q1");
+
+  q1.appendChild(createAcls(doc,"acl-submit-job","u1"));
+
+  q1.appendChild(createAcls(doc,"acl-administer-jobs","u2"));
+
+  q1.appendChild(createQueue(doc,"p15"));
+
+  q1.appendChild(createQueue(doc,"p16"));
+
+  queues.appendChild(q1);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  try {
+
+    new QueueManager(QUEUES_CONFIG_FILE_PATH,false);
+
+    fail("Should throw an exception as configuration is wrong ");
+
+  }
+
+ catch (  RuntimeException re) {
+
+    LOG.info(re.getMessage());
+
+  }
+
+}
+
+Location: TestQueueManager.java
+
+Content: 
+
+@Test public void testXMLParsing() throws Exception {
+
+  deleteQueuesConfigFile();
+
+  Document doc=createDocument();
+
+  createSimpleDocument(doc);
+
+  writeToFile(doc,QUEUES_CONFIG_FILE_PATH);
+
+  QueueManager qm=new QueueManager(QUEUES_CONFIG_FILE_PATH,true);
+
+  Set<Queue> rootQueues=qm.getRoot().getChildren();
+
+  List<String> names=new ArrayList<String>();
+
+  for (  Queue q : rootQueues) {
+
+    names.add(q.getName());
+
+  }
+
+  assertEquals(rootQueues.size(),2);
+
+  assertTrue(names.contains("q1"));
+
+  assertTrue(names.contains("p1"));
+
+  Set<String> leafNames=qm.getLeafQueueNames();
+
+  Queue p=qm.getQueue("p1");
+
+  Set<Queue> children=p.getChildren();
+
+  assertTrue(children.size() == 2);
+
+  assertTrue(leafNames.contains("p1" + NAME_SEPARATOR + "p11"));
+
+  assertTrue(leafNames.contains("p1" + NAME_SEPARATOR + "p12"));
+
+  Queue q=qm.getQueue("p1" + NAME_SEPARATOR + "p12");
+
+  assertTrue(q.getAcls().get(toFullPropertyName(q.getName(),ACL_SUBMIT_JOB_TAG)).isUserAllowed(createUGI("u1")));
+
+  assertTrue(q.getAcls().get(toFullPropertyName(q.getName(),ACL_ADMINISTER_JOB_TAG)).isUserAllowed(createUGI("u2")));
+
+  assertTrue(q.getState().equals(QueueState.STOPPED));
+
+}
+

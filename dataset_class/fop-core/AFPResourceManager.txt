@@ -1,0 +1,614 @@
+Location: AFPResourceManager.java
+
+Content: 
+
+private void addToCache(AFPResourceInfo resourceInfo,AbstractCachedObject cachedObject){
+
+  List<AbstractCachedObject> objs=includeObjectCache.get(resourceInfo);
+
+  if (objs == null) {
+
+    objs=new ArrayList<AbstractCachedObject>();
+
+    includeObjectCache.put(resourceInfo,objs);
+
+  }
+
+  objs.add(cachedObject);
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Main constructor
+
+ * @param resourceResolver  the associated {@link InternalResourceResolver} instance
+
+ */
+
+public AFPResourceManager(InternalResourceResolver resourceResolver){
+
+  this.factory=new Factory();
+
+  this.streamer=new AFPStreamer(factory,resourceResolver);
+
+  this.dataObjectFactory=new AFPDataObjectFactory(factory);
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Creates an included resource extracting the named resource from an external source.
+
+ * @param resourceName the name of the resource
+
+ * @param uri the URI for the resource
+
+ * @param accessor resource accessor to access the resource with
+
+ * @throws IOException if an I/O error occurs while loading the resource
+
+ */
+
+public void createIncludedResourceFromExternal(final String resourceName,final URI uri,final AFPResourceAccessor accessor) throws IOException {
+
+  AFPResourceLevel resourceLevel=new AFPResourceLevel(ResourceType.PRINT_FILE);
+
+  AFPResourceInfo resourceInfo=new AFPResourceInfo();
+
+  resourceInfo.setLevel(resourceLevel);
+
+  resourceInfo.setName(resourceName);
+
+  resourceInfo.setUri(uri.toASCIIString());
+
+  List<AbstractCachedObject> resource=includeObjectCache.get(resourceInfo);
+
+  if (resource == null) {
+
+    ResourceGroup resourceGroup=streamer.getResourceGroup(resourceLevel);
+
+    AbstractNamedAFPObject resourceObject=new AbstractNamedAFPObject(null){
+
+      @Override protected void writeContent(      OutputStream os) throws IOException {
+
+        InputStream inputStream=null;
+
+        try {
+
+          inputStream=accessor.createInputStream(uri);
+
+          BufferedInputStream bin=new BufferedInputStream(inputStream);
+
+          AFPResourceUtil.copyNamedResource(resourceName,bin,os);
+
+        }
+
+  finally {
+
+          IOUtils.closeQuietly(inputStream);
+
+        }
+
+      }
+
+      @Override protected void writeStart(      OutputStream os) throws IOException {
+
+      }
+
+      @Override protected void writeEnd(      OutputStream os) throws IOException {
+
+      }
+
+    }
+
+;
+
+    resourceGroup.addObject(resourceObject);
+
+    CachedObject newresource=new CachedObject(resourceName,null);
+
+    addToCache(resourceInfo,newresource);
+
+  }
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Creates an included resource object by loading the contained object from a file.
+
+ * @param resourceName the name of the resource
+
+ * @param accessor resource accessor to access the resource with
+
+ * @param resourceObjectType the resource object type ({@link ResourceObject}.*)
+
+ * @throws IOException if an I/O error occurs while loading the resource
+
+ */
+
+public void createIncludedResource(String resourceName,AFPResourceAccessor accessor,byte resourceObjectType) throws IOException {
+
+  URI uri;
+
+  try {
+
+    uri=new URI(resourceName.trim());
+
+  }
+
+ catch (  URISyntaxException e) {
+
+    throw new IOException("Could not create URI from resource name: " + resourceName + " ("+ e.getMessage()+ ")");
+
+  }
+
+  createIncludedResource(resourceName,uri,accessor,resourceObjectType,false,null);
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Creates an included resource object by loading the contained object from a file.
+
+ * @param resourceName the name of the resource
+
+ * @param uri the URI for the resource
+
+ * @param accessor resource accessor to access the resource with
+
+ * @param resourceObjectType the resource object type ({@link ResourceObject}.*)
+
+ * @throws IOException if an I/O error occurs while loading the resource
+
+ */
+
+public void createIncludedResource(String resourceName,URI uri,AFPResourceAccessor accessor,byte resourceObjectType,boolean truetype,String ttc) throws IOException {
+
+  AFPResourceLevel resourceLevel=new AFPResourceLevel(ResourceType.PRINT_FILE);
+
+  AFPResourceInfo resourceInfo=new AFPResourceInfo();
+
+  resourceInfo.setLevel(resourceLevel);
+
+  resourceInfo.setName(resourceName);
+
+  resourceInfo.setUri(uri.toASCIIString());
+
+  List<AbstractCachedObject> cachedObject=includeObjectCache.get(resourceInfo);
+
+  if (cachedObject == null) {
+
+    if (log.isDebugEnabled()) {
+
+      log.debug("Adding included resource: " + resourceName);
+
+    }
+
+    ResourceGroup resourceGroup=streamer.getResourceGroup(resourceLevel);
+
+    if (truetype) {
+
+      ResourceObject res=factory.createResource();
+
+      res.setType(ResourceObject.TYPE_OBJECT_CONTAINER);
+
+      ActiveEnvironmentGroup.setupTruetypeMDR(res,false);
+
+      ObjectContainer oc=factory.createObjectContainer();
+
+      InputStream is=accessor.createInputStream(uri);
+
+      if (ttc != null) {
+
+        oc.setData(extractTTC(ttc,is));
+
+      }
+
+ else {
+
+        oc.setData(IOUtils.toByteArray(is));
+
+      }
+
+      ActiveEnvironmentGroup.setupTruetypeMDR(oc,true);
+
+      res.addTriplet(new EncodingTriplet(1200));
+
+      res.setFullyQualifiedName(FullyQualifiedNameTriplet.TYPE_REPLACE_FIRST_GID_NAME,FullyQualifiedNameTriplet.FORMAT_CHARSTR,resourceName,true);
+
+      res.setDataObject(oc);
+
+      resourceGroup.addObject(res);
+
+    }
+
+ else {
+
+      ResourceObject resourceObject=factory.createResource(resourceName);
+
+      IncludedResourceObject resourceContent=new IncludedResourceObject(resourceName,accessor,uri);
+
+      resourceObject.setDataObject(resourceContent);
+
+      resourceObject.setType(resourceObjectType);
+
+      resourceGroup.addObject(resourceObject);
+
+    }
+
+    CachedObject newcachedObject=new CachedObject(resourceName,null);
+
+    addToCache(resourceInfo,newcachedObject);
+
+  }
+
+ else {
+
+  }
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Creates a new data object in the AFP datastream
+
+ * @param dataObjectInfo the data object info
+
+ * @throws IOException thrown if an I/O exception of some sort has occurred.
+
+ */
+
+public void createObject(AFPDataObjectInfo dataObjectInfo) throws IOException {
+
+  if (tryIncludeObject(dataObjectInfo)) {
+
+    return;
+
+  }
+
+  AbstractNamedAFPObject namedObj=null;
+
+  AFPResourceInfo resourceInfo=dataObjectInfo.getResourceInfo();
+
+  boolean useInclude=true;
+
+  Registry.ObjectType objectType=null;
+
+  if (dataObjectInfo instanceof AFPImageObjectInfo) {
+
+    AFPImageObjectInfo imageObjectInfo=(AFPImageObjectInfo)dataObjectInfo;
+
+    namedObj=dataObjectFactory.createImage(imageObjectInfo);
+
+  }
+
+ else   if (dataObjectInfo instanceof AFPGraphicsObjectInfo) {
+
+    AFPGraphicsObjectInfo graphicsObjectInfo=(AFPGraphicsObjectInfo)dataObjectInfo;
+
+    namedObj=dataObjectFactory.createGraphic(graphicsObjectInfo);
+
+  }
+
+ else {
+
+    namedObj=dataObjectFactory.createObjectContainer(dataObjectInfo);
+
+    objectType=dataObjectInfo.getObjectType();
+
+    useInclude=objectType != null && objectType.isIncludable();
+
+  }
+
+  AFPResourceLevel resourceLevel=resourceInfo.getLevel();
+
+  ResourceGroup resourceGroup=streamer.getResourceGroup(resourceLevel);
+
+  useInclude&=resourceGroup != null;
+
+  if (useInclude) {
+
+    final boolean usePageSegment=dataObjectInfo.isCreatePageSegment();
+
+    if (resourceLevel.isPrintFile() || resourceLevel.isExternal()) {
+
+      if (usePageSegment) {
+
+        String pageSegmentName="S10" + namedObj.getName().substring(3);
+
+        namedObj.setName(pageSegmentName);
+
+        PageSegment seg=new PageSegment(pageSegmentName);
+
+        seg.addObject(namedObj);
+
+        namedObj=seg;
+
+      }
+
+      namedObj=dataObjectFactory.createResource(namedObj,resourceInfo,objectType);
+
+    }
+
+    resourceGroup.addObject(namedObj);
+
+    includeObject(namedObj,dataObjectInfo);
+
+  }
+
+ else {
+
+    dataStream.getCurrentPage().addObject(namedObj);
+
+  }
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Handles font embedding. If a font is embeddable and has not already been embedded it will be.
+
+ * @param afpFont the AFP font to be checked for embedding
+
+ * @param charSet the associated character set
+
+ * @throws IOException if there's a problem while embedding the external resources
+
+ */
+
+public void embedFont(AFPFont afpFont,CharacterSet charSet) throws IOException {
+
+  if (afpFont.isEmbeddable()) {
+
+    if (charSet.getResourceAccessor() != null) {
+
+      AFPResourceAccessor accessor=charSet.getResourceAccessor();
+
+      if (afpFont.getFontType() == FontType.TRUETYPE) {
+
+        createIncludedResource(afpFont.getFontName(),((AFPFontConfig.AFPTrueTypeFont)afpFont).getUri(),accessor,ResourceObject.TYPE_OBJECT_CONTAINER,true,((AFPFontConfig.AFPTrueTypeFont)afpFont).getTTC());
+
+      }
+
+ else {
+
+        createIncludedResource(charSet.getName(),accessor,ResourceObject.TYPE_FONT_CHARACTER_SET);
+
+        createIncludedResource(charSet.getCodePage(),accessor,ResourceObject.TYPE_CODE_PAGE);
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+private byte[] extractTTC(String ttc,InputStream is) throws IOException {
+
+  throw new IOException(ttc + " not supported");
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * @param resourceInfo  the resource info to check
+
+ * @param areaInfo  the area info to check
+
+ * @return  {@code true} if ...
+
+ */
+
+public boolean includeCachedObject(AFPResourceInfo resourceInfo,AFPObjectAreaInfo areaInfo){
+
+  List<AbstractCachedObject> cachedObjectList=includeObjectCache.get(resourceInfo);
+
+  if (cachedObjectList != null && includeCached) {
+
+    for (    AbstractCachedObject cachedObject : cachedObjectList) {
+
+      if (areaInfo != null && cachedObjectList.size() == 1) {
+
+        cachedObject.dataObjectInfo.setObjectAreaInfo(areaInfo);
+
+      }
+
+      cachedObject.includeObject();
+
+    }
+
+    return true;
+
+  }
+
+ else {
+
+    return false;
+
+  }
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+private void includeObject(AbstractNamedAFPObject namedObj,AFPDataObjectInfo dataObjectInfo){
+
+  String objectName=namedObj.getName();
+
+  AbstractCachedObject cachedObject;
+
+  if (dataObjectInfo.isCreatePageSegment()) {
+
+    cachedObject=new CachedPageSegment(objectName,dataObjectInfo);
+
+  }
+
+ else {
+
+    cachedObject=new CachedObject(objectName,dataObjectInfo);
+
+  }
+
+  cachedObject.includeObject();
+
+  addToCache(dataObjectInfo.getResourceInfo(),cachedObject);
+
+  dataObjectInfo.setData(null);
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+private void includeObject(AFPDataObjectInfo dataObjectInfo,String objectName){
+
+  IncludeObject includeObject=dataObjectFactory.createInclude(objectName,dataObjectInfo);
+
+  dataStream.getCurrentPage().addObject(includeObject);
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+private void includePageSegment(AFPDataObjectInfo dataObjectInfo,String pageSegmentName){
+
+  int x=dataObjectInfo.getObjectAreaInfo().getX();
+
+  int y=dataObjectInfo.getObjectAreaInfo().getY();
+
+  AbstractPageObject currentPage=dataStream.getCurrentPage();
+
+  boolean createHardPageSegments=true;
+
+  currentPage.createIncludePageSegment(pageSegmentName,x,y,createHardPageSegments);
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Returns  {@code true} if the passed {@link AFPResourceInfo} instance is already cached.
+
+ * @param resourceInfo  the resource info to check
+
+ * @return  {@code true} if the object is cached
+
+ */
+
+public boolean isObjectCached(AFPResourceInfo resourceInfo){
+
+  return includeObjectCache.containsKey(resourceInfo);
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Tries to create an include of a data object that has been previously added to the AFP data stream. If no such object was available, the method returns false which serves as a signal that the object has to be created.
+
+ * @param dataObjectInfo the data object info
+
+ * @return true if the inclusion succeeded, false if the object was not available
+
+ * @throws IOException thrown if an I/O exception of some sort has occurred.
+
+ */
+
+public boolean tryIncludeObject(AFPDataObjectInfo dataObjectInfo) throws IOException {
+
+  AFPResourceInfo resourceInfo=dataObjectInfo.getResourceInfo();
+
+  updateResourceInfoUri(resourceInfo);
+
+  return includeCachedObject(resourceInfo,dataObjectInfo.getObjectAreaInfo());
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+private void updateResourceInfoUri(AFPResourceInfo resourceInfo){
+
+  String uri=resourceInfo.getUri();
+
+  if (uri == null) {
+
+    uri="/";
+
+  }
+
+  if (uri.endsWith("/")) {
+
+    uri+="#" + (++instreamObjectCount);
+
+    resourceInfo.setUri(uri);
+
+  }
+
+}
+
+Location: AFPResourceManager.java
+
+Content: 
+
+/** 
+
+ * Tells the streamer to write
+
+ * @throws IOException thrown if an I/O exception of some sort has occurred.
+
+ */
+
+public void writeToStream() throws IOException {
+
+  streamer.close();
+
+}
+

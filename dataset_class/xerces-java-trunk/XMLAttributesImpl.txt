@@ -1,0 +1,656 @@
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Adds an attribute. The attribute's non-normalized value of the attribute will have the same value as the attribute value until set using the <code>setNonNormalizedValue</code> method. Also, the added attribute will be marked as specified in the XML instance document unless set otherwise using the <code>setSpecified</code> method. <p> This method differs from <code>addAttribute</code> in that it does not check if an attribute of the same name already exists in the list before adding it. In order to improve performance of namespace processing, this method allows uniqueness checks to be deferred until all the namespace information is available after the entire attribute specification has been read. <p> <strong>Caution:</strong> If this method is called it should not be mixed with calls to <code>addAttribute</code> unless it has been determined that all the attribute names are unique.
+
+ * @param name the attribute name
+
+ * @param type the attribute type
+
+ * @param value the attribute value
+
+ * @see #setNonNormalizedValue
+
+ * @see #setSpecified
+
+ * @see #checkDuplicatesNS
+
+ */
+
+public void addAttributeNS(QName name,String type,String value){
+
+  int index=fLength;
+
+  if (fLength++ == fAttributes.length) {
+
+    Attribute[] attributes;
+
+    if (fLength < SIZE_LIMIT) {
+
+      attributes=new Attribute[fAttributes.length + 4];
+
+    }
+
+ else {
+
+      attributes=new Attribute[fAttributes.length << 1];
+
+    }
+
+    System.arraycopy(fAttributes,0,attributes,0,fAttributes.length);
+
+    for (int i=fAttributes.length; i < attributes.length; i++) {
+
+      attributes[i]=new Attribute();
+
+    }
+
+    fAttributes=attributes;
+
+  }
+
+  Attribute attribute=fAttributes[index];
+
+  attribute.name.setValues(name);
+
+  attribute.type=type;
+
+  attribute.value=value;
+
+  attribute.nonNormalizedValue=value;
+
+  attribute.specified=false;
+
+  attribute.augs.removeAllItems();
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Checks for duplicate expanded names (local part and namespace name pairs) in the attribute specification. If a duplicate is found its name is returned. <p> This should be called once all the in-scope namespaces for the element enclosing these attributes is known, and after all the attributes have gone through namespace binding.
+
+ * @return the name of a duplicate attribute found in the search,otherwise null.
+
+ */
+
+public QName checkDuplicatesNS(){
+
+  final int length=fLength;
+
+  if (length <= SIZE_LIMIT) {
+
+    final Attribute[] attributes=fAttributes;
+
+    for (int i=0; i < length - 1; ++i) {
+
+      Attribute att1=attributes[i];
+
+      for (int j=i + 1; j < length; ++j) {
+
+        Attribute att2=attributes[j];
+
+        if (att1.name.localpart == att2.name.localpart && att1.name.uri == att2.name.uri) {
+
+          return att2.name;
+
+        }
+
+      }
+
+    }
+
+    return null;
+
+  }
+
+ else {
+
+    return checkManyDuplicatesNS();
+
+  }
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+private QName checkManyDuplicatesNS(){
+
+  fIsTableViewConsistent=false;
+
+  prepareTableView();
+
+  Attribute attr;
+
+  int bucket;
+
+  final int length=fLength;
+
+  final Attribute[] attributes=fAttributes;
+
+  final Attribute[] attributeTableView=fAttributeTableView;
+
+  final int[] attributeTableViewChainState=fAttributeTableViewChainState;
+
+  int largeCount=fLargeCount;
+
+  for (int i=0; i < length; ++i) {
+
+    attr=attributes[i];
+
+    bucket=getTableViewBucket(attr.name.localpart,attr.name.uri);
+
+    if (attributeTableViewChainState[bucket] != largeCount) {
+
+      attributeTableViewChainState[bucket]=largeCount;
+
+      attr.next=null;
+
+      attributeTableView[bucket]=attr;
+
+    }
+
+ else {
+
+      int collisionCount=0;
+
+      Attribute found=attributeTableView[bucket];
+
+      while (found != null) {
+
+        if (found.name.localpart == attr.name.localpart && found.name.uri == attr.name.uri) {
+
+          return attr.name;
+
+        }
+
+        found=found.next;
+
+        ++collisionCount;
+
+      }
+
+      if (collisionCount >= MAX_HASH_COLLISIONS) {
+
+        rebalanceTableViewNS(i + 1);
+
+        largeCount=fLargeCount;
+
+      }
+
+ else {
+
+        attr.next=attributeTableView[bucket];
+
+        attributeTableView[bucket]=attr;
+
+      }
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Purges all elements from the table view.
+
+ */
+
+protected void cleanTableView(){
+
+  if (++fLargeCount < 0) {
+
+    if (fAttributeTableViewChainState != null) {
+
+      for (int i=fTableViewBuckets - 1; i >= 0; --i) {
+
+        fAttributeTableViewChainState[i]=0;
+
+      }
+
+    }
+
+    fLargeCount=1;
+
+  }
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Look up the index of an attribute by XML 1.0 qualified name. <p> <strong>Note:</strong>  This method uses reference comparison, and thus should only be used internally. We cannot use this method in any code exposed to users as they may not pass in unique strings.
+
+ * @param qName The qualified (prefixed) name.
+
+ * @return The index of the attribute, or -1 if it does notappear in the list.
+
+ */
+
+public int getIndexFast(String qName){
+
+  for (int i=0; i < fLength; ++i) {
+
+    Attribute attribute=fAttributes[i];
+
+    if (attribute.name.rawname == qName) {
+
+      return i;
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Look up the index of an attribute by Namespace name. <p> <strong>Note:</strong>  This method uses reference comparison, and thus should only be used internally. We cannot use this method in any code exposed to users as they may not pass in unique strings.
+
+ * @param uri The Namespace URI, or null ifthe name has no Namespace URI.
+
+ * @param localPart The attribute's local name.
+
+ * @return The index of the attribute, or -1 if it does notappear in the list.
+
+ */
+
+public int getIndexFast(String uri,String localPart){
+
+  for (int i=0; i < fLength; ++i) {
+
+    Attribute attribute=fAttributes[i];
+
+    if (attribute.name.localpart == localPart && attribute.name.uri == uri) {
+
+      return i;
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the value passed in or NMTOKEN if it's an enumerated type.
+
+ * @param type attribute type
+
+ * @return the value passed in or NMTOKEN if it's an enumerated type.
+
+ */
+
+private String getReportableType(String type){
+
+  if (type.charAt(0) == '(') {
+
+    return "NMTOKEN";
+
+  }
+
+  return type;
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the position in the table view  where the given attribute name would be hashed.
+
+ * @param qname the attribute name
+
+ * @return the position in the table view where the given attributewould be hashed
+
+ */
+
+protected int getTableViewBucket(String qname){
+
+  return (hash(qname) & 0x7FFFFFFF) % fTableViewBuckets;
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Returns the position in the table view where the given attribute name would be hashed.
+
+ * @param localpart the local part of the attribute
+
+ * @param uri the namespace name of the attribute
+
+ * @return the position in the table view where the given attributewould be hashed
+
+ */
+
+protected int getTableViewBucket(String localpart,String uri){
+
+  if (uri == null) {
+
+    return (hash(localpart) & 0x7FFFFFFF) % fTableViewBuckets;
+
+  }
+
+ else {
+
+    return (hash(localpart,uri) & 0x7FFFFFFF) % fTableViewBuckets;
+
+  }
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+private int hash(String localpart,String uri){
+
+  if (fHashMultipliers == null) {
+
+    return localpart.hashCode() + uri.hashCode() * 31;
+
+  }
+
+  return hash0(localpart) + hash0(uri) * fHashMultipliers[MULTIPLIERS_SIZE];
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Prepares the table view of the attributes list for use, and populates it with the attributes which have been previously read.
+
+ */
+
+protected void prepareAndPopulateTableView(){
+
+  prepareAndPopulateTableView(fLength);
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+private void prepareAndPopulateTableViewNS(final int count){
+
+  prepareTableView();
+
+  Attribute attr;
+
+  int bucket;
+
+  for (int i=0; i < count; ++i) {
+
+    attr=fAttributes[i];
+
+    bucket=getTableViewBucket(attr.name.localpart,attr.name.uri);
+
+    if (fAttributeTableViewChainState[bucket] != fLargeCount) {
+
+      fAttributeTableViewChainState[bucket]=fLargeCount;
+
+      attr.next=null;
+
+      fAttributeTableView[bucket]=attr;
+
+    }
+
+ else {
+
+      attr.next=fAttributeTableView[bucket];
+
+      fAttributeTableView[bucket]=attr;
+
+    }
+
+  }
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+private void prepareAndPopulateTableView(final int count){
+
+  prepareTableView();
+
+  Attribute attr;
+
+  int bucket;
+
+  for (int i=0; i < count; ++i) {
+
+    attr=fAttributes[i];
+
+    bucket=getTableViewBucket(attr.name.rawname);
+
+    if (fAttributeTableViewChainState[bucket] != fLargeCount) {
+
+      fAttributeTableViewChainState[bucket]=fLargeCount;
+
+      attr.next=null;
+
+      fAttributeTableView[bucket]=attr;
+
+    }
+
+ else {
+
+      attr.next=fAttributeTableView[bucket];
+
+      fAttributeTableView[bucket]=attr;
+
+    }
+
+  }
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Prepares the table view of the attributes list for use.
+
+ */
+
+protected void prepareTableView(){
+
+  if (fLength > fTableViewBuckets) {
+
+    hongshuai();
+
+    final int length=fLength;
+
+    int tableViewBuckets=fTableViewBuckets;
+
+    do {
+
+      tableViewBuckets=(tableViewBuckets << 1) + 1;
+
+      if (tableViewBuckets < 0) {
+
+        tableViewBuckets=Integer.MAX_VALUE;
+
+        break;
+
+      }
+
+    }
+
+ while (length > tableViewBuckets);
+
+    fTableViewBuckets=tableViewBuckets;
+
+    fAttributeTableView=null;
+
+    fLargeCount=1;
+
+  }
+
+  if (fAttributeTableView == null) {
+
+    fAttributeTableView=new Attribute[fTableViewBuckets];
+
+    fAttributeTableViewChainState=new int[fTableViewBuckets];
+
+  }
+
+ else {
+
+    cleanTableView();
+
+  }
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Randomly selects a new hash function and reorganizes the table view in order to more evenly distribute its entries. This method is called automatically when the number of attributes in one bucket exceeds MAX_HASH_COLLISIONS.
+
+ */
+
+private void rebalanceTableViewNS(final int count){
+
+  if (fHashMultipliers == null) {
+
+    fHashMultipliers=new int[MULTIPLIERS_SIZE + 1];
+
+  }
+
+  PrimeNumberSequenceGenerator.generateSequence(fHashMultipliers);
+
+  prepareAndPopulateTableViewNS(count);
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Randomly selects a new hash function and reorganizes the table view in order to more evenly distribute its entries. This method is called automatically when the number of attributes in one bucket exceeds MAX_HASH_COLLISIONS.
+
+ */
+
+private void rebalanceTableView(final int count){
+
+  if (fHashMultipliers == null) {
+
+    fHashMultipliers=new int[MULTIPLIERS_SIZE + 1];
+
+  }
+
+  PrimeNumberSequenceGenerator.generateSequence(fHashMultipliers);
+
+  prepareAndPopulateTableView(count);
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Sets the uri of the attribute at the specified index.
+
+ * @param attrIndex The attribute index.
+
+ * @param uri       Namespace uri
+
+ */
+
+public void setURI(int attrIndex,String uri){
+
+  fAttributes[attrIndex].name.uri=uri;
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * Default constructor. 
+
+ */
+
+public XMLAttributesImpl(){
+
+  this(TABLE_SIZE);
+
+}
+
+Location: XMLAttributesImpl.java
+
+Content: 
+
+/** 
+
+ * @param tableSize initial size of table view
+
+ */
+
+public XMLAttributesImpl(int tableSize){
+
+  fTableViewBuckets=tableSize;
+
+  for (int i=0; i < fAttributes.length; i++) {
+
+    fAttributes[i]=new Attribute();
+
+  }
+
+}
+

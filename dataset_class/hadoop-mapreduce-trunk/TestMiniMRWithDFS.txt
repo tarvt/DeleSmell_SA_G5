@@ -1,0 +1,352 @@
+Location: TestMiniMRWithDFS.java
+
+Content: 
+
+/** 
+
+ * Make sure that there are exactly the directories that we expect to find. <br/> <br/> For e.g., if we want to check the existence of *only* the directories for user1's tasks job1-attempt1, job1-attempt2, job2-attempt1, we pass user1 as user, {job1, job1, job2, job3} as jobIds and {attempt1, attempt2, attempt1, attempt3} as taskDirs.
+
+ * @param mr the map-reduce cluster
+
+ * @param user the name of the job-owner
+
+ * @param jobIds the list of jobs
+
+ * @param taskDirs the task ids that should be present
+
+ */
+
+static void checkTaskDirectories(MiniMRCluster mr,String user,String[] jobIds,String[] taskDirs){
+
+  mr.waitUntilIdle();
+
+  int trackers=mr.getNumTaskTrackers();
+
+  List<String> observedJobDirs=new ArrayList<String>();
+
+  List<String> observedFilesInsideJobDir=new ArrayList<String>();
+
+  for (int i=0; i < trackers; ++i) {
+
+    File localDir=new File(mr.getTaskTrackerLocalDir(i));
+
+    assertTrue("Local dir " + localDir + " does not exist.",localDir.isDirectory());
+
+    LOG.info("Verifying contents of " + MRConfig.LOCAL_DIR + " "+ localDir.getAbsolutePath());
+
+    File trackerSubDir=new File(localDir,TaskTracker.SUBDIR);
+
+    if (trackerSubDir.isDirectory()) {
+
+      File userDir=new File(trackerSubDir,user);
+
+      if (userDir.isDirectory()) {
+
+        LOG.info("Verifying contents of user-dir " + userDir.getAbsolutePath());
+
+        verifyContents(new String[]{TaskTracker.JOBCACHE,TaskTracker.DISTCACHEDIR},userDir.list());
+
+        File jobCacheDir=new File(localDir,TaskTracker.getJobCacheSubdir(user));
+
+        String[] jobDirs=jobCacheDir.list();
+
+        observedJobDirs.addAll(Arrays.asList(jobDirs));
+
+        for (        String jobDir : jobDirs) {
+
+          String[] attemptDirs=new File(jobCacheDir,jobDir).list();
+
+          observedFilesInsideJobDir.addAll(Arrays.asList(attemptDirs));
+
+        }
+
+      }
+
+    }
+
+  }
+
+  LOG.info("Verifying the list of job directories");
+
+  verifyContents(jobIds,observedJobDirs.toArray(new String[observedJobDirs.size()]));
+
+  LOG.info("Verifying the list of task directories");
+
+  for (int j=0; j < taskDirs.length; j++) {
+
+    assertTrue("Expected task-directory " + taskDirs[j] + " is not present!",observedFilesInsideJobDir.contains(taskDirs[j]));
+
+  }
+
+}
+
+Location: TestMiniMRWithDFS.java
+
+Content: 
+
+public static TestResult launchWordCount(JobConf conf,Path inDir,Path outDir,String input,int numMaps,int numReduces) throws IOException {
+
+  FileSystem inFs=inDir.getFileSystem(conf);
+
+  FileSystem outFs=outDir.getFileSystem(conf);
+
+  outFs.delete(outDir,true);
+
+  if (!inFs.mkdirs(inDir)) {
+
+    throw new IOException("Mkdirs failed to create " + inDir.toString());
+
+  }
+
+{
+
+    DataOutputStream file=inFs.create(new Path(inDir,"part-0"));
+
+    file.writeBytes(input);
+
+    file.close();
+
+  }
+
+  conf.setJobName("wordcount");
+
+  conf.setInputFormat(TextInputFormat.class);
+
+  conf.setOutputKeyClass(Text.class);
+
+  conf.setOutputValueClass(IntWritable.class);
+
+  conf.setMapperClass(WordCount.MapClass.class);
+
+  conf.setCombinerClass(WordCount.Reduce.class);
+
+  conf.setReducerClass(WordCount.Reduce.class);
+
+  FileInputFormat.setInputPaths(conf,inDir);
+
+  FileOutputFormat.setOutputPath(conf,outDir);
+
+  conf.setNumMapTasks(numMaps);
+
+  conf.setNumReduceTasks(numReduces);
+
+  RunningJob job=JobClient.runJob(conf);
+
+  return new TestResult(job,MapReduceTestUtil.readOutput(outDir,conf));
+
+}
+
+Location: TestMiniMRWithDFS.java
+
+Content: 
+
+public static void runPI(MiniMRCluster mr,JobConf jobconf) throws IOException, InterruptedException, ClassNotFoundException {
+
+  LOG.info("runPI");
+
+  double estimate=org.apache.hadoop.examples.QuasiMonteCarlo.estimatePi(NUM_MAPS,NUM_SAMPLES,jobconf).doubleValue();
+
+  double error=Math.abs(Math.PI - estimate);
+
+  assertTrue("Error in PI estimation " + error + " exceeds 0.01",(error < 0.01));
+
+  String userName=UserGroupInformation.getLoginUser().getUserName();
+
+  checkTaskDirectories(mr,userName,new String[]{},new String[]{});
+
+}
+
+Location: TestMiniMRWithDFS.java
+
+Content: 
+
+public static void runWordCount(MiniMRCluster mr,JobConf jobConf) throws IOException {
+
+  LOG.info("runWordCount");
+
+  String pattern=TaskAttemptID.getTaskAttemptIDsPattern(null,null,TaskType.MAP,1,null);
+
+  jobConf.setKeepTaskFilesPattern(pattern);
+
+  TestResult result;
+
+  final Path inDir=new Path("./wc/input");
+
+  final Path outDir=new Path("./wc/output");
+
+  String input="The quick brown fox\nhas many silly\nred fox sox\n";
+
+  result=launchWordCount(jobConf,inDir,outDir,input,3,1);
+
+  assertEquals("The\t1\nbrown\t1\nfox\t2\nhas\t1\nmany\t1\n" + "quick\t1\nred\t1\nsilly\t1\nsox\t1\n",result.output);
+
+  JobID jobid=result.job.getID();
+
+  TaskAttemptID taskid=new TaskAttemptID(new TaskID(jobid,TaskType.MAP,1),0);
+
+  String userName=UserGroupInformation.getLoginUser().getUserName();
+
+  checkTaskDirectories(mr,userName,new String[]{jobid.toString()},new String[]{taskid.toString()});
+
+  jobConf=mr.createJobConf();
+
+  input="owen is oom";
+
+  result=launchWordCount(jobConf,inDir,outDir,input,0,1);
+
+  assertEquals("is\t1\noom\t1\nowen\t1\n",result.output);
+
+  Counters counters=result.job.getCounters();
+
+  long hdfsRead=counters.findCounter(Task.FILESYSTEM_COUNTER_GROUP,Task.getFileSystemCounterNames("hdfs")[0]).getCounter();
+
+  long hdfsWrite=counters.findCounter(Task.FILESYSTEM_COUNTER_GROUP,Task.getFileSystemCounterNames("hdfs")[1]).getCounter();
+
+  long rawSplitBytesRead=counters.findCounter(TaskCounter.SPLIT_RAW_BYTES).getCounter();
+
+  assertEquals(result.output.length(),hdfsWrite);
+
+  assertEquals(input.length() + rawSplitBytesRead,hdfsRead);
+
+{
+
+    FileSystem localfs=FileSystem.getLocal(jobConf);
+
+    String TEST_ROOT_DIR=new File(System.getProperty("test.build.data","/tmp")).toString().replace(' ','+');
+
+    Path localIn=localfs.makeQualified(new Path(TEST_ROOT_DIR + "/local/in"));
+
+    Path localOut=localfs.makeQualified(new Path(TEST_ROOT_DIR + "/local/out"));
+
+    result=launchWordCount(jobConf,localIn,localOut,"all your base belong to us",1,1);
+
+    assertEquals("all\t1\nbase\t1\nbelong\t1\nto\t1\nus\t1\nyour\t1\n",result.output);
+
+    assertTrue("outputs on localfs",localfs.exists(localOut));
+
+  }
+
+}
+
+Location: TestMiniMRWithDFS.java
+
+Content: 
+
+public void testWithDFSWithDefaultPort() throws IOException {
+
+  MiniDFSCluster dfs=null;
+
+  MiniMRCluster mr=null;
+
+  FileSystem fileSys=null;
+
+  try {
+
+    final int taskTrackers=4;
+
+    Configuration conf=new Configuration();
+
+    dfs=new MiniDFSCluster(NameNode.DEFAULT_PORT,conf,4,true,true,null,null);
+
+    fileSys=dfs.getFileSystem();
+
+    mr=new MiniMRCluster(taskTrackers,fileSys.getUri().toString(),1);
+
+    JobConf jobConf=mr.createJobConf();
+
+    TestResult result;
+
+    final Path inDir=new Path("./wc/input");
+
+    final Path outDir=new Path("hdfs://" + dfs.getNameNode().getNameNodeAddress().getHostName() + ":"+ NameNode.DEFAULT_PORT+ "/./wc/output");
+
+    String input="The quick brown fox\nhas many silly\nred fox sox\n";
+
+    result=launchWordCount(jobConf,inDir,outDir,input,3,1);
+
+    assertEquals("The\t1\nbrown\t1\nfox\t2\nhas\t1\nmany\t1\n" + "quick\t1\nred\t1\nsilly\t1\nsox\t1\n",result.output);
+
+    final Path outDir2=new Path("hdfs:/test/wc/output2");
+
+    jobConf.set("fs.default.name","hdfs://localhost:" + NameNode.DEFAULT_PORT);
+
+    result=launchWordCount(jobConf,inDir,outDir2,input,3,1);
+
+    assertEquals("The\t1\nbrown\t1\nfox\t2\nhas\t1\nmany\t1\n" + "quick\t1\nred\t1\nsilly\t1\nsox\t1\n",result.output);
+
+  }
+
+ catch (  java.net.BindException be) {
+
+    LOG.info("Skip the test this time because can not start namenode on port " + NameNode.DEFAULT_PORT,be);
+
+  }
+
+ finally {
+
+    if (dfs != null) {
+
+      dfs.shutdown();
+
+    }
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestMiniMRWithDFS.java
+
+Content: 
+
+/** 
+
+ * Check the list of expectedFiles against the list of observedFiles and make sure they both are the same. Duplicates can be present in either of the lists and all duplicate entries are treated as a single entity.
+
+ * @param expectedFiles
+
+ * @param observedFiles
+
+ */
+
+private static void verifyContents(String[] expectedFiles,String[] observedFiles){
+
+  boolean[] foundExpectedFiles=new boolean[expectedFiles.length];
+
+  boolean[] validObservedFiles=new boolean[observedFiles.length];
+
+  for (int j=0; j < observedFiles.length; ++j) {
+
+    for (int k=0; k < expectedFiles.length; ++k) {
+
+      if (expectedFiles[k].equals(observedFiles[j])) {
+
+        foundExpectedFiles[k]=true;
+
+        validObservedFiles[j]=true;
+
+      }
+
+    }
+
+  }
+
+  for (int j=0; j < foundExpectedFiles.length; j++) {
+
+    assertTrue("Expected file " + expectedFiles[j] + " not found",foundExpectedFiles[j]);
+
+  }
+
+  for (int j=0; j < validObservedFiles.length; j++) {
+
+    assertTrue("Unexpected file " + observedFiles[j] + " found",validObservedFiles[j]);
+
+  }
+
+}
+

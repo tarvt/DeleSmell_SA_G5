@@ -1,0 +1,278 @@
+Location: PSPainterTestCase.java
+
+Content: 
+
+private void addFont(FontInfo fi,String name,boolean otf){
+
+  fi.addFontProperties(name,name,"",0);
+
+  MultiByteFont mbf=new MultiByteFont(null,EmbeddingMode.AUTO);
+
+  mbf.setWidthArray(new int[100]);
+
+  mbf.setIsOTFFile(otf);
+
+  fi.addMetrics(name,mbf);
+
+}
+
+Location: PSPainterTestCase.java
+
+Content: 
+
+@Test public void testDrawBorderRect(){
+
+  PSGenerator psGenerator=mock(PSGenerator.class);
+
+  when(psGenerator.formatDouble(anyFloat())).thenReturn("20.0");
+
+  PSRenderingUtil psRenderingUtil=mock(PSRenderingUtil.class);
+
+  PSDocumentHandler psDocumentHandler=mock(PSDocumentHandler.class);
+
+  when(psDocumentHandler.getGenerator()).thenReturn(psGenerator);
+
+  when(psDocumentHandler.getPSUtil()).thenReturn(psRenderingUtil);
+
+  PSPainter psPainter=new PSPainter(psDocumentHandler);
+
+  Rectangle rectangle=new Rectangle(0,0,200000,50000);
+
+  BorderProps border=new BorderProps(Constants.EN_SOLID,4000,30000,30000,Color.BLACK,BorderProps.Mode.SEPARATE);
+
+  try {
+
+    psPainter.drawBorderRect(rectangle,border,border,border,border,Color.WHITE);
+
+    verify(psGenerator,times(16)).writeln("20.0 20.0 20.0 20.0 20.0 20.0 curveto ");
+
+  }
+
+ catch (  Exception e) {
+
+    fail("something broke...");
+
+  }
+
+}
+
+Location: PSPainterTestCase.java
+
+Content: 
+
+@Test public void testDrawText() throws IOException {
+
+  int fontSize=12000;
+
+  String fontName="MockFont";
+
+  PSGenerator psGenerator=mock(PSGenerator.class);
+
+  PSRenderingUtil psRenderingUtil=mock(PSRenderingUtil.class);
+
+  PSDocumentHandler psDocumentHandler=mock(PSDocumentHandler.class);
+
+  FontInfo fontInfo=mock(FontInfo.class);
+
+  PSFontResource psFontResource=mock(PSFontResource.class);
+
+  MultiByteFont multiByteFont=mock(MultiByteFont.class);
+
+  Font font=mock(Font.class);
+
+  when(psDocumentHandler.getGenerator()).thenReturn(psGenerator);
+
+  when(psDocumentHandler.getPSUtil()).thenReturn(psRenderingUtil);
+
+  when(psDocumentHandler.getFontInfo()).thenReturn(fontInfo);
+
+  when(psDocumentHandler.getPSResourceForFontKey(fontName)).thenReturn(psFontResource);
+
+  when(fontInfo.getInternalFontKey(any(FontTriplet.class))).thenReturn(fontName);
+
+  when(fontInfo.getFontInstance(any(FontTriplet.class),anyInt())).thenReturn(font);
+
+  Map<String,Typeface> fonts=new HashMap<String,Typeface>();
+
+  fonts.put(fontName,multiByteFont);
+
+  when(fontInfo.getFonts()).thenReturn(fonts);
+
+  IFState ifState=IFState.create();
+
+  ifState.setFontSize(fontSize);
+
+  PSPainter psPainter=new PSPainter(psDocumentHandler,ifState);
+
+  int x=100000;
+
+  int y=100000;
+
+  int letterSpacing=0;
+
+  int wordSpacing=0;
+
+  int[][] dp={{100,100,0,0},null,null,{200,200,-100,-100}};
+
+  double xAsDouble=(x + dp[0][0]) / 1000.0;
+
+  double yAsDouble=(y - dp[0][1]) / 1000.0;
+
+  when(psGenerator.formatDouble(xAsDouble)).thenReturn("100.100");
+
+  when(psGenerator.formatDouble(yAsDouble)).thenReturn("99.900");
+
+  String text="Hello Mock!\uD83D\uDCA9";
+
+  for (  int cp : CharUtilities.codepointsIter(text)) {
+
+    when(font.mapCodePoint(cp)).thenReturn(cp);
+
+  }
+
+  try {
+
+    psPainter.drawText(x,y,letterSpacing,wordSpacing,dp,text);
+
+    verify(psGenerator).writeln("1 0 0 -1 100.100 99.900 Tm");
+
+    verify(psGenerator).writeln("[<0048> [-100 100] <0065006C> [200 -200] <006C> [-300 300] " + "<006F0020004D006F0063006B002101F4A9>] TJ");
+
+  }
+
+ catch (  Exception e) {
+
+    fail("something broke...");
+
+  }
+
+}
+
+Location: PSPainterTestCase.java
+
+Content: 
+
+private void testFontSize(int fontSize,VerificationMode test) throws IOException {
+
+  state.setFontSize(fontSize);
+
+  try {
+
+    psPainter.drawText(10,10,2,2,null,"Test");
+
+  }
+
+ catch (  Exception ex) {
+
+  }
+
+  verify(gen,test).useColor(state.getTextColor());
+
+}
+
+Location: PSPainterTestCase.java
+
+Content: 
+
+@Test public void testNonZeroFontSize() throws IOException {
+
+  testFontSize(6,times(1));
+
+}
+
+Location: PSPainterTestCase.java
+
+Content: 
+
+@Test public void testOTF() throws IFException, IOException {
+
+  FOUserAgent ua=FopFactory.newInstance(new File(".").toURI()).newFOUserAgent();
+
+  final IFState state=IFState.create();
+
+  PSDocumentHandler dh=new PSDocumentHandler(new IFContext(ua)){
+
+    protected PSFontResource getPSResourceForFontKey(    String key){
+
+      return new PSFontResource(){
+
+        String getName(){
+
+          return state.getFontFamily();
+
+        }
+
+        void notifyResourceUsageOnPage(        ResourceTracker resourceTracker){
+
+        }
+
+      }
+
+;
+
+    }
+
+  }
+
+;
+
+  FontInfo fi=new FontInfo();
+
+  addFont(fi,"OTFFont",true);
+
+  addFont(fi,"TTFFont",false);
+
+  dh.setFontInfo(fi);
+
+  ByteArrayOutputStream bos=new ByteArrayOutputStream();
+
+  dh.setResult(new StreamResult(bos));
+
+  dh.startDocument();
+
+  state.setFontSize(10);
+
+  state.setTextColor(Color.BLACK);
+
+  state.setFontStyle("");
+
+  PSPainter p=new PSPainter(dh,state){
+
+    protected String getFontKey(    FontTriplet triplet) throws IFException {
+
+      return state.getFontFamily();
+
+    }
+
+  }
+
+;
+
+  state.setFontFamily("TTFFont");
+
+  p.drawText(0,0,0,0,null,"test1");
+
+  state.setFontFamily("OTFFont");
+
+  p.drawText(0,0,0,0,null,"test2");
+
+  p.drawText(0,0,0,0,null,"test3");
+
+  state.setFontFamily("TTFFont");
+
+  p.drawText(0,0,0,0,null,"test4");
+
+  Assert.assertTrue(bos.toString(),bos.toString().endsWith("BT\n" + "/TTFFont 0.01 F\n" + "1 0 0 -1 0 0 Tm\n"+ "<00000000000000000000> t\n"+ "/OTFFont.0 0.01 F\n"+ "1 0 0 -1 0 0 Tm\n"+ "<0000000000> t\n"+ "1 0 0 -1 0 0 Tm\n"+ "<0000000000> t\n"+ "/TTFFont 0.01 F\n"+ "1 0 0 -1 0 0 Tm\n"+ "<00000000000000000000> t\n"));
+
+}
+
+Location: PSPainterTestCase.java
+
+Content: 
+
+@Test public void testZeroFontSize() throws IOException {
+
+  testFontSize(0,never());
+
+}
+

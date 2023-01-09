@@ -1,0 +1,530 @@
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Check for presence of the process with the pid passed is alive or not currently.
+
+ * @param pid pid of the process
+
+ * @return if a process is alive or not.
+
+ */
+
+private static boolean isAlive(String pid) throws IOException {
+
+  String commandString="ps -o pid,command -e";
+
+  String args[]=new String[]{"bash","-c",commandString};
+
+  ShellCommandExecutor shExec=new ShellCommandExecutor(args);
+
+  try {
+
+    shExec.execute();
+
+  }
+
+ catch (  ExitCodeException e) {
+
+    return false;
+
+  }
+
+catch (  IOException e) {
+
+    LOG.warn("IOExecption thrown while checking if process is alive" + StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+  String output=shExec.getOutput();
+
+  StringTokenizer strTok=new StringTokenizer(output,"\n");
+
+  boolean found=false;
+
+  while (strTok.hasMoreTokens()) {
+
+    StringTokenizer pidToken=new StringTokenizer(strTok.nextToken()," ");
+
+    String pidStr=pidToken.nextToken();
+
+    String commandStr=pidToken.nextToken();
+
+    if (pid.equals(pidStr) && !(commandStr.contains("ps") || commandStr.contains("grep"))) {
+
+      found=true;
+
+      break;
+
+    }
+
+  }
+
+  return found;
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Runs a recursive shell script to create a chain of subprocesses
+
+ */
+
+private static void runChildren(JobConf conf) throws IOException {
+
+  if (ProcessTree.isSetsidAvailable) {
+
+    FileSystem fs=FileSystem.getLocal(conf);
+
+    if (fs.exists(scriptDir)) {
+
+      fs.delete(scriptDir,true);
+
+    }
+
+    fs.mkdirs(scriptDir);
+
+    fs.setPermission(scriptDir,new FsPermission(FsAction.ALL,FsAction.ALL,FsAction.ALL));
+
+    Random rm=new Random();
+
+    Path scriptPath=new Path(scriptDirName,"_shellScript_" + rm.nextInt() + ".sh");
+
+    String shellScript=scriptPath.toString();
+
+    String script="umask 000\n" + "echo $$ > " + scriptDirName + "/childPidFile"+ "$1\n"+ "echo hello\n"+ "trap 'echo got SIGTERM' 15 \n"+ "if [ $1 != 0 ]\nthen\n"+ " sh "+ shellScript+ " $(($1-1))\n"+ "else\n"+ " while true\n do\n"+ "  sleep 2\n"+ " done\n"+ "fi";
+
+    DataOutputStream file=fs.create(scriptPath);
+
+    file.writeBytes(script);
+
+    file.close();
+
+    new File(scriptPath.toUri().getPath()).setExecutable(true);
+
+    LOG.info("Calling script from map task : " + shellScript);
+
+    Runtime.getRuntime().exec(shellScript + " " + numLevelsOfSubProcesses);
+
+    String childPid=TestProcfsBasedProcessTree.getPidFromPidFile(scriptDirName + "/childPidFile" + 0);
+
+    while (childPid == null) {
+
+      LOG.warn(scriptDirName + "/childPidFile" + 0+ " is null; Sleeping...");
+
+      try {
+
+        Thread.sleep(500);
+
+      }
+
+ catch (      InterruptedException ie) {
+
+        LOG.warn("sleep is interrupted:" + ie);
+
+        break;
+
+      }
+
+      childPid=TestProcfsBasedProcessTree.getPidFromPidFile(scriptDirName + "/childPidFile" + 0);
+
+    }
+
+  }
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Runs a job that will fail and verifies if the subprocesses of failed map task are killed properly or not.
+
+ */
+
+private static void runFailingJobAndValidate(JobTracker jt,JobConf conf) throws IOException {
+
+  conf.setJobName("testfailjobsubprocesses");
+
+  conf.setMapperClass(FailingMapperWithChildren.class);
+
+  conf.setMaxMapAttempts(1);
+
+  RunningJob job=runJobAndSetProcessHandle(jt,conf);
+
+  signalTask(signalFile.toString(),conf);
+
+  validateKillingSubprocesses(job,conf);
+
+  assertEquals(job.getJobState(),JobStatus.FAILED);
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Runs the given job and saves the pid of map task. Also checks if the subprocesses of map task are alive.
+
+ */
+
+private static RunningJob runJobAndSetProcessHandle(JobTracker jt,JobConf conf) throws IOException {
+
+  RunningJob job=runJob(conf);
+
+  while (job.getJobState() != JobStatus.RUNNING) {
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    InterruptedException e) {
+
+      break;
+
+    }
+
+  }
+
+  pid=null;
+
+  jobClient=new JobClient(conf);
+
+  TaskReport[] mapReports=jobClient.getMapTaskReports(job.getID());
+
+  JobInProgress jip=jt.getJob(job.getID());
+
+  for (  TaskReport tr : mapReports) {
+
+    TaskInProgress tip=jip.getTaskInProgress(tr.getTaskID());
+
+    while (tip.getActiveTasks().size() == 0) {
+
+      try {
+
+        Thread.sleep(500);
+
+      }
+
+ catch (      InterruptedException ie) {
+
+        LOG.warn("sleep is interrupted:" + ie);
+
+        break;
+
+      }
+
+    }
+
+    for (Iterator<TaskAttemptID> it=tip.getActiveTasks().keySet().iterator(); it.hasNext(); ) {
+
+      TaskAttemptID id=it.next();
+
+      LOG.info("taskAttemptID of map task is " + id);
+
+      while (pid == null) {
+
+        pid=mr.getTaskTrackerRunner(0).getTaskTracker().getPid(id);
+
+        if (pid == null) {
+
+          try {
+
+            Thread.sleep(500);
+
+          }
+
+ catch (          InterruptedException e) {
+
+          }
+
+        }
+
+      }
+
+      LOG.info("pid of map task is " + pid);
+
+      assertTrue("Map is no more alive",isAlive(pid));
+
+      LOG.info("The map task is alive before Job completion, as expected.");
+
+    }
+
+  }
+
+  if (ProcessTree.isSetsidAvailable) {
+
+    String childPid=TestProcfsBasedProcessTree.getPidFromPidFile(scriptDirName + "/childPidFile" + 0);
+
+    while (childPid == null) {
+
+      LOG.warn(scriptDirName + "/childPidFile" + 0+ " is null; Sleeping...");
+
+      try {
+
+        Thread.sleep(500);
+
+      }
+
+ catch (      InterruptedException ie) {
+
+        LOG.warn("sleep is interrupted:" + ie);
+
+        break;
+
+      }
+
+      childPid=TestProcfsBasedProcessTree.getPidFromPidFile(scriptDirName + "/childPidFile" + 0);
+
+    }
+
+    for (int i=0; i <= numLevelsOfSubProcesses; i++) {
+
+      childPid=TestProcfsBasedProcessTree.getPidFromPidFile(scriptDirName + "/childPidFile" + i);
+
+      LOG.info("pid of the descendant process at level " + i + "in the subtree of processes(with the map task as the root)"+ " is "+ childPid);
+
+      assertTrue("Unexpected: The subprocess at level " + i + " in the subtree is not alive before Job completion",isAlive(childPid));
+
+    }
+
+  }
+
+  return job;
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Runs a job, kills the job and verifies if the map task and its subprocesses are also killed properly or not.
+
+ */
+
+private static void runKillingJobAndValidate(JobTracker jt,JobConf conf) throws IOException {
+
+  conf.setJobName("testkilljobsubprocesses");
+
+  conf.setMapperClass(KillingMapperWithChildren.class);
+
+  RunningJob job=runJobAndSetProcessHandle(jt,conf);
+
+  job.killJob();
+
+  while (job.cleanupProgress() == 0.0f) {
+
+    try {
+
+      Thread.sleep(100);
+
+    }
+
+ catch (    InterruptedException ie) {
+
+      LOG.warn("sleep is interrupted:" + ie);
+
+      break;
+
+    }
+
+  }
+
+  validateKillingSubprocesses(job,conf);
+
+  assertEquals(job.getJobState(),JobStatus.KILLED);
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Runs a job that will succeed and verifies if the subprocesses of succeeded map task are killed properly or not.
+
+ */
+
+private static void runSuccessfulJobAndValidate(JobTracker jt,JobConf conf) throws IOException {
+
+  conf.setJobName("testsucceedjobsubprocesses");
+
+  conf.setMapperClass(MapperWithChildren.class);
+
+  RunningJob job=runJobAndSetProcessHandle(jt,conf);
+
+  signalTask(signalFile.toString(),conf);
+
+  validateKillingSubprocesses(job,conf);
+
+  assertEquals(job.getJobState(),JobStatus.SUCCEEDED);
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+void runTests(JobConf conf,JobTracker jt) throws IOException {
+
+  FileSystem fs=FileSystem.getLocal(mr.createJobConf());
+
+  Path rootDir=new Path(TEST_ROOT_DIR);
+
+  if (!fs.exists(rootDir)) {
+
+    fs.mkdirs(rootDir);
+
+  }
+
+  fs.setPermission(rootDir,new FsPermission(FsAction.ALL,FsAction.ALL,FsAction.ALL));
+
+  runKillingJobAndValidate(jt,conf);
+
+  runFailingJobAndValidate(jt,conf);
+
+  runSuccessfulJobAndValidate(jt,conf);
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Creates signal file
+
+ */
+
+private static void signalTask(String signalFile,JobConf conf){
+
+  try {
+
+    FileSystem fs=FileSystem.getLocal(conf);
+
+    fs.createNewFile(new Path(signalFile));
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.warn("Unable to create signal file. " + e);
+
+  }
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+public void testJobKillFailAndSucceed() throws IOException {
+
+  if (Shell.WINDOWS) {
+
+    System.out.println("setsid doesn't work on WINDOWS as expected. Not testing");
+
+    return;
+
+  }
+
+  JobConf conf=null;
+
+  try {
+
+    mr=new MiniMRCluster(1,"file:///",1);
+
+    conf=mr.createJobConf();
+
+    JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+    runTests(conf,jt);
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestKillSubProcesses.java
+
+Content: 
+
+/** 
+
+ * Verifies if the subprocesses of the map task are killed properly.
+
+ */
+
+private static void validateKillingSubprocesses(RunningJob job,JobConf conf) throws IOException {
+
+  while (!job.isComplete()) {
+
+    try {
+
+      Thread.sleep(500);
+
+    }
+
+ catch (    InterruptedException e) {
+
+      break;
+
+    }
+
+  }
+
+  assertTrue(!ProcessTree.isAlive(pid));
+
+  LOG.info("The map task is not alive after Job is completed, as expected.");
+
+  if (ProcessTree.isSetsidAvailable) {
+
+    for (int i=0; i <= numLevelsOfSubProcesses; i++) {
+
+      String childPid=TestProcfsBasedProcessTree.getPidFromPidFile(scriptDirName + "/childPidFile" + i);
+
+      LOG.info("pid of the descendant process at level " + i + "in the subtree of processes(with the map task as the root)"+ " is "+ childPid);
+
+      assertTrue("Unexpected: The subprocess at level " + i + " in the subtree is alive after Job completion",!isAlive(childPid));
+
+    }
+
+  }
+
+  FileSystem fs=FileSystem.getLocal(mr.createJobConf());
+
+  if (fs.exists(scriptDir)) {
+
+    fs.delete(scriptDir,true);
+
+  }
+
+}
+

@@ -1,0 +1,482 @@
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Extracts compression/decompression related configuration parameters from  the source configuration to the target configuration.
+
+ */
+
+static void configureCompressionEmulation(Configuration source,Configuration target){
+
+  target.setBoolean(FileOutputFormat.COMPRESS,source.getBoolean(FileOutputFormat.COMPRESS,false));
+
+  String jobOutputCompressionCodec=source.get(FileOutputFormat.COMPRESS_CODEC);
+
+  if (jobOutputCompressionCodec != null) {
+
+    target.set(FileOutputFormat.COMPRESS_CODEC,jobOutputCompressionCodec);
+
+  }
+
+  String jobOutputCompressionType=source.get(FileOutputFormat.COMPRESS_TYPE);
+
+  if (jobOutputCompressionType != null) {
+
+    target.set(FileOutputFormat.COMPRESS_TYPE,jobOutputCompressionType);
+
+  }
+
+  target.setBoolean(MRJobConfig.MAP_OUTPUT_COMPRESS,source.getBoolean(MRJobConfig.MAP_OUTPUT_COMPRESS,false));
+
+  String mapOutputCompressionCodec=source.get(MRJobConfig.MAP_OUTPUT_COMPRESS_CODEC);
+
+  if (mapOutputCompressionCodec != null) {
+
+    target.set(MRJobConfig.MAP_OUTPUT_COMPRESS_CODEC,mapOutputCompressionCodec);
+
+  }
+
+  Path[] inputs=org.apache.hadoop.mapred.FileInputFormat.getInputPaths(new JobConf(source));
+
+  boolean needsCompressedInput=false;
+
+  CompressionCodecFactory compressionCodecs=new CompressionCodecFactory(source);
+
+  for (  Path input : inputs) {
+
+    CompressionCodec codec=compressionCodecs.getCodec(input);
+
+    if (codec != null) {
+
+      needsCompressedInput=true;
+
+    }
+
+  }
+
+  setInputCompressionEmulationEnabled(target,needsCompressedInput);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Configure the  {@link Job} for enabling compression emulation.
+
+ */
+
+static void configure(final Job job) throws IOException, InterruptedException, ClassNotFoundException {
+
+  job.setMapperClass(RandomTextDataMapper.class);
+
+  job.setNumReduceTasks(0);
+
+  job.setMapOutputKeyClass(Text.class);
+
+  job.setMapOutputValueClass(Text.class);
+
+  job.setInputFormatClass(GenDataFormat.class);
+
+  job.setJarByClass(GenerateData.class);
+
+  FileOutputFormat.setCompressOutput(job,true);
+
+  try {
+
+    FileInputFormat.addInputPath(job,new Path("ignored"));
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.error("Error while adding input path ",e);
+
+  }
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Get the map input data compression ratio using the given configuration. If the compression ratio is not set in the configuration then use the  default value i.e  {@value #DEFAULT_COMPRESSION_RATIO}.
+
+ */
+
+static float getMapInputCompressionEmulationRatio(Configuration conf){
+
+  return conf.getFloat(GRIDMIX_MAP_INPUT_COMPRESSION_RATIO,DEFAULT_COMPRESSION_RATIO);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Get the map output data compression ratio using the given configuration. If the compression ratio is not set in the configuration then use the  default value i.e  {@value #DEFAULT_COMPRESSION_RATIO}.
+
+ */
+
+static float getMapOutputCompressionEmulationRatio(Configuration conf){
+
+  return conf.getFloat(GRIDMIX_MAP_OUTPUT_COMPRESSION_RATIO,DEFAULT_COMPRESSION_RATIO);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link OutputStream} for a file that might need compression.
+
+ */
+
+static OutputStream getPossiblyCompressedOutputStream(Path file,Configuration conf) throws IOException {
+
+  FileSystem fs=file.getFileSystem(conf);
+
+  JobConf jConf=new JobConf(conf);
+
+  if (org.apache.hadoop.mapred.FileOutputFormat.getCompressOutput(jConf)) {
+
+    Class<? extends CompressionCodec> codecClass=org.apache.hadoop.mapred.FileOutputFormat.getOutputCompressorClass(jConf,GzipCodec.class);
+
+    CompressionCodec codec=ReflectionUtils.newInstance(codecClass,conf);
+
+    file=file.suffix(codec.getDefaultExtension());
+
+    if (isCompressionEmulationEnabled(conf)) {
+
+      FSDataOutputStream fileOut=fs.create(file,false);
+
+      return new DataOutputStream(codec.createOutputStream(fileOut));
+
+    }
+
+  }
+
+  return fs.create(file,false);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link InputStream} for a file that might be compressed.
+
+ */
+
+static InputStream getPossiblyDecompressedInputStream(Path file,Configuration conf,long offset) throws IOException {
+
+  FileSystem fs=file.getFileSystem(conf);
+
+  if (isCompressionEmulationEnabled(conf) && isInputCompressionEmulationEnabled(conf)) {
+
+    CompressionCodecFactory compressionCodecs=new CompressionCodecFactory(conf);
+
+    CompressionCodec codec=compressionCodecs.getCodec(file);
+
+    if (codec != null) {
+
+      Decompressor decompressor=CodecPool.getDecompressor(codec);
+
+      if (decompressor != null) {
+
+        CompressionInputStream in=codec.createInputStream(fs.open(file),decompressor);
+
+        return (InputStream)in;
+
+      }
+
+    }
+
+  }
+
+  FSDataInputStream in=fs.open(file);
+
+  in.seek(offset);
+
+  return (InputStream)in;
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Returns a  {@link RandomTextDataGenerator} that generates random compressible text with the desired compression ratio.
+
+ */
+
+static RandomTextDataGenerator getRandomTextDataGenerator(float ratio,long seed){
+
+  int wordSize=COMPRESSION_LOOKUP_TABLE.getWordSizeForRatio(ratio);
+
+  RandomTextDataGenerator rtg=new RandomTextDataGenerator(RandomTextDataGenerator.DEFAULT_LIST_SIZE,seed,wordSize);
+
+  return rtg;
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Get the reduce output data compression ratio using the given configuration. If the compression ratio is not set in the configuration then use the  default value i.e  {@value #DEFAULT_COMPRESSION_RATIO}.
+
+ */
+
+static float getReduceOutputCompressionEmulationRatio(Configuration conf){
+
+  return conf.getFloat(GRIDMIX_REDUCE_OUTPUT_COMPRESSION_RATIO,DEFAULT_COMPRESSION_RATIO);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Checks if compression emulation is enabled or not. Default is  {@code true}.
+
+ */
+
+static boolean isCompressionEmulationEnabled(Configuration conf){
+
+  return conf.getBoolean(COMPRESSION_EMULATION_ENABLE,true);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Check if input decompression emulation is enabled or not.  Default is  {@code false}.
+
+ */
+
+static boolean isInputCompressionEmulationEnabled(Configuration conf){
+
+  return conf.getBoolean(INPUT_DECOMPRESSION_EMULATION_ENABLE,false);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Publishes compression related data statistics. Following statistics are published <ul> <li>Total compressed input data size</li> <li>Number of compressed input data files</li> <li>Compression Ratio</li> <li>Text data dictionary size</li> <li>Random text word size</li> </ul>
+
+ */
+
+static void publishCompressedDataStatistics(Path inputDir,Configuration conf,long uncompressedDataSize) throws IOException {
+
+  FileSystem fs=inputDir.getFileSystem(conf);
+
+  CompressionCodecFactory compressionCodecs=new CompressionCodecFactory(conf);
+
+  long compressedDataSize=0;
+
+  int numCompressedFiles=0;
+
+  FileStatus[] outFileStatuses=fs.listStatus(inputDir,new Utils.OutputFileUtils.OutputFilesFilter());
+
+  for (  FileStatus status : outFileStatuses) {
+
+    if (compressionCodecs != null) {
+
+      CompressionCodec codec=compressionCodecs.getCodec(status.getPath());
+
+      if (codec != null) {
+
+        ++numCompressedFiles;
+
+        compressedDataSize+=status.getLen();
+
+      }
+
+    }
+
+  }
+
+  LOG.info("Gridmix is configured to use compressed input data.");
+
+  LOG.info("Total size of compressed input data : " + StringUtils.humanReadableInt(compressedDataSize));
+
+  LOG.info("Total number of compressed input data files : " + numCompressedFiles);
+
+  if (numCompressedFiles == 0) {
+
+    throw new RuntimeException("No compressed file found in the input" + " directory : " + inputDir.toString() + ". To enable compression"+ " emulation, run Gridmix either with "+ " an input directory containing compressed input file(s) or"+ " use the -generate option to (re)generate it. If compression"+ " emulation is not desired, disable it by setting '"+ COMPRESSION_EMULATION_ENABLE+ "' to 'false'.");
+
+  }
+
+  if (uncompressedDataSize > 0) {
+
+    double ratio=((double)compressedDataSize) / uncompressedDataSize;
+
+    LOG.info("Input Data Compression Ratio : " + ratio);
+
+  }
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Enables/Disables compression emulation.
+
+ * @param conf Target configuration where the parameter {@value #COMPRESSION_EMULATION_ENABLE} will be set. 
+
+ * @param val The value to be set.
+
+ */
+
+static void setCompressionEmulationEnabled(Configuration conf,boolean val){
+
+  conf.setBoolean(COMPRESSION_EMULATION_ENABLE,val);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Enables/Disables input decompression emulation.
+
+ * @param conf Target configuration where the parameter {@value #INPUT_DECOMPRESSION_EMULATION_ENABLE} will be set. 
+
+ * @param val The value to be set.
+
+ */
+
+static void setInputCompressionEmulationEnabled(Configuration conf,boolean val){
+
+  conf.setBoolean(INPUT_DECOMPRESSION_EMULATION_ENABLE,val);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Set the map input data compression ratio in the given conf.
+
+ */
+
+static void setMapInputCompressionEmulationRatio(Configuration conf,float ratio){
+
+  conf.setFloat(GRIDMIX_MAP_INPUT_COMPRESSION_RATIO,ratio);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Set the map output data compression ratio in the given configuration.
+
+ */
+
+static void setMapOutputCompressionEmulationRatio(Configuration conf,float ratio){
+
+  conf.setFloat(GRIDMIX_MAP_OUTPUT_COMPRESSION_RATIO,ratio);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Set the reduce output data compression ratio in the given configuration.
+
+ */
+
+static void setReduceOutputCompressionEmulationRatio(Configuration conf,float ratio){
+
+  conf.setFloat(GRIDMIX_REDUCE_OUTPUT_COMPRESSION_RATIO,ratio);
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Setup the data generator's configuration to generate compressible random  text data with the desired compression ratio. Note that the compression ratio, if configured, will set the  {@link RandomTextDataGenerator}'s list-size and word-size based on  empirical values using the compression ratio set in the configuration.  Hence to achieve the desired compression ratio,  {@link RandomTextDataGenerator}'s list-size will be set to the default  value i.e  {@value RandomTextDataGenerator#DEFAULT_LIST_SIZE}.
+
+ */
+
+static void setupDataGeneratorConfig(Configuration conf){
+
+  boolean compress=isCompressionEmulationEnabled(conf);
+
+  if (compress) {
+
+    float ratio=getMapInputCompressionEmulationRatio(conf);
+
+    LOG.info("GridMix is configured to generate compressed input data with " + " a compression ratio of " + ratio);
+
+    int wordSize=COMPRESSION_LOOKUP_TABLE.getWordSizeForRatio(ratio);
+
+    RandomTextDataGenerator.setRandomTextDataGeneratorWordSize(conf,wordSize);
+
+    RandomTextDataGenerator.setRandomTextDataGeneratorListSize(conf,RandomTextDataGenerator.DEFAULT_LIST_SIZE);
+
+  }
+
+}
+
+Location: CompressionEmulationUtil.java
+
+Content: 
+
+/** 
+
+ * Standardize the compression ratio i.e round off the compression ratio to only 2 significant digits.
+
+ */
+
+static float standardizeCompressionRatio(float ratio){
+
+  int significant=(int)Math.round(ratio * 100);
+
+  return ((float)significant) / 100;
+
+}
+

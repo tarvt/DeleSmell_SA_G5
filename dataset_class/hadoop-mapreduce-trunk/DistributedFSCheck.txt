@@ -1,0 +1,288 @@
+Location: DistributedFSCheck.java
+
+Content: 
+
+private void analyzeResult(long execTime,String resFileName,boolean viewStats) throws IOException {
+
+  Path reduceFile=new Path(READ_DIR,"part-00000");
+
+  DataInputStream in;
+
+  in=new DataInputStream(fs.open(reduceFile));
+
+  BufferedReader lines;
+
+  lines=new BufferedReader(new InputStreamReader(in));
+
+  long blocks=0;
+
+  long size=0;
+
+  long time=0;
+
+  float rate=0;
+
+  StringTokenizer badBlocks=null;
+
+  long nrBadBlocks=0;
+
+  String line;
+
+  while ((line=lines.readLine()) != null) {
+
+    StringTokenizer tokens=new StringTokenizer(line," \t\n\r\f%");
+
+    String attr=tokens.nextToken();
+
+    if (attr.endsWith("blocks"))     blocks=Long.parseLong(tokens.nextToken());
+
+ else     if (attr.endsWith("size"))     size=Long.parseLong(tokens.nextToken());
+
+ else     if (attr.endsWith("time"))     time=Long.parseLong(tokens.nextToken());
+
+ else     if (attr.endsWith("rate"))     rate=Float.parseFloat(tokens.nextToken());
+
+ else     if (attr.endsWith("badBlocks")) {
+
+      badBlocks=new StringTokenizer(tokens.nextToken(),";");
+
+      nrBadBlocks=badBlocks.countTokens();
+
+    }
+
+  }
+
+  Vector<String> resultLines=new Vector<String>();
+
+  resultLines.add("----- DistributedFSCheck ----- : ");
+
+  resultLines.add("               Date & time: " + new Date(System.currentTimeMillis()));
+
+  resultLines.add("    Total number of blocks: " + blocks);
+
+  resultLines.add("    Total number of  files: " + nrFiles);
+
+  resultLines.add("Number of corrupted blocks: " + nrBadBlocks);
+
+  int nrBadFilesPos=resultLines.size();
+
+  TreeSet<String> badFiles=new TreeSet<String>();
+
+  long nrBadFiles=0;
+
+  if (nrBadBlocks > 0) {
+
+    resultLines.add("");
+
+    resultLines.add("----- Corrupted Blocks (file@offset) ----- : ");
+
+    while (badBlocks.hasMoreTokens()) {
+
+      String curBlock=badBlocks.nextToken();
+
+      resultLines.add(curBlock);
+
+      badFiles.add(curBlock.substring(0,curBlock.indexOf('@')));
+
+    }
+
+    nrBadFiles=badFiles.size();
+
+  }
+
+  resultLines.insertElementAt(" Number of corrupted files: " + nrBadFiles,nrBadFilesPos);
+
+  if (viewStats) {
+
+    resultLines.add("");
+
+    resultLines.add("-----   Performance  ----- : ");
+
+    resultLines.add("         Total MBytes read: " + size / MEGA);
+
+    resultLines.add("         Throughput mb/sec: " + (float)size * 1000.0 / (time * MEGA));
+
+    resultLines.add("    Average IO rate mb/sec: " + rate / 1000 / blocks);
+
+    resultLines.add("        Test exec time sec: " + (float)execTime / 1000);
+
+  }
+
+  PrintStream res=new PrintStream(new FileOutputStream(new File(resFileName),true));
+
+  for (int i=0; i < resultLines.size(); i++) {
+
+    String cur=resultLines.get(i);
+
+    LOG.info(cur);
+
+    res.println(cur);
+
+  }
+
+}
+
+Location: DistributedFSCheck.java
+
+Content: 
+
+private void createInputFile(String rootName) throws IOException {
+
+  cleanup();
+
+  Path inputFile=new Path(MAP_INPUT_DIR,"in_file");
+
+  SequenceFile.Writer writer=SequenceFile.createWriter(fs,fsConfig,inputFile,Text.class,LongWritable.class,CompressionType.NONE);
+
+  try {
+
+    nrFiles=0;
+
+    listSubtree(new Path(rootName),writer);
+
+  }
+
+  finally {
+
+    writer.close();
+
+  }
+
+  LOG.info("Created map input files.");
+
+}
+
+Location: DistributedFSCheck.java
+
+Content: 
+
+DistributedFSCheck(Configuration conf) throws Exception {
+
+  fsConfig=conf;
+
+  this.fs=FileSystem.get(conf);
+
+}
+
+Location: DistributedFSCheck.java
+
+Content: 
+
+private void listSubtree(FileStatus rootStatus,SequenceFile.Writer writer) throws IOException {
+
+  Path rootFile=rootStatus.getPath();
+
+  if (rootStatus.isFile()) {
+
+    nrFiles++;
+
+    long blockSize=fs.getDefaultBlockSize();
+
+    long fileLength=rootStatus.getLen();
+
+    for (long offset=0; offset < fileLength; offset+=blockSize)     writer.append(new Text(rootFile.toString()),new LongWritable(offset));
+
+    return;
+
+  }
+
+  FileStatus[] children=null;
+
+  try {
+
+    children=fs.listStatus(rootFile);
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    throw new IOException("Could not get listing for " + rootFile);
+
+  }
+
+  for (int i=0; i < children.length; i++)   listSubtree(children[i],writer);
+
+}
+
+Location: DistributedFSCheck.java
+
+Content: 
+
+private void listSubtree(Path rootFile,SequenceFile.Writer writer) throws IOException {
+
+  FileStatus rootStatus=fs.getFileStatus(rootFile);
+
+  listSubtree(rootStatus,writer);
+
+}
+
+Location: DistributedFSCheck.java
+
+Content: 
+
+private void runDistributedFSCheck() throws Exception {
+
+  JobConf job=new JobConf(fs.getConf(),DistributedFSCheck.class);
+
+  FileInputFormat.setInputPaths(job,MAP_INPUT_DIR);
+
+  job.setInputFormat(SequenceFileInputFormat.class);
+
+  job.setMapperClass(DistributedFSCheckMapper.class);
+
+  job.setReducerClass(AccumulatingReducer.class);
+
+  FileOutputFormat.setOutputPath(job,READ_DIR);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Text.class);
+
+  job.setNumReduceTasks(1);
+
+  JobClient.runJob(job);
+
+}
+
+Location: DistributedFSCheck.java
+
+Content: 
+
+/** 
+
+ * Run distributed checkup for the entire files system.
+
+ * @throws Exception
+
+ */
+
+public void testFSBlocks() throws Exception {
+
+  testFSBlocks("/");
+
+}
+
+Location: DistributedFSCheck.java
+
+Content: 
+
+/** 
+
+ * Run distributed checkup for the specified directory.
+
+ * @param rootName root directory name
+
+ * @throws Exception
+
+ */
+
+public void testFSBlocks(String rootName) throws Exception {
+
+  createInputFile(rootName);
+
+  runDistributedFSCheck();
+
+  cleanup();
+
+}
+

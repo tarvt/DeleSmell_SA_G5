@@ -1,0 +1,182 @@
+Location: IndexingJob.java
+
+Content: 
+
+public IndexingJob(){
+
+  super(null);
+
+}
+
+Location: IndexingJob.java
+
+Content: 
+
+public IndexingJob(Configuration conf){
+
+  super(conf);
+
+}
+
+Location: IndexingJob.java
+
+Content: 
+
+public void index(Path crawlDb,Path linkDb,List<Path> segments,boolean noCommit) throws IOException, InterruptedException, ClassNotFoundException {
+
+  index(crawlDb,linkDb,segments,noCommit,false,null);
+
+}
+
+Location: IndexingJob.java
+
+Content: 
+
+public void index(Path crawlDb,Path linkDb,List<Path> segments,boolean noCommit,boolean deleteGone) throws IOException, InterruptedException, ClassNotFoundException {
+
+  index(crawlDb,linkDb,segments,noCommit,deleteGone,null);
+
+}
+
+Location: IndexingJob.java
+
+Content: 
+
+public void index(Path crawlDb,Path linkDb,List<Path> segments,boolean noCommit,boolean deleteGone,String params) throws IOException, InterruptedException, ClassNotFoundException {
+
+  index(crawlDb,linkDb,segments,noCommit,deleteGone,params,false,false);
+
+}
+
+Location: IndexingJob.java
+
+Content: 
+
+public void index(Path crawlDb,Path linkDb,List<Path> segments,boolean noCommit,boolean deleteGone,String params,boolean filter,boolean normalize) throws IOException, InterruptedException, ClassNotFoundException {
+
+  index(crawlDb,linkDb,segments,noCommit,deleteGone,params,false,false,false);
+
+}
+
+Location: IndexingJob.java
+
+Content: 
+
+public void index(Path crawlDb,Path linkDb,List<Path> segments,boolean noCommit,boolean deleteGone,String params,boolean filter,boolean normalize,boolean addBinaryContent) throws IOException, InterruptedException, ClassNotFoundException {
+
+  index(crawlDb,linkDb,segments,noCommit,deleteGone,params,false,false,false,false);
+
+}
+
+Location: IndexingJob.java
+
+Content: 
+
+public void index(Path crawlDb,Path linkDb,List<Path> segments,boolean noCommit,boolean deleteGone,String params,boolean filter,boolean normalize,boolean addBinaryContent,boolean base64) throws IOException, InterruptedException, ClassNotFoundException {
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("Indexer: starting at {}",sdf.format(start));
+
+  final Job job=NutchJob.getInstance(getConf());
+
+  job.setJobName("Indexer");
+
+  Configuration conf=job.getConfiguration();
+
+  LOG.info("Indexer: deleting gone documents: {}",deleteGone);
+
+  LOG.info("Indexer: URL filtering: {}",filter);
+
+  LOG.info("Indexer: URL normalizing: {}",normalize);
+
+  if (addBinaryContent) {
+
+    if (base64) {
+
+      LOG.info("Indexer: adding binary content as Base64");
+
+    }
+
+ else {
+
+      LOG.info("Indexer: adding binary content");
+
+    }
+
+  }
+
+  IndexerMapReduce.initMRJob(crawlDb,linkDb,segments,job,addBinaryContent);
+
+  conf.setBoolean(IndexerMapReduce.INDEXER_DELETE,deleteGone);
+
+  conf.setBoolean(IndexerMapReduce.URL_FILTERING,filter);
+
+  conf.setBoolean(IndexerMapReduce.URL_NORMALIZING,normalize);
+
+  conf.setBoolean(IndexerMapReduce.INDEXER_BINARY_AS_BASE64,base64);
+
+  conf.setBoolean(IndexerMapReduce.INDEXER_NO_COMMIT,noCommit);
+
+  if (params != null) {
+
+    conf.set(IndexerMapReduce.INDEXER_PARAMS,params);
+
+  }
+
+  job.setReduceSpeculativeExecution(false);
+
+  final Path tmp=new Path("tmp_" + System.currentTimeMillis() + "-"+ RANDOM.nextInt());
+
+  FileOutputFormat.setOutputPath(job,tmp);
+
+  try {
+
+    try {
+
+      boolean success=job.waitForCompletion(true);
+
+      if (!success) {
+
+        String message="Indexing job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+        LOG.error(message);
+
+        throw new RuntimeException(message);
+
+      }
+
+    }
+
+ catch (    IOException|InterruptedException|ClassNotFoundException e) {
+
+      LOG.error(StringUtils.stringifyException(e));
+
+      throw e;
+
+    }
+
+    LOG.info("Indexer: number of documents indexed, deleted, or skipped:");
+
+    for (    Counter counter : job.getCounters().getGroup("IndexerStatus")) {
+
+      LOG.info("Indexer: {}  {}",String.format(Locale.ROOT,"%6d",counter.getValue()),counter.getName());
+
+    }
+
+    long end=System.currentTimeMillis();
+
+    LOG.info("Indexer: finished at " + sdf.format(end) + ", elapsed: "+ TimingUtil.elapsedTime(start,end));
+
+  }
+
+  finally {
+
+    tmp.getFileSystem(conf).delete(tmp,true);
+
+  }
+
+}
+

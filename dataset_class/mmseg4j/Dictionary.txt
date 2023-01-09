@@ -1,0 +1,886 @@
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * �? wordsFile 文件的最后更新时间加记录下来.
+
+ * @param wordsFile �? null
+
+ */
+
+private synchronized void addLastTime(File wordsFile){
+
+  if (wordsFile != null) {
+
+    wordsLastTime.put(wordsFile,wordsFile.lastModified());
+
+  }
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * 从单例缓存中去除
+
+ * @param path
+
+ * @return 没有返回 null
+
+ */
+
+public static Dictionary clear(File path){
+
+  File normalizeDir=normalizeFile(path);
+
+  return dics.remove(normalizeDir);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * @see Dictionary#clear(File)
+
+ */
+
+public static Dictionary clear(String path){
+
+  return clear(new File(path));
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ */
+
+void destroy(){
+
+  clear(dicPath);
+
+  dicPath=null;
+
+  dict=null;
+
+  unit=null;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * 词典的目�?
+
+ */
+
+private Dictionary(File path){
+
+  init(path);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+protected void finalize() throws Throwable {
+
+  destroy();
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ */
+
+public static File getDefalutPath(){
+
+  if (defalutPath == null) {
+
+    String defPath=System.getProperty("mmseg.dic.path");
+
+    log.info("look up in mmseg.dic.path=" + defPath);
+
+    if (defPath == null) {
+
+      URL url=Dictionary.class.getClassLoader().getResource("data");
+
+      if (url != null) {
+
+        defPath=url.getFile();
+
+        log.info("look up in classpath=" + defPath);
+
+      }
+
+ else {
+
+        defPath=System.getProperty("user.dir") + "/data";
+
+        log.info("look up in user.dir=" + defPath);
+
+      }
+
+    }
+
+    defalutPath=new File(defPath);
+
+    if (!defalutPath.exists()) {
+
+      log.warning("defalut dic path=" + defalutPath + " not exist");
+
+    }
+
+  }
+
+  return defalutPath;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+
+
+ */
+
+public File getDicPath(){
+
+  return dicPath;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * 仅仅用来观察词库.
+
+ */
+
+public Map<Character,CharNode> getDict(){
+
+  return dict;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+getDefalutPath()
+
+ */
+
+public static Dictionary getInstance(){
+
+  File path=getDefalutPath();
+
+  return getInstance(path);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * @param path 词典的目�?
+
+ */
+
+public static Dictionary getInstance(File path){
+
+  log.info("try to load dir=" + path);
+
+  File normalizeDir=normalizeFile(path);
+
+  Dictionary dic=dics.get(normalizeDir);
+
+  if (dic == null) {
+
+    dic=new Dictionary(normalizeDir);
+
+    dics.put(normalizeDir,dic);
+
+  }
+
+  return dic;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * @param path 词典的目�?
+
+ */
+
+public static Dictionary getInstance(String path){
+
+  return getInstance(new File(path));
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * �?后加载词库的时间
+
+ */
+
+public long getLastLoadTime(){
+
+  return lastLoadTime;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public CharNode head(char ch){
+
+  return dict.get(ch);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+private void init(File path){
+
+  dicPath=path;
+
+  wordsLastTime=new HashMap<File,Long>();
+
+  reload();
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public static boolean isStopWord(String word){
+
+  return stopWords.contains(word);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public boolean isUnit(Character ch){
+
+  return unit.containsKey(ch);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/**  @return
+
+ */
+
+protected File[] listWordsFiles(){
+
+  return dicPath.listFiles(new FilenameFilter(){
+
+    public boolean accept(    File dir,    String name){
+
+      return name.startsWith("words") && name.endsWith(".dic");
+
+    }
+
+  }
+
+);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+private Map<Character,CharNode> loadDic(File wordsPath) throws IOException {
+
+  InputStream charsIn=null;
+
+  File charsFile=new File(wordsPath,"chars.dic");
+
+  if (charsFile.exists()) {
+
+    charsIn=new FileInputStream(charsFile);
+
+    addLastTime(charsFile);
+
+  }
+
+ else {
+
+    charsIn=this.getClass().getResourceAsStream("/data/chars.dic");
+
+    charsFile=new File(this.getClass().getResource("/data/chars.dic").getFile());
+
+  }
+
+  final Map<Character,CharNode> dic=new HashMap<Character,CharNode>();
+
+  int lineNum=0;
+
+  long s=now();
+
+  long ss=s;
+
+  lineNum=load(charsIn,new FileLoading(){
+
+    public void row(    String line,    int n){
+
+      if (line.length() < 1) {
+
+        return;
+
+      }
+
+      String[] w=line.split(" ");
+
+      CharNode cn=new CharNode();
+
+switch (w.length) {
+
+case 2:
+
+        try {
+
+          cn.setFreq((int)(Math.log(Integer.parseInt(w[1])) * 100));
+
+        }
+
+ catch (        NumberFormatException e) {
+
+        }
+
+case 1:
+
+      dic.put(w[0].charAt(0),cn);
+
+  }
+
+}
+
+}
+
+);
+
+log.info("chars loaded time=" + (now() - s) + "ms, line="+ lineNum+ ", on file="+ charsFile);
+
+if (useDefault) {
+
+String[] dicInJar={"/data/words_brand.dic","/data/words_category.dic","/data/words_en_ext.dic","/data/words_ext.dic","/data/words_new.dic"};
+
+for (String dicName : dicInJar) {
+
+  loadWordsFromJar(dicName,dic);
+
+}
+
+}
+
+File[] words=listWordsFiles();
+
+if (words != null) {
+
+for (File wordsFile : words) {
+
+  loadWord(new FileInputStream(wordsFile),dic,wordsFile);
+
+  addLastTime(wordsFile);
+
+}
+
+}
+
+log.info("load all dic use time=" + (now() - ss) + "ms");
+
+return dic;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+private Set<String> loadStop(File dicPath) throws IOException {
+
+  final Set<String> ret=new HashSet<>();
+
+  InputStream fin=null;
+
+  File stop=new File(dicPath,"stop.dic");
+
+  if (stop.exists()) {
+
+    fin=new FileInputStream(stop);
+
+    addLastTime(stop);
+
+  }
+
+ else {
+
+    fin=Dictionary.class.getResourceAsStream("/data/stop.dic");
+
+    if (fin != null) {
+
+      stop=new File(Dictionary.class.getResource("/data/stop.dic").getFile());
+
+    }
+
+  }
+
+  if (fin != null) {
+
+    long s=now();
+
+    int lineNum=load(fin,new FileLoading(){
+
+      public void row(      String line,      int n){
+
+        ret.add(line.trim().toLowerCase());
+
+      }
+
+    }
+
+);
+
+    log.info("stop loaded time=" + (now() - s) + "ms, line="+ lineNum+ ", on file="+ stop);
+
+  }
+
+  return ret;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+private Map<Character,Object> loadUnit(File path) throws IOException {
+
+  InputStream fin=null;
+
+  File unitFile=new File(path,"units.dic");
+
+  if (unitFile.exists()) {
+
+    fin=new FileInputStream(unitFile);
+
+    addLastTime(unitFile);
+
+  }
+
+ else {
+
+    fin=Dictionary.class.getResourceAsStream("/data/units.dic");
+
+    unitFile=new File(Dictionary.class.getResource("/data/units.dic").getFile());
+
+  }
+
+  final Map<Character,Object> unit=new HashMap<Character,Object>();
+
+  long s=now();
+
+  int lineNum=load(fin,new FileLoading(){
+
+    public void row(    String line,    int n){
+
+      if (line.length() != 1) {
+
+        return;
+
+      }
+
+      unit.put(line.charAt(0),Dictionary.class);
+
+    }
+
+  }
+
+);
+
+  log.info("unit loaded time=" + (now() - s) + "ms, line="+ lineNum+ ", on file="+ unitFile);
+
+  return unit;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+private void loadWordsFromJar(String fileName,Map<Character,CharNode> dic){
+
+  InputStream wordsDicIn=this.getClass().getResourceAsStream(fileName);
+
+  if (wordsDicIn != null) {
+
+    File wordsDic=new File(this.getClass().getResource(fileName).getFile());
+
+    try {
+
+      loadWord(wordsDicIn,dic,wordsDic);
+
+    }
+
+ catch (    Exception e) {
+
+      log.warning("load " + fileName + " meet error!");
+
+    }
+
+  }
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * @param is        词库文件�?
+
+ * @param dic       加载的词保存在结构中
+
+ * @param wordsFile 日志�?
+
+ * @throws IOException from {@link #load(InputStream,FileLoading)}
+
+ */
+
+private void loadWord(InputStream is,Map<Character,CharNode> dic,File wordsFile) throws IOException {
+
+  long s=now();
+
+  int lineNum=load(is,new WordsFileLoading(dic));
+
+  log.info("words loaded time=" + (now() - s) + "ms, line="+ lineNum+ ", on file="+ wordsFile);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ */
+
+public static int load(InputStream fin,FileLoading loading) throws IOException {
+
+  BufferedReader br=new BufferedReader(new InputStreamReader(new BufferedInputStream(fin),"UTF-8"));
+
+  String line=null;
+
+  int n=0;
+
+  while ((line=br.readLine()) != null) {
+
+    if (line == null || line.startsWith("#")) {
+
+      continue;
+
+    }
+
+    n++;
+
+    loading.row(line,n);
+
+  }
+
+  return n;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * word 能否在词库里找到
+
+ * @author chenlb 2009-3-3 下午11:10:45
+
+ */
+
+public boolean match(String word){
+
+  if (word == null || word.length() < 2) {
+
+    return false;
+
+  }
+
+  CharNode cn=dict.get(word.charAt(0));
+
+  return search(cn,word.toCharArray(),0,word.length() - 1) >= 0;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public int maxMatch(char[] sen,int offset){
+
+  CharNode node=dict.get(sen[offset]);
+
+  return maxMatch(node,sen,offset);
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public ArrayList<Integer> maxMatch(CharNode node,ArrayList<Integer> tailLens,char[] sen,int offset){
+
+  tailLens.clear();
+
+  tailLens.add(0);
+
+  if (node != null) {
+
+    return node.maxMatch(tailLens,sen,offset + 1);
+
+  }
+
+  return tailLens;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public int maxMatch(CharNode node,char[] sen,int offset){
+
+  if (node != null) {
+
+    return node.maxMatch(sen,offset + 1);
+
+  }
+
+  return 0;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public static File normalizeFile(File file){
+
+  if (file == defalutPath) {
+
+    return defalutPath;
+
+  }
+
+  try {
+
+    return file.getCanonicalFile();
+
+  }
+
+ catch (  IOException e) {
+
+    throw new RuntimeException("normalize file=[" + file + "] fail",e);
+
+  }
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+private static long now(){
+
+  return System.currentTimeMillis();
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ */
+
+public synchronized boolean reload(){
+
+  Map<File,Long> oldWordsLastTime=new HashMap<File,Long>(wordsLastTime);
+
+  Map<Character,CharNode> oldDict=dict;
+
+  Map<Character,Object> oldUnit=unit;
+
+  try {
+
+    wordsLastTime.clear();
+
+    dict=loadDic(dicPath);
+
+    unit=loadUnit(dicPath);
+
+    stopWords=loadStop(dicPath);
+
+    lastLoadTime=System.currentTimeMillis();
+
+  }
+
+ catch (  IOException e) {
+
+    wordsLastTime.putAll(oldWordsLastTime);
+
+    dict=oldDict;
+
+    unit=oldUnit;
+
+    if (log.isLoggable(Level.WARNING)) {
+
+      log.log(Level.WARNING,"reload dic error! dic=" + dicPath + ", and rollbacked.",e);
+
+    }
+
+    return false;
+
+  }
+
+  return true;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+public static void setUseDefault(boolean useDefault){
+
+  Dictionary.useDefault=useDefault;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * @author chenlb 
+
+ */
+
+private static char[] tail(String str){
+
+  char[] cs=new char[str.length() - 1];
+
+  str.getChars(1,str.length(),cs,0);
+
+  return cs;
+
+}
+
+Location: Dictionary.java
+
+Content: 
+
+/** 
+
+ * @return
+
+ */
+
+public synchronized boolean wordsFileIsChange(){
+
+  for (  Entry<File,Long> flt : wordsLastTime.entrySet()) {
+
+    File words=flt.getKey();
+
+    if (!words.canRead()) {
+
+      return true;
+
+    }
+
+    if (words.lastModified() > flt.getValue()) {
+
+      return true;
+
+    }
+
+  }
+
+  File[] words=listWordsFiles();
+
+  if (words != null) {
+
+    for (    File wordsFile : words) {
+
+      if (!wordsLastTime.containsKey(wordsFile)) {
+
+        return true;
+
+      }
+
+    }
+
+  }
+
+  return false;
+
+}
+

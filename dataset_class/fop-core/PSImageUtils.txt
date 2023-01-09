@@ -1,0 +1,104 @@
+Location: PSImageUtils.java
+
+Content: 
+
+private static ImageFlavor[] determineSupportedImageFlavors(RenderingContext renderingContext){
+
+  ImageFlavor[] inlineFlavors;
+
+  ImageHandlerRegistry imageHandlerRegistry=renderingContext.getUserAgent().getImageHandlerRegistry();
+
+  inlineFlavors=imageHandlerRegistry.getSupportedFlavors(renderingContext);
+
+  return inlineFlavors;
+
+}
+
+Location: PSImageUtils.java
+
+Content: 
+
+/** 
+
+ * Draws a form at a given location.
+
+ * @param form the form resource
+
+ * @param info the image info object representing the image in the form
+
+ * @param rect the target rectangle (coordinates in millipoints)
+
+ * @param generator the PostScript generator
+
+ * @throws IOException if an I/O error occurs
+
+ */
+
+public static void drawForm(PSResource form,ImageInfo info,Rectangle rect,PSGenerator generator) throws IOException {
+
+  Rectangle2D targetRect=new Rectangle2D.Double(rect.getMinX() / 1000.0,rect.getMinY() / 1000.0,rect.getWidth() / 1000.0,rect.getHeight() / 1000.0);
+
+  generator.saveGraphicsState();
+
+  translateAndScale(generator,info.getSize().getDimensionPt(),targetRect);
+
+  generator.writeDSCComment(DSCConstants.INCLUDE_RESOURCE,form);
+
+  generator.getResourceTracker().notifyResourceUsageOnPage(form);
+
+  generator.writeln(form.getName() + " execform");
+
+  generator.restoreGraphicsState();
+
+}
+
+Location: PSImageUtils.java
+
+Content: 
+
+/** 
+
+ * Indicates whether the given image (identified by an  {@link ImageInfo} object) shall beinlined rather than generated as a PostScript form.
+
+ * @param info the info object for the image
+
+ * @param renderingContext the rendering context
+
+ * @return true if the image shall be inlined, false if forms shall be used.
+
+ */
+
+public static boolean isImageInlined(ImageInfo info,PSRenderingContext renderingContext){
+
+  String uri=info.getOriginalURI();
+
+  if (uri == null || "".equals(uri)) {
+
+    return true;
+
+  }
+
+  ImageFlavor[] inlineFlavors=determineSupportedImageFlavors(renderingContext);
+
+  ImageManager manager=renderingContext.getUserAgent().getImageManager();
+
+  ImageProviderPipeline[] inlineCandidates=manager.getPipelineFactory().determineCandidatePipelines(info,inlineFlavors);
+
+  ImageProviderPipeline inlineChoice=manager.choosePipeline(inlineCandidates);
+
+  ImageFlavor inlineFlavor=(inlineChoice != null ? inlineChoice.getTargetFlavor() : null);
+
+  PSRenderingContext formContext=renderingContext.toFormContext();
+
+  ImageFlavor[] formFlavors=determineSupportedImageFlavors(formContext);
+
+  ImageProviderPipeline[] formCandidates=manager.getPipelineFactory().determineCandidatePipelines(info,formFlavors);
+
+  ImageProviderPipeline formChoice=manager.choosePipeline(formCandidates);
+
+  ImageFlavor formFlavor=(formChoice != null ? formChoice.getTargetFlavor() : null);
+
+  return formFlavor == null || !formFlavor.equals(inlineFlavor);
+
+}
+

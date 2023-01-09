@@ -1,0 +1,254 @@
+Location: SerializerTraceWriter.java
+
+Content: 
+
+/** 
+
+ * Flush out the collected characters by sending them to the trace listener. These characters are never written to the real writer (m_writer) because that has already happened with every method call. This method simple informs the listener of what has already happened.
+
+ * @throws IOException
+
+ */
+
+private void flushBuffer() throws IOException {
+
+  if (count > 0) {
+
+    char[] chars=new char[count];
+
+    for (int i=0; i < count; i++)     chars[i]=(char)buf[i];
+
+    if (m_tracer != null)     m_tracer.fireGenerateEvent(SerializerTrace.EVENTTYPE_OUTPUT_CHARACTERS,chars,0,chars.length);
+
+    count=0;
+
+  }
+
+}
+
+Location: SerializerTraceWriter.java
+
+Content: 
+
+/** 
+
+ * Constructor. If the writer passed in is null, then this SerializerTraceWriter will only signal trace events of what would have been written to that writer. If the writer passed in is not null then the trace events will mirror what is going to that writer. In this way tools, such as a debugger, can gather information on what is being written out.
+
+ * @param out    the Writer to write to (possibly null)
+
+ * @param tracer the tracer to inform that characters are being written
+
+ */
+
+public SerializerTraceWriter(Writer out,SerializerTrace tracer){
+
+  m_writer=out;
+
+  m_tracer=tracer;
+
+  setBufferSize(1024);
+
+}
+
+Location: SerializerTraceWriter.java
+
+Content: 
+
+/** 
+
+ * Creates or replaces the internal buffer, and makes sure it has a few extra bytes slight overflow of the last UTF8 encoded character.
+
+ * @param size
+
+ */
+
+private void setBufferSize(int size){
+
+  buf=new byte[size + 3];
+
+  buf_length=size;
+
+  count=0;
+
+}
+
+Location: SerializerTraceWriter.java
+
+Content: 
+
+/** 
+
+ * Write a portion of an array of characters.
+
+ * @param chars  Array of characters
+
+ * @param start  Offset from which to start writing characters
+
+ * @param length Number of characters to write
+
+ * @exception IOException If an I/O error occurs
+
+ * @throws java.io.IOException
+
+ */
+
+public void write(final char chars[],final int start,final int length) throws java.io.IOException {
+
+  if (m_writer != null)   m_writer.write(chars,start,length);
+
+  int lengthx3=(length << 1) + length;
+
+  if (lengthx3 >= buf_length) {
+
+    flushBuffer();
+
+    setBufferSize(2 * lengthx3);
+
+  }
+
+  if (lengthx3 > buf_length - count) {
+
+    flushBuffer();
+
+  }
+
+  final int n=length + start;
+
+  for (int i=start; i < n; i++) {
+
+    final char c=chars[i];
+
+    if (c < 0x80)     buf[count++]=(byte)(c);
+
+ else     if (c < 0x800) {
+
+      buf[count++]=(byte)(0xc0 + (c >> 6));
+
+      buf[count++]=(byte)(0x80 + (c & 0x3f));
+
+    }
+
+ else {
+
+      buf[count++]=(byte)(0xe0 + (c >> 12));
+
+      buf[count++]=(byte)(0x80 + ((c >> 6) & 0x3f));
+
+      buf[count++]=(byte)(0x80 + (c & 0x3f));
+
+    }
+
+  }
+
+}
+
+Location: SerializerTraceWriter.java
+
+Content: 
+
+/** 
+
+ * Write a single character. The character to be written is contained in the 16 low-order bits of the given integer value; the 16 high-order bits are ignored. <p> Subclasses that intend to support efficient single-character output should override this method.
+
+ * @param c int specifying a character to be written.
+
+ * @exception IOException If an I/O error occurs
+
+ */
+
+public void write(final int c) throws IOException {
+
+  if (m_writer != null)   m_writer.write(c);
+
+  if (count >= buf_length)   flushBuffer();
+
+  if (c < 0x80) {
+
+    buf[count++]=(byte)(c);
+
+  }
+
+ else   if (c < 0x800) {
+
+    buf[count++]=(byte)(0xc0 + (c >> 6));
+
+    buf[count++]=(byte)(0x80 + (c & 0x3f));
+
+  }
+
+ else {
+
+    buf[count++]=(byte)(0xe0 + (c >> 12));
+
+    buf[count++]=(byte)(0x80 + ((c >> 6) & 0x3f));
+
+    buf[count++]=(byte)(0x80 + (c & 0x3f));
+
+  }
+
+}
+
+Location: SerializerTraceWriter.java
+
+Content: 
+
+/** 
+
+ * Write a string.
+
+ * @param s String to be written
+
+ * @exception IOException If an I/O error occurs
+
+ */
+
+public void write(final String s) throws IOException {
+
+  if (m_writer != null)   m_writer.write(s);
+
+  final int length=s.length();
+
+  int lengthx3=(length << 1) + length;
+
+  if (lengthx3 >= buf_length) {
+
+    flushBuffer();
+
+    setBufferSize(2 * lengthx3);
+
+  }
+
+  if (lengthx3 > buf_length - count) {
+
+    flushBuffer();
+
+  }
+
+  for (int i=0; i < length; i++) {
+
+    final char c=s.charAt(i);
+
+    if (c < 0x80)     buf[count++]=(byte)(c);
+
+ else     if (c < 0x800) {
+
+      buf[count++]=(byte)(0xc0 + (c >> 6));
+
+      buf[count++]=(byte)(0x80 + (c & 0x3f));
+
+    }
+
+ else {
+
+      buf[count++]=(byte)(0xe0 + (c >> 12));
+
+      buf[count++]=(byte)(0x80 + ((c >> 6) & 0x3f));
+
+      buf[count++]=(byte)(0x80 + (c & 0x3f));
+
+    }
+
+  }
+
+}
+

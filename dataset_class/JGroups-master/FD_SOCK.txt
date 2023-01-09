@@ -1,0 +1,698 @@
+Location: FD_SOCK.java
+
+Content: 
+
+/** 
+
+ * Sends a SUSPECT message to all group members. Only the coordinator (or the next member in line if the coord itself is suspected) will react to this message by installing a new view. To overcome the unreliability of the SUSPECT message (it may be lost because we are not above any retransmission layer), the following scheme is used: after sending the SUSPECT message, it is also added to the broadcast task, which will periodically re-send the SUSPECT until a view is received in which the suspected process is not a member anymore. The reason is that - at one point - either the coordinator or another participant taking over for a crashed coordinator, will react to the SUSPECT message and issue a new view, at which point the broadcast task stops.
+
+ */
+
+protected void broadcastSuspectMessage(Address suspected_mbr){
+
+  if (suspected_mbr == null)   return;
+
+  log.debug("%s: broadcasting suspect(%s)",local_addr,suspected_mbr);
+
+  FdHeader hdr=new FdHeader(FdHeader.SUSPECT).mbrs(Collections.singleton(suspected_mbr));
+
+  Message suspect_msg=new Message().setFlag(Message.Flag.INTERNAL).putHeader(this.id,hdr);
+
+  down_prot.down(suspect_msg);
+
+  bcast_task.addSuspectedMember(suspected_mbr);
+
+  if (stats) {
+
+    num_suspect_events++;
+
+    suspect_history.add(String.format("%s: %s",new Date(),suspected_mbr));
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected void broadcastUnuspectMessage(Address mbr){
+
+  if (mbr == null)   return;
+
+  log.debug("%s: broadcasting unsuspect(%s)",local_addr,mbr);
+
+  FdHeader hdr=new FdHeader(FdHeader.UNSUSPECT).mbrs(Collections.singleton(mbr));
+
+  Message suspect_msg=new Message().setFlag(Message.Flag.INTERNAL).putHeader(this.id,hdr);
+
+  down_prot.down(suspect_msg);
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected Address determinePingDest(){
+
+  if (pingable_mbrs == null || local_addr == null)   return null;
+
+  Address next=Util.pickNext(pingable_mbrs,local_addr);
+
+  return Objects.equals(local_addr,next) ? null : next;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+public FD_SOCK(){
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+/** 
+
+ * Attempts to obtain the ping_addr first from the cache, then by unicasting q request to  {@code mbr}, then by multicasting a request to all members.
+
+ */
+
+protected IpAddress fetchPingAddress(final Address mbr){
+
+  IpAddress ret;
+
+  if (mbr == null)   return null;
+
+  if ((ret=cache.get(mbr)) != null)   return ret;
+
+  if (!isPingerThreadRunning())   return null;
+
+  ping_addr_promise.reset();
+
+  for (  Address dest : Arrays.asList(mbr,null)) {
+
+    Message msg=new Message(dest).setFlag(Message.Flag.INTERNAL).putHeader(this.id,new FdHeader(FdHeader.WHO_HAS_SOCK,mbr));
+
+    down_prot.down(msg);
+
+    if ((ret=ping_addr_promise.getResult(500)) != null)     return ret;
+
+    if (!isPingerThreadRunning())     return null;
+
+  }
+
+  return null;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+/** 
+
+ * Determines coordinator C. If C is null and we are the first member, return. Else loop: send GET_CACHE message to coordinator and wait for GET_CACHE_RSP response. Loop until valid response has been received.
+
+ */
+
+protected void getCacheFromCoordinator(){
+
+  Address coord;
+
+  int attempts=num_tries;
+
+  get_cache_promise.reset();
+
+  while (attempts > 0 && isPingerThreadRunning()) {
+
+    if ((coord=determineCoordinator()) != null) {
+
+      if (coord.equals(local_addr)) {
+
+        return;
+
+      }
+
+      Message msg=new Message(coord).setFlag(Message.Flag.INTERNAL).putHeader(this.id,new FdHeader(FdHeader.GET_CACHE));
+
+      down_prot.down(msg);
+
+      Map<Address,IpAddress> result=get_cache_promise.getResult(get_cache_timeout);
+
+      if (result != null) {
+
+        cache.addAll(result);
+
+        log.trace("%s: got cache from %s: cache is %s",local_addr,coord,cache);
+
+        return;
+
+      }
+
+    }
+
+    --attempts;
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+@ManagedAttribute(description="The actual client_bind_port") public int getClientBindPortActual(){
+
+  return ping_sock != null ? ping_sock.getLocalPort() : 0;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+@ManagedAttribute(description="The number of currently suspected members") public int getNumSuspectedMembers(){
+
+  return suspected_mbrs.size();
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected void handleSocketClose(Exception ex){
+
+  teardownPingSocket();
+
+  if (!regular_sock_close) {
+
+    log.debug("%s: %s closed socket (%s)",local_addr,ping_dest,(ex != null ? ex.toString() : "eof"));
+
+    broadcastSuspectMessage(ping_dest);
+
+    pingable_mbrs.remove(ping_dest);
+
+  }
+
+ else {
+
+    log.debug("%s: socket to %s was closed gracefully",local_addr,ping_dest);
+
+    regular_sock_close=false;
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+/** 
+
+ * Interrupts the pinger thread. The Thread.interrupt() method doesn't seem to work under Linux with JDK 1.3.1 (JDK 1.2.2 had no problems here), therefore we close the socket (setSoLinger has to be set !) if we are running under Linux. This should be tested under Windows. (Solaris 8 and JDK 1.3.1 definitely works).<p> Oct 29 2001 (bela): completely removed Thread.interrupt(), but used socket close on all OSs. This makes this code portable and we don't have to check for OSs.<p/>
+
+ */
+
+protected synchronized void interruptPingerThread(boolean sendTerminationSignal){
+
+  if (isPingerThreadRunning()) {
+
+    regular_sock_close=true;
+
+    if (sendTerminationSignal) {
+
+      sendPingTermination();
+
+    }
+
+    teardownPingSocket();
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+@ManagedAttribute(description="Whether or not to log suspect messages") public boolean isLogSuspectedMessages(){
+
+  return log_suspected_msgs;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+@ManagedAttribute(description="Whether the node crash detection monitor is running") public boolean isNodeCrashMonitorRunning(){
+
+  return isPingerThreadRunning();
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected synchronized boolean isPingerThreadRunning(){
+
+  return pinger_thread != null;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+public static Buffer marshal(LazyRemovalCache<Address,IpAddress> addrs){
+
+  final ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(512);
+
+  try {
+
+    int size=addrs != null ? addrs.size() : 0;
+
+    out.writeInt(size);
+
+    if (size > 0) {
+
+      for (      Map.Entry<Address,LazyRemovalCache.Entry<IpAddress>> entry : addrs.entrySet()) {
+
+        Address key=entry.getKey();
+
+        IpAddress val=entry.getValue().getVal();
+
+        Util.writeAddress(key,out);
+
+        Util.writeStreamable(val,out);
+
+      }
+
+    }
+
+    return out.getBuffer();
+
+  }
+
+ catch (  Exception ex) {
+
+    return null;
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+/** 
+
+ * Sends or broadcasts a I_HAVE_SOCK response. If 'dst' is null, the reponse will be broadcast, otherwise it will be unicast back to the requester
+
+ */
+
+protected void sendIHaveSockMessage(Address dst,Address mbr,IpAddress addr){
+
+  Message msg=new Message(dst).setFlag(Message.Flag.INTERNAL).setTransientFlag(Message.TransientFlag.DONT_LOOPBACK);
+
+  FdHeader hdr=new FdHeader(FdHeader.I_HAVE_SOCK,mbr);
+
+  hdr.sock_addr=addr;
+
+  msg.putHeader(this.id,hdr);
+
+  down_prot.down(msg);
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected void sendPingSignal(int signal){
+
+  lock.lock();
+
+  try {
+
+    if (ping_sock != null) {
+
+      OutputStream out=ping_sock.getOutputStream();
+
+      out.write(signal);
+
+      out.flush();
+
+    }
+
+  }
+
+ catch (  Throwable t) {
+
+    log.trace("%s: problem sending signal %s: %s",local_addr,signalToString(signal),t);
+
+  }
+
+ finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected void sendPingTermination(){
+
+  sendPingSignal(NORMAL_TERMINATION);
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+public void setLogSuspectedMessages(boolean log_suspected_msgs){
+
+  this.log_suspected_msgs=log_suspected_msgs;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+/** 
+
+ * Creates a socket to  {@code dest}, and assigns it to ping_sock. Also assigns ping_input
+
+ */
+
+protected boolean setupPingSocket(IpAddress dest){
+
+  lock.lock();
+
+  try {
+
+    SocketAddress destAddr=new InetSocketAddress(dest.getIpAddress(),dest.getPort());
+
+    ping_sock=getSocketFactory().createSocket("jgroups.fd.ping_sock");
+
+    Util.bind(ping_sock,bind_addr,client_bind_port,client_bind_port + port_range);
+
+    ping_sock.setSoLinger(true,1);
+
+    ping_sock.setKeepAlive(keep_alive);
+
+    Util.connect(ping_sock,destAddr,sock_conn_timeout);
+
+    ping_input=ping_sock.getInputStream();
+
+    return true;
+
+  }
+
+ catch (  Throwable ex) {
+
+    if (!shuttin_down)     log.debug("%s: failed connecting to %s: %s",local_addr,ping_dest != null ? ping_dest : dest,ex.getMessage());
+
+    return false;
+
+  }
+
+ finally {
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected static String signalToString(int signal){
+
+switch (signal) {
+
+case NORMAL_TERMINATION:
+
+    return "NORMAL_TERMINATION";
+
+case ABNORMAL_TERMINATION:
+
+  return "ABNORMAL_TERMINATION";
+
+default :
+
+return "n/a";
+
+}
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+@ManagedOperation(description="Starts node crash monitor if member count > 1 and monitor is not running") public boolean startNodeCrashMonitor(){
+
+  if (members.size() > 1) {
+
+    if (startPingerThread()) {
+
+      log.warn("Node crash detection manually started, was not running for some reason.");
+
+      return true;
+
+    }
+
+    log.debug("Node crash detection is already running.");
+
+  }
+
+ else   log.debug("Single node cluster, no need for node crash detection.");
+
+  return false;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+/** 
+
+ * Does *not* need to be synchronized on pinger_mutex because the caller (down()) already has the mutex acquired
+
+ */
+
+protected synchronized boolean startPingerThread(){
+
+  if (!isPingerThreadRunning()) {
+
+    ThreadFactory factory=getThreadFactory();
+
+    pinger_thread=factory.newThread(this,"FD_SOCK pinger");
+
+    pinger_thread.setDaemon(true);
+
+    pinger_thread.start();
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected void startServerSocket() throws Exception {
+
+  srv_sock=Util.createServerSocket(getSocketFactory(),"jgroups.fd_sock.srv_sock",bind_addr,start_port,start_port + port_range);
+
+  srv_sock_addr=new IpAddress(external_addr != null ? external_addr : bind_addr,external_port > 0 ? external_port : srv_sock.getLocalPort());
+
+  if (local_addr != null)   cache.add(local_addr,srv_sock_addr);
+
+  if (srv_sock_handler != null)   srv_sock_handler.start();
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected synchronized void stopPingerThread(){
+
+  ping_addr_promise.setResult(null);
+
+  get_cache_promise.setResult(null);
+
+  interruptPingerThread(true);
+
+  if (pinger_thread != null) {
+
+    try {
+
+      pinger_thread.join(Global.THREAD_SHUTDOWN_WAIT_TIME);
+
+    }
+
+ catch (    InterruptedException ignored) {
+
+      Thread.currentThread().interrupt();
+
+    }
+
+    pinger_thread=null;
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+public void stopServerSocket(boolean graceful){
+
+  if (srv_sock_handler != null)   srv_sock_handler.stop(graceful);
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected void suspect(Set<Address> suspects){
+
+  if (suspects == null)   return;
+
+  suspects.remove(local_addr);
+
+  suspects.forEach(suspect -> suspect_history.add(String.format("%s: %s",new Date(),suspect)));
+
+  suspected_mbrs.addAll(suspects);
+
+  List<Address> eligible_mbrs=new ArrayList<>(this.members);
+
+  eligible_mbrs.removeAll(suspected_mbrs);
+
+  if (local_addr != null && !eligible_mbrs.isEmpty() && local_addr.equals(eligible_mbrs.get(0))) {
+
+    log.debug("%s: suspecting %s",local_addr,suspected_mbrs);
+
+    up_prot.up(new Event(Event.SUSPECT,suspected_mbrs));
+
+    down_prot.down(new Event(Event.SUSPECT,suspected_mbrs));
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected void teardownPingSocket(){
+
+  lock.lock();
+
+  try {
+
+    if (ping_sock != null) {
+
+      try {
+
+        ping_sock.shutdownInput();
+
+        ping_sock.close();
+
+      }
+
+ catch (      Exception ex) {
+
+      }
+
+    }
+
+    Util.close(ping_input);
+
+  }
+
+  finally {
+
+    ping_sock=null;
+
+    ping_input=null;
+
+    lock.unlock();
+
+  }
+
+}
+
+Location: FD_SOCK.java
+
+Content: 
+
+protected Map<Address,IpAddress> unmarshal(byte[] buffer,int offset,int length){
+
+  if (buffer == null)   return null;
+
+  DataInput in=new ByteArrayDataInputStream(buffer,offset,length);
+
+  HashMap<Address,IpAddress> addrs=null;
+
+  try {
+
+    int size=in.readInt();
+
+    if (size > 0) {
+
+      addrs=new HashMap<>(size);
+
+      for (int i=0; i < size; i++) {
+
+        Address key=Util.readAddress(in);
+
+        IpAddress val=Util.readStreamable(IpAddress::new,in);
+
+        addrs.put(key,val);
+
+      }
+
+    }
+
+    return addrs;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("%s: failed reading addresses from message: %s",local_addr,ex);
+
+    return null;
+
+  }
+
+}
+

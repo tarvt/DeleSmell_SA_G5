@@ -1,0 +1,494 @@
+Location: PDFLinearization.java
+
+Content: 
+
+private Set<PDFObject> assignNumbers() throws IOException {
+
+  Set<PDFObject> page1Children=getPage1Children();
+
+  if (!doc.pageObjs.isEmpty()) {
+
+    for (int i=1; i < doc.pageObjs.size(); i++) {
+
+      PDFPage page=doc.pageObjs.get(i);
+
+      Set<PDFObject> children=pageObjsMap.get(page);
+
+      for (      PDFObject c : children) {
+
+        if (!page1Children.contains(c) && c.hasObjectNumber()) {
+
+          c.getObjectNumber().getNumber();
+
+        }
+
+      }
+
+    }
+
+    for (    PDFObject o : doc.objects) {
+
+      if (o instanceof PDFDests || o instanceof PDFOutline) {
+
+        for (        PDFObject c : getChildren(o)) {
+
+          c.getObjectNumber().getNumber();
+
+        }
+
+      }
+
+      if (o instanceof PDFInfo || o instanceof PDFPageLabels) {
+
+        o.getObjectNumber().getNumber();
+
+      }
+
+    }
+
+    for (    PDFObject o : doc.objects) {
+
+      if (!page1Children.contains(o)) {
+
+        o.getObjectNumber().getNumber();
+
+      }
+
+    }
+
+  }
+
+  linearDict=new LinearPDFDictionary(doc);
+
+  for (  PDFObject o : page1Children) {
+
+    o.getObjectNumber().getNumber();
+
+  }
+
+  sort(doc.objects);
+
+  return page1Children;
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private Set<PDFObject> getChildren(PDFObject o){
+
+  Set<PDFObject> children=new LinkedHashSet<PDFObject>();
+
+  children.add(o);
+
+  o.getChildren(children);
+
+  return children;
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private Set<PDFObject> getPage1Children() throws IOException {
+
+  Set<PDFObject> page1Children=new LinkedHashSet<PDFObject>();
+
+  if (!doc.pageObjs.isEmpty()) {
+
+    PDFPage page1=doc.pageObjs.get(0);
+
+    page1Children.add(doc.getRoot());
+
+    hintTable=new HintTable(doc);
+
+    page1Children.add(hintTable);
+
+    page1Children.add(page1);
+
+    page1.getChildren(page1Children);
+
+    doc.objects.remove(doc.getPages());
+
+    doc.objects.add(0,doc.getPages());
+
+    pageObjsMap.put(page1,page1Children);
+
+    for (int i=1; i < doc.pageObjs.size(); i++) {
+
+      PDFPage page=doc.pageObjs.get(i);
+
+      pageObjsMap.put(page,getChildren(page));
+
+    }
+
+  }
+
+  return page1Children;
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private Set<PDFObject> getSharedObjects(){
+
+  Set<PDFObject> pageSharedChildren=getChildren(doc.pageObjs.get(0));
+
+  for (int i=0; i < pageSharedChildren.size(); i++) {
+
+    hintTable.sharedLengths.add(0);
+
+  }
+
+  return pageSharedChildren;
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+public void outputPages(OutputStream stream) throws IOException {
+
+  Collections.sort(doc.pageObjs,new Comparator<PDFPage>(){
+
+    public int compare(    PDFPage o1,    PDFPage o2){
+
+      return Integer.compare(o1.pageIndex,o2.pageIndex);
+
+    }
+
+  }
+
+);
+
+  doc.objects.addAll(doc.trailerObjects);
+
+  doc.trailerObjects=null;
+
+  if (doc.getStructureTreeElements() != null) {
+
+    doc.objects.addAll(doc.getStructureTreeElements());
+
+    doc.structureTreeElements=null;
+
+  }
+
+  for (int i=0; i < doc.objects.size() * 2; i++) {
+
+    doc.indirectObjectOffsets.add(0L);
+
+  }
+
+  Set<PDFObject> page1Children=assignNumbers();
+
+  doc.streamIndirectObject(linearDict,new ByteArrayOutputStream());
+
+  for (  PDFObject o : page1Children) {
+
+    doc.objects.remove(o);
+
+  }
+
+  int sizeOfRest=doc.objects.size();
+
+  ByteArrayOutputStream fakeHeaderTrailerStream=new ByteArrayOutputStream();
+
+  long topTrailer=doc.position;
+
+  doc.writeTrailer(fakeHeaderTrailerStream,sizeOfRest,page1Children.size() + 1,page1Children.size() + sizeOfRest + 1,Long.MAX_VALUE,0);
+
+  doc.position+=fakeHeaderTrailerStream.size();
+
+  ByteArrayOutputStream pageStream=new ByteArrayOutputStream();
+
+  writeObjects(page1Children,pageStream,sizeOfRest + 1);
+
+  long trailerOffset=doc.position;
+
+  ByteArrayOutputStream footerTrailerStream=new ByteArrayOutputStream();
+
+  doc.writeTrailer(footerTrailerStream,0,sizeOfRest,sizeOfRest,0,topTrailer);
+
+  doc.position+=footerTrailerStream.size();
+
+  linearDict.put("/L",doc.position);
+
+  PDFDocument.outputIndirectObject(linearDict,stream);
+
+  CountingOutputStream realTrailer=new CountingOutputStream(stream);
+
+  doc.writeTrailer(realTrailer,sizeOfRest,page1Children.size() + 1,page1Children.size() + sizeOfRest + 1,trailerOffset,0);
+
+  writePadding(fakeHeaderTrailerStream.size() - realTrailer.getCount(),stream);
+
+  for (  PDFObject o : page1Children) {
+
+    PDFDocument.outputIndirectObject(o,stream);
+
+    if (o instanceof HintTable) {
+
+      break;
+
+    }
+
+  }
+
+  stream.write(pageStream.toByteArray());
+
+  stream.write(footerTrailerStream.toByteArray());
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+public PDFLinearization(PDFDocument doc){
+
+  this.doc=doc;
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private void sort(List<PDFObject> objects){
+
+  Collections.sort(objects,new Comparator<PDFObject>(){
+
+    public int compare(    PDFObject o1,    PDFObject o2){
+
+      return Integer.compare(o1.getObjectNumber().getNumber(),o2.getObjectNumber().getNumber());
+
+    }
+
+  }
+
+);
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private void writeObjectGroup(String name,Set<PDFObject> objects,OutputStream pageStream) throws IOException {
+
+  List<PDFObject> children=new ArrayList<PDFObject>(objects);
+
+  sort(children);
+
+  int[] values=hintTable.hintGroups.get(name);
+
+  values[0]=children.iterator().next().getObjectNumber().getNumber();
+
+  values[1]=(int)doc.position;
+
+  values[2]=children.size();
+
+  for (  PDFObject o : children) {
+
+    values[3]+=doc.streamIndirectObject(o,pageStream);
+
+    doc.objects.remove(o);
+
+  }
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private void writeObjects(Set<PDFObject> children1,OutputStream pageStream,int sizeOfRest) throws IOException {
+
+  writePage1(children1,pageStream);
+
+  linearDict.put("/E",doc.position);
+
+  for (  PDFPage page : doc.pageObjs) {
+
+    if (page.pageIndex != 0) {
+
+      writePage(page,pageStream);
+
+    }
+
+  }
+
+  while (!doc.objects.isEmpty()) {
+
+    PDFObject o=doc.objects.remove(0);
+
+    if (o instanceof PDFOutline) {
+
+      writeObjectGroup("/O",getChildren(o),pageStream);
+
+    }
+
+ else     if (o instanceof PDFDests) {
+
+      writeObjectGroup("/E",getChildren(o),pageStream);
+
+    }
+
+ else     if (o instanceof PDFInfo) {
+
+      writeObjectGroup("/I",getChildren(o),pageStream);
+
+    }
+
+ else     if (o instanceof PDFPageLabels) {
+
+      writeObjectGroup("/L",getChildren(o),pageStream);
+
+    }
+
+ else     if (o instanceof PDFStructTreeRoot) {
+
+      writeObjectGroup("/C",getChildren(o),pageStream);
+
+    }
+
+ else {
+
+      doc.streamIndirectObject(o,pageStream);
+
+    }
+
+  }
+
+  linearDict.put("/T",doc.position + 8 + String.valueOf(sizeOfRest).length());
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private static void writePadding(int padding,OutputStream stream) throws IOException {
+
+  for (int i=0; i < padding; i++) {
+
+    stream.write(" ".getBytes("UTF-8"));
+
+  }
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private void writePage1(Set<PDFObject> children1,OutputStream pageStream) throws IOException {
+
+  hintTable.pageStartPos=(int)doc.position;
+
+  OutputStream stream=new ByteArrayOutputStream();
+
+  Set<PDFObject> sharedChildren=getSharedObjects();
+
+  int page1Len=0;
+
+  int objCount=0;
+
+  int sharedCount=0;
+
+  for (  PDFObject o : children1) {
+
+    if (o instanceof HintTable) {
+
+      PDFArray a=(PDFArray)linearDict.get("/H");
+
+      a.set(0,doc.position);
+
+      doc.streamIndirectObject(o,stream);
+
+      a.set(1,doc.position - (Double)a.get(0));
+
+      stream=pageStream;
+
+    }
+
+ else {
+
+      int len=doc.streamIndirectObject(o,stream);
+
+      if (o instanceof PDFStream && hintTable.contentStreamLengths.get(0) == 0) {
+
+        hintTable.contentStreamLengths.set(0,len);
+
+      }
+
+      if (!(o instanceof PDFRoot)) {
+
+        page1Len+=len;
+
+        objCount++;
+
+      }
+
+      if (sharedChildren.contains(o)) {
+
+        hintTable.sharedLengths.set(sharedCount,len);
+
+        sharedCount++;
+
+      }
+
+    }
+
+  }
+
+  hintTable.pageLengths.set(0,page1Len);
+
+  hintTable.objCount.set(0,objCount);
+
+}
+
+Location: PDFLinearization.java
+
+Content: 
+
+private void writePage(PDFPage page,OutputStream pageStream) throws IOException {
+
+  Set<PDFObject> children=pageObjsMap.get(page);
+
+  int pageLen=0;
+
+  int objCount=0;
+
+  for (  PDFObject c : children) {
+
+    if (doc.objects.contains(c)) {
+
+      int len=doc.streamIndirectObject(c,pageStream);
+
+      if (c instanceof PDFStream) {
+
+        hintTable.contentStreamLengths.set(page.pageIndex,len);
+
+      }
+
+      pageLen+=len;
+
+      doc.objects.remove(c);
+
+      objCount++;
+
+    }
+
+  }
+
+  hintTable.pageLengths.set(page.pageIndex,pageLen);
+
+  hintTable.objCount.set(page.pageIndex,objCount);
+
+}
+

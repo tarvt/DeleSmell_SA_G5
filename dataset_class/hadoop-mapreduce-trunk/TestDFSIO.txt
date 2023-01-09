@@ -1,0 +1,190 @@
+Location: TestDFSIO.java
+
+Content: 
+
+private void appendTest(FileSystem fs) throws IOException {
+
+  Path appendDir=getAppendDir(config);
+
+  fs.delete(appendDir,true);
+
+  runIOTest(AppendMapper.class,appendDir);
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private void createControlFile(FileSystem fs,long fileSize,int nrFiles) throws IOException {
+
+  LOG.info("creating control file: " + fileSize + " bytes, "+ nrFiles+ " files");
+
+  Path controlDir=getControlDir(config);
+
+  fs.delete(controlDir,true);
+
+  for (int i=0; i < nrFiles; i++) {
+
+    String name=getFileName(i);
+
+    Path controlFile=new Path(controlDir,"in_file_" + name);
+
+    SequenceFile.Writer writer=null;
+
+    try {
+
+      writer=SequenceFile.createWriter(fs,config,controlFile,Text.class,LongWritable.class,CompressionType.NONE);
+
+      writer.append(new Text(name),new LongWritable(fileSize));
+
+    }
+
+ catch (    Exception e) {
+
+      throw new IOException(e.getLocalizedMessage());
+
+    }
+
+ finally {
+
+      if (writer != null)       writer.close();
+
+      writer=null;
+
+    }
+
+  }
+
+  LOG.info("created control files for: " + nrFiles + " files");
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private static Path getAppendDir(Configuration conf){
+
+  return new Path(getBaseDir(conf),"io_append");
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private static String getBaseDir(Configuration conf){
+
+  return conf.get("test.build.data","/benchmarks/TestDFSIO");
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private static Path getControlDir(Configuration conf){
+
+  return new Path(getBaseDir(conf),"io_control");
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private static Path getDataDir(Configuration conf){
+
+  return new Path(getBaseDir(conf),"io_data");
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private static Path getReadDir(Configuration conf){
+
+  return new Path(getBaseDir(conf),"io_read");
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private static Path getWriteDir(Configuration conf){
+
+  return new Path(getBaseDir(conf),"io_write");
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+/** 
+
+ * Returns size in bytes.
+
+ * @param arg = {d}[B|KB|MB|GB|TB]
+
+ * @return
+
+ */
+
+static long parseSize(String arg){
+
+  String[] args=arg.split("\\D",2);
+
+  assert args.length <= 2;
+
+  long fileSize=Long.parseLong(args[0]);
+
+  String bytesMult=arg.substring(args[0].length());
+
+  return fileSize * ByteMultiple.parseString(bytesMult).value();
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+private void sequentialTest(FileSystem fs,int testType,long fileSize,int nrFiles) throws IOException {
+
+  IOStatMapper<Long> ioer=null;
+
+  if (testType == TEST_TYPE_READ)   ioer=new ReadMapper();
+
+ else   if (testType == TEST_TYPE_WRITE)   ioer=new WriteMapper();
+
+ else   if (testType == TEST_TYPE_APPEND)   ioer=new AppendMapper();
+
+ else   return;
+
+  for (int i=0; i < nrFiles; i++)   ioer.doIO(Reporter.NULL,BASE_FILE_NAME + Integer.toString(i),fileSize);
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+public TestDFSIO(){
+
+  this.config=new Configuration();
+
+}
+
+Location: TestDFSIO.java
+
+Content: 
+
+static float toMB(long bytes){
+
+  return ((float)bytes) / MEGA;
+
+}
+

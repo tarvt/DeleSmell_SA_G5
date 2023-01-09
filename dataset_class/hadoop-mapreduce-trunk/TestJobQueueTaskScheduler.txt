@@ -1,0 +1,102 @@
+Location: TestJobQueueTaskScheduler.java
+
+Content: 
+
+static void checkAssignment(TaskScheduler scheduler,TaskTracker taskTracker,String[] expectedTaskStrings) throws IOException {
+
+  List<Task> tasks=scheduler.assignTasks(taskTracker);
+
+  assertNotNull(tasks);
+
+  assertEquals(expectedTaskStrings.length,tasks.size());
+
+  for (int i=0; i < expectedTaskStrings.length; ++i) {
+
+    assertEquals(expectedTaskStrings[i],tasks.get(i).toString());
+
+  }
+
+}
+
+Location: TestJobQueueTaskScheduler.java
+
+Content: 
+
+static void submitJobs(FakeTaskTrackerManager taskTrackerManager,JobConf jobConf,int numJobs,int state) throws IOException {
+
+  for (int i=0; i < numJobs; i++) {
+
+    JobInProgress job=new FakeJobInProgress(jobConf,taskTrackerManager,UtilsForTests.getJobTracker());
+
+    job.getStatus().setRunState(state);
+
+    taskTrackerManager.submitJob(job);
+
+  }
+
+}
+
+Location: TestJobQueueTaskScheduler.java
+
+Content: 
+
+public void testDefaultTaskAssignment() throws IOException {
+
+  submitJobs(taskTrackerManager,jobConf,2,JobStatus.RUNNING);
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt1"),new String[]{"attempt_test_0001_m_000001_0 on tt1","attempt_test_0001_m_000002_0 on tt1","attempt_test_0001_r_000003_0 on tt1"});
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt1"),new String[]{"attempt_test_0001_r_000004_0 on tt1"});
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt1"),new String[]{});
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt2"),new String[]{"attempt_test_0001_m_000005_0 on tt2","attempt_test_0001_m_000006_0 on tt2","attempt_test_0001_r_000007_0 on tt2"});
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt2"),new String[]{"attempt_test_0001_r_000008_0 on tt2"});
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt2"),new String[]{});
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt1"),new String[]{});
+
+  checkAssignment(scheduler,tracker(taskTrackerManager,"tt2"),new String[]{});
+
+}
+
+Location: TestJobQueueTaskScheduler.java
+
+Content: 
+
+public void testNonRunningJobsAreIgnored() throws IOException {
+
+  submitJobs(taskTrackerManager,jobConf,1,JobStatus.PREP);
+
+  submitJobs(taskTrackerManager,jobConf,1,JobStatus.SUCCEEDED);
+
+  submitJobs(taskTrackerManager,jobConf,1,JobStatus.FAILED);
+
+  submitJobs(taskTrackerManager,jobConf,1,JobStatus.KILLED);
+
+  assertEquals(0,scheduler.assignTasks(tracker(taskTrackerManager,"tt1")).size());
+
+}
+
+Location: TestJobQueueTaskScheduler.java
+
+Content: 
+
+public void testTaskNotAssignedWhenNoJobsArePresent() throws IOException {
+
+  assertEquals(0,scheduler.assignTasks(tracker(taskTrackerManager,"tt1")).size());
+
+}
+
+Location: TestJobQueueTaskScheduler.java
+
+Content: 
+
+static TaskTracker tracker(FakeTaskTrackerManager taskTrackerManager,String taskTrackerName){
+
+  return taskTrackerManager.getTaskTracker(taskTrackerName);
+
+}
+

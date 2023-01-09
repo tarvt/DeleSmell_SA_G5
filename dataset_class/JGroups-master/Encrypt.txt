@@ -1,0 +1,368 @@
+Location: Encrypt.java
+
+Content: 
+
+public String asymAlgorithm(){
+
+  return asym_algorithm;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public <T extends Encrypt<E>>T asymAlgorithm(String alg){
+
+  this.asym_algorithm=alg;
+
+  return (T)this;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public int asymKeylength(){
+
+  return asym_keylength;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public <T extends Encrypt<E>>T asymKeylength(int len){
+
+  this.asym_keylength=len;
+
+  return (T)this;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected byte[] code(byte[] buf,int offset,int length,boolean decode) throws Exception {
+
+  BlockingQueue<Cipher> queue=decode ? decoding_ciphers : encoding_ciphers;
+
+  Cipher cipher=queue.take();
+
+  try {
+
+    return cipher.doFinal(buf,offset,length);
+
+  }
+
+ catch (  BadPaddingException|IllegalBlockSizeException e) {
+
+    cipher.init(decode ? Cipher.DECRYPT_MODE : Cipher.ENCRYPT_MODE,secret_key);
+
+    throw e;
+
+  }
+
+ finally {
+
+    queue.offer(cipher);
+
+  }
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected Cipher createCipher(int mode,Key secret_key,String algorithm) throws Exception {
+
+  Cipher cipher=provider != null && !provider.trim().isEmpty() ? Cipher.getInstance(algorithm,provider) : Cipher.getInstance(algorithm);
+
+  cipher.init(mode,secret_key);
+
+  return cipher;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+/** 
+
+ * Does the actual work for decrypting - if version does not match current cipher then tries the previous cipher 
+
+ */
+
+protected Message decryptMessage(Cipher cipher,Message msg) throws Exception {
+
+  EncryptHeader hdr=msg.getHeader(this.id);
+
+  if (!Arrays.equals(hdr.version(),sym_version)) {
+
+    if (!inView(msg.src(),String.format("%s: rejected decryption of %s message from non-member %s",local_addr,msg.dest() == null ? "multicast" : "unicast",msg.getSrc())))     return null;
+
+    cipher=key_map.get(new AsciiString(hdr.version()));
+
+    if (cipher == null) {
+
+      log.trace("%s: message from %s (version: %s) dropped, as a cipher matching that version wasn't found " + "(current version: %s)",local_addr,msg.src(),Util.byteArrayToHexString(hdr.version()),Util.byteArrayToHexString(sym_version));
+
+      return null;
+
+    }
+
+    log.trace("%s: decrypting msg from %s using previous cipher version %s",local_addr,msg.src(),Util.byteArrayToHexString(hdr.version()));
+
+    return _decrypt(cipher,msg);
+
+  }
+
+  return _decrypt(cipher,msg);
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected void encryptAndSend(Message msg) throws Exception {
+
+  down_prot.down(encrypt(msg));
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected Message encrypt(Message msg) throws Exception {
+
+  EncryptHeader hdr=new EncryptHeader(symVersion());
+
+  Message msgEncrypted=msg.copy(false).putHeader(this.id,hdr);
+
+  byte[] payload=msg.getRawBuffer();
+
+  if (payload != null) {
+
+    if (msg.getLength() > 0)     msgEncrypted.setBuffer(code(payload,msg.getOffset(),msg.getLength(),false));
+
+ else     msgEncrypted.setBuffer(payload,msg.getOffset(),msg.getLength());
+
+  }
+
+  return msgEncrypted;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected static String getAlgorithm(String s){
+
+  int index=s.indexOf('/');
+
+  return index == -1 ? s : s.substring(0,index);
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected Object handleEncryptedMessage(Message msg) throws Exception {
+
+  Message tmpMsg=decryptMessage(null,msg.copy());
+
+  return tmpMsg != null ? up_prot.up(tmpMsg) : null;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+/** 
+
+ * Initialises the ciphers for both encryption and decryption using the generated or supplied secret key 
+
+ */
+
+protected void initSymCiphers(String algorithm,Key secret) throws Exception {
+
+  if (secret == null)   return;
+
+  BlockingQueue<Cipher> tmp_encoding_ciphers=new ArrayBlockingQueue<>(cipher_pool_size);
+
+  BlockingQueue<Cipher> tmp_decoding_ciphers=new ArrayBlockingQueue<>(cipher_pool_size);
+
+  for (int i=0; i < cipher_pool_size; i++) {
+
+    tmp_encoding_ciphers.offer(createCipher(Cipher.ENCRYPT_MODE,secret,algorithm));
+
+    tmp_decoding_ciphers.offer(createCipher(Cipher.DECRYPT_MODE,secret,algorithm));
+
+  }
+
+  MessageDigest digest=MessageDigest.getInstance("MD5");
+
+  byte[] tmp_sym_version=digest.digest(secret.getEncoded());
+
+  this.encoding_ciphers=tmp_encoding_ciphers;
+
+  this.decoding_ciphers=tmp_decoding_ciphers;
+
+  this.sym_version=tmp_sym_version;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected boolean inView(Address sender,String error_msg){
+
+  View curr_view=this.view;
+
+  if (curr_view == null || curr_view.containsMember(sender))   return true;
+
+  log.error(error_msg,sender,curr_view);
+
+  return false;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+@ManagedOperation(description="Prints the versions of the shared group keys cached in the key map") public String printCachedGroupKeys(){
+
+  return key_map.keySet().stream().map(v -> Util.byteArrayToHexString(v.chars())).collect(Collectors.joining(", "));
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public Key secretKey(){
+
+  return secret_key;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+/** 
+
+ * Sets the key store entry used to configure this protocol.
+
+ * @param entry a key store entry
+
+ */
+
+public abstract void setKeyStoreEntry(E entry);
+
+Location: Encrypt.java
+
+Content: 
+
+public String symAlgorithm(){
+
+  return sym_algorithm;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public <T extends Encrypt<E>>T symAlgorithm(String alg){
+
+  this.sym_algorithm=alg;
+
+  return (T)this;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public int symKeylength(){
+
+  return sym_keylength;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public <T extends Encrypt<E>>T symKeylength(int len){
+
+  this.sym_keylength=len;
+
+  return (T)this;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+public byte[] symVersion(){
+
+  return sym_version;
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+@ManagedAttribute public String version(){
+
+  return Util.byteArrayToHexString(sym_version);
+
+}
+
+Location: Encrypt.java
+
+Content: 
+
+protected Message _decrypt(final Cipher cipher,Message msg) throws Exception {
+
+  if (msg.getLength() == 0)   return msg;
+
+  byte[] decrypted_msg;
+
+  if (cipher == null)   decrypted_msg=code(msg.getRawBuffer(),msg.getOffset(),msg.getLength(),true);
+
+ else   try {
+
+    decrypted_msg=cipher.doFinal(msg.getRawBuffer(),msg.getOffset(),msg.getLength());
+
+  }
+
+ catch (  BadPaddingException|IllegalBlockSizeException e) {
+
+    cipher.init(Cipher.DECRYPT_MODE,secret_key);
+
+    throw e;
+
+  }
+
+  return msg.setBuffer(decrypted_msg);
+
+}
+

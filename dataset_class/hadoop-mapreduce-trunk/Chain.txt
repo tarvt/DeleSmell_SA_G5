@@ -1,0 +1,868 @@
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Adds a Mapper class to the chain job. <p/> The configuration properties of the chain job have precedence over the configuration properties of the Mapper.
+
+ * @param isMap indicates if the Chain is for a Mapper or for a Reducer.
+
+ * @param job chain job.
+
+ * @param klass the Mapper class to add.
+
+ * @param inputKeyClass mapper input key class.
+
+ * @param inputValueClass mapper input value class.
+
+ * @param outputKeyClass mapper output key class.
+
+ * @param outputValueClass mapper output value class.
+
+ * @param mapperConf a configuration for the Mapper class. It is recommended to use a Configuration without default values using the <code>Configuration(boolean loadDefaults)</code> constructor with FALSE.
+
+ */
+
+@SuppressWarnings("unchecked") protected static void addMapper(boolean isMap,Job job,Class<? extends Mapper> klass,Class<?> inputKeyClass,Class<?> inputValueClass,Class<?> outputKeyClass,Class<?> outputValueClass,Configuration mapperConf){
+
+  String prefix=getPrefix(isMap);
+
+  Configuration jobConf=job.getConfiguration();
+
+  checkReducerAlreadySet(isMap,jobConf,prefix,true);
+
+  int index=getIndex(jobConf,prefix);
+
+  jobConf.setClass(prefix + CHAIN_MAPPER_CLASS + index,klass,Mapper.class);
+
+  validateKeyValueTypes(isMap,jobConf,inputKeyClass,inputValueClass,outputKeyClass,outputValueClass,index,prefix);
+
+  setMapperConf(isMap,jobConf,inputKeyClass,inputValueClass,outputKeyClass,outputValueClass,mapperConf,index,prefix);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Adds a Mapper class to the chain job's JobConf. <p/> The configuration properties of the chain job have precedence over the configuration properties of the Mapper.
+
+ * @param isMap            indicates if the Chain is for a Mapper or for aReducer.
+
+ * @param jobConf              chain job's JobConf to add the Mapper class.
+
+ * @param klass            the Mapper class to add.
+
+ * @param inputKeyClass    mapper input key class.
+
+ * @param inputValueClass  mapper input value class.
+
+ * @param outputKeyClass   mapper output key class.
+
+ * @param outputValueClass mapper output value class.
+
+ * @param byValue          indicates if key/values should be passed by valueto the next Mapper in the chain, if any.
+
+ * @param mapperConf       a JobConf with the configuration for the Mapperclass. It is recommended to use a JobConf without default values using the <code>JobConf(boolean loadDefaults)</code> constructor with FALSE.
+
+ */
+
+public static <K1,V1,K2,V2>void addMapper(boolean isMap,JobConf jobConf,Class<? extends Mapper<K1,V1,K2,V2>> klass,Class<? extends K1> inputKeyClass,Class<? extends V1> inputValueClass,Class<? extends K2> outputKeyClass,Class<? extends V2> outputValueClass,boolean byValue,JobConf mapperConf){
+
+  String prefix=getPrefix(isMap);
+
+  checkReducerAlreadySet(isMap,jobConf,prefix,true);
+
+  int index=getIndex(jobConf,prefix);
+
+  jobConf.setClass(prefix + CHAIN_MAPPER_CLASS + index,klass,Mapper.class);
+
+  validateKeyValueTypes(isMap,jobConf,inputKeyClass,inputValueClass,outputKeyClass,outputValueClass,index,prefix);
+
+  if (mapperConf == null) {
+
+    mapperConf=new JobConf(true);
+
+  }
+
+  mapperConf.setBoolean(MAPPER_BY_VALUE,byValue);
+
+  setMapperConf(isMap,jobConf,inputKeyClass,inputValueClass,outputKeyClass,outputValueClass,mapperConf,index,prefix);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Add mapper that reads and writes from/to the queue
+
+ */
+
+@SuppressWarnings("unchecked") void addMapper(ChainBlockingQueue<KeyValuePair<?,?>> input,ChainBlockingQueue<KeyValuePair<?,?>> output,TaskInputOutputContext context,int index) throws IOException, InterruptedException {
+
+  Configuration conf=getConf(index);
+
+  Class<?> keyClass=conf.getClass(MAPPER_INPUT_KEY_CLASS,Object.class);
+
+  Class<?> valueClass=conf.getClass(MAPPER_INPUT_VALUE_CLASS,Object.class);
+
+  Class<?> keyOutClass=conf.getClass(MAPPER_OUTPUT_KEY_CLASS,Object.class);
+
+  Class<?> valueOutClass=conf.getClass(MAPPER_OUTPUT_VALUE_CLASS,Object.class);
+
+  RecordReader rr=new ChainRecordReader(keyClass,valueClass,input,conf);
+
+  RecordWriter rw=new ChainRecordWriter(keyOutClass,valueOutClass,output,conf);
+
+  MapRunner runner=new MapRunner(mappers.get(index),createMapContext(rr,rw,context,getConf(index)),rr,rw);
+
+  threads.add(runner);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Add mapper(the last mapper) that reads input from queue and writes output to the output context
+
+ */
+
+@SuppressWarnings("unchecked") void addMapper(ChainBlockingQueue<KeyValuePair<?,?>> input,TaskInputOutputContext outputContext,int index) throws IOException, InterruptedException {
+
+  Configuration conf=getConf(index);
+
+  Class<?> keyClass=conf.getClass(MAPPER_INPUT_KEY_CLASS,Object.class);
+
+  Class<?> valueClass=conf.getClass(MAPPER_INPUT_VALUE_CLASS,Object.class);
+
+  RecordReader rr=new ChainRecordReader(keyClass,valueClass,input,conf);
+
+  RecordWriter rw=new ChainRecordWriter(outputContext);
+
+  MapRunner runner=new MapRunner(mappers.get(index),createMapContext(rr,rw,outputContext,getConf(index)),rr,rw);
+
+  threads.add(runner);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Add mapper(the first mapper) that reads input from the input context and writes to queue
+
+ */
+
+@SuppressWarnings("unchecked") void addMapper(TaskInputOutputContext inputContext,ChainBlockingQueue<KeyValuePair<?,?>> output,int index) throws IOException, InterruptedException {
+
+  Configuration conf=getConf(index);
+
+  Class<?> keyOutClass=conf.getClass(MAPPER_OUTPUT_KEY_CLASS,Object.class);
+
+  Class<?> valueOutClass=conf.getClass(MAPPER_OUTPUT_VALUE_CLASS,Object.class);
+
+  RecordReader rr=new ChainRecordReader(inputContext);
+
+  RecordWriter rw=new ChainRecordWriter(keyOutClass,valueOutClass,output,conf);
+
+  Mapper.Context mapperContext=createMapContext(rr,rw,(MapContext)inputContext,getConf(index));
+
+  MapRunner runner=new MapRunner(mappers.get(index),mapperContext,rr,rw);
+
+  threads.add(runner);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Add reducer that reads from context and writes to a queue
+
+ */
+
+@SuppressWarnings("unchecked") void addReducer(TaskInputOutputContext inputContext,ChainBlockingQueue<KeyValuePair<?,?>> outputQueue) throws IOException, InterruptedException {
+
+  Class<?> keyOutClass=rConf.getClass(REDUCER_OUTPUT_KEY_CLASS,Object.class);
+
+  Class<?> valueOutClass=rConf.getClass(REDUCER_OUTPUT_VALUE_CLASS,Object.class);
+
+  RecordWriter rw=new ChainRecordWriter(keyOutClass,valueOutClass,outputQueue,rConf);
+
+  Reducer.Context reducerContext=createReduceContext(rw,(ReduceContext)inputContext,rConf);
+
+  ReduceRunner runner=new ReduceRunner(reducerContext,reducer,rw);
+
+  threads.add(runner);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Creates a Chain instance configured for a Mapper or a Reducer.
+
+ * @param isMap TRUE indicates the chain is for a Mapper, FALSE that is for a Reducer.
+
+ */
+
+protected Chain(boolean isMap){
+
+  this.isMap=isMap;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+protected static void checkReducerAlreadySet(boolean isMap,Configuration jobConf,String prefix,boolean shouldSet){
+
+  if (!isMap) {
+
+    if (shouldSet) {
+
+      if (jobConf.getClass(prefix + CHAIN_REDUCER_CLASS,null) == null) {
+
+        throw new IllegalStateException("A Mapper can be added to the chain only after the Reducer has " + "been set");
+
+      }
+
+    }
+
+ else {
+
+      if (jobConf.getClass(prefix + CHAIN_REDUCER_CLASS,null) != null) {
+
+        throw new IllegalStateException("Reducer has been already set");
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Creates a ChainBlockingQueue with KeyValuePair as element
+
+ * @return the ChainBlockingQueue
+
+ */
+
+ChainBlockingQueue<KeyValuePair<?,?>> createBlockingQueue(){
+
+  return new ChainBlockingQueue<KeyValuePair<?,?>>();
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Create a map context that is based on ChainMapContext and the given record reader and record writer
+
+ */
+
+private <KEYIN,VALUEIN,KEYOUT,VALUEOUT>Mapper<KEYIN,VALUEIN,KEYOUT,VALUEOUT>.Context createMapContext(RecordReader<KEYIN,VALUEIN> rr,RecordWriter<KEYOUT,VALUEOUT> rw,TaskInputOutputContext<KEYIN,VALUEIN,KEYOUT,VALUEOUT> context,Configuration conf){
+
+  MapContext<KEYIN,VALUEIN,KEYOUT,VALUEOUT> mapContext=new ChainMapContextImpl<KEYIN,VALUEIN,KEYOUT,VALUEOUT>(context,rr,rw,conf);
+
+  Mapper<KEYIN,VALUEIN,KEYOUT,VALUEOUT>.Context mapperContext=new WrappedMapper<KEYIN,VALUEIN,KEYOUT,VALUEOUT>().getMapContext(mapContext);
+
+  return mapperContext;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Create a reduce context that is based on ChainMapContext and the given record writer
+
+ */
+
+private <KEYIN,VALUEIN,KEYOUT,VALUEOUT>Reducer<KEYIN,VALUEIN,KEYOUT,VALUEOUT>.Context createReduceContext(RecordWriter<KEYOUT,VALUEOUT> rw,ReduceContext<KEYIN,VALUEIN,KEYOUT,VALUEOUT> context,Configuration conf){
+
+  ReduceContext<KEYIN,VALUEIN,KEYOUT,VALUEOUT> reduceContext=new ChainReduceContextImpl<KEYIN,VALUEIN,KEYOUT,VALUEOUT>(context,rw,conf);
+
+  Reducer<KEYIN,VALUEIN,KEYOUT,VALUEOUT>.Context reducerContext=new WrappedReducer<KEYIN,VALUEIN,KEYOUT,VALUEOUT>().getReducerContext(reduceContext);
+
+  return reducerContext;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+@SuppressWarnings("unchecked") List<Mapper> getAllMappers(){
+
+  return mappers;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Creates a  {@link Configuration} for the Map or Reduce in the chain.<p> It creates a new Configuration using the chain job's Configuration as base and adds to it the configuration properties for the chain element. The keys of the chain element Configuration have precedence over the given Configuration. </p>
+
+ * @param jobConf the chain job's Configuration.
+
+ * @param confKey the key for chain element configuration serialized in the chain job's Configuration.
+
+ * @return a new Configuration aggregating the chain job's Configuration withthe chain element configuration properties.
+
+ */
+
+protected static Configuration getChainElementConf(Configuration jobConf,String confKey){
+
+  Configuration conf=null;
+
+  try {
+
+    Stringifier<Configuration> stringifier=new DefaultStringifier<Configuration>(jobConf,Configuration.class);
+
+    String confString=jobConf.get(confKey,null);
+
+    if (confString != null) {
+
+      conf=stringifier.fromString(jobConf.get(confKey,null));
+
+    }
+
+  }
+
+ catch (  IOException ioex) {
+
+    throw new RuntimeException(ioex);
+
+  }
+
+  jobConf=new Configuration(jobConf);
+
+  if (conf != null) {
+
+    for (    Map.Entry<String,String> entry : conf) {
+
+      jobConf.set(entry.getKey(),entry.getValue());
+
+    }
+
+  }
+
+  return jobConf;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Returns the chain job conf.
+
+ * @return the chain job conf.
+
+ */
+
+protected JobConf getChainJobConf(){
+
+  return chainJobConf;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+Configuration getConf(int index){
+
+  return confList.get(index);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Returns the first Mapper instance in the chain.
+
+ * @return the first Mapper instance in the chain or NULL if none.
+
+ */
+
+public Mapper getFirstMap(){
+
+  return (mappers.size() > 0) ? mappers.get(0) : null;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+protected static int getIndex(Configuration conf,String prefix){
+
+  return conf.getInt(prefix + CHAIN_MAPPER_SIZE,0);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Returns the OutputCollector to be used by a Mapper instance in the chain.
+
+ * @param mapperIndex index of the Mapper instance to get the OutputCollector.
+
+ * @param output      the original OutputCollector of the task.
+
+ * @param reporter    the reporter of the task.
+
+ * @return the OutputCollector to be used in the chain.
+
+ */
+
+@SuppressWarnings({"unchecked"}) public OutputCollector getMapperCollector(int mapperIndex,OutputCollector output,Reporter reporter){
+
+  Serialization keySerialization=mappersKeySerialization.get(mapperIndex);
+
+  Serialization valueSerialization=mappersValueSerialization.get(mapperIndex);
+
+  return new ChainOutputCollector(mapperIndex,keySerialization,valueSerialization,output,reporter);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Returns the prefix to use for the configuration of the chain depending if it is for a Mapper or a Reducer.
+
+ * @param isMap TRUE for Mapper, FALSE for Reducer.
+
+ * @return the prefix to use.
+
+ */
+
+protected static String getPrefix(boolean isMap){
+
+  return (isMap) ? CHAIN_MAPPER : CHAIN_REDUCER;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Returns the Reducer instance in the chain.
+
+ * @return the Reducer instance in the chain or NULL if none.
+
+ */
+
+Reducer<?,?,?,?> getReducer(){
+
+  return reducer;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Returns the OutputCollector to be used by a Mapper instance in the chain.
+
+ * @param output   the original OutputCollector of the task.
+
+ * @param reporter the reporter of the task.
+
+ * @return the OutputCollector to be used in the chain.
+
+ */
+
+@SuppressWarnings({"unchecked"}) public OutputCollector getReducerCollector(OutputCollector output,Reporter reporter){
+
+  return new ChainOutputCollector(reducerKeySerialization,reducerValueSerialization,output,reporter);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+private synchronized Throwable getThrowable(){
+
+  return throwable;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+private synchronized void interruptAllThreads(){
+
+  for (  Thread th : threads) {
+
+    th.interrupt();
+
+  }
+
+  for (  ChainBlockingQueue<?> queue : blockingQueues) {
+
+    queue.interrupt();
+
+  }
+
+}
+
+Location: Chain.java
+
+Content: 
+
+void joinAllThreads() throws IOException, InterruptedException {
+
+  for (  Thread thread : threads) {
+
+    thread.join();
+
+  }
+
+  Throwable th=getThrowable();
+
+  if (th != null) {
+
+    if (th instanceof IOException) {
+
+      throw (IOException)th;
+
+    }
+
+ else     if (th instanceof InterruptedException) {
+
+      throw (InterruptedException)th;
+
+    }
+
+ else {
+
+      throw new RuntimeException(th);
+
+    }
+
+  }
+
+}
+
+Location: Chain.java
+
+Content: 
+
+@SuppressWarnings("unchecked") void runMapper(TaskInputOutputContext context,int index) throws IOException, InterruptedException {
+
+  Mapper mapper=mappers.get(index);
+
+  RecordReader rr=new ChainRecordReader(context);
+
+  RecordWriter rw=new ChainRecordWriter(context);
+
+  Mapper.Context mapperContext=createMapContext(rr,rw,context,getConf(index));
+
+  mapper.run(mapperContext);
+
+  rr.close();
+
+  rw.close(context);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+@SuppressWarnings("unchecked") <KEYIN,VALUEIN,KEYOUT,VALUEOUT>void runReducer(TaskInputOutputContext<KEYIN,VALUEIN,KEYOUT,VALUEOUT> context) throws IOException, InterruptedException {
+
+  RecordWriter<KEYOUT,VALUEOUT> rw=new ChainRecordWriter<KEYOUT,VALUEOUT>(context);
+
+  Reducer.Context reducerContext=createReduceContext(rw,(ReduceContext)context,rConf);
+
+  reducer.run(reducerContext);
+
+  rw.close(context);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+private synchronized boolean setIfUnsetThrowable(Throwable th){
+
+  if (throwable == null) {
+
+    throwable=th;
+
+    return true;
+
+  }
+
+  return false;
+
+}
+
+Location: Chain.java
+
+Content: 
+
+protected static void setMapperConf(boolean isMap,Configuration jobConf,Class<?> inputKeyClass,Class<?> inputValueClass,Class<?> outputKeyClass,Class<?> outputValueClass,Configuration mapperConf,int index,String prefix){
+
+  if (mapperConf == null) {
+
+    mapperConf=new Configuration(true);
+
+  }
+
+  mapperConf.setClass(MAPPER_INPUT_KEY_CLASS,inputKeyClass,Object.class);
+
+  mapperConf.setClass(MAPPER_INPUT_VALUE_CLASS,inputValueClass,Object.class);
+
+  mapperConf.setClass(MAPPER_OUTPUT_KEY_CLASS,outputKeyClass,Object.class);
+
+  mapperConf.setClass(MAPPER_OUTPUT_VALUE_CLASS,outputValueClass,Object.class);
+
+  Stringifier<Configuration> stringifier=new DefaultStringifier<Configuration>(jobConf,Configuration.class);
+
+  try {
+
+    jobConf.set(prefix + CHAIN_MAPPER_CONFIG + index,stringifier.toString(new Configuration(mapperConf)));
+
+  }
+
+ catch (  IOException ioEx) {
+
+    throw new RuntimeException(ioEx);
+
+  }
+
+  jobConf.setInt(prefix + CHAIN_MAPPER_SIZE,index + 1);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+protected static void setReducerConf(Configuration jobConf,Class<?> inputKeyClass,Class<?> inputValueClass,Class<?> outputKeyClass,Class<?> outputValueClass,Configuration reducerConf,String prefix){
+
+  if (reducerConf == null) {
+
+    reducerConf=new Configuration(false);
+
+  }
+
+  reducerConf.setClass(REDUCER_INPUT_KEY_CLASS,inputKeyClass,Object.class);
+
+  reducerConf.setClass(REDUCER_INPUT_VALUE_CLASS,inputValueClass,Object.class);
+
+  reducerConf.setClass(REDUCER_OUTPUT_KEY_CLASS,outputKeyClass,Object.class);
+
+  reducerConf.setClass(REDUCER_OUTPUT_VALUE_CLASS,outputValueClass,Object.class);
+
+  Stringifier<Configuration> stringifier=new DefaultStringifier<Configuration>(jobConf,Configuration.class);
+
+  try {
+
+    jobConf.set(prefix + CHAIN_REDUCER_CONFIG,stringifier.toString(new Configuration(reducerConf)));
+
+  }
+
+ catch (  IOException ioEx) {
+
+    throw new RuntimeException(ioEx);
+
+  }
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Sets the Reducer class to the chain job. <p/> The configuration properties of the chain job have precedence over the configuration properties of the Reducer.
+
+ * @param job the chain job.
+
+ * @param klass the Reducer class to add.
+
+ * @param inputKeyClass reducer input key class.
+
+ * @param inputValueClass reducer input value class.
+
+ * @param outputKeyClass reducer output key class.
+
+ * @param outputValueClass reducer output value class.
+
+ * @param reducerConf a configuration for the Reducer class. It is recommended to use a Configuration without default values using the <code>Configuration(boolean loadDefaults)</code> constructor with FALSE.
+
+ */
+
+@SuppressWarnings("unchecked") protected static void setReducer(Job job,Class<? extends Reducer> klass,Class<?> inputKeyClass,Class<?> inputValueClass,Class<?> outputKeyClass,Class<?> outputValueClass,Configuration reducerConf){
+
+  String prefix=getPrefix(false);
+
+  Configuration jobConf=job.getConfiguration();
+
+  checkReducerAlreadySet(false,jobConf,prefix,false);
+
+  jobConf.setClass(prefix + CHAIN_REDUCER_CLASS,klass,Reducer.class);
+
+  setReducerConf(jobConf,inputKeyClass,inputValueClass,outputKeyClass,outputValueClass,reducerConf,prefix);
+
+}
+
+Location: Chain.java
+
+Content: 
+
+/** 
+
+ * Setup the chain.
+
+ * @param jobConf chain job's  {@link Configuration}.
+
+ */
+
+@SuppressWarnings("unchecked") void setup(Configuration jobConf){
+
+  String prefix=getPrefix(isMap);
+
+  int index=jobConf.getInt(prefix + CHAIN_MAPPER_SIZE,0);
+
+  for (int i=0; i < index; i++) {
+
+    Class<? extends Mapper> klass=jobConf.getClass(prefix + CHAIN_MAPPER_CLASS + i,null,Mapper.class);
+
+    Configuration mConf=getChainElementConf(jobConf,prefix + CHAIN_MAPPER_CONFIG + i);
+
+    confList.add(mConf);
+
+    Mapper mapper=ReflectionUtils.newInstance(klass,mConf);
+
+    mappers.add(mapper);
+
+  }
+
+  Class<? extends Reducer> klass=jobConf.getClass(prefix + CHAIN_REDUCER_CLASS,null,Reducer.class);
+
+  if (klass != null) {
+
+    rConf=getChainElementConf(jobConf,prefix + CHAIN_REDUCER_CONFIG);
+
+    reducer=ReflectionUtils.newInstance(klass,rConf);
+
+  }
+
+}
+
+Location: Chain.java
+
+Content: 
+
+void startAllThreads(){
+
+  for (  Thread thread : threads) {
+
+    thread.start();
+
+  }
+
+}
+
+Location: Chain.java
+
+Content: 
+
+protected static void validateKeyValueTypes(boolean isMap,Configuration jobConf,Class<?> inputKeyClass,Class<?> inputValueClass,Class<?> outputKeyClass,Class<?> outputValueClass,int index,String prefix){
+
+  if (!isMap && index == 0) {
+
+    Configuration reducerConf=getChainElementConf(jobConf,prefix + CHAIN_REDUCER_CONFIG);
+
+    if (!inputKeyClass.isAssignableFrom(reducerConf.getClass(REDUCER_OUTPUT_KEY_CLASS,null))) {
+
+      throw new IllegalArgumentException("The Reducer output key class does" + " not match the Mapper input key class");
+
+    }
+
+    if (!inputValueClass.isAssignableFrom(reducerConf.getClass(REDUCER_OUTPUT_VALUE_CLASS,null))) {
+
+      throw new IllegalArgumentException("The Reducer output value class" + " does not match the Mapper input value class");
+
+    }
+
+  }
+
+ else   if (index > 0) {
+
+    Configuration previousMapperConf=getChainElementConf(jobConf,prefix + CHAIN_MAPPER_CONFIG + (index - 1));
+
+    if (!inputKeyClass.isAssignableFrom(previousMapperConf.getClass(MAPPER_OUTPUT_KEY_CLASS,null))) {
+
+      throw new IllegalArgumentException("The specified Mapper input key class does" + " not match the previous Mapper's output key class.");
+
+    }
+
+    if (!inputValueClass.isAssignableFrom(previousMapperConf.getClass(MAPPER_OUTPUT_VALUE_CLASS,null))) {
+
+      throw new IllegalArgumentException("The specified Mapper input value class" + " does not match the previous Mapper's output value class.");
+
+    }
+
+  }
+
+}
+

@@ -1,0 +1,994 @@
+Location: TestJobHistory.java
+
+Content: 
+
+private void cleanupLocalFiles(MiniMRCluster mr) throws IOException {
+
+  Configuration conf=mr.createJobConf();
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  Path sysDir=new Path(jt.getSystemDir());
+
+  FileSystem fs=sysDir.getFileSystem(conf);
+
+  fs.delete(sysDir,true);
+
+  Path jobHistoryDir=mr.getJobTrackerRunner().getJobTracker().getJobHistory().getJobHistoryLocation();
+
+  fs=jobHistoryDir.getFileSystem(conf);
+
+  fs.delete(jobHistoryDir,true);
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private static String getDoneFile(JobHistory jobHistory,JobConf conf,JobID id,Path doneDir) throws IOException {
+
+  String name=null;
+
+  String user=UserGroupInformation.getCurrentUser().getUserName();
+
+  for (int i=0; name == null && i < 20; i++) {
+
+    Path path=JobHistory.getJobHistoryFile(jobHistory.getCompletedJobHistoryLocation(),id,user);
+
+    if (path.getFileSystem(conf).exists(path)) {
+
+      name=path.toString();
+
+    }
+
+    UtilsForTests.waitFor(1000);
+
+  }
+
+  assertNotNull("Job history file not created",name);
+
+  return name;
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+/** 
+
+ * Returns the conf file name in the same
+
+ * @param path path of the jobhistory file
+
+ * @param running whether the job is running or completed
+
+ */
+
+private static Path getPathForConf(Path path,Path dir){
+
+  String parts[]=path.getName().split("_");
+
+  String id=parts[0] + "_" + parts[1]+ "_"+ parts[2];
+
+  return new Path(dir,id + "_conf.xml");
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private void runDoneFolderTest(String doneFolder) throws IOException, InterruptedException {
+
+  MiniMRCluster mr=null;
+
+  MiniDFSCluster dfsCluster=null;
+
+  try {
+
+    JobConf conf=new JobConf();
+
+    conf.setLong("mapred.jobtracker.retirejob.check",1000);
+
+    conf.setLong("mapred.jobtracker.retirejob.interval",1000);
+
+    conf.set(JTConfig.JT_JOBHISTORY_COMPLETED_LOCATION,doneFolder);
+
+    String logDir="file:///" + new File(System.getProperty("hadoop.log.dir")).getAbsolutePath() + File.separator+ "history";
+
+    Path logDirPath=new Path(logDir);
+
+    FileSystem logDirFs=logDirPath.getFileSystem(conf);
+
+    if (logDirFs.exists(logDirPath)) {
+
+      boolean deleted=logDirFs.delete(logDirPath,true);
+
+      LOG.info(logDirPath + " deleted " + deleted);
+
+    }
+
+    logDirFs.mkdirs(logDirPath);
+
+    assertEquals("No of file in logDir not correct",0,logDirFs.listStatus(logDirPath).length);
+
+    logDirFs.create(new Path(logDirPath,"f1"));
+
+    logDirFs.create(new Path(logDirPath,"f2"));
+
+    assertEquals("No of file in logDir not correct",2,logDirFs.listStatus(logDirPath).length);
+
+    dfsCluster=new MiniDFSCluster(conf,2,true,null);
+
+    mr=new MiniMRCluster(2,dfsCluster.getFileSystem().getUri().toString(),3,null,null,conf);
+
+    assertEquals("Files in logDir did not move to DONE folder",0,logDirFs.listStatus(logDirPath).length);
+
+    JobHistory jobHistory=mr.getJobTrackerRunner().getJobTracker().getJobHistory();
+
+    Path doneDir=jobHistory.getCompletedJobHistoryLocation();
+
+    assertEquals("Files in DONE dir not correct",2,doneDir.getFileSystem(conf).listStatus(doneDir).length);
+
+    conf=mr.createJobConf();
+
+    FileSystem fs=FileSystem.get(conf);
+
+    fs.delete(new Path("succeed"),true);
+
+    Path inDir=new Path("succeed/input");
+
+    Path outDir=new Path("succeed/output");
+
+    conf.setSpeculativeExecution(false);
+
+    conf.setInt("mapred.jobtracker.completeuserjobs.maximum",10);
+
+    RunningJob job=UtilsForTests.runJobSucceed(conf,inDir,outDir);
+
+    assertEquals("History DONE folder not correct",new Path(doneFolder).getName(),doneDir.getName());
+
+    JobID id=job.getID();
+
+    String logFileName=getDoneFile(jobHistory,conf,id,doneDir);
+
+    Path logFile=new Path(doneDir,logFileName);
+
+    FileSystem fileSys=logFile.getFileSystem(conf);
+
+    Cluster cluster=new Cluster(conf);
+
+    assertEquals("Client returned wrong history url",logFile.toString(),cluster.getJobHistoryUrl(id));
+
+    assertTrue("History file does not exist",fileSys.exists(logFile));
+
+    Path confFile=getPathForConf(logFile,doneDir);
+
+    assertTrue("Config for completed jobs doesnt exist",fileSys.exists(confFile));
+
+    assertTrue("Completed job config doesnt exist in the done folder",doneDir.getName().equals(confFile.getParent().getName()));
+
+    assertTrue("Completed jobs doesnt exist in the done folder",doneDir.getName().equals(logFile.getParent().getName()));
+
+    Path runningJobsHistoryFolder=logFile.getParent().getParent();
+
+    Path runningJobHistoryFilename=new Path(runningJobsHistoryFolder,logFile.getName());
+
+    Path runningJobConfFilename=new Path(runningJobsHistoryFolder,confFile.getName());
+
+    assertFalse("History file not deleted from the running folder",fileSys.exists(runningJobHistoryFilename));
+
+    assertFalse("Config for completed jobs not deleted from running folder",fileSys.exists(runningJobConfFilename));
+
+    validateJobHistoryFileFormat(jobHistory,job.getID(),conf,"SUCCEEDED",false);
+
+    validateJobHistoryFileContent(mr,job,conf);
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      cleanupLocalFiles(mr);
+
+      mr.shutdown();
+
+    }
+
+    if (dfsCluster != null) {
+
+      dfsCluster.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+public void testDoneFolderNotOnDefaultFileSystem() throws IOException, InterruptedException {
+
+  runDoneFolderTest("file://" + System.getProperty("test.build.data","tmp") + "/history_done");
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+public void testDoneFolderOnHDFS() throws IOException, InterruptedException {
+
+  runDoneFolderTest("history_done");
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+public void testHistoryInitWithCorruptFiles() throws IOException {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    JobConf conf=new JobConf();
+
+    Path historyDir=new Path(System.getProperty("test.build.data","."),"history");
+
+    conf.set(JTConfig.JT_JOBHISTORY_LOCATION,historyDir.toString());
+
+    conf.setUser("user");
+
+    FileSystem localFs=FileSystem.getLocal(conf);
+
+    if (localFs.exists(historyDir)) {
+
+      boolean deleted=localFs.delete(historyDir,true);
+
+      LOG.info(historyDir + " deleted " + deleted);
+
+    }
+
+    mr=new MiniMRCluster(0,"file:///",3,null,null,conf);
+
+    JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+    JobHistory jh=jt.getJobHistory();
+
+    final JobID jobId=JobID.forName("job_200809171136_0001");
+
+    jh.setupEventWriter(jobId,conf);
+
+    Map<JobACL,AccessControlList> jobACLs=new HashMap<JobACL,AccessControlList>();
+
+    JobSubmittedEvent jse=new JobSubmittedEvent(jobId,"job","user",12345,"path",jobACLs,"default");
+
+    jh.logEvent(jse,jobId);
+
+    jh.closeWriter(jobId);
+
+    String historyFileName=jobId.toString() + "_" + "user";
+
+    Path historyFilePath=new Path(historyDir.toString(),historyFileName);
+
+    RawLocalFileSystem fs=(RawLocalFileSystem)FileSystem.getLocal(conf).getRaw();
+
+    FSDataOutputStream out=fs.create(historyFilePath,true);
+
+    byte[] corruptData=new byte[32];
+
+    new Random().nextBytes(corruptData);
+
+    out.write(corruptData,0,32);
+
+    out.close();
+
+    mr.stopJobTracker();
+
+    mr.startJobTracker();
+
+    jt=mr.getJobTrackerRunner().getJobTracker();
+
+    assertNotNull("JobTracker did not come up",jt);
+
+    jh=jt.getJobHistory();
+
+    assertNotNull("JobHistory did not get initialized correctly",jh);
+
+    assertEquals("Files in logDir did not move to DONE folder",1,historyDir.getFileSystem(conf).listStatus(historyDir).length);
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      cleanupLocalFiles(mr);
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+/** 
+
+ * Run a job that will be succeeded and validate its history file format and its content.
+
+ */
+
+public void testJobHistoryFile() throws Exception {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    JobConf conf=new JobConf();
+
+    conf.setLong("mapred.jobtracker.retirejob.check",1000);
+
+    conf.setLong("mapred.jobtracker.retirejob.interval",1000);
+
+    String doneFolder=TEST_ROOT_DIR + "history_done";
+
+    conf.set(JTConfig.JT_JOBHISTORY_COMPLETED_LOCATION,doneFolder);
+
+    conf.setBoolean(MRConfig.MR_ACLS_ENABLED,true);
+
+    mr=new MiniMRCluster(2,"file:///",3,null,null,conf);
+
+    conf=mr.createJobConf();
+
+    FileSystem fs=FileSystem.get(conf);
+
+    fs.delete(new Path(TEST_ROOT_DIR + "/succeed"),true);
+
+    Path inDir=new Path(TEST_ROOT_DIR + "/succeed/input");
+
+    Path outDir=new Path(TEST_ROOT_DIR + "/succeed/output");
+
+    conf.setSpeculativeExecution(false);
+
+    conf.set(JobACL.VIEW_JOB.getAclName(),"user1,user2 group1,group2");
+
+    conf.set(JobACL.MODIFY_JOB.getAclName(),"user3,user4 group3,group4");
+
+    conf.setInt("mapred.jobtracker.completeuserjobs.maximum",10);
+
+    RunningJob job=UtilsForTests.runJobSucceed(conf,inDir,outDir);
+
+    JobHistory jobHistory=mr.getJobTrackerRunner().getJobTracker().getJobHistory();
+
+    Path doneDir=jobHistory.getCompletedJobHistoryLocation();
+
+    assertEquals("History DONE folder not correct",doneFolder,doneDir.toString());
+
+    JobID id=job.getID();
+
+    String logFileName=getDoneFile(jobHistory,conf,id,doneDir);
+
+    Path logFile=new Path(doneDir,logFileName);
+
+    FileSystem fileSys=logFile.getFileSystem(conf);
+
+    assertTrue("History file does not exist",fileSys.exists(logFile));
+
+    Path confFile=getPathForConf(logFile,doneDir);
+
+    assertTrue("Config for completed jobs doesnt exist",fileSys.exists(confFile));
+
+    assertTrue("Completed job config doesnt exist in the done folder",doneDir.getName().equals(confFile.getParent().getName()));
+
+    assertTrue("Completed jobs doesnt exist in the done folder",doneDir.getName().equals(logFile.getParent().getName()));
+
+    Path runningJobsHistoryFolder=logFile.getParent().getParent();
+
+    Path runningJobHistoryFilename=new Path(runningJobsHistoryFolder,logFile.getName());
+
+    Path runningJobConfFilename=new Path(runningJobsHistoryFolder,confFile.getName());
+
+    assertFalse("History file not deleted from the running folder",fileSys.exists(runningJobHistoryFilename));
+
+    assertFalse("Config for completed jobs not deleted from running folder",fileSys.exists(runningJobConfFilename));
+
+    validateJobHistoryFileFormat(jobHistory,job.getID(),conf,"SUCCEEDED",false);
+
+    validateJobHistoryFileContent(mr,job,conf);
+
+    JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+    String name=jt.getLocalJobFilePath(job.getID());
+
+    File file=new File(name);
+
+    while (file.exists()) {
+
+      LOG.info("Waiting for " + file + " to be deleted");
+
+      UtilsForTests.waitFor(100);
+
+    }
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      cleanupLocalFiles(mr);
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+public void testJobHistoryJobStatus() throws IOException {
+
+  MiniMRCluster mr=null;
+
+  try {
+
+    mr=new MiniMRCluster(2,"file:///",3);
+
+    JobConf conf=mr.createJobConf();
+
+    FileSystem fs=FileSystem.get(conf);
+
+    fs.delete(new Path(TEST_ROOT_DIR + "/succeedfailkilljob"),true);
+
+    Path inDir=new Path(TEST_ROOT_DIR + "/succeedfailkilljob/input");
+
+    Path outDir=new Path(TEST_ROOT_DIR + "/succeedfailkilljob/output");
+
+    RunningJob job=UtilsForTests.runJobSucceed(conf,inDir,outDir);
+
+    JobHistory jobHistory=mr.getJobTrackerRunner().getJobTracker().getJobHistory();
+
+    validateJobHistoryJobStatus(jobHistory,job.getID(),conf,JobStatus.getJobRunState(JobStatus.SUCCEEDED));
+
+    job=UtilsForTests.runJobFail(conf,inDir,outDir);
+
+    validateJobHistoryJobStatus(jobHistory,job.getID(),conf,JobStatus.getJobRunState(JobStatus.FAILED));
+
+    job=UtilsForTests.runJobKill(conf,inDir,outDir);
+
+    validateJobHistoryJobStatus(jobHistory,job.getID(),conf,JobStatus.getJobRunState(JobStatus.KILLED));
+
+  }
+
+  finally {
+
+    if (mr != null) {
+
+      cleanupLocalFiles(mr);
+
+      mr.shutdown();
+
+    }
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+/** 
+
+ * Checks if the history file content is as expected comparing with the actual values obtained from JT. Job Level, Task Level and Task Attempt Level Keys, Values are validated.
+
+ * @param job RunningJob object of the job whose history is to be validated
+
+ * @param conf job conf
+
+ */
+
+public static void validateJobHistoryFileContent(MiniMRCluster mr,RunningJob job,JobConf conf) throws IOException {
+
+  JobID id=job.getID();
+
+  JobHistory jobHistory=mr.getJobTrackerRunner().getJobTracker().getJobHistory();
+
+  Path doneDir=jobHistory.getCompletedJobHistoryLocation();
+
+  String logFileName=getDoneFile(jobHistory,conf,id,doneDir);
+
+  Path logFile=new Path(doneDir,logFileName);
+
+  FileSystem fileSys=logFile.getFileSystem(conf);
+
+  assertTrue("History file does not exist",fileSys.exists(logFile));
+
+  JobHistoryParser parser=new JobHistoryParser(fileSys,logFile.toUri().getPath());
+
+  JobHistoryParser.JobInfo jobInfo=parser.parse();
+
+  validateJobLevelKeyValues(mr,job,jobInfo,conf);
+
+  validateTaskLevelKeyValues(mr,job,jobInfo);
+
+  validateTaskAttemptLevelKeyValues(mr,job,jobInfo);
+
+  if (mr.getJobTrackerRunner().getJobTracker().areACLsEnabled()) {
+
+    AccessControlList acl=new AccessControlList(conf.get(JobACL.VIEW_JOB.getAclName()," "));
+
+    assertTrue("VIEW_JOB ACL is not properly logged to history file.",acl.toString().equals(jobInfo.getJobACLs().get(JobACL.VIEW_JOB).toString()));
+
+    acl=new AccessControlList(conf.get(JobACL.MODIFY_JOB.getAclName()," "));
+
+    assertTrue("MODIFY_JOB ACL is not properly logged to history file.",acl.toString().equals(jobInfo.getJobACLs().get(JobACL.MODIFY_JOB).toString()));
+
+  }
+
+  assertTrue(jobInfo.getJobQueueName().equals(conf.getQueueName()));
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+/** 
+
+ * Validates the format of contents of history file (1) history file exists and in correct location (2) Verify if the history file is parsable (3) Validate the contents of history file (a) Format of all TIMEs are checked against a regex (b) validate legality/format of job level key, values (c) validate legality/format of task level key, values (d) validate legality/format of attempt level key, values (e) check if all the TaskAttempts, Tasks started are finished. Check finish of each TaskAttemptID against its start to make sure that all TaskAttempts, Tasks started are indeed finished and the history log lines are in the proper order. We want to catch ordering of history lines like Task START Attempt START Task FINISH Attempt FINISH (speculative execution is turned off for this).
+
+ * @param id job id
+
+ * @param conf job conf
+
+ */
+
+public static void validateJobHistoryFileFormat(JobHistory jobHistory,JobID id,JobConf conf,String status,boolean splitsCanBeEmpty) throws IOException {
+
+  Path dir=jobHistory.getCompletedJobHistoryLocation();
+
+  String logFileName=getDoneFile(jobHistory,conf,id,dir);
+
+  Path logFile=new Path(dir,logFileName);
+
+  FileSystem fileSys=logFile.getFileSystem(conf);
+
+  assertTrue("History file does not exist",fileSys.exists(logFile));
+
+  JobHistoryParser parser=new JobHistoryParser(fileSys,logFile.toUri().getPath());
+
+  JobHistoryParser.JobInfo jobInfo=parser.parse();
+
+  validateJobLevelKeyValuesFormat(jobInfo,status);
+
+  validateTaskLevelKeyValuesFormat(jobInfo,splitsCanBeEmpty);
+
+  validateTaskAttemptLevelKeyValuesFormat(jobInfo);
+
+  if (status.equals("SUCCEEDED")) {
+
+    for (Iterator<String> it=taskIDsToAttemptIDs.keySet().iterator(); it.hasNext(); ) {
+
+      String taskid=it.next();
+
+      assertTrue("There are some Tasks which are not finished in history " + "file.",taskEnds.contains(taskid));
+
+      List<String> attemptIDs=taskIDsToAttemptIDs.get(taskid);
+
+      if (attemptIDs != null) {
+
+        assertTrue("Unexpected. TaskID " + taskid + " has task attempt(s)"+ " that are not finished.",(attemptIDs.size() == 1));
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+/** 
+
+ * Checks if the history file has expected job status
+
+ * @param id job id
+
+ * @param conf job conf
+
+ */
+
+private static void validateJobHistoryJobStatus(JobHistory jobHistory,JobID id,JobConf conf,String status) throws IOException {
+
+  Path doneDir=jobHistory.getCompletedJobHistoryLocation();
+
+  String logFileName=getDoneFile(jobHistory,conf,id,doneDir);
+
+  Path logFile=new Path(doneDir,logFileName);
+
+  FileSystem fileSys=logFile.getFileSystem(conf);
+
+  assertTrue("History file does not exist",fileSys.exists(logFile));
+
+  assertTrue("History file permissions does not match",fileSys.getFileStatus(logFile).getPermission().equals(new FsPermission(JobHistory.HISTORY_FILE_PERMISSION)));
+
+  JobHistoryParser parser=new JobHistoryParser(fileSys,logFile.toUri().getPath());
+
+  JobHistoryParser.JobInfo jobInfo=parser.parse();
+
+  assertTrue("Job Status read from job history file is not the expected" + " status",status.equals(jobInfo.getJobStatus()));
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private static void validateJobLevelKeyValuesFormat(JobInfo jobInfo,String status){
+
+  long submitTime=jobInfo.getSubmitTime();
+
+  long launchTime=jobInfo.getLaunchTime();
+
+  long finishTime=jobInfo.getFinishTime();
+
+  assertTrue("Invalid submit time",submitTime > 0);
+
+  assertTrue("SubmitTime > LaunchTime",submitTime <= launchTime);
+
+  assertTrue("LaunchTime > FinishTime",launchTime <= finishTime);
+
+  String stat=jobInfo.getJobStatus();
+
+  assertTrue("Unexpected JOB_STATUS \"" + stat + "\" is seen in"+ " history file",(status.equals(stat)));
+
+  String priority=jobInfo.getPriority();
+
+  assertNotNull(priority);
+
+  assertTrue("Unknown priority for the job in history file",(priority.equals("HIGH") || priority.equals("LOW") || priority.equals("NORMAL")|| priority.equals("VERY_HIGH")|| priority.equals("VERY_LOW")));
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private static void validateJobLevelKeyValues(MiniMRCluster mr,RunningJob job,JobInfo jobInfo,JobConf conf) throws IOException {
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  JobInProgress jip=jt.getJob(job.getID());
+
+  assertTrue("SUBMIT_TIME of job obtained from history file did not " + "match the expected value",jip.getStartTime() == jobInfo.getSubmitTime());
+
+  assertTrue("LAUNCH_TIME of job obtained from history file did not " + "match the expected value",jip.getLaunchTime() == jobInfo.getLaunchTime());
+
+  assertTrue("FINISH_TIME of job obtained from history file did not " + "match the expected value",jip.getFinishTime() == jobInfo.getFinishTime());
+
+  assertTrue("Job Status of job obtained from history file did not " + "match the expected value",jobInfo.getJobStatus().equals("SUCCEEDED"));
+
+  assertTrue("Job Priority of job obtained from history file did not " + "match the expected value",jip.getPriority().toString().equals(jobInfo.getPriority()));
+
+  assertTrue("Job Name of job obtained from history file did not " + "match the expected value",conf.getJobName().equals(jobInfo.getJobname()));
+
+  String user=UserGroupInformation.getCurrentUser().getUserName();
+
+  assertTrue("User Name of job obtained from history file did not " + "match the expected value",user.equals(jobInfo.getUsername()));
+
+  Counters c=new Counters(jip.getCounters());
+
+  Counters jiCounters=jobInfo.getTotalCounters();
+
+  assertTrue("Counters of job obtained from history file did not " + "match the expected value",c.equals(jiCounters));
+
+  assertTrue("Unexpected number of total maps in history file",jobInfo.getTotalMaps() == jip.desiredMaps());
+
+  assertTrue("Unexpected number of total reduces in history file",jobInfo.getTotalReduces() == jip.desiredReduces());
+
+  assertTrue("Unexpected number of finished maps in history file",jobInfo.getFinishedMaps() == jip.finishedMaps());
+
+  assertTrue("Unexpected number of finished reduces in history file",jobInfo.getFinishedReduces() == jip.finishedReduces());
+
+  assertTrue("Unexpected number of failed maps in history file",jobInfo.getFailedMaps() == jip.failedMapTasks);
+
+  assertTrue("Unexpected number of failed reduces in history file",jobInfo.getFailedReduces() == jip.failedReduceTasks);
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private static void validateTaskAttemptLevelKeyValuesFormat(JobInfo job){
+
+  Map<TaskID,TaskInfo> tasks=job.getAllTasks();
+
+  for (  TaskInfo task : tasks.values()) {
+
+    for (    TaskAttemptInfo attempt : task.getAllTaskAttempts().values()) {
+
+      TaskAttemptID id=attempt.getAttemptId();
+
+      assertNotNull(id);
+
+      long startTime=attempt.getStartTime();
+
+      assertTrue("Invalid Start time",startTime > 0);
+
+      long finishTime=attempt.getFinishTime();
+
+      assertTrue("Task FINISH_TIME is < START_TIME in history file",startTime < finishTime);
+
+      TaskType type=attempt.getTaskType();
+
+      assertTrue("Unknown Task type \"" + type + "\" is seen in "+ "history file for task attempt "+ id,(type.equals(TaskType.MAP) || type.equals(TaskType.REDUCE) || type.equals(TaskType.JOB_CLEANUP)|| type.equals(TaskType.JOB_SETUP)));
+
+      String status=attempt.getTaskStatus();
+
+      assertTrue("Unexpected TASK_STATUS \"" + status + "\" is seen in"+ " history file for task attempt "+ id,(status.equals(TaskStatus.State.SUCCEEDED.toString()) || status.equals(TaskStatus.State.FAILED.toString()) || status.equals(TaskStatus.State.KILLED.toString())));
+
+      if (type.equals(TaskType.REDUCE) && status.equals(TaskStatus.State.SUCCEEDED.toString())) {
+
+        long shuffleFinishTime=attempt.getShuffleFinishTime();
+
+        assertTrue(startTime < shuffleFinishTime);
+
+        long sortFinishTime=attempt.getSortFinishTime();
+
+        assertTrue(shuffleFinishTime < sortFinishTime);
+
+      }
+
+ else       if (type.equals(TaskType.MAP) && status.equals(TaskStatus.State.SUCCEEDED.toString())) {
+
+        long mapFinishTime=attempt.getMapFinishTime();
+
+        assertTrue(startTime < mapFinishTime);
+
+      }
+
+      String hostname=attempt.getHostname();
+
+      Matcher m=hostNamePattern.matcher(hostname);
+
+      assertTrue("Unexpected Host name of task attempt " + id,m.matches());
+
+      String trackerName=attempt.getTrackerName();
+
+      m=trackerNamePattern.matcher(trackerName);
+
+      assertTrue("Unexpected tracker name of task attempt " + id,m.matches());
+
+      if (!status.equals("KILLED")) {
+
+        int httpPort=attempt.getHttpPort();
+
+        assertTrue(httpPort > 0);
+
+      }
+
+      Counters counters=attempt.getCounters();
+
+      assertNotNull(counters);
+
+    }
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private static void validateTaskAttemptLevelKeyValues(MiniMRCluster mr,RunningJob job,JobInfo jobInfo) throws IOException {
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  JobInProgress jip=jt.getJob(job.getID());
+
+  Map<TaskID,TaskInfo> tasks=jobInfo.getAllTasks();
+
+  for (  TaskInfo task : tasks.values()) {
+
+    for (    TaskAttemptInfo attempt : task.getAllTaskAttempts().values()) {
+
+      TaskAttemptID attemptId=attempt.getAttemptId();
+
+      TaskID tid=attemptId.getTaskID();
+
+      TaskInProgress tip=jip.getTaskInProgress(org.apache.hadoop.mapred.TaskID.downgrade(tid));
+
+      TaskStatus ts=tip.getTaskStatus(org.apache.hadoop.mapred.TaskAttemptID.downgrade(attemptId));
+
+      assertTrue("START_TIME of Task attempt " + attemptId + " obtained from "+ "history file did not match the expected value",ts.getStartTime() == attempt.getStartTime());
+
+      assertTrue("FINISH_TIME of Task attempt " + attemptId + " obtained from "+ "history file "+ ts.getFinishTime()+ " did not match the expected value, "+ attempt.getFinishTime(),ts.getFinishTime() == attempt.getFinishTime());
+
+      TaskTrackerStatus ttStatus=jt.getTaskTrackerStatus(ts.getTaskTracker());
+
+      if (ttStatus != null) {
+
+        assertTrue("http port of task attempt " + attemptId + " obtained from "+ "history file did not match the expected value",ttStatus.getHttpPort() == attempt.getHttpPort());
+
+        if (attempt.getTaskStatus().equals("SUCCEEDED")) {
+
+          String ttHostname=jt.getNode(ttStatus.getHost()).toString();
+
+          assertTrue("Host name of task attempt " + attemptId + " obtained from"+ " history file did not match the expected value",ttHostname.equals(attempt.getHostname()));
+
+        }
+
+      }
+
+      if (attempt.getTaskStatus().equals("SUCCEEDED")) {
+
+        if (attempt.getTaskType().equals("REDUCE")) {
+
+          assertTrue("SHUFFLE_FINISHED time of task attempt " + attemptId + " obtained from history file did not match the expected"+ " value",ts.getShuffleFinishTime() == attempt.getShuffleFinishTime());
+
+          assertTrue("SORT_FINISHED time of task attempt " + attemptId + " obtained from history file did not match the expected"+ " value",ts.getSortFinishTime() == attempt.getSortFinishTime());
+
+        }
+
+        Counters c=new Counters(ts.getCounters());
+
+        assertTrue("Counters of Task Attempt " + attemptId + " obtained from "+ "history file did not match the expected value",c.equals(attempt.getCounters()));
+
+      }
+
+      assertTrue("Tracker name of task attempt " + attemptId + " obtained from "+ "history file did not match the expected value",ts.getTaskTracker().equals(attempt.getTrackerName()));
+
+    }
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private static void validateTaskLevelKeyValuesFormat(JobInfo job,boolean splitsCanBeEmpty){
+
+  Map<TaskID,TaskInfo> tasks=job.getAllTasks();
+
+  for (  TaskInfo task : tasks.values()) {
+
+    TaskID tid=task.getTaskId();
+
+    long startTime=task.getStartTime();
+
+    assertTrue("Invalid Start time",startTime > 0);
+
+    long finishTime=task.getFinishTime();
+
+    assertTrue("Task FINISH_TIME is < START_TIME in history file",startTime < finishTime);
+
+    TaskType type=task.getTaskType();
+
+    assertTrue("Unknown Task type \"" + type + "\" is seen in "+ "history file for task "+ tid,(type.equals(TaskType.MAP) || type.equals(TaskType.REDUCE) || type.equals(TaskType.JOB_CLEANUP)|| type.equals(TaskType.JOB_SETUP)));
+
+    if (type.equals(TaskType.MAP)) {
+
+      String splits=task.getSplitLocations();
+
+      if (!splitsCanBeEmpty || splits.length() != 0) {
+
+        Matcher m=splitsPattern.matcher(splits);
+
+        assertTrue("Unexpected format of SPLITS \"" + splits + "\" is seen"+ " in history file for task "+ tid,m.matches());
+
+      }
+
+    }
+
+    String status=task.getTaskStatus();
+
+    assertTrue("Unexpected TASK_STATUS \"" + status + "\" is seen in"+ " history file for task "+ tid,(status.equals("SUCCEEDED") || status.equals("FAILED") || status.equals("KILLED")));
+
+  }
+
+}
+
+Location: TestJobHistory.java
+
+Content: 
+
+private static void validateTaskLevelKeyValues(MiniMRCluster mr,RunningJob job,JobInfo jobInfo) throws IOException {
+
+  JobTracker jt=mr.getJobTrackerRunner().getJobTracker();
+
+  JobInProgress jip=jt.getJob(job.getID());
+
+  TaskID mapTaskId=new TaskID(job.getID(),TaskType.MAP,0);
+
+  TaskID reduceTaskId=new TaskID(job.getID(),TaskType.REDUCE,0);
+
+  TaskInProgress cleanups[]=jip.cleanup;
+
+  TaskID cleanupTaskId;
+
+  if (cleanups[0].isComplete()) {
+
+    cleanupTaskId=cleanups[0].getTIPId();
+
+  }
+
+ else {
+
+    cleanupTaskId=cleanups[1].getTIPId();
+
+  }
+
+  TaskInProgress setups[]=jip.setup;
+
+  TaskID setupTaskId;
+
+  if (setups[0].isComplete()) {
+
+    setupTaskId=setups[0].getTIPId();
+
+  }
+
+ else {
+
+    setupTaskId=setups[1].getTIPId();
+
+  }
+
+  Map<TaskID,TaskInfo> tasks=jobInfo.getAllTasks();
+
+  for (  TaskInfo task : tasks.values()) {
+
+    TaskID tid=task.getTaskId();
+
+    if (tid.equals(mapTaskId) || tid.equals(reduceTaskId) || tid.equals(cleanupTaskId)|| tid.equals(setupTaskId)) {
+
+      TaskInProgress tip=jip.getTaskInProgress(org.apache.hadoop.mapred.TaskID.downgrade(tid));
+
+      assertTrue("START_TIME of Task " + tid + " obtained from history "+ "file did not match the expected value",tip.getExecStartTime() == task.getStartTime());
+
+      assertTrue("FINISH_TIME of Task " + tid + " obtained from history "+ "file did not match the expected value",tip.getExecFinishTime() == task.getFinishTime());
+
+      if (tid == mapTaskId) {
+
+        assertTrue("Splits of Task " + tid + " obtained from history file "+ " did not match the expected value",tip.getSplitNodes().equals(task.getSplitLocations()));
+
+      }
+
+      TaskAttemptID attemptId=tip.getSuccessfulTaskid();
+
+      TaskStatus ts=tip.getTaskStatus(org.apache.hadoop.mapred.TaskAttemptID.downgrade(attemptId));
+
+      Counters c=new Counters(ts.getCounters());
+
+      assertTrue("Counters of Task " + tid + " obtained from history file "+ " did not match the expected value",c.equals(task.getCounters()));
+
+    }
+
+  }
+
+}
+

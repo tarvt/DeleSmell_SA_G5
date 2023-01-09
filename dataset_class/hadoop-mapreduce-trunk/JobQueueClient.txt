@@ -1,0 +1,196 @@
+Location: JobQueueClient.java
+
+Content: 
+
+private void displayQueueAclsInfoForCurrentUser() throws IOException {
+
+  QueueAclsInfo[] queueAclsInfoList=jc.getQueueAclsForCurrentUser();
+
+  UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
+
+  if (queueAclsInfoList.length > 0) {
+
+    System.out.println("Queue acls for user :  " + ugi.getShortUserName());
+
+    System.out.println("\nQueue  Operations");
+
+    System.out.println("=====================");
+
+    for (    QueueAclsInfo queueInfo : queueAclsInfoList) {
+
+      System.out.print(queueInfo.getQueueName() + "  ");
+
+      String[] ops=queueInfo.getOperations();
+
+      int max=ops.length - 1;
+
+      for (int j=0; j < ops.length; j++) {
+
+        System.out.print(ops[j].replaceFirst("acl-",""));
+
+        if (j < max) {
+
+          System.out.print(",");
+
+        }
+
+      }
+
+      System.out.println();
+
+    }
+
+  }
+
+ else {
+
+    System.out.println("User " + ugi.getShortUserName() + " does not have access to any queue. \n");
+
+  }
+
+}
+
+Location: JobQueueClient.java
+
+Content: 
+
+/** 
+
+ * Method used to display information pertaining to a Single JobQueue registered with the  {@link QueueManager}. Display of the Jobs is determine by the boolean
+
+ * @throws IOException
+
+ */
+
+private void displayQueueInfo(String queue,boolean showJobs) throws IOException {
+
+  JobQueueInfo jobQueueInfo=jc.getQueueInfo(queue);
+
+  if (jobQueueInfo == null) {
+
+    System.out.println("Queue \"" + queue + "\" does not exist.");
+
+    return;
+
+  }
+
+  printJobQueueInfo(jobQueueInfo,new PrintWriter(System.out));
+
+  if (showJobs && (jobQueueInfo.getChildren() == null || jobQueueInfo.getChildren().size() == 0)) {
+
+    JobStatus[] jobs=jc.getJobsFromQueue(queue);
+
+    if (jobs == null)     jobs=new JobStatus[0];
+
+    jc.displayJobList(jobs);
+
+  }
+
+}
+
+Location: JobQueueClient.java
+
+Content: 
+
+/** 
+
+ * Expands the hierarchy of queues and gives the list of all queues in  depth-first order
+
+ * @param rootQueues the top-level queues
+
+ * @return the list of all the queues in depth-first order.
+
+ */
+
+List<JobQueueInfo> expandQueueList(JobQueueInfo[] rootQueues){
+
+  List<JobQueueInfo> allQueues=new ArrayList<JobQueueInfo>();
+
+  for (  JobQueueInfo queue : rootQueues) {
+
+    allQueues.add(queue);
+
+    if (queue.getChildren() != null) {
+
+      JobQueueInfo[] childQueues=queue.getChildren().toArray(new JobQueueInfo[0]);
+
+      allQueues.addAll(expandQueueList(childQueues));
+
+    }
+
+  }
+
+  return allQueues;
+
+}
+
+Location: JobQueueClient.java
+
+Content: 
+
+public JobQueueClient(){
+
+}
+
+Location: JobQueueClient.java
+
+Content: 
+
+public JobQueueClient(JobConf conf) throws IOException {
+
+  setConf(conf);
+
+}
+
+Location: JobQueueClient.java
+
+Content: 
+
+void printJobQueueInfo(JobQueueInfo jobQueueInfo,Writer writer) throws IOException {
+
+  if (jobQueueInfo == null) {
+
+    writer.write("No queue found.\n");
+
+    writer.flush();
+
+    return;
+
+  }
+
+  writer.write(String.format("Queue Name : %s \n",jobQueueInfo.getQueueName()));
+
+  writer.write(String.format("Queue State : %s \n",jobQueueInfo.getQueueState()));
+
+  writer.write(String.format("Scheduling Info : %s \n",jobQueueInfo.getSchedulingInfo()));
+
+  List<JobQueueInfo> childQueues=jobQueueInfo.getChildren();
+
+  if (childQueues != null && childQueues.size() > 0) {
+
+    writer.write(String.format("Child Queues : "));
+
+    for (int i=0; i < childQueues.size(); i++) {
+
+      JobQueueInfo childQueue=childQueues.get(i);
+
+      writer.write(String.format("%s",childQueue.getQueueName()));
+
+      if (i != childQueues.size() - 1) {
+
+        writer.write(String.format(", "));
+
+      }
+
+    }
+
+    writer.write("\n");
+
+  }
+
+  writer.write(String.format("======================\n"));
+
+  writer.flush();
+
+}
+

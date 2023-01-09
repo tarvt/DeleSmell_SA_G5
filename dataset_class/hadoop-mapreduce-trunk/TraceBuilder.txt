@@ -1,0 +1,318 @@
+Location: TraceBuilder.java
+
+Content: 
+
+private static String applyParser(String fileName,Pattern pattern){
+
+  Matcher matcher=pattern.matcher(fileName);
+
+  if (!matcher.matches()) {
+
+    return null;
+
+  }
+
+  return matcher.group(1);
+
+}
+
+Location: TraceBuilder.java
+
+Content: 
+
+/** 
+
+ * @param fileName
+
+ * @return the jobID String, parsed out of the file name. We return a validString for either a history log file or a config file. Otherwise, [especially for .crc files] we return null.
+
+ */
+
+static String extractJobID(String fileName){
+
+  String jobId=applyParser(fileName,JobHistory.JOBHISTORY_FILENAME_REGEX);
+
+  if (jobId == null) {
+
+    jobId=applyParser(fileName,Pre21JobHistoryConstants.JOBHISTORY_FILENAME_REGEX);
+
+  }
+
+  return jobId;
+
+}
+
+Location: TraceBuilder.java
+
+Content: 
+
+void finish(){
+
+  IOUtils.cleanup(LOG,traceWriter,topologyWriter);
+
+}
+
+Location: TraceBuilder.java
+
+Content: 
+
+static boolean isJobConfXml(String fileName,InputStream input){
+
+  String jobId=applyParser(fileName,JobHistory.CONF_FILENAME_REGEX);
+
+  if (jobId == null) {
+
+    jobId=applyParser(fileName,Pre21JobHistoryConstants.CONF_FILENAME_REGEX);
+
+  }
+
+  return jobId != null;
+
+}
+
+Location: TraceBuilder.java
+
+Content: 
+
+public static void main(String[] args){
+
+  TraceBuilder builder=new TraceBuilder();
+
+  int result=RUN_METHOD_FAILED_EXIT_CODE;
+
+  try {
+
+    result=ToolRunner.run(builder,args);
+
+  }
+
+ catch (  Throwable t) {
+
+    t.printStackTrace(System.err);
+
+  }
+
+ finally {
+
+    try {
+
+      builder.finish();
+
+    }
+
+  finally {
+
+      if (result == 0) {
+
+        return;
+
+      }
+
+      System.exit(result);
+
+    }
+
+  }
+
+}
+
+Location: TraceBuilder.java
+
+Content: 
+
+private void processJobConf(Properties properties,JobBuilder jobBuilder){
+
+  jobBuilder.process(properties);
+
+  topologyBuilder.process(properties);
+
+}
+
+Location: TraceBuilder.java
+
+Content: 
+
+void processJobHistory(JobHistoryParser parser,JobBuilder jobBuilder) throws IOException {
+
+  HistoryEvent e;
+
+  while ((e=parser.nextEvent()) != null) {
+
+    jobBuilder.process(e);
+
+    topologyBuilder.process(e);
+
+  }
+
+  parser.close();
+
+}
+
+Location: TraceBuilder.java
+
+Content: 
+
+@SuppressWarnings("unchecked") @Override public int run(String[] args) throws Exception {
+
+  MyOptions options=new MyOptions(args,getConf());
+
+  traceWriter=options.clazzTraceOutputter.newInstance();
+
+  traceWriter.init(options.traceOutput,getConf());
+
+  topologyWriter=new DefaultOutputter<LoggedNetworkTopology>();
+
+  topologyWriter.init(options.topologyOutput,getConf());
+
+  try {
+
+    JobBuilder jobBuilder=null;
+
+    for (    Path p : options.inputs) {
+
+      InputDemuxer inputDemuxer=options.inputDemuxerClass.newInstance();
+
+      try {
+
+        inputDemuxer.bindTo(p,getConf());
+
+      }
+
+ catch (      IOException e) {
+
+        LOG.warn("Unable to bind Path " + p + " .  Skipping...",e);
+
+        continue;
+
+      }
+
+      Pair<String,InputStream> filePair=null;
+
+      try {
+
+        while ((filePair=inputDemuxer.getNext()) != null) {
+
+          RewindableInputStream ris=new RewindableInputStream(filePair.second());
+
+          JobHistoryParser parser=null;
+
+          try {
+
+            String jobID=extractJobID(filePair.first());
+
+            if (jobID == null) {
+
+              LOG.warn("File skipped: Invalid file name: " + filePair.first());
+
+              continue;
+
+            }
+
+            if ((jobBuilder == null) || (!jobBuilder.getJobID().equals(jobID))) {
+
+              if (jobBuilder != null) {
+
+                traceWriter.output(jobBuilder.build());
+
+              }
+
+              jobBuilder=new JobBuilder(jobID);
+
+            }
+
+            if (isJobConfXml(filePair.first(),ris)) {
+
+              processJobConf(JobConfigurationParser.parse(ris.rewind()),jobBuilder);
+
+            }
+
+ else {
+
+              parser=JobHistoryParserFactory.getParser(ris);
+
+              if (parser == null) {
+
+                LOG.warn("File skipped: Cannot find suitable parser: " + filePair.first());
+
+              }
+
+ else {
+
+                processJobHistory(parser,jobBuilder);
+
+              }
+
+            }
+
+          }
+
+  finally {
+
+            if (parser == null) {
+
+              ris.close();
+
+            }
+
+ else {
+
+              parser.close();
+
+              parser=null;
+
+            }
+
+          }
+
+        }
+
+      }
+
+ catch (      Throwable t) {
+
+        if (filePair != null) {
+
+          LOG.warn("TraceBuilder got an error while processing the [possibly virtual] file " + filePair.first() + " within Path "+ p,t);
+
+        }
+
+      }
+
+ finally {
+
+        inputDemuxer.close();
+
+      }
+
+    }
+
+    if (jobBuilder != null) {
+
+      traceWriter.output(jobBuilder.build());
+
+      jobBuilder=null;
+
+    }
+
+ else {
+
+      LOG.warn("No job found in traces: ");
+
+    }
+
+    topologyWriter.output(topologyBuilder.build());
+
+  }
+
+  finally {
+
+    traceWriter.close();
+
+    topologyWriter.close();
+
+  }
+
+  return 0;
+
+}
+

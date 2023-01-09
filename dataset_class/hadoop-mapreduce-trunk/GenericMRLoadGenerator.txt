@@ -1,0 +1,354 @@
+Location: GenericMRLoadGenerator.java
+
+Content: 
+
+/** 
+
+ * When no input dir is specified, generate random data.
+
+ */
+
+protected static void confRandom(Job job) throws IOException {
+
+  job.setInputFormatClass(RandomInputFormat.class);
+
+  job.setMapperClass(RandomMapOutput.class);
+
+  Configuration conf=job.getConfiguration();
+
+  final ClusterStatus cluster=new JobClient(conf).getClusterStatus();
+
+  int numMapsPerHost=conf.getInt(RandomTextWriter.MAPS_PER_HOST,10);
+
+  long numBytesToWritePerMap=conf.getLong(RandomTextWriter.BYTES_PER_MAP,1 * 1024 * 1024* 1024);
+
+  if (numBytesToWritePerMap == 0) {
+
+    throw new IOException("Cannot have " + RandomTextWriter.BYTES_PER_MAP + " set to 0");
+
+  }
+
+  long totalBytesToWrite=conf.getLong(RandomTextWriter.TOTAL_BYTES,numMapsPerHost * numBytesToWritePerMap * cluster.getTaskTrackers());
+
+  int numMaps=(int)(totalBytesToWrite / numBytesToWritePerMap);
+
+  if (numMaps == 0 && totalBytesToWrite > 0) {
+
+    numMaps=1;
+
+    conf.setLong(RandomTextWriter.BYTES_PER_MAP,totalBytesToWrite);
+
+  }
+
+  conf.setInt(MRJobConfig.NUM_MAPS,numMaps);
+
+}
+
+Location: GenericMRLoadGenerator.java
+
+Content: 
+
+/** 
+
+ * When no input dir is specified, generate random data.
+
+ */
+
+protected static void confRandom(JobConf job) throws IOException {
+
+  job.setInputFormat(RandomInputFormat.class);
+
+  job.setMapperClass(RandomMapOutput.class);
+
+  final ClusterStatus cluster=new JobClient(job).getClusterStatus();
+
+  int numMapsPerHost=job.getInt(RandomTextWriter.MAPS_PER_HOST,10);
+
+  long numBytesToWritePerMap=job.getLong(RandomTextWriter.BYTES_PER_MAP,1 * 1024 * 1024* 1024);
+
+  if (numBytesToWritePerMap == 0) {
+
+    throw new IOException("Cannot have " + RandomTextWriter.BYTES_PER_MAP + " set to 0");
+
+  }
+
+  long totalBytesToWrite=job.getLong(RandomTextWriter.TOTAL_BYTES,numMapsPerHost * numBytesToWritePerMap * cluster.getTaskTrackers());
+
+  int numMaps=(int)(totalBytesToWrite / numBytesToWritePerMap);
+
+  if (numMaps == 0 && totalBytesToWrite > 0) {
+
+    numMaps=1;
+
+    job.setLong(RandomTextWriter.BYTES_PER_MAP,totalBytesToWrite);
+
+  }
+
+  job.setNumMapTasks(numMaps);
+
+}
+
+Location: GenericMRLoadGenerator.java
+
+Content: 
+
+/** 
+
+ * Configure a job given argv.
+
+ */
+
+public static boolean parseArgs(String[] argv,Job job) throws IOException {
+
+  if (argv.length < 1) {
+
+    return 0 == printUsage();
+
+  }
+
+  for (int i=0; i < argv.length; ++i) {
+
+    if (argv.length == i + 1) {
+
+      System.out.println("ERROR: Required parameter missing from " + argv[i]);
+
+      return 0 == printUsage();
+
+    }
+
+    try {
+
+      if ("-r".equals(argv[i])) {
+
+        job.setNumReduceTasks(Integer.parseInt(argv[++i]));
+
+      }
+
+ else       if ("-inFormat".equals(argv[i])) {
+
+        job.setInputFormatClass(Class.forName(argv[++i]).asSubclass(InputFormat.class));
+
+      }
+
+ else       if ("-outFormat".equals(argv[i])) {
+
+        job.setOutputFormatClass(Class.forName(argv[++i]).asSubclass(OutputFormat.class));
+
+      }
+
+ else       if ("-outKey".equals(argv[i])) {
+
+        job.setOutputKeyClass(Class.forName(argv[++i]).asSubclass(WritableComparable.class));
+
+      }
+
+ else       if ("-outValue".equals(argv[i])) {
+
+        job.setOutputValueClass(Class.forName(argv[++i]).asSubclass(Writable.class));
+
+      }
+
+ else       if ("-keepmap".equals(argv[i])) {
+
+        job.getConfiguration().set(MAP_PRESERVE_PERCENT,argv[++i]);
+
+      }
+
+ else       if ("-keepred".equals(argv[i])) {
+
+        job.getConfiguration().set(REDUCE_PRESERVE_PERCENT,argv[++i]);
+
+      }
+
+ else       if ("-outdir".equals(argv[i])) {
+
+        FileOutputFormat.setOutputPath(job,new Path(argv[++i]));
+
+      }
+
+ else       if ("-indir".equals(argv[i])) {
+
+        FileInputFormat.addInputPaths(job,argv[++i]);
+
+      }
+
+ else       if ("-inFormatIndirect".equals(argv[i])) {
+
+        job.getConfiguration().setClass(INDIRECT_INPUT_FORMAT,Class.forName(argv[++i]).asSubclass(InputFormat.class),InputFormat.class);
+
+        job.setInputFormatClass(IndirectInputFormat.class);
+
+      }
+
+ else {
+
+        System.out.println("Unexpected argument: " + argv[i]);
+
+        return 0 == printUsage();
+
+      }
+
+    }
+
+ catch (    NumberFormatException except) {
+
+      System.out.println("ERROR: Integer expected instead of " + argv[i]);
+
+      return 0 == printUsage();
+
+    }
+
+catch (    Exception e) {
+
+      throw (IOException)new IOException().initCause(e);
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: GenericMRLoadGenerator.java
+
+Content: 
+
+/** 
+
+ * Configure a job given argv.
+
+ */
+
+public static boolean parseArgs(String[] argv,JobConf job) throws IOException {
+
+  if (argv.length < 1) {
+
+    return 0 == printUsage();
+
+  }
+
+  for (int i=0; i < argv.length; ++i) {
+
+    if (argv.length == i + 1) {
+
+      System.out.println("ERROR: Required parameter missing from " + argv[i]);
+
+      return 0 == printUsage();
+
+    }
+
+    try {
+
+      if ("-m".equals(argv[i])) {
+
+        job.setNumMapTasks(Integer.parseInt(argv[++i]));
+
+      }
+
+ else       if ("-r".equals(argv[i])) {
+
+        job.setNumReduceTasks(Integer.parseInt(argv[++i]));
+
+      }
+
+ else       if ("-inFormat".equals(argv[i])) {
+
+        job.setInputFormat(Class.forName(argv[++i]).asSubclass(InputFormat.class));
+
+      }
+
+ else       if ("-outFormat".equals(argv[i])) {
+
+        job.setOutputFormat(Class.forName(argv[++i]).asSubclass(OutputFormat.class));
+
+      }
+
+ else       if ("-outKey".equals(argv[i])) {
+
+        job.setOutputKeyClass(Class.forName(argv[++i]).asSubclass(WritableComparable.class));
+
+      }
+
+ else       if ("-outValue".equals(argv[i])) {
+
+        job.setOutputValueClass(Class.forName(argv[++i]).asSubclass(Writable.class));
+
+      }
+
+ else       if ("-keepmap".equals(argv[i])) {
+
+        job.set(org.apache.hadoop.mapreduce.GenericMRLoadGenerator.MAP_PRESERVE_PERCENT,argv[++i]);
+
+      }
+
+ else       if ("-keepred".equals(argv[i])) {
+
+        job.set(org.apache.hadoop.mapreduce.GenericMRLoadGenerator.REDUCE_PRESERVE_PERCENT,argv[++i]);
+
+      }
+
+ else       if ("-outdir".equals(argv[i])) {
+
+        FileOutputFormat.setOutputPath(job,new Path(argv[++i]));
+
+      }
+
+ else       if ("-indir".equals(argv[i])) {
+
+        FileInputFormat.addInputPaths(job,argv[++i]);
+
+      }
+
+ else       if ("-inFormatIndirect".equals(argv[i])) {
+
+        job.setClass(org.apache.hadoop.mapreduce.GenericMRLoadGenerator.INDIRECT_INPUT_FORMAT,Class.forName(argv[++i]).asSubclass(InputFormat.class),InputFormat.class);
+
+        job.setInputFormat(IndirectInputFormat.class);
+
+      }
+
+ else {
+
+        System.out.println("Unexpected argument: " + argv[i]);
+
+        return 0 == printUsage();
+
+      }
+
+    }
+
+ catch (    NumberFormatException except) {
+
+      System.out.println("ERROR: Integer expected instead of " + argv[i]);
+
+      return 0 == printUsage();
+
+    }
+
+catch (    Exception e) {
+
+      throw (IOException)new IOException().initCause(e);
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: GenericMRLoadGenerator.java
+
+Content: 
+
+protected static int printUsage(){
+
+  System.err.println("Usage: [-m <maps>] [-r <reduces>]\n" + "       [-keepmap <percent>] [-keepred <percent>]\n" + "       [-indir <path>] [-outdir <path]\n"+ "       [-inFormat[Indirect] <InputFormat>] [-outFormat <OutputFormat>]\n"+ "       [-outKey <WritableComparable>] [-outValue <Writable>]\n");
+
+  GenericOptionsParser.printGenericCommandUsage(System.err);
+
+  return -1;
+
+}
+

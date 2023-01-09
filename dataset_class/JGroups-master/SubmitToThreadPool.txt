@@ -1,0 +1,38 @@
+Location: SubmitToThreadPool.java
+
+Content: 
+
+/** 
+
+ * Removes messages with flags DONT_BUNDLE and OOB set and executes them in the oob or internal thread pool. JGRP-1737
+
+ */
+
+protected void removeAndDispatchNonBundledMessages(MessageBatch oob_batch){
+
+  if (oob_batch == null)   return;
+
+  AsciiString tmp=oob_batch.clusterName();
+
+  byte[] cname=tmp != null ? tmp.chars() : null;
+
+  for (Iterator<Message> it=oob_batch.iterator(); it.hasNext(); ) {
+
+    Message msg=it.next();
+
+    if (msg.isFlagSet(Message.Flag.DONT_BUNDLE) && msg.isFlagSet(Message.Flag.OOB)) {
+
+      boolean internal=msg.isFlagSet(Message.Flag.INTERNAL);
+
+      it.remove();
+
+      if (tp.statsEnabled())       tp.getMessageStats().incrNumOOBMsgsReceived(1);
+
+      tp.submitToThreadPool(new SingleMessageHandlerWithClusterName(msg,cname),internal);
+
+    }
+
+  }
+
+}
+

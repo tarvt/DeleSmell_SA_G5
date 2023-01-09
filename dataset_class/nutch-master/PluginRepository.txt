@@ -1,0 +1,670 @@
+Location: PluginRepository.java
+
+Content: 
+
+private void displayStatus(){
+
+  LOG.info("Plugin Auto-activation mode: [" + this.auto + "]");
+
+  LOG.info("Registered Plugins:");
+
+  if ((fRegisteredPlugins == null) || (fRegisteredPlugins.size() == 0)) {
+
+    LOG.info("\tNONE");
+
+  }
+
+ else {
+
+    for (    PluginDescriptor plugin : fRegisteredPlugins) {
+
+      LOG.info("\t" + plugin.getName() + " ("+ plugin.getPluginId()+ ")");
+
+    }
+
+  }
+
+  LOG.info("Registered Extension-Points:");
+
+  if ((fExtensionPoints == null) || (fExtensionPoints.size() == 0)) {
+
+    LOG.info("\tNONE");
+
+  }
+
+ else {
+
+    for (    ExtensionPoint ep : fExtensionPoints.values()) {
+
+      LOG.info("\t" + ep.getName() + " ("+ ep.getId()+ ")");
+
+    }
+
+  }
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * Filters a list of plugins. The list of plugins is filtered regarding the configuration properties <code>plugin.excludes</code> and <code>plugin.includes</code>.
+
+ * @param excludes
+
+ * @param includes
+
+ * @param plugins Map of plugins
+
+ * @return map of plugins matching the configuration
+
+ */
+
+private Map<String,PluginDescriptor> filter(Pattern excludes,Pattern includes,Map<String,PluginDescriptor> plugins){
+
+  Map<String,PluginDescriptor> map=new HashMap<>();
+
+  if (plugins == null) {
+
+    return map;
+
+  }
+
+  for (  PluginDescriptor plugin : plugins.values()) {
+
+    if (plugin == null) {
+
+      continue;
+
+    }
+
+    String id=plugin.getPluginId();
+
+    if (id == null) {
+
+      continue;
+
+    }
+
+    if (!includes.matcher(id).matches()) {
+
+      LOG.debug("not including: " + id);
+
+      continue;
+
+    }
+
+    if (excludes.matcher(id).matches()) {
+
+      LOG.debug("excluding: " + id);
+
+      continue;
+
+    }
+
+    map.put(plugin.getPluginId(),plugin);
+
+  }
+
+  return map;
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+public void finalize() throws Throwable {
+
+  shutDownActivatedPlugins();
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+public Class getCachedClass(PluginDescriptor pDescriptor,String className) throws ClassNotFoundException {
+
+  Map<PluginClassLoader,Class> descMap=CLASS_CACHE.get(className);
+
+  if (descMap == null) {
+
+    descMap=new HashMap<>();
+
+    CLASS_CACHE.put(className,descMap);
+
+  }
+
+  PluginClassLoader loader=pDescriptor.getClassLoader();
+
+  Class clazz=descMap.get(loader);
+
+  if (clazz == null) {
+
+    clazz=loader.loadClass(className);
+
+    descMap.put(loader,clazz);
+
+  }
+
+  return clazz;
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * @param filtered is the list of plugin filtred
+
+ * @param all is the list of all plugins found.
+
+ * @return List
+
+ */
+
+private List<PluginDescriptor> getDependencyCheckedPlugins(Map<String,PluginDescriptor> filtered,Map<String,PluginDescriptor> all){
+
+  if (filtered == null) {
+
+    return null;
+
+  }
+
+  Map<String,PluginDescriptor> checked=new HashMap<>();
+
+  for (  PluginDescriptor plugin : filtered.values()) {
+
+    try {
+
+      checked.putAll(getPluginCheckedDependencies(plugin,all));
+
+      checked.put(plugin.getPluginId(),plugin);
+
+    }
+
+ catch (    MissingDependencyException mde) {
+
+      LOG.warn(mde.getMessage());
+
+    }
+
+catch (    CircularDependencyException cde) {
+
+      LOG.warn(cde.getMessage());
+
+    }
+
+  }
+
+  return new ArrayList<>(checked.values());
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * Returns a extension point identified by a extension point id.
+
+ * @param pXpId an extension point id
+
+ * @return a extentsion point
+
+ */
+
+public ExtensionPoint getExtensionPoint(String pXpId){
+
+  return this.fExtensionPoints.get(pXpId);
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * Get ordered list of plugins. Filter and normalization plugins are applied in a configurable "pipeline" order, e.g., if one plugin depends on the output of another plugin. This method loads the plugins in the order defined by orderProperty. If orderProperty is empty or unset, all active plugins of the given interface and extension point are loaded.
+
+ * @param clazz interface class implemented by required plugins
+
+ * @param xPointId extension point id of required plugins
+
+ * @param orderProperty property name defining plugin order
+
+ * @return array of plugin instances
+
+ */
+
+public synchronized Object[] getOrderedPlugins(Class<?> clazz,String xPointId,String orderProperty){
+
+  Object[] filters;
+
+  ObjectCache objectCache=ObjectCache.get(conf);
+
+  filters=(Object[])objectCache.getObject(clazz.getName());
+
+  if (filters == null) {
+
+    String order=conf.get(orderProperty);
+
+    List<String> orderOfFilters=new ArrayList<>();
+
+    boolean userDefinedOrder=false;
+
+    if (order != null && !order.trim().isEmpty()) {
+
+      orderOfFilters=Arrays.asList(order.trim().split("\\s+"));
+
+      userDefinedOrder=true;
+
+    }
+
+    try {
+
+      ExtensionPoint point=PluginRepository.get(conf).getExtensionPoint(xPointId);
+
+      if (point == null)       throw new RuntimeException(xPointId + " not found.");
+
+      Extension[] extensions=point.getExtensions();
+
+      HashMap<String,Object> filterMap=new HashMap<>();
+
+      for (int i=0; i < extensions.length; i++) {
+
+        Extension extension=extensions[i];
+
+        Object filter=extension.getExtensionInstance();
+
+        if (!filterMap.containsKey(filter.getClass().getName())) {
+
+          filterMap.put(filter.getClass().getName(),filter);
+
+          if (!userDefinedOrder)           orderOfFilters.add(filter.getClass().getName());
+
+        }
+
+      }
+
+      List<Object> sorted=new ArrayList<>();
+
+      for (      String orderedFilter : orderOfFilters) {
+
+        Object f=filterMap.get(orderedFilter);
+
+        if (f == null) {
+
+          LOG.error(clazz.getSimpleName() + " : " + orderedFilter+ " declared in configuration property "+ orderProperty+ " but not found in an active plugin - ignoring.");
+
+          continue;
+
+        }
+
+        sorted.add(f);
+
+      }
+
+      Object[] filter=(Object[])Array.newInstance(clazz,sorted.size());
+
+      for (int i=0; i < sorted.size(); i++) {
+
+        filter[i]=sorted.get(i);
+
+        if (LOG.isTraceEnabled()) {
+
+          LOG.trace(clazz.getSimpleName() + " : filters[" + i+ "] = "+ filter[i].getClass());
+
+        }
+
+      }
+
+      objectCache.setObject(clazz.getName(),filter);
+
+    }
+
+ catch (    PluginRuntimeException e) {
+
+      throw new RuntimeException(e);
+
+    }
+
+    filters=(Object[])objectCache.getObject(clazz.getName());
+
+  }
+
+  return filters;
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+private Map<String,PluginDescriptor> getPluginCheckedDependencies(PluginDescriptor plugin,Map<String,PluginDescriptor> plugins) throws MissingDependencyException, CircularDependencyException {
+
+  Map<String,PluginDescriptor> dependencies=new HashMap<>();
+
+  Map<String,PluginDescriptor> branch=new HashMap<>();
+
+  getPluginCheckedDependencies(plugin,plugins,dependencies,branch);
+
+  return dependencies;
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+private void getPluginCheckedDependencies(PluginDescriptor plugin,Map<String,PluginDescriptor> plugins,Map<String,PluginDescriptor> dependencies,Map<String,PluginDescriptor> branch) throws MissingDependencyException, CircularDependencyException {
+
+  if (dependencies == null) {
+
+    dependencies=new HashMap<>();
+
+  }
+
+  if (branch == null) {
+
+    branch=new HashMap<>();
+
+  }
+
+  branch.put(plugin.getPluginId(),plugin);
+
+  for (  String id : plugin.getDependencies()) {
+
+    PluginDescriptor dependency=plugins.get(id);
+
+    if (dependency == null) {
+
+      throw new MissingDependencyException("Missing dependency " + id + " for plugin "+ plugin.getPluginId());
+
+    }
+
+    if (branch.containsKey(id)) {
+
+      throw new CircularDependencyException("Circular dependency detected " + id + " for plugin "+ plugin.getPluginId());
+
+    }
+
+    dependencies.put(id,dependency);
+
+    getPluginCheckedDependencies(plugins.get(id),plugins,dependencies,branch);
+
+  }
+
+  branch.remove(plugin.getPluginId());
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * Returns all registed plugin descriptors.
+
+ * @return PluginDescriptor[]
+
+ */
+
+public PluginDescriptor[] getPluginDescriptors(){
+
+  return fRegisteredPlugins.toArray(new PluginDescriptor[fRegisteredPlugins.size()]);
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * Returns the descriptor of one plugin identified by a plugin id.
+
+ * @param pPluginId a pluginId for which the descriptor will be retrieved
+
+ * @return PluginDescriptor
+
+ */
+
+public PluginDescriptor getPluginDescriptor(String pPluginId){
+
+  for (  PluginDescriptor descriptor : fRegisteredPlugins) {
+
+    if (descriptor.getPluginId().equals(pPluginId))     return descriptor;
+
+  }
+
+  return null;
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * Returns a instance of a plugin. Plugin instances are cached. So a plugin exist only as one instance. This allow a central management of plugin own resources. After creating the plugin instance the startUp() method is invoked. The plugin use a own classloader that is used as well by all instance of extensions of the same plugin. This class loader use all exported libraries from the dependend plugins and all plugin libraries.
+
+ * @param pDescriptor a {@link PluginDescriptor} for which to retrieve a {@link Plugin} instance
+
+ * @return a {@link Plugin} instance
+
+ * @throws PluginRuntimeException if there is a fatal runtime plugin error
+
+ */
+
+public Plugin getPluginInstance(PluginDescriptor pDescriptor) throws PluginRuntimeException {
+
+  if (fActivatedPlugins.containsKey(pDescriptor.getPluginId()))   return fActivatedPlugins.get(pDescriptor.getPluginId());
+
+  try {
+
+synchronized (pDescriptor) {
+
+      Class<?> pluginClass=getCachedClass(pDescriptor,pDescriptor.getPluginClass());
+
+      Constructor<?> constructor=pluginClass.getConstructor(new Class<?>[]{PluginDescriptor.class,Configuration.class});
+
+      Plugin plugin=(Plugin)constructor.newInstance(new Object[]{pDescriptor,this.conf});
+
+      plugin.startUp();
+
+      fActivatedPlugins.put(pDescriptor.getPluginId(),plugin);
+
+      return plugin;
+
+    }
+
+  }
+
+ catch (  ClassNotFoundException e) {
+
+    throw new PluginRuntimeException(e);
+
+  }
+
+catch (  InstantiationException e) {
+
+    throw new PluginRuntimeException(e);
+
+  }
+
+catch (  IllegalAccessException e) {
+
+    throw new PluginRuntimeException(e);
+
+  }
+
+catch (  NoSuchMethodException e) {
+
+    throw new PluginRuntimeException(e);
+
+  }
+
+catch (  InvocationTargetException e) {
+
+    throw new PluginRuntimeException(e);
+
+  }
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+private void installExtensionPoints(List<PluginDescriptor> plugins){
+
+  if (plugins == null) {
+
+    return;
+
+  }
+
+  for (  PluginDescriptor plugin : plugins) {
+
+    for (    ExtensionPoint point : plugin.getExtenstionPoints()) {
+
+      String xpId=point.getId();
+
+      LOG.debug("Adding extension point " + xpId);
+
+      fExtensionPoints.put(xpId,point);
+
+    }
+
+  }
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * @param pRegisteredPlugins
+
+ */
+
+private void installExtensions(List<PluginDescriptor> pRegisteredPlugins) throws PluginRuntimeException {
+
+  for (  PluginDescriptor descriptor : pRegisteredPlugins) {
+
+    for (    Extension extension : descriptor.getExtensions()) {
+
+      String xpId=extension.getTargetPoint();
+
+      ExtensionPoint point=getExtensionPoint(xpId);
+
+      if (point == null) {
+
+        throw new PluginRuntimeException("Plugin (" + descriptor.getPluginId() + "), "+ "extension point: "+ xpId+ " does not exist.");
+
+      }
+
+      point.addExtension(extension);
+
+    }
+
+  }
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * @param conf a populated {@link Configuration}
+
+ * @throws RuntimeException if a fatal runtime error is encountered 
+
+ */
+
+public PluginRepository(Configuration conf) throws RuntimeException {
+
+  fActivatedPlugins=new HashMap<>();
+
+  fExtensionPoints=new HashMap<>();
+
+  this.conf=new Configuration(conf);
+
+  this.auto=conf.getBoolean("plugin.auto-activation",true);
+
+  String[] pluginFolders=conf.getStrings("plugin.folders");
+
+  PluginManifestParser manifestParser=new PluginManifestParser(this.conf,this);
+
+  Map<String,PluginDescriptor> allPlugins=manifestParser.parsePluginFolder(pluginFolders);
+
+  if (allPlugins.isEmpty()) {
+
+    LOG.warn("No plugins found on paths of property plugin.folders=\"{}\"",conf.get("plugin.folders"));
+
+  }
+
+  Pattern excludes=Pattern.compile(conf.get("plugin.excludes",""));
+
+  Pattern includes=Pattern.compile(conf.get("plugin.includes",""));
+
+  Map<String,PluginDescriptor> filteredPlugins=filter(excludes,includes,allPlugins);
+
+  fRegisteredPlugins=getDependencyCheckedPlugins(filteredPlugins,this.auto ? allPlugins : filteredPlugins);
+
+  installExtensionPoints(fRegisteredPlugins);
+
+  try {
+
+    installExtensions(fRegisteredPlugins);
+
+  }
+
+ catch (  PluginRuntimeException e) {
+
+    LOG.error(e.toString());
+
+    throw new RuntimeException(e.getMessage());
+
+  }
+
+  displayStatus();
+
+}
+
+Location: PluginRepository.java
+
+Content: 
+
+/** 
+
+ * Shuts down all plugins
+
+ * @throws PluginRuntimeException
+
+ */
+
+private void shutDownActivatedPlugins() throws PluginRuntimeException {
+
+  for (  Plugin plugin : fActivatedPlugins.values()) {
+
+    plugin.shutDown();
+
+  }
+
+}
+

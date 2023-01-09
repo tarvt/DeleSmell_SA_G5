@@ -1,0 +1,120 @@
+Location: TestReduceFetchFromPartialMem.java
+
+Content: 
+
+private static int getValLen(int id,int nMaps){
+
+  return 4096 / nMaps * (id + 1);
+
+}
+
+Location: TestReduceFetchFromPartialMem.java
+
+Content: 
+
+public static Counters runJob(JobConf conf) throws Exception {
+
+  conf.setMapperClass(MapMB.class);
+
+  conf.setReducerClass(MBValidate.class);
+
+  conf.setOutputKeyClass(Text.class);
+
+  conf.setOutputValueClass(Text.class);
+
+  conf.setNumReduceTasks(1);
+
+  conf.setInputFormat(FakeIF.class);
+
+  conf.setNumTasksToExecutePerJvm(1);
+
+  conf.setInt(JobContext.MAP_MAX_ATTEMPTS,0);
+
+  conf.setInt(JobContext.REDUCE_MAX_ATTEMPTS,0);
+
+  FileInputFormat.setInputPaths(conf,new Path("/in"));
+
+  final Path outp=new Path("/out");
+
+  FileOutputFormat.setOutputPath(conf,outp);
+
+  RunningJob job=null;
+
+  try {
+
+    job=JobClient.runJob(conf);
+
+    assertTrue(job.isSuccessful());
+
+  }
+
+  finally {
+
+    FileSystem fs=dfsCluster.getFileSystem();
+
+    if (fs.exists(outp)) {
+
+      fs.delete(outp,true);
+
+    }
+
+  }
+
+  return job.getCounters();
+
+}
+
+Location: TestReduceFetchFromPartialMem.java
+
+Content: 
+
+protected static void setSuite(Class<? extends TestCase> klass){
+
+  mySuite=new TestSuite(klass);
+
+}
+
+Location: TestReduceFetchFromPartialMem.java
+
+Content: 
+
+/** 
+
+ * Verify that at least one segment does not hit disk 
+
+ */
+
+public void testReduceFromPartialMem() throws Exception {
+
+  final int MAP_TASKS=7;
+
+  JobConf job=mrCluster.createJobConf();
+
+  job.setNumMapTasks(MAP_TASKS);
+
+  job.setInt(JobContext.REDUCE_MERGE_INMEM_THRESHOLD,0);
+
+  job.set(JobContext.REDUCE_INPUT_BUFFER_PERCENT,"1.0");
+
+  job.setInt(JobContext.SHUFFLE_PARALLEL_COPIES,1);
+
+  job.setInt(JobContext.IO_SORT_MB,10);
+
+  job.set(JobConf.MAPRED_REDUCE_TASK_JAVA_OPTS,"-Xmx128m");
+
+  job.setLong(JobContext.REDUCE_MEMORY_TOTAL_BYTES,128 << 20);
+
+  job.set(JobContext.SHUFFLE_INPUT_BUFFER_PERCENT,"0.14");
+
+  job.set(JobContext.SHUFFLE_MERGE_EPRCENT,"1.0");
+
+  Counters c=runJob(job);
+
+  final long out=c.findCounter(TaskCounter.MAP_OUTPUT_RECORDS).getCounter();
+
+  final long spill=c.findCounter(TaskCounter.SPILLED_RECORDS).getCounter();
+
+  assertTrue("Expected some records not spilled during reduce" + spill + ")",spill < 2 * out);
+
+}
+

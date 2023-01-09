@@ -1,0 +1,264 @@
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+/** 
+
+ * Applies Algorithm 3.1 from the PDF 1.4 Reference.
+
+ * @param objectNumber the object number
+
+ * @param generationNumber the generation number
+
+ * @return the key to use for encryption
+
+ */
+
+private byte[] createEncryptionKey(int objectNumber,int generationNumber){
+
+  byte[] md5Input=prepareMD5Input(objectNumber,generationNumber);
+
+  digest.reset();
+
+  byte[] hash=digest.digest(md5Input);
+
+  int keyLength=Math.min(16,md5Input.length);
+
+  byte[] key=new byte[keyLength];
+
+  System.arraycopy(hash,0,key,0,keyLength);
+
+  return key;
+
+}
+
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+private static byte[] encryptWithKey(byte[] key,byte[] data){
+
+  try {
+
+    final Cipher c=initCipher(key);
+
+    return c.doFinal(data);
+
+  }
+
+ catch (  IllegalBlockSizeException e) {
+
+    throw new IllegalStateException(e.getMessage());
+
+  }
+
+catch (  BadPaddingException e) {
+
+    throw new IllegalStateException(e.getMessage());
+
+  }
+
+}
+
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+private static byte[] encryptWithKey(byte[] key,byte[] data,boolean noPadding,byte[] iv){
+
+  try {
+
+    final Cipher c=initCipher(key,noPadding,iv);
+
+    return c.doFinal(data);
+
+  }
+
+ catch (  IllegalBlockSizeException e) {
+
+    throw new IllegalStateException(e.getMessage());
+
+  }
+
+catch (  BadPaddingException e) {
+
+    throw new IllegalStateException(e.getMessage());
+
+  }
+
+}
+
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+private static Cipher initCipher(byte[] key){
+
+  try {
+
+    SecretKeySpec keyspec=new SecretKeySpec(key,"RC4");
+
+    Cipher cipher=Cipher.getInstance("RC4");
+
+    cipher.init(Cipher.ENCRYPT_MODE,keyspec);
+
+    return cipher;
+
+  }
+
+ catch (  InvalidKeyException e) {
+
+    throw new IllegalStateException(e);
+
+  }
+
+catch (  NoSuchAlgorithmException e) {
+
+    throw new UnsupportedOperationException(e);
+
+  }
+
+catch (  NoSuchPaddingException e) {
+
+    throw new UnsupportedOperationException(e);
+
+  }
+
+}
+
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+private static Cipher initCipher(byte[] key,boolean noPadding,byte[] iv){
+
+  try {
+
+    SecretKeySpec skeySpec=new SecretKeySpec(key,"AES");
+
+    IvParameterSpec ivspec=new IvParameterSpec(iv);
+
+    Cipher cipher=noPadding ? Cipher.getInstance("AES/CBC/NoPadding") : Cipher.getInstance("AES/CBC/PKCS5Padding");
+
+    cipher.init(Cipher.ENCRYPT_MODE,skeySpec,ivspec);
+
+    return cipher;
+
+  }
+
+ catch (  InvalidKeyException e) {
+
+    throw new IllegalStateException(e);
+
+  }
+
+catch (  NoSuchAlgorithmException e) {
+
+    throw new UnsupportedOperationException(e);
+
+  }
+
+catch (  NoSuchPaddingException e) {
+
+    throw new UnsupportedOperationException(e);
+
+  }
+
+catch (  InvalidAlgorithmParameterException e) {
+
+    throw new UnsupportedOperationException(e);
+
+  }
+
+}
+
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+/** 
+
+ * Creates and returns an encryption object.
+
+ * @param objectNumber the object number for the encryption dictionary
+
+ * @param params the encryption parameters
+
+ * @param pdf the PDF document to be encrypted
+
+ * @return the newly created encryption object
+
+ */
+
+public static PDFEncryption make(PDFObjectNumber objectNumber,PDFEncryptionParams params,PDFDocument pdf){
+
+  return new PDFEncryptionJCE(objectNumber,params,pdf);
+
+}
+
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+private PDFEncryptionJCE(PDFObjectNumber objectNumber,PDFEncryptionParams params,PDFDocument pdf){
+
+  setObjectNumber(objectNumber);
+
+  try {
+
+    if (params.getEncryptionLengthInBits() == 256) {
+
+      digest=MessageDigest.getInstance("SHA-256");
+
+    }
+
+ else {
+
+      digest=MessageDigest.getInstance("MD5");
+
+    }
+
+  }
+
+ catch (  NoSuchAlgorithmException e) {
+
+    throw new UnsupportedOperationException(e.getMessage());
+
+  }
+
+  setDocument(pdf);
+
+  EncryptionInitializer encryptionInitializer=new EncryptionInitializer(params);
+
+  encryptionInitializer.init();
+
+  useAlgorithm31a=encryptionInitializer.isVersion5Revision5Algorithm();
+
+}
+
+Location: PDFEncryptionJCE.java
+
+Content: 
+
+private byte[] prepareMD5Input(int objectNumber,int generationNumber){
+
+  byte[] md5Input=new byte[encryptionKey.length + 5];
+
+  System.arraycopy(encryptionKey,0,md5Input,0,encryptionKey.length);
+
+  int i=encryptionKey.length;
+
+  md5Input[i++]=(byte)(objectNumber >>> 0);
+
+  md5Input[i++]=(byte)(objectNumber >>> 8);
+
+  md5Input[i++]=(byte)(objectNumber >>> 16);
+
+  md5Input[i++]=(byte)(generationNumber >>> 0);
+
+  md5Input[i++]=(byte)(generationNumber >>> 8);
+
+  return md5Input;
+
+}
+

@@ -1,0 +1,216 @@
+Location: TestQueueAclsForCurrentUser.java
+
+Content: 
+
+private boolean checkAll(String[] operations){
+
+  boolean submit=false;
+
+  boolean admin=false;
+
+  for (  String val : operations) {
+
+    if (val.equalsIgnoreCase(submitAcl))     submit=true;
+
+ else     if (val.equalsIgnoreCase(adminAcl))     admin=true;
+
+  }
+
+  if (submit && admin)   return true;
+
+  return false;
+
+}
+
+Location: TestQueueAclsForCurrentUser.java
+
+Content: 
+
+private void checkQueueAclsInfo(QueueAclsInfo[] queueAclsInfoList) throws IOException {
+
+  if (conf.get(MRConfig.MR_ACLS_ENABLED).equalsIgnoreCase("true")) {
+
+    for (int i=0; i < queueAclsInfoList.length; i++) {
+
+      QueueAclsInfo acls=queueAclsInfoList[i];
+
+      String queueName=acls.getQueueName();
+
+      assertFalse(queueName.contains("qu2"));
+
+      if (queueName.equals("qu1")) {
+
+        assertTrue(acls.getOperations().length == 2);
+
+        assertTrue(checkAll(acls.getOperations()));
+
+      }
+
+ else       if (queueName.equals("qu3")) {
+
+        assertTrue(acls.getOperations().length == 1);
+
+        assertTrue(acls.getOperations()[0].equalsIgnoreCase(adminAcl));
+
+      }
+
+ else       if (queueName.equals("qu4")) {
+
+        assertTrue(acls.getOperations().length == 1);
+
+        assertTrue(acls.getOperations()[0].equalsIgnoreCase(submitAcl));
+
+      }
+
+ else       if (queueName.equals("qu5")) {
+
+        assertTrue(acls.getOperations().length == 2);
+
+        assertTrue(checkAll(acls.getOperations()));
+
+      }
+
+ else       if (queueName.equals("qu6")) {
+
+        assertTrue(acls.getOperations()[0].equals(submitAcl));
+
+      }
+
+ else       if (queueName.equals("qu7")) {
+
+        assertTrue(acls.getOperations()[0].equals(adminAcl));
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    for (int i=0; i < queueAclsInfoList.length; i++) {
+
+      QueueAclsInfo acls=queueAclsInfoList[i];
+
+      String queueName=acls.getQueueName();
+
+      assertTrue(acls.getOperations().length == 2);
+
+      assertTrue(checkAll(acls.getOperations()));
+
+    }
+
+  }
+
+}
+
+Location: TestQueueAclsForCurrentUser.java
+
+Content: 
+
+/** 
+
+ * sets up configuration for acls test.
+
+ * @return
+
+ */
+
+private void setupConf(boolean aclSwitch) throws Exception {
+
+  currentUGI=UserGroupInformation.getLoginUser();
+
+  String userName=currentUGI.getUserName();
+
+  StringBuilder groupNames=new StringBuilder("");
+
+  String[] ugiGroupNames=currentUGI.getGroupNames();
+
+  int max=ugiGroupNames.length - 1;
+
+  for (int j=0; j < ugiGroupNames.length; j++) {
+
+    groupNames.append(ugiGroupNames[j]);
+
+    if (j < max) {
+
+      groupNames.append(",");
+
+    }
+
+  }
+
+  String groupsAcl=" " + groupNames.toString();
+
+  String[] queueNames={"qu1","qu2","qu3","qu4","qu5","qu6","qu7"};
+
+  String[] submitAcls={"*","u2","u2","*",groupsAcl,userName,"u2"};
+
+  String[] adminsAcls={"*","u2","*","u2",groupsAcl,"u2",userName};
+
+  createQueuesConfigFile(queueNames,submitAcls,adminsAcls);
+
+  conf=new JobConf();
+
+  conf.setBoolean(MRConfig.MR_ACLS_ENABLED,aclSwitch);
+
+  queueManager=new QueueManager(conf);
+
+}
+
+Location: TestQueueAclsForCurrentUser.java
+
+Content: 
+
+public void testQueueAclsForCurrentuser() throws Exception {
+
+  setupConf(true);
+
+  QueueAclsInfo[] queueAclsInfoList=queueManager.getQueueAcls(currentUGI);
+
+  checkQueueAclsInfo(queueAclsInfoList);
+
+}
+
+Location: TestQueueAclsForCurrentUser.java
+
+Content: 
+
+public void testQueueAclsForCurrentUserAclsDisabled() throws Exception {
+
+  setupConf(false);
+
+  QueueAclsInfo[] queueAclsInfoList=queueManager.getQueueAcls(currentUGI);
+
+  checkQueueAclsInfo(queueAclsInfoList);
+
+}
+
+Location: TestQueueAclsForCurrentUser.java
+
+Content: 
+
+public void testQueueAclsForNoAccess() throws Exception {
+
+  hongshuai();
+
+  currentUGI=UserGroupInformation.getLoginUser();
+
+  String userName=currentUGI.getUserName();
+
+  String[] queueNames={"qu1","qu2"};
+
+  createQueuesConfigFile(queueNames,new String[]{"u1"," g2"},new String[]{"u1"," g2"});
+
+  conf=new JobConf();
+
+  conf.setBoolean(MRConfig.MR_ACLS_ENABLED,true);
+
+  queueManager=new QueueManager(conf);
+
+  QueueAclsInfo[] queueAclsInfoList=queueManager.getQueueAcls(currentUGI);
+
+  assertTrue(queueAclsInfoList.length == 0);
+
+}
+

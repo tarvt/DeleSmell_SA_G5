@@ -1,0 +1,80 @@
+Location: TestSimulatorJobClient.java
+
+Content: 
+
+@Test public final void testRelativeStartTime() throws IOException {
+
+  long relativeStartTime=jobSubmissionTimes[0] - simulationStartTime;
+
+  MockJobStoryProducer jobStoryProducer=new MockJobStoryProducer(jobSubmissionTimes,relativeStartTime);
+
+  try {
+
+    jobTracker=new MockSimulatorJobTracker(simulationStartTime,heartbeatInterval,true);
+
+  }
+
+ catch (  Exception e) {
+
+    Assert.fail("Couldn't set up the mock job tracker: " + e);
+
+  }
+
+  eventQueue=new CheckedEventQueue(simulationStartTime);
+
+  jobClient=new SimulatorJobClient(jobTracker,jobStoryProducer);
+
+  eventQueue.addExpected(simulationStartTime,new JobSubmissionEvent(jobClient,simulationStartTime,jobStoryProducer.getJob(0)));
+
+  for (int i=1; i < jobSubmissionTimes.length; i++) {
+
+    eventQueue.addExpected(jobSubmissionTimes[i - 1] - relativeStartTime,new JobSubmissionEvent(jobClient,jobSubmissionTimes[i] - relativeStartTime,jobStoryProducer.getJob(i)));
+
+  }
+
+  long runUntil=eventQueue.getLastCheckTime();
+
+  LOG.debug("Running until simulation time=" + runUntil);
+
+  List<SimulatorEvent> events=jobClient.init(simulationStartTime);
+
+  eventQueue.addAll(events);
+
+  while (true) {
+
+    SimulatorEvent currentEvent=eventQueue.get();
+
+    long now=currentEvent.getTimeStamp();
+
+    LOG.debug("Number of events to deliver=" + (eventQueue.getSize() + 1) + ", now="+ now);
+
+    LOG.debug("Calling accept(), event=" + currentEvent + ", now="+ now);
+
+    events=jobClient.accept(currentEvent);
+
+    if (now > runUntil) {
+
+      break;
+
+    }
+
+    LOG.debug("Accept() returned " + events.size() + " new event(s)");
+
+    for (    SimulatorEvent newEvent : events) {
+
+      LOG.debug("New event " + newEvent);
+
+    }
+
+    eventQueue.addAll(events);
+
+    LOG.debug("Done checking and enqueuing new events");
+
+  }
+
+  LOG.debug("going to check if all expected events have been processed");
+
+  eventQueue.checkMissingExpected();
+
+}
+

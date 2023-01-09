@@ -1,0 +1,260 @@
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+/** 
+
+ * Used for default, readonly, Text and Session data files
+
+ */
+
+DataSpaceManagerSimple(DataFileCache cache,boolean isReadOnly){
+
+  this.cache=cache;
+
+  if (cache instanceof DataFileCacheSession) {
+
+    defaultSpaceManager=new TableSpaceManagerSimple(cache);
+
+  }
+
+ else   if (cache instanceof TextCache) {
+
+    defaultSpaceManager=new TableSpaceManagerSimple(cache);
+
+  }
+
+ else {
+
+    int capacity=cache.database.logger.propMaxFreeBlocks;
+
+    defaultSpaceManager=new TableSpaceManagerBlocks(this,DataSpaceManager.tableIdDefault,fileBlockSize,capacity,cache.getDataFileScale(),0);
+
+    if (!isReadOnly) {
+
+      hongshuai();
+
+      long currentSize=cache.getFileFreePos();
+
+      long totalBlocks=(currentSize + fileBlockSize) / fileBlockSize;
+
+      long lastFreePosition=cache.enlargeFileSpace(totalBlocks * fileBlockSize - currentSize);
+
+      defaultSpaceManager.initialiseFileBlock(lookup,lastFreePosition,cache.getFileFreePos());
+
+      if (lookup != null) {
+
+        totalFragmentSize-=lookup.getTotalValues() * cache.getDataFileScale();
+
+        lookup=null;
+
+      }
+
+      cache.spaceManagerPosition=0;
+
+    }
+
+  }
+
+  totalFragmentSize=cache.lostSpaceSize;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public void freeTableSpace(int spaceId){
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public void freeTableSpace(int spaceId,DoubleIntIndex spaceList,long offset,long limit,boolean full){
+
+  totalFragmentSize+=spaceList.getTotalValues() * cache.getDataFileScale();
+
+  if (full) {
+
+    if (cache.fileFreePosition == limit) {
+
+      cache.writeLock.lock();
+
+      try {
+
+        cache.fileFreePosition=offset;
+
+      }
+
+  finally {
+
+        cache.writeLock.unlock();
+
+      }
+
+    }
+
+ else {
+
+      totalFragmentSize+=limit - offset;
+
+    }
+
+    if (spaceList.size() != 0) {
+
+      lookup=new DoubleIntIndex(spaceList.size(),true);
+
+      spaceList.copyTo(lookup);
+
+      spaceList.clear();
+
+    }
+
+  }
+
+ else {
+
+    spaceList.compactLookupAsIntervals();
+
+    spaceList.setValuesSearchTarget();
+
+    spaceList.sort();
+
+    int extra=spaceList.size() - spaceList.capacity() / 2;
+
+    if (extra > 0) {
+
+      spaceList.removeRange(0,extra);
+
+      totalFragmentSize-=spaceList.getTotalValues() * cache.getDataFileScale();
+
+    }
+
+  }
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public TableSpaceManager getDefaultTableSpace(){
+
+  return defaultSpaceManager;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public DirectoryBlockCachedObject[] getDirectoryList(){
+
+  return new DirectoryBlockCachedObject[0];
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public int getFileBlockItemCount(){
+
+  return 1024 * 64;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public int getFileBlockSize(){
+
+  return 1024 * 1024 * cache.getDataFileScale() / 16;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public long getFileBlocks(int spaceId,int blockCount){
+
+  long filePosition=cache.enlargeFileSpace((long)blockCount * fileBlockSize);
+
+  return filePosition;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public int getNewTableSpaceID(){
+
+  return spaceIdSequence++;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public TableSpaceManager getTableSpace(int spaceId){
+
+  if (spaceId >= spaceIdSequence) {
+
+    spaceIdSequence=spaceId + 1;
+
+  }
+
+  return defaultSpaceManager;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public void initialiseSpaces(){
+
+  long currentSize=cache.getFileFreePos();
+
+  long totalBlocks=(currentSize + fileBlockSize) / fileBlockSize;
+
+  long lastFreePosition=cache.enlargeFileSpace(totalBlocks * fileBlockSize - currentSize);
+
+  defaultSpaceManager.initialiseFileBlock(lookup,lastFreePosition,cache.getFileFreePos());
+
+  if (lookup != null) {
+
+    totalFragmentSize-=lookup.getTotalValues() * cache.getDataFileScale();
+
+    lookup=null;
+
+  }
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public boolean isModified(){
+
+  return true;
+
+}
+
+Location: DataSpaceManagerSimple.java
+
+Content: 
+
+public boolean isMultiSpace(){
+
+  return false;
+
+}
+

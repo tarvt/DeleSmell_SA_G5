@@ -1,0 +1,444 @@
+Location: NodeCounter.java
+
+Content: 
+
+private String alphaValue(int value,int min,int max){
+
+  if (value <= 0) {
+
+    return "" + value;
+
+  }
+
+  int range=max - min + 1;
+
+  char last=(char)(((value - 1) % range) + min);
+
+  if (value > range) {
+
+    return alphaValue((value - 1) / range,min,max) + last;
+
+  }
+
+ else {
+
+    return "" + last;
+
+  }
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * Format a sequence of values according to the format paramaters set by calling setFormatting().
+
+ */
+
+protected String formatNumbers(int[] values){
+
+  final int nValues=values.length;
+
+  final int length=_format.length();
+
+  boolean isEmpty=true;
+
+  for (int i=0; i < nValues; i++)   if (values[i] != Integer.MIN_VALUE)   isEmpty=false;
+
+  if (isEmpty)   return ("");
+
+  boolean isFirst=true;
+
+  int t=0, n=0, s=1;
+
+  _tempBuffer.setLength(0);
+
+  final StringBuffer buffer=_tempBuffer;
+
+  if (_separFirst)   buffer.append((String)_separToks.elementAt(0));
+
+  while (n < nValues) {
+
+    final int value=values[n];
+
+    if (value != Integer.MIN_VALUE) {
+
+      if (!isFirst)       buffer.append((String)_separToks.elementAt(s++));
+
+      formatValue(value,(String)_formatToks.elementAt(t++),buffer);
+
+      if (t == _nFormats)       t--;
+
+      if (s >= _nSepars)       s--;
+
+      isFirst=false;
+
+    }
+
+    n++;
+
+  }
+
+  if (_separLast)   buffer.append((String)_separToks.lastElement());
+
+  return buffer.toString();
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * Format a single value based on the appropriate formatting token. This method is based on saxon (Michael Kay) and only implements lang="en".
+
+ */
+
+private void formatValue(int value,String format,StringBuffer buffer){
+
+  char c=format.charAt(0);
+
+  if (Character.isDigit(c)) {
+
+    char zero=(char)(c - Character.getNumericValue(c));
+
+    StringBuffer temp=buffer;
+
+    if (_groupSize > 0) {
+
+      temp=new StringBuffer();
+
+    }
+
+    String s="";
+
+    int n=value;
+
+    while (n > 0) {
+
+      s=(char)((int)zero + (n % 10)) + s;
+
+      n=n / 10;
+
+    }
+
+    for (int i=0; i < format.length() - s.length(); i++) {
+
+      temp.append(zero);
+
+    }
+
+    temp.append(s);
+
+    if (_groupSize > 0) {
+
+      for (int i=0; i < temp.length(); i++) {
+
+        if (i != 0 && ((temp.length() - i) % _groupSize) == 0) {
+
+          buffer.append(_groupSep);
+
+        }
+
+        buffer.append(temp.charAt(i));
+
+      }
+
+    }
+
+  }
+
+ else   if (c == 'i' && !_letterValue.equals("alphabetic")) {
+
+    buffer.append(romanValue(value));
+
+  }
+
+ else   if (c == 'I' && !_letterValue.equals("alphabetic")) {
+
+    buffer.append(romanValue(value).toUpperCase());
+
+  }
+
+ else {
+
+    int min=(int)c;
+
+    int max=(int)c;
+
+    if (c >= 0x3b1 && c <= 0x3c9) {
+
+      max=0x3c9;
+
+    }
+
+ else {
+
+      while (Character.isLetterOrDigit((char)(max + 1))) {
+
+        max++;
+
+      }
+
+    }
+
+    buffer.append(alphaValue(value,min,max));
+
+  }
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * Returns the position of <tt>node</tt> according to the level and the from and count patterns. This position is converted into a string based on the arguments passed.
+
+ */
+
+public String getCounter(String format,String lang,String letterValue,String groupSep,String groupSize){
+
+  setFormatting(format,lang,letterValue,groupSep,groupSize);
+
+  return getCounter();
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * Returns true if <tt>node</tt> matches the count pattern. By default a node matches the count patterns if it is of the same type as the starting node.
+
+ */
+
+public boolean matchesCount(int node){
+
+  return _nodeType == _document.getExpandedTypeID(node);
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * Returns true if <tt>node</tt> matches the from pattern. By default, no node matches the from pattern.
+
+ */
+
+public boolean matchesFrom(int node){
+
+  return false;
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+protected NodeCounter(Translet translet,DOM document,DTMAxisIterator iterator){
+
+  _translet=translet;
+
+  _document=document;
+
+  _iterator=iterator;
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+private String romanValue(int n){
+
+  if (n <= 0 || n > 4000) {
+
+    return "" + n;
+
+  }
+
+  return Thousands[n / 1000] + Hundreds[(n / 100) % 10] + Tens[(n / 10) % 10]+ Ones[n % 10];
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * Sets formatting fields to their default values.
+
+ */
+
+public NodeCounter setDefaultFormatting(){
+
+  setFormatting("1","en","alphabetic",null,null);
+
+  return this;
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * Sets formatting fields before calling formatNumbers().
+
+ */
+
+protected void setFormatting(String format,String lang,String letterValue,String groupSep,String groupSize){
+
+  _lang=lang;
+
+  _groupSep=groupSep;
+
+  _letterValue=letterValue;
+
+  try {
+
+    _groupSize=Integer.parseInt(groupSize);
+
+  }
+
+ catch (  NumberFormatException e) {
+
+    _groupSize=0;
+
+  }
+
+  setTokens(format);
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+private final void setTokens(final String format){
+
+  if ((_format != null) && (format.equals(_format))) {
+
+    return;
+
+  }
+
+  _format=format;
+
+  final int length=_format.length();
+
+  boolean isFirst=true;
+
+  _separFirst=true;
+
+  _separLast=false;
+
+  _nSepars=0;
+
+  _nFormats=0;
+
+  _separToks.clear();
+
+  _formatToks.clear();
+
+  for (int j=0, i=0; i < length; ) {
+
+    char c=format.charAt(i);
+
+    for (j=i; Character.isLetterOrDigit(c); ) {
+
+      if (++i == length)       break;
+
+      c=format.charAt(i);
+
+    }
+
+    if (i > j) {
+
+      if (isFirst) {
+
+        _separToks.addElement(".");
+
+        isFirst=_separFirst=false;
+
+      }
+
+      _formatToks.addElement(format.substring(j,i));
+
+    }
+
+    if (i == length)     break;
+
+    c=format.charAt(i);
+
+    for (j=i; !Character.isLetterOrDigit(c); ) {
+
+      if (++i == length)       break;
+
+      c=format.charAt(i);
+
+      isFirst=false;
+
+    }
+
+    if (i > j) {
+
+      _separToks.addElement(format.substring(j,i));
+
+    }
+
+  }
+
+  _nSepars=_separToks.size();
+
+  _nFormats=_formatToks.size();
+
+  if (_nSepars > _nFormats)   _separLast=true;
+
+  if (_separFirst)   _nSepars--;
+
+  if (_separLast)   _nSepars--;
+
+  if (_nSepars == 0) {
+
+    _separToks.insertElementAt(".",1);
+
+    _nSepars++;
+
+  }
+
+  if (_separFirst)   _nSepars++;
+
+}
+
+Location: NodeCounter.java
+
+Content: 
+
+/** 
+
+ * If the user specified a value attribute, use this instead of counting nodes.
+
+ */
+
+public NodeCounter setValue(double value){
+
+  _value=value;
+
+  return this;
+
+}
+

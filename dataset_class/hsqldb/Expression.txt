@@ -1,0 +1,1462 @@
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * checkValidCheckConstraint
+
+ */
+
+public void checkValidCheckConstraint(){
+
+  OrderedHashSet set=null;
+
+  set=collectAllExpressions(set,Expression.subqueryAggregateExpressionSet,Expression.emptyExpressionSet);
+
+  if (set != null && !set.isEmpty()) {
+
+    throw Error.error(ErrorCode.X_0A000,"subquery in check constraint");
+
+  }
+
+}
+
+Location: Expression.java
+
+Content: 
+
+OrderedHashSet collectAllSubqueries(OrderedHashSet set){
+
+  for (int i=0; i < nodes.length; i++) {
+
+    if (nodes[i] != null) {
+
+      set=nodes[i].collectAllSubqueries(set);
+
+    }
+
+  }
+
+  if (table != null) {
+
+    OrderedHashSet tempSet=null;
+
+    if (table.queryExpression != null) {
+
+      tempSet=table.queryExpression.getSubqueries();
+
+      set=OrderedHashSet.addAll(set,tempSet);
+
+    }
+
+    if (set == null) {
+
+      set=new OrderedHashSet();
+
+    }
+
+    set.add(table);
+
+  }
+
+  return set;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+static void convertToType(Session session,Object[] data,Type[] dataType,Type[] newType){
+
+  for (int i=0; i < data.length; i++) {
+
+    if (!dataType[i].canConvertFrom(newType[i])) {
+
+      data[i]=newType[i].convertToType(session,data[i],dataType[i]);
+
+    }
+
+  }
+
+}
+
+Location: Expression.java
+
+Content: 
+
+static int countNulls(Object[] a){
+
+  int nulls=0;
+
+  for (int i=0; i < a.length; i++) {
+
+    if (a[i] == null) {
+
+      nulls++;
+
+    }
+
+  }
+
+  return nulls;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+static boolean equals(Expression[] row1,Expression[] row2){
+
+  if (row1 == row2) {
+
+    return true;
+
+  }
+
+  if (row1.length != row2.length) {
+
+    return false;
+
+  }
+
+  int len=row1.length;
+
+  for (int i=0; i < len; i++) {
+
+    Expression e1=row1[i];
+
+    Expression e2=row2[i];
+
+    boolean equals=(e1 == null) ? e2 == null : e1.equals(e2);
+
+    if (!equals) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+static boolean equals(Object o1,Object o2){
+
+  if (o1 == o2) {
+
+    return true;
+
+  }
+
+  return (o1 == null) ? false : o1.equals(o2);
+
+}
+
+Location: Expression.java
+
+Content: 
+
+Expression(int type){
+
+  opType=type;
+
+  nodes=emptyArray;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * ROW, ARRAY etc.
+
+ */
+
+Expression(int type,Expression[] list){
+
+  this(type);
+
+  this.nodes=list;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * Creates a SUBQUERY expression.
+
+ */
+
+Expression(int type,TableDerived table){
+
+switch (type) {
+
+case OpTypes.ARRAY:
+
+    opType=OpTypes.ARRAY;
+
+  break;
+
+case OpTypes.ARRAY_SUBQUERY:
+
+opType=OpTypes.ARRAY_SUBQUERY;
+
+break;
+
+case OpTypes.TABLE_SUBQUERY:
+
+opType=OpTypes.TABLE_SUBQUERY;
+
+break;
+
+case OpTypes.ROW_SUBQUERY:
+
+case OpTypes.SCALAR_SUBQUERY:
+
+opType=OpTypes.ROW_SUBQUERY;
+
+break;
+
+default :
+
+throw Error.runtimeError(ErrorCode.U_S0500,"Expression");
+
+}
+
+nodes=emptyArray;
+
+this.table=table;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * Returns a Select object that can be used for checking the contents of an existing table against the given CHECK search condition.
+
+ */
+
+static QuerySpecification getCheckSelect(Session session,Table t,Expression e){
+
+  CompileContext compileContext=new CompileContext(session);
+
+  compileContext.setNextRangeVarIndex(0);
+
+  QuerySpecification s=new QuerySpecification(compileContext);
+
+  RangeVariable range=new RangeVariable(t,null,null,null,compileContext);
+
+  RangeVariable[] ranges=new RangeVariable[]{range};
+
+  RangeGroup rangeGroup=new RangeGroupSimple(ranges,false);
+
+  e.resolveCheckOrGenExpression(session,rangeGroup,true);
+
+  if (Type.SQL_BOOLEAN != e.getDataType()) {
+
+    throw Error.error(ErrorCode.X_42568);
+
+  }
+
+  Expression condition=new ExpressionLogical(OpTypes.NOT,e);
+
+  s.addSelectColumnExpression(EXPR_TRUE);
+
+  s.addRangeVariable(session,range);
+
+  s.addQueryCondition(condition);
+
+  s.resolve(session);
+
+  return s;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * Returns the column index in the table
+
+ */
+
+int getColumnIndex(){
+
+  return columnIndex;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public Object getConstantValueNoCheck(Session session){
+
+  try {
+
+    return getValue(session);
+
+  }
+
+ catch (  HsqlException e) {
+
+    return null;
+
+  }
+
+}
+
+Location: Expression.java
+
+Content: 
+
+static String getContextSQL(Expression expression){
+
+  if (expression == null) {
+
+    return null;
+
+  }
+
+  String ddl=expression.getSQL();
+
+switch (expression.opType) {
+
+case OpTypes.VALUE:
+
+case OpTypes.COLUMN:
+
+case OpTypes.ROW:
+
+case OpTypes.FUNCTION:
+
+case OpTypes.SQL_FUNCTION:
+
+case OpTypes.ALTERNATIVE:
+
+case OpTypes.CASEWHEN:
+
+case OpTypes.CAST:
+
+    return ddl;
+
+}
+
+StringBuffer sb=new StringBuffer();
+
+ddl=sb.append('(').append(ddl).append(')').toString();
+
+return ddl;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * Returns the left node
+
+ */
+
+Expression getLeftNode(){
+
+  return nodes.length > 0 ? nodes[LEFT] : null;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+Type[] getNodeDataTypes(){
+
+  if (nodeDataTypes == null) {
+
+    return new Type[]{dataType};
+
+  }
+
+ else {
+
+    return nodeDataTypes;
+
+  }
+
+}
+
+Location: Expression.java
+
+Content: 
+
+Type getNodeDataType(int i){
+
+  if (nodeDataTypes == null) {
+
+    if (i > 0) {
+
+      throw Error.runtimeError(ErrorCode.U_S0500,"Expression");
+
+    }
+
+    return dataType;
+
+  }
+
+ else {
+
+    return nodeDataTypes[i];
+
+  }
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * Returns the right node
+
+ */
+
+Expression getRightNode(){
+
+  return nodes.length > 1 ? nodes[RIGHT] : null;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+SimpleName getSimpleName(){
+
+  return alias;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+String getValueClassName(){
+
+  Type type=dataType == null ? NullType.getNullType() : dataType;
+
+  return type.getJDBCClassName();
+
+}
+
+Location: Expression.java
+
+Content: 
+
+boolean hasAggregate(){
+
+  return hasAggregate;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+boolean hasNonDeterministicFunction(){
+
+  OrderedHashSet list=null;
+
+  list=collectAllExpressions(list,Expression.functionExpressionSet,Expression.emptyExpressionSet);
+
+  if (list == null) {
+
+    return false;
+
+  }
+
+  for (int j=0; j < list.size(); j++) {
+
+    Expression current=(Expression)list.get(j);
+
+    if (current.opType == OpTypes.FUNCTION) {
+
+      if (!((FunctionSQLInvoked)current).isDeterministic()) {
+
+        return true;
+
+      }
+
+    }
+
+ else     if (current.opType == OpTypes.SQL_FUNCTION) {
+
+      if (!((FunctionSQL)current).isDeterministic()) {
+
+        return true;
+
+      }
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * return true if given RangeVariable is used in expression tree
+
+ */
+
+boolean hasReference(RangeVariable[] ranges,int exclude){
+
+  OrderedHashSet set=collectRangeVariables(ranges,null);
+
+  if (set == null) {
+
+    return false;
+
+  }
+
+  for (int j=0; j < set.size(); j++) {
+
+    if (set.get(j) != ranges[exclude]) {
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * For GROUP only.
+
+ */
+
+boolean isComposedOf(Expression[] exprList,int start,int end,OrderedIntHashSet excludeSet){
+
+switch (opType) {
+
+case OpTypes.VALUE:
+
+case OpTypes.DYNAMIC_PARAM:
+
+case OpTypes.PARAMETER:
+
+case OpTypes.VARIABLE:
+
+{
+
+      return true;
+
+    }
+
+}
+
+if (excludeSet.contains(opType)) {
+
+  return true;
+
+}
+
+for (int i=start; i < end; i++) {
+
+  if (equals(exprList[i])) {
+
+    return true;
+
+  }
+
+}
+
+switch (opType) {
+
+case OpTypes.COLUMN:
+
+  return false;
+
+case OpTypes.LIKE:
+
+case OpTypes.MATCH_SIMPLE:
+
+case OpTypes.MATCH_PARTIAL:
+
+case OpTypes.MATCH_FULL:
+
+case OpTypes.MATCH_UNIQUE_SIMPLE:
+
+case OpTypes.MATCH_UNIQUE_PARTIAL:
+
+case OpTypes.MATCH_UNIQUE_FULL:
+
+case OpTypes.UNIQUE:
+
+case OpTypes.EXISTS:
+
+case OpTypes.ARRAY:
+
+case OpTypes.ARRAY_SUBQUERY:
+
+case OpTypes.TABLE_SUBQUERY:
+
+return false;
+
+case OpTypes.ROW_SUBQUERY:
+
+{
+
+if (table == null) {
+
+  break;
+
+}
+
+if (!(table.getQueryExpression() instanceof QuerySpecification)) {
+
+  return false;
+
+}
+
+QuerySpecification qs=(QuerySpecification)table.getQueryExpression();
+
+OrderedHashSet set=new OrderedHashSet();
+
+for (int i=start; i < end; i++) {
+
+  if (exprList[i].opType == OpTypes.COLUMN) {
+
+    set.add(exprList[i]);
+
+  }
+
+}
+
+return qs.collectOuterColumnExpressions(null,set) == null;
+
+}
+
+}
+
+if (aggregateFunctionSet.contains(opType)) {
+
+return false;
+
+}
+
+if (nodes.length == 0) {
+
+return true;
+
+}
+
+boolean result=true;
+
+for (int i=0; i < nodes.length; i++) {
+
+result&=(nodes[i] == null || nodes[i].isComposedOf(exprList,start,end,excludeSet));
+
+}
+
+return result;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * For HAVING only.
+
+ */
+
+boolean isComposedOf(OrderedHashSet expressions,RangeGroup[] rangeGroups,OrderedIntHashSet excludeSet){
+
+switch (opType) {
+
+case OpTypes.VALUE:
+
+case OpTypes.DYNAMIC_PARAM:
+
+case OpTypes.PARAMETER:
+
+case OpTypes.VARIABLE:
+
+{
+
+      return true;
+
+    }
+
+}
+
+if (excludeSet.contains(opType)) {
+
+  return true;
+
+}
+
+for (int i=0; i < expressions.size(); i++) {
+
+  if (equals(expressions.get(i))) {
+
+    return true;
+
+  }
+
+}
+
+if (opType == OpTypes.COLUMN) {
+
+  for (int i=0; i < rangeGroups.length; i++) {
+
+    RangeVariable[] ranges=rangeGroups[i].getRangeVariables();
+
+    for (int j=0; j < ranges.length; j++) {
+
+      if (ranges[j] == getRangeVariable()) {
+
+        return true;
+
+      }
+
+    }
+
+  }
+
+}
+
+switch (opType) {
+
+case OpTypes.FUNCTION:
+
+case OpTypes.SQL_FUNCTION:
+
+  if (nodes.length == 0) {
+
+    return true;
+
+  }
+
+}
+
+if (aggregateFunctionSet.contains(opType)) {
+
+return false;
+
+}
+
+if (nodes.length == 0) {
+
+return false;
+
+}
+
+boolean result=true;
+
+for (int i=0; i < nodes.length; i++) {
+
+result&=(nodes[i] == null || nodes[i].isComposedOf(expressions,rangeGroups,excludeSet));
+
+}
+
+return result;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+boolean isDistinctAggregate(){
+
+  return isDistinctAggregate;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean isFalse(){
+
+  return opType == OpTypes.VALUE && valueData instanceof Boolean && !((Boolean)valueData).booleanValue();
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean isTrue(){
+
+  return opType == OpTypes.VALUE && valueData instanceof Boolean && ((Boolean)valueData).booleanValue();
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void prepareTable(Session session,Expression row,int degree){
+
+  if (nodeDataTypes != null) {
+
+    return;
+
+  }
+
+  for (int i=0; i < nodes.length; i++) {
+
+    Expression e=nodes[i];
+
+    if (e.opType == OpTypes.ROW) {
+
+      if (degree != e.nodes.length) {
+
+        throw Error.error(ErrorCode.X_42564);
+
+      }
+
+    }
+
+ else     if (degree == 1) {
+
+      nodes[i]=new Expression(OpTypes.ROW);
+
+      nodes[i].nodes=new Expression[]{e};
+
+    }
+
+ else {
+
+      throw Error.error(ErrorCode.X_42564);
+
+    }
+
+  }
+
+  nodeDataTypes=new Type[degree];
+
+  for (int j=0; j < degree; j++) {
+
+    Type type=row == null ? null : row.nodes[j].dataType;
+
+    boolean hasUresolvedParameter=row == null ? false : row.nodes[j].isUnresolvedParam();
+
+    for (int i=0; i < nodes.length; i++) {
+
+      type=Type.getAggregateType(nodes[i].nodes[j].dataType,type);
+
+      hasUresolvedParameter|=nodes[i].nodes[j].isUnresolvedParam();
+
+    }
+
+    if (type == null) {
+
+      type=Type.SQL_VARCHAR_DEFAULT;
+
+    }
+
+    int typeCode=type.typeCode;
+
+    if (hasUresolvedParameter && type.isCharacterType()) {
+
+      if (typeCode == Types.SQL_CHAR || type.precision < Type.SQL_VARCHAR_DEFAULT.precision) {
+
+        if (typeCode == Types.SQL_CHAR) {
+
+          typeCode=Types.SQL_VARCHAR;
+
+        }
+
+        long precision=Math.max(Type.SQL_VARCHAR_DEFAULT.precision,type.precision);
+
+        type=CharacterType.getCharacterType(typeCode,precision,type.getCollation());
+
+      }
+
+    }
+
+    nodeDataTypes[j]=type;
+
+    if (row != null && row.nodes[j].isUnresolvedParam()) {
+
+      row.nodes[j].dataType=type;
+
+    }
+
+    for (int i=0; i < nodes.length; i++) {
+
+      if (nodes[i].nodes[j].isUnresolvedParam()) {
+
+        nodes[i].nodes[j].dataType=nodeDataTypes[j];
+
+        continue;
+
+      }
+
+      if (nodes[i].nodes[j].opType == OpTypes.VALUE) {
+
+        if (nodes[i].nodes[j].valueData == null) {
+
+          nodes[i].nodes[j].dataType=nodeDataTypes[j];
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void replaceNode(Expression existing,Expression replacement){
+
+  for (int i=0; i < nodes.length; i++) {
+
+    if (nodes[i] == existing) {
+
+      replacement.alias=nodes[i].alias;
+
+      nodes[i]=replacement;
+
+      return;
+
+    }
+
+  }
+
+  throw Error.runtimeError(ErrorCode.U_S0500,"Expression");
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public void resolveCheckOrGenExpression(Session session,RangeGroup rangeGroup,boolean isCheck){
+
+  boolean nonDeterministic=false;
+
+  OrderedHashSet set=new OrderedHashSet();
+
+  HsqlList unresolved=resolveColumnReferences(session,rangeGroup,RangeGroup.emptyArray,null);
+
+  ExpressionColumn.checkColumnsResolved(unresolved);
+
+  resolveTypes(session,null);
+
+  collectAllExpressions(set,Expression.subqueryAggregateExpressionSet,Expression.emptyExpressionSet);
+
+  if (!set.isEmpty()) {
+
+    throw Error.error(ErrorCode.X_42512);
+
+  }
+
+  collectAllExpressions(set,Expression.functionExpressionSet,Expression.emptyExpressionSet);
+
+  for (int i=0; i < set.size(); i++) {
+
+    Expression current=(Expression)set.get(i);
+
+    if (current.opType == OpTypes.FUNCTION) {
+
+      if (!((FunctionSQLInvoked)current).isDeterministic()) {
+
+        throw Error.error(ErrorCode.X_42512);
+
+      }
+
+    }
+
+    if (current.opType == OpTypes.SQL_FUNCTION) {
+
+      if (!((FunctionSQL)current).isDeterministic()) {
+
+        if (isCheck) {
+
+          nonDeterministic=true;
+
+          continue;
+
+        }
+
+        throw Error.error(ErrorCode.X_42512);
+
+      }
+
+    }
+
+  }
+
+  if (isCheck && nonDeterministic) {
+
+    HsqlArrayList list=new HsqlArrayList();
+
+    RangeVariableResolver.decomposeAndConditions(session,this,list);
+
+    for (int i=0; i < list.size(); i++) {
+
+      nonDeterministic=true;
+
+      Expression e=(Expression)list.get(i);
+
+      Expression e1;
+
+      if (e instanceof ExpressionLogical) {
+
+        boolean b=((ExpressionLogical)e).convertToSmaller();
+
+        if (!b) {
+
+          break;
+
+        }
+
+        e1=e.getRightNode();
+
+        e=e.getLeftNode();
+
+        if (!e.dataType.isDateTimeType()) {
+
+          nonDeterministic=true;
+
+          break;
+
+        }
+
+        if (e.hasNonDeterministicFunction()) {
+
+          nonDeterministic=true;
+
+          break;
+
+        }
+
+        if (e1 instanceof ExpressionArithmetic) {
+
+          if (opType == OpTypes.ADD) {
+
+            if (e1.getRightNode().hasNonDeterministicFunction()) {
+
+              e1.swapLeftAndRightNodes();
+
+            }
+
+          }
+
+ else           if (opType == OpTypes.SUBTRACT) {
+
+          }
+
+ else {
+
+            break;
+
+          }
+
+          if (e1.getRightNode().hasNonDeterministicFunction()) {
+
+            break;
+
+          }
+
+          e1=e1.getLeftNode();
+
+        }
+
+        if (e1.opType == OpTypes.SQL_FUNCTION) {
+
+          FunctionSQL function=(FunctionSQL)e1;
+
+switch (function.funcType) {
+
+case FunctionSQL.FUNC_CURRENT_DATE:
+
+case FunctionSQL.FUNC_CURRENT_TIMESTAMP:
+
+case FunctionSQL.FUNC_LOCALTIMESTAMP:
+
+            nonDeterministic=false;
+
+          continue;
+
+default :
+
+        break;
+
+    }
+
+    break;
+
+  }
+
+  break;
+
+}
+
+ else {
+
+  break;
+
+}
+
+}
+
+if (nonDeterministic) {
+
+throw Error.error(ErrorCode.X_42512);
+
+}
+
+}
+
+set.clear();
+
+collectObjectNames(set);
+
+RangeVariable[] ranges=rangeGroup.getRangeVariables();
+
+for (int i=0; i < set.size(); i++) {
+
+HsqlName name=(HsqlName)set.get(i);
+
+switch (name.type) {
+
+case SchemaObject.COLUMN:
+
+{
+
+  if (isCheck) {
+
+    break;
+
+  }
+
+  int colIndex=ranges[0].rangeTable.findColumn(name.name);
+
+  ColumnSchema column=ranges[0].rangeTable.getColumn(colIndex);
+
+  if (column.isGenerated()) {
+
+    throw Error.error(ErrorCode.X_42512);
+
+  }
+
+  break;
+
+}
+
+case SchemaObject.SEQUENCE:
+
+{
+
+throw Error.error(ErrorCode.X_42512);
+
+}
+
+case SchemaObject.SPECIFIC_ROUTINE:
+
+{
+
+Routine routine=(Routine)session.database.schemaManager.getSchemaObject(name);
+
+if (!routine.isDeterministic()) {
+
+throw Error.error(ErrorCode.X_42512);
+
+}
+
+int impact=routine.getDataImpact();
+
+if (impact == Routine.READS_SQL || impact == Routine.MODIFIES_SQL) {
+
+throw Error.error(ErrorCode.X_42512);
+
+}
+
+}
+
+}
+
+}
+
+set.clear();
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * resolve tables and collect unresolved column expressions
+
+ */
+
+public HsqlList resolveColumnReferences(Session session,RangeGroup rangeGroup,RangeGroup[] rangeGroups,HsqlList unresolvedSet){
+
+  return resolveColumnReferences(session,rangeGroup,rangeGroup.getRangeVariables().length,rangeGroups,unresolvedSet,true);
+
+}
+
+Location: Expression.java
+
+Content: 
+
+static HsqlList resolveColumnSet(Session session,RangeVariable[] rangeVars,int rangeCount,RangeGroup[] rangeGroups,HsqlList sourceSet,HsqlList targetSet){
+
+  if (sourceSet == null) {
+
+    return targetSet;
+
+  }
+
+  RangeGroup rangeGroup=new RangeGroupSimple(rangeVars,false);
+
+  for (int i=0; i < sourceSet.size(); i++) {
+
+    Expression e=(Expression)sourceSet.get(i);
+
+    targetSet=e.resolveColumnReferences(session,rangeGroup,rangeCount,rangeGroups,targetSet,false);
+
+  }
+
+  return targetSet;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+static HsqlList resolveColumnSet(Session session,RangeVariable[] rangeVars,RangeGroup[] rangeGroups,HsqlList sourceSet){
+
+  return resolveColumnSet(session,rangeVars,rangeVars.length,rangeGroups,sourceSet,null);
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void setAggregate(){
+
+  hasAggregate=true;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * Set the column alias
+
+ */
+
+void setAlias(SimpleName name){
+
+  alias=name;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void setAsConstantValue(Object value,Expression parent){
+
+  valueData=value;
+
+  opType=OpTypes.VALUE;
+
+  nodes=emptyArray;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void setAsConstantValue(Session session,Expression parent){
+
+  valueData=getValue(session);
+
+  opType=OpTypes.VALUE;
+
+  nodes=emptyArray;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void setAttributesAsColumn(ColumnSchema column,boolean isWritable){
+
+  throw Error.runtimeError(ErrorCode.U_S0500,"Expression");
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public void setCollation(Collation collation){
+
+  this.collation=collation;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public void setCorrelatedReferences(RangeGroup resolvedRangeGroup){
+
+  if (rangeGroups == null) {
+
+    for (int i=0; i < nodes.length; i++) {
+
+      if (nodes[i] != null) {
+
+        nodes[i].setCorrelatedReferences(resolvedRangeGroup);
+
+      }
+
+    }
+
+  }
+
+ else   if (ArrayUtil.find(rangeGroups,resolvedRangeGroup) > -1) {
+
+    for (int idx=rangeGroups.length - 1; idx >= 0; idx--) {
+
+      if (rangeGroups[idx] == resolvedRangeGroup) {
+
+        break;
+
+      }
+
+      rangeGroups[idx].setCorrelated();
+
+    }
+
+    rangeGroup.setCorrelated();
+
+  }
+
+}
+
+Location: Expression.java
+
+Content: 
+
+/** 
+
+ * Set the data type
+
+ */
+
+void setDataType(Session session,Type type){
+
+  if (opType == OpTypes.VALUE) {
+
+    valueData=type.convertToType(session,valueData,dataType);
+
+  }
+
+  dataType=type;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void setLeftNode(Expression e){
+
+  nodes[LEFT]=e;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void setRightNode(Expression e){
+
+  nodes[RIGHT]=e;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+void swapLeftAndRightNodes(){
+
+  Expression temp=nodes[LEFT];
+
+  nodes[LEFT]=nodes[RIGHT];
+
+  nodes[RIGHT]=temp;
+
+}
+
+Location: Expression.java
+
+Content: 
+
+public boolean testCondition(Session session){
+
+  return Boolean.TRUE.equals(getValue(session));
+
+}
+

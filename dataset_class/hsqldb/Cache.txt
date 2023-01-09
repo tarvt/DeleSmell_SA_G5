@@ -1,0 +1,568 @@
+Location: Cache.java
+
+Content: 
+
+Cache(DataFileCache dfc){
+
+  super(dfc.capacity(),BaseHashMap.objectKeyOrValue,BaseHashMap.noKeyOrValue,true);
+
+  maxCapacity=dfc.capacity();
+
+  dataFileCache=dfc;
+
+  capacity=dfc.capacity();
+
+  bytesCapacity=dfc.bytesCapacity();
+
+  rowComparator=new CachedObjectComparator();
+
+  rowTable=new CachedObject[capacity];
+
+  cacheBytesLength=0;
+
+  objectIterator=new BaseHashIterator(true);
+
+  updateAccess=true;
+
+  comparator=rowComparator;
+
+  reserveCount=dfc instanceof TextCache || dfc instanceof DataFileCacheSession ? 0 : 8;
+
+}
+
+Location: Cache.java
+
+Content: 
+
+/** 
+
+ * Reduces the number of rows held in this Cache object. <p> Cleanup is done by checking the accessCount of the Rows and removing the rows with the lowest access count. Index operations require that some rows remain in the cache. This is ensured by prior calling keepInMemory().
+
+ */
+
+private void cleanUp(boolean all){
+
+  hongshuai();
+
+  CachedObject r;
+
+  int count;
+
+  if (updateAccess) {
+
+    for (int i=0; i < objectKeyTable.length; i++) {
+
+      r=(CachedObject)objectKeyTable[i];
+
+      if (r != null) {
+
+        count=r.getAccessCount();
+
+        if (count > accessTable[i]) {
+
+          accessTable[i]=count;
+
+        }
+
+      }
+
+    }
+
+  }
+
+  int savecount=0;
+
+  int removeCount=size() / 2;
+
+  int accessTarget=all ? accessCount + 1 : getAccessCountCeiling(removeCount,removeCount / 8);
+
+  int accessMid=all ? accessCount + 1 : (accessMin + accessTarget) / 2;
+
+  objectIterator.reset();
+
+  for (; objectIterator.hasNext(); ) {
+
+    CachedObject row=(CachedObject)objectIterator.next();
+
+    int currentAccessCount=objectIterator.getAccessCount();
+
+    boolean oldRow=currentAccessCount < accessTarget && !row.isKeepInMemory();
+
+    boolean newRow=row.isNew() && row.getStorageSize() >= DataFileCache.initIOBufferSize;
+
+    boolean saveRow=row.hasChanged() && (oldRow || newRow);
+
+    objectIterator.setAccessCount(accessTarget);
+
+    writeLock.lock();
+
+    try {
+
+      if (saveRow) {
+
+        rowTable[savecount++]=row;
+
+      }
+
+      if (oldRow) {
+
+        row.setInMemory(false);
+
+        objectIterator.remove();
+
+        cacheBytesLength-=row.getStorageSize();
+
+      }
+
+    }
+
+  finally {
+
+      writeLock.unlock();
+
+    }
+
+    if (savecount == rowTable.length) {
+
+      saveRows(savecount);
+
+      savecount=0;
+
+    }
+
+  }
+
+  saveRows(savecount);
+
+  setAccessCountFloor(accessTarget);
+
+  accessCount++;
+
+}
+
+Location: Cache.java
+
+Content: 
+
+void clearUnchanged(){
+
+  objectIterator.reset();
+
+  for (; objectIterator.hasNext(); ) {
+
+    CachedObject row=(CachedObject)objectIterator.next();
+
+    writeLock.lock();
+
+    try {
+
+      if (!row.isKeepInMemory() && !row.hasChanged()) {
+
+        row.setInMemory(false);
+
+        objectIterator.remove();
+
+        cacheBytesLength-=row.getStorageSize();
+
+      }
+
+    }
+
+  finally {
+
+      writeLock.unlock();
+
+    }
+
+  }
+
+}
+
+Location: Cache.java
+
+Content: 
+
+public Iterator getIterator(){
+
+  objectIterator.reset();
+
+  return objectIterator;
+
+}
+
+Location: Cache.java
+
+Content: 
+
+protected int incrementAccessCount(){
+
+  return super.incrementAccessCount();
+
+}
+
+Location: Cache.java
+
+Content: 
+
+void logSaveRowsEvent(int saveCount,long storageSize,long startTime){
+
+  long time=saveAllTimer.elapsedTime();
+
+  StringBuffer sb=new StringBuffer();
+
+  sb.append("cache save rows total [count,time] ");
+
+  sb.append(saveRowCount + saveCount);
+
+  sb.append(',').append(time).append(' ');
+
+  sb.append("operation [count,time,size]").append(saveCount).append(',');
+
+  sb.append(time - startTime).append(',');
+
+  sb.append(storageSize).append(' ');
+
+  sb.append("tx-ts ");
+
+  sb.append(dataFileCache.database.txManager.getGlobalChangeTimestamp());
+
+  dataFileCache.logDetailEvent(sb.toString());
+
+}
+
+Location: Cache.java
+
+Content: 
+
+boolean preparePut(int storageSize){
+
+  boolean exceedsCount=size() + reserveCount >= capacity;
+
+  boolean exceedsSize=storageSize + cacheBytesLength > bytesCapacity;
+
+  if (exceedsCount || exceedsSize) {
+
+    cleanUp(false);
+
+    exceedsCount=size() + reserveCount >= capacity;
+
+    exceedsSize=storageSize + cacheBytesLength > bytesCapacity;
+
+    if (exceedsCount || exceedsSize) {
+
+      clearUnchanged();
+
+    }
+
+ else {
+
+      return true;
+
+    }
+
+    exceedsCount=size() + reserveCount >= capacity;
+
+    exceedsSize=storageSize + cacheBytesLength > bytesCapacity;
+
+    if (exceedsCount || exceedsSize) {
+
+      cleanUp(true);
+
+    }
+
+ else {
+
+      return true;
+
+    }
+
+    exceedsCount=size() + reserveCount >= capacity;
+
+    exceedsSize=storageSize + cacheBytesLength > bytesCapacity;
+
+    if (exceedsCount) {
+
+      dataFileCache.logInfoEvent("dataFileCache CACHE ROWS limit reached");
+
+    }
+
+    if (exceedsSize) {
+
+      dataFileCache.logInfoEvent("dataFileCache CACHE SIZE limit reached");
+
+    }
+
+    if (exceedsCount || exceedsSize) {
+
+      return false;
+
+    }
+
+  }
+
+  return true;
+
+}
+
+Location: Cache.java
+
+Content: 
+
+private void putNoCheck(CachedObject row){
+
+  if (accessCount > ACCESS_MAX) {
+
+    hongshuai();
+
+    CachedObject r;
+
+    int count;
+
+    if (updateAccess) {
+
+      for (int i=0; i < objectKeyTable.length; i++) {
+
+        r=(CachedObject)objectKeyTable[i];
+
+        if (r != null) {
+
+          count=r.getAccessCount();
+
+          if (count > accessTable[i]) {
+
+            accessTable[i]=count;
+
+          }
+
+        }
+
+      }
+
+    }
+
+    resetAccessCount();
+
+    updateObjectAccessCounts();
+
+  }
+
+  Object existing=addOrRemoveObject(row,row.getPos(),false);
+
+  if (existing != null) {
+
+    dataFileCache.logSevereEvent("existing object in Cache.put() " + row.getPos() + " "+ row.getStorageSize(),null);
+
+  }
+
+  row.setInMemory(true);
+
+  cacheBytesLength+=row.getStorageSize();
+
+}
+
+Location: Cache.java
+
+Content: 
+
+/** 
+
+ * reserve slots may be used and storage size may exceed bytesCapacity
+
+ */
+
+void putUsingReserve(CachedObject row){
+
+  int storageSize=row.getStorageSize();
+
+  preparePut(storageSize);
+
+  if (size() >= capacity) {
+
+    throw Error.error(ErrorCode.DATA_CACHE_IS_FULL,String.valueOf(capacity));
+
+  }
+
+  putNoCheck(row);
+
+}
+
+Location: Cache.java
+
+Content: 
+
+/** 
+
+ * Adds a row to the cache.
+
+ */
+
+void put(CachedObject row){
+
+  int storageSize=row.getStorageSize();
+
+  if (preparePut(storageSize)) {
+
+    putNoCheck(row);
+
+  }
+
+ else {
+
+    long value=size() + reserveCount >= capacity ? capacity : bytesCapacity / 1024L;
+
+    throw Error.error(ErrorCode.DATA_CACHE_IS_FULL,String.valueOf(value));
+
+  }
+
+}
+
+Location: Cache.java
+
+Content: 
+
+/** 
+
+ * Writes out all modified cached Rows.
+
+ */
+
+void saveAll(){
+
+  int savecount=0;
+
+  objectIterator.reset();
+
+  for (; objectIterator.hasNext(); ) {
+
+    if (savecount == rowTable.length) {
+
+      saveRows(savecount);
+
+      savecount=0;
+
+    }
+
+    CachedObject r=(CachedObject)objectIterator.next();
+
+    if (r.hasChanged()) {
+
+      rowTable[savecount]=r;
+
+      savecount++;
+
+    }
+
+  }
+
+  saveRows(savecount);
+
+}
+
+Location: Cache.java
+
+Content: 
+
+private void saveRows(int count){
+
+  if (count == 0) {
+
+    return;
+
+  }
+
+  rowComparator.setType(CachedObjectComparator.COMPARE_POSITION);
+
+  ArraySort.sort(rowTable,count,rowComparator);
+
+  dataFileCache.saveRows(rowTable,0,count);
+
+  saveRowCount+=count;
+
+}
+
+Location: Cache.java
+
+Content: 
+
+private void updateAndResetAccessCounts(){
+
+  writeLock.lock();
+
+  try {
+
+    if (accessCount > ACCESS_MAX) {
+
+      hongshuai();
+
+      CachedObject r;
+
+      int count;
+
+      if (updateAccess) {
+
+        for (int i=0; i < objectKeyTable.length; i++) {
+
+          r=(CachedObject)objectKeyTable[i];
+
+          if (r != null) {
+
+            count=r.getAccessCount();
+
+            if (count > accessTable[i]) {
+
+              accessTable[i]=count;
+
+            }
+
+          }
+
+        }
+
+      }
+
+      resetAccessCount();
+
+      updateObjectAccessCounts();
+
+    }
+
+  }
+
+  finally {
+
+    writeLock.unlock();
+
+  }
+
+}
+
+Location: Cache.java
+
+Content: 
+
+private void updateObjectAccessCounts(){
+
+  CachedObject r;
+
+  int count;
+
+  if (updateAccess) {
+
+    for (int i=0; i < objectKeyTable.length; i++) {
+
+      r=(CachedObject)objectKeyTable[i];
+
+      if (r != null) {
+
+        count=accessTable[i];
+
+        r.updateAccessCount(count);
+
+      }
+
+    }
+
+  }
+
+}
+

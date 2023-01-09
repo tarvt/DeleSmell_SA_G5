@@ -1,0 +1,166 @@
+Location: StressJobFactory.java
+
+Content: 
+
+float calcEffectiveIncompleteMapTasks(int mapSlotCapacity,int numMaps,float mapProgress){
+
+  float maxEffIncompleteMapTasks=Math.max(1.0f,mapSlotCapacity * maxMapSlotSharePerJob);
+
+  float mapProgressAdjusted=Math.max(Math.min(mapProgress,1.0f),0.0f);
+
+  return Math.min(maxEffIncompleteMapTasks,numMaps * (1.0f - mapProgressAdjusted));
+
+}
+
+Location: StressJobFactory.java
+
+Content: 
+
+float calcEffectiveIncompleteReduceTasks(int reduceSlotCapacity,int numReduces,float reduceProgress){
+
+  float maxEffIncompleteReduceTasks=Math.max(1.0f,reduceSlotCapacity * maxReduceSlotSharePerJob);
+
+  float reduceProgressAdjusted=Math.max(Math.min(reduceProgress,1.0f),0.0f);
+
+  return Math.min(maxEffIncompleteReduceTasks,numReduces * (1.0f - reduceProgressAdjusted));
+
+}
+
+Location: StressJobFactory.java
+
+Content: 
+
+/** 
+
+ * We try to use some light-weight mechanism to determine cluster load.
+
+ * @param stats
+
+ * @param clusterStatus Cluster status
+
+ * @throws java.io.IOException
+
+ */
+
+private void checkLoadAndGetSlotsToBackfill(ClusterStats stats,ClusterStatus clusterStatus) throws IOException, InterruptedException {
+
+  loadStatus.mapSlotCapacity=clusterStatus.getMaxMapTasks();
+
+  loadStatus.reduceSlotCapacity=clusterStatus.getMaxReduceTasks();
+
+  loadStatus.numJobsBackfill=(int)(maxJobTrackerRatio * clusterStatus.getTaskTrackers()) - stats.getNumRunningJob();
+
+  if (loadStatus.numJobsBackfill <= 0) {
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug(System.currentTimeMillis() + " Overloaded is " + Boolean.TRUE.toString()+ " NumJobsBackfill is "+ loadStatus.numJobsBackfill);
+
+    }
+
+    return;
+
+  }
+
+  float incompleteMapTasks=0;
+
+  for (  JobStats job : ClusterStats.getRunningJobStats()) {
+
+    float mapProgress=job.getJob().mapProgress();
+
+    int noOfMaps=job.getNoOfMaps();
+
+    incompleteMapTasks+=calcEffectiveIncompleteMapTasks(clusterStatus.getMaxMapTasks(),noOfMaps,mapProgress);
+
+  }
+
+  loadStatus.mapSlotsBackfill=(int)((overloadMapTaskMapSlotRatio * clusterStatus.getMaxMapTasks()) - incompleteMapTasks);
+
+  if (loadStatus.mapSlotsBackfill <= 0) {
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug(System.currentTimeMillis() + " Overloaded is " + Boolean.TRUE.toString()+ " MapSlotsBackfill is "+ loadStatus.mapSlotsBackfill);
+
+    }
+
+    return;
+
+  }
+
+  float incompleteReduceTasks=0;
+
+  for (  JobStats job : ClusterStats.getRunningJobStats()) {
+
+    int noOfReduces=job.getJob().getNumReduceTasks();
+
+    if (noOfReduces > 0) {
+
+      float reduceProgress=job.getJob().reduceProgress();
+
+      incompleteReduceTasks+=calcEffectiveIncompleteReduceTasks(clusterStatus.getMaxReduceTasks(),noOfReduces,reduceProgress);
+
+    }
+
+  }
+
+  loadStatus.reduceSlotsBackfill=(int)((overloadReduceTaskReduceSlotRatio * clusterStatus.getMaxReduceTasks()) - incompleteReduceTasks);
+
+  if (loadStatus.reduceSlotsBackfill <= 0) {
+
+    if (LOG.isDebugEnabled()) {
+
+      LOG.debug(System.currentTimeMillis() + " Overloaded is " + Boolean.TRUE.toString()+ " ReduceSlotsBackfill is "+ loadStatus.reduceSlotsBackfill);
+
+    }
+
+    return;
+
+  }
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug(System.currentTimeMillis() + " Overloaded is " + Boolean.FALSE.toString()+ "Current load Status is "+ loadStatus);
+
+  }
+
+}
+
+Location: StressJobFactory.java
+
+Content: 
+
+/** 
+
+ * Creating a new instance does not start the thread.
+
+ * @param submitter   Component to which deserialized jobs are passed
+
+ * @param jobProducer Stream of job traces with which to construct a{@link org.apache.hadoop.tools.rumen.ZombieJobProducer}
+
+ * @param scratch     Directory into which to write output from simulated jobs
+
+ * @param conf        Config passed to all jobs to be submitted
+
+ * @param startFlag   Latch released from main to start pipeline
+
+ * @throws java.io.IOException
+
+ */
+
+public StressJobFactory(JobSubmitter submitter,JobStoryProducer jobProducer,Path scratch,Configuration conf,CountDownLatch startFlag,UserResolver resolver) throws IOException {
+
+  super(submitter,jobProducer,scratch,conf,startFlag,resolver);
+
+  overloadMapTaskMapSlotRatio=conf.getFloat(CONF_OVERLOAD_MAPTASK_MAPSLOT_RATIO,OVERLOAD_MAPTASK_MAPSLOT_RATIO);
+
+  overloadReduceTaskReduceSlotRatio=conf.getFloat(CONF_OVERLOAD_REDUCETASK_REDUCESLOT_RATIO,OVERLOAD_REDUCETASK_REDUCESLOT_RATIO);
+
+  maxMapSlotSharePerJob=conf.getFloat(CONF_MAX_MAPSLOT_SHARE_PER_JOB,MAX_MAPSLOT_SHARE_PER_JOB);
+
+  maxReduceSlotSharePerJob=conf.getFloat(CONF_MAX_REDUCESLOT_SHARE_PER_JOB,MAX_REDUCESLOT_SHARE_PER_JOB);
+
+  maxJobTrackerRatio=conf.getFloat(CONF_MAX_JOB_TRACKER_RATIO,MAX_JOB_TRACKER_RATIO);
+
+}
+

@@ -1,0 +1,390 @@
+Location: FlowControl.java
+
+Content: 
+
+/** 
+
+ * Check whether sender has enough credits left. If not, send it some more
+
+ * @param map The hashmap to use
+
+ * @param sender The address of the sender
+
+ * @param length The number of bytes received by this message. We don't care about the size of the headers forthe purpose of flow control
+
+ * @return long Number of credits to be sent. Greater than 0 if credits needs to be sent, 0 otherwise
+
+ */
+
+protected long adjustCredit(Map<Address,Credit> map,Address sender,int length){
+
+  Credit cred;
+
+  if (sender == null || length == 0 || (cred=map.get(sender)) == null)   return 0;
+
+  if (log.isTraceEnabled())   log.trace("%s used %d credits, %d remaining",sender,length,cred.get() - length);
+
+  return cred.decrementAndGet(length,min_credits,max_credits);
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+protected static long bufferToLong(byte[] buf,int offset){
+
+  return Bits.readLong(buf,offset);
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public long getMaxBlockTime(){
+
+  return max_block_time;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public String getMaxBlockTimes(){
+
+  if (max_block_times == null)   return "n/a";
+
+  StringBuilder sb=new StringBuilder();
+
+  boolean first=true;
+
+  for (  Map.Entry<Long,Long> entry : max_block_times.entrySet()) {
+
+    if (!first)     sb.append(", ");
+
+ else     first=false;
+
+    sb.append(entry.getKey()).append(":").append(entry.getValue());
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+protected long getMaxBlockTime(long length){
+
+  if (max_block_times == null)   return 0;
+
+  Long retval=null;
+
+  for (  Map.Entry<Long,Long> entry : max_block_times.entrySet()) {
+
+    retval=entry.getValue();
+
+    if (length <= entry.getKey())     break;
+
+  }
+
+  return retval != null ? retval : 0;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public long getMaxCredits(){
+
+  return max_credits;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public double getMinThreshold(){
+
+  return min_threshold;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+@ManagedAttribute(description="Number of credit requests received") public int getNumberOfCreditRequestsReceived(){
+
+  return num_credit_requests_received;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+@ManagedAttribute(description="Number of credit requests sent") public int getNumberOfCreditRequestsSent(){
+
+  return num_credit_requests_sent;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+@ManagedAttribute(description="Number of credit responses received") public int getNumberOfCreditResponsesReceived(){
+
+  return num_credit_responses_received;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+@ManagedAttribute(description="Number of credit responses sent") public int getNumberOfCreditResponsesSent(){
+
+  return num_credit_responses_sent;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+/** 
+
+ * @param map The map to modify
+
+ * @param sender The sender who requests credits
+
+ * @param requested_credits Number of bytes that the sender has left to send messages to us
+
+ */
+
+protected void handleCreditRequest(Map<Address,Credit> map,Address sender,long requested_credits){
+
+  if (requested_credits > 0 && sender != null) {
+
+    Credit cred=map.get(sender);
+
+    if (cred == null)     return;
+
+    if (log.isTraceEnabled())     log.trace("received credit request from %s: sending %d credits",sender,requested_credits);
+
+    cred.increment(requested_credits,max_credits);
+
+    sendCredit(sender,requested_credits);
+
+  }
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+protected void handleUpEvent(final Message msg,FcHeader hdr){
+
+switch (hdr.type) {
+
+case FcHeader.REPLENISH:
+
+    num_credit_responses_received++;
+
+  handleCredit(msg.getSrc(),bufferToLong(msg.getRawBuffer(),msg.getOffset()));
+
+break;
+
+case FcHeader.CREDIT_REQUEST:
+
+num_credit_requests_received++;
+
+Address sender=msg.getSrc();
+
+Long requested_credits=bufferToLong(msg.getRawBuffer(),msg.getOffset());
+
+if (requested_credits != null) handleCreditRequest(received,sender,requested_credits);
+
+break;
+
+default :
+
+log.error(Util.getMessage("HeaderTypeNotKnown"),local_addr,hdr.type);
+
+break;
+
+}
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+protected static byte[] longToBuffer(long num){
+
+  byte[] buf=new byte[Global.LONG_SIZE];
+
+  Bits.writeLong(num,buf,0);
+
+  return buf;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+protected static String printMap(Map<Address,? extends Credit> m){
+
+  return m.entrySet().stream().collect(StringBuilder::new,(sb,entry) -> sb.append(entry.getKey()).append(": ").append(entry.getValue()).append("\n"),(l,r) -> {
+
+  }
+
+).toString();
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+@ManagedOperation(description="Print receiver credits") public String printReceiverCredits(){
+
+  return printMap(received);
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+/** 
+
+ * We cannot send this request as OOB message, as the credit request needs to queue up behind the regular messages; if a receiver cannot process the regular messages, that is a sign that the sender should be throttled !
+
+ * @param dest The member to which we send the credit request
+
+ * @param credits_needed The number of bytes (of credits) left for dest
+
+ */
+
+protected void sendCreditRequest(final Address dest,long credits_needed){
+
+  if (log.isTraceEnabled())   log.trace("sending request for %d credits to %s",credits_needed,dest);
+
+  Message msg=new Message(dest,longToBuffer(credits_needed)).setFlag(Message.Flag.OOB,Message.Flag.INTERNAL,Message.Flag.DONT_BUNDLE).putHeader(this.id,getCreditRequestHeader());
+
+  down_prot.down(msg);
+
+  num_credit_requests_sent++;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+protected void sendCredit(Address dest,long credits){
+
+  if (log.isTraceEnabled())   log.trace("sending %d credits to %s",credits,dest);
+
+  Message msg=new Message(dest,longToBuffer(credits)).setFlag(Message.Flag.OOB,Message.Flag.INTERNAL,Message.Flag.DONT_BUNDLE).putHeader(this.id,getReplenishHeader());
+
+  down_prot.down(msg);
+
+  num_credit_responses_sent++;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+@Property(description="Max times to block for the listed messages sizes (Message.getLength()). Example: \"1000:10,5000:30,10000:500\"") public void setMaxBlockTimes(String str){
+
+  if (str == null)   return;
+
+  Long prev_key=null, prev_val=null;
+
+  List<String> vals=Util.parseCommaDelimitedStrings(str);
+
+  if (max_block_times == null)   max_block_times=new TreeMap<>();
+
+  for (  String tmp : vals) {
+
+    int index=tmp.indexOf(':');
+
+    if (index == -1)     throw new IllegalArgumentException("element '" + tmp + "'  is missing a ':' separator");
+
+    Long key=Long.parseLong(tmp.substring(0,index).trim());
+
+    Long val=Long.parseLong(tmp.substring(index + 1).trim());
+
+    if (key < 0 || val < 0)     throw new IllegalArgumentException("keys and values must be >= 0");
+
+    if (prev_key != null && key <= prev_key)     throw new IllegalArgumentException("keys are not sorted: " + vals);
+
+    prev_key=key;
+
+    if (prev_val != null && val <= prev_val)     throw new IllegalArgumentException("values are not sorted: " + vals);
+
+    prev_val=val;
+
+    max_block_times.put(key,val);
+
+  }
+
+  log.debug("max_block_times: %s",max_block_times);
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public void setMaxBlockTime(long t){
+
+  max_block_time=t;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public void setMaxCredits(long max_credits){
+
+  this.max_credits=max_credits;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public void setMinCredits(long min_credits){
+
+  this.min_credits=min_credits;
+
+}
+
+Location: FlowControl.java
+
+Content: 
+
+public void setMinThreshold(double min_threshold){
+
+  this.min_threshold=min_threshold;
+
+}
+

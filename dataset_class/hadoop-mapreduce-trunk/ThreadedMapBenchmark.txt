@@ -1,0 +1,64 @@
+Location: ThreadedMapBenchmark.java
+
+Content: 
+
+/** 
+
+ * Generate input data for the benchmark
+
+ */
+
+public static void generateInputData(int dataSizePerMap,int numSpillsPerMap,int numMapsPerHost,JobConf masterConf) throws Exception {
+
+  JobConf job=new JobConf(masterConf,ThreadedMapBenchmark.class);
+
+  job.setJobName("threaded-map-benchmark-random-writer");
+
+  job.setJarByClass(ThreadedMapBenchmark.class);
+
+  job.setInputFormat(UtilsForTests.RandomInputFormat.class);
+
+  job.setOutputFormat(SequenceFileOutputFormat.class);
+
+  job.setMapperClass(Map.class);
+
+  job.setReducerClass(IdentityReducer.class);
+
+  job.setOutputKeyClass(BytesWritable.class);
+
+  job.setOutputValueClass(BytesWritable.class);
+
+  JobClient client=new JobClient(job);
+
+  ClusterStatus cluster=client.getClusterStatus();
+
+  long totalDataSize=dataSizePerMap * numMapsPerHost * cluster.getTaskTrackers();
+
+  job.set("test.tmb.bytes_per_map",String.valueOf(dataSizePerMap * 1024 * 1024));
+
+  job.setNumReduceTasks(0);
+
+  job.setNumMapTasks(numMapsPerHost * cluster.getTaskTrackers());
+
+  FileOutputFormat.setOutputPath(job,INPUT_DIR);
+
+  FileSystem fs=FileSystem.get(job);
+
+  fs.delete(BASE_DIR,true);
+
+  LOG.info("Generating random input for the benchmark");
+
+  LOG.info("Total data : " + totalDataSize + " mb");
+
+  LOG.info("Data per map: " + dataSizePerMap + " mb");
+
+  LOG.info("Number of spills : " + numSpillsPerMap);
+
+  LOG.info("Number of maps per host : " + numMapsPerHost);
+
+  LOG.info("Number of hosts : " + cluster.getTaskTrackers());
+
+  JobClient.runJob(job);
+
+}
+

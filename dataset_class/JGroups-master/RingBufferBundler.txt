@@ -1,0 +1,316 @@
+Location: RingBufferBundler.java
+
+Content: 
+
+protected final int advance(int index){
+
+  return index + 1 == capacity ? 0 : index + 1;
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+protected BiConsumer<Integer,Integer> createWaitStrategy(String st,BiConsumer<Integer,Integer> default_wait_strategy){
+
+  if (st == null)   return default_wait_strategy;
+
+switch (st) {
+
+case "spin":
+
+    return wait_strategy=SPIN;
+
+case "yield":
+
+  return wait_strategy=YIELD;
+
+case "park":
+
+return wait_strategy=PARK;
+
+case "spin_park":
+
+case "spin-park":
+
+return wait_strategy=SPIN_PARK;
+
+case "spin_yield":
+
+case "spin-yield":
+
+return wait_strategy=SPIN_YIELD;
+
+default :
+
+try {
+
+Class<BiConsumer<Integer,Integer>> clazz=Util.loadClass(st,this.getClass());
+
+return clazz.getDeclaredConstructor().newInstance();
+
+}
+
+ catch (Throwable t) {
+
+log.error("failed creating wait_strategy " + st,t);
+
+return default_wait_strategy;
+
+}
+
+}
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+protected final int index(int idx){
+
+  return idx & (capacity - 1);
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+protected int marshalMessagesToSameDestination(Address dest,Message[] buf,int start_index,final int end_index,int max_bundle_size) throws Exception {
+
+  int num_msgs=0, bytes=0;
+
+  for (; ; ) {
+
+    Message msg=buf[start_index];
+
+    if (msg != null && Objects.equals(dest,msg.dest())) {
+
+      long size=msg.size();
+
+      if (bytes + size > max_bundle_size)       break;
+
+      bytes+=size;
+
+      num_msgs++;
+
+      buf[start_index]=null;
+
+      msg.writeToNoAddrs(msg.src(),output,transport.getId());
+
+    }
+
+    if (start_index == end_index)     break;
+
+    start_index=advance(start_index);
+
+  }
+
+  return num_msgs;
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+public int numSpins(){
+
+  return num_spins;
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+public RingBufferBundler numSpins(int n){
+
+  num_spins=n;
+
+  return this;
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+protected static String print(BiConsumer<Integer,Integer> wait_strategy){
+
+  if (wait_strategy == null)   return null;
+
+  if (wait_strategy == SPIN)   return "spin";
+
+ else   if (wait_strategy == YIELD)   return "yield";
+
+ else   if (wait_strategy == PARK)   return "park";
+
+ else   if (wait_strategy == SPIN_PARK)   return "spin-park";
+
+ else   if (wait_strategy == SPIN_YIELD)   return "spin-yield";
+
+ else   return wait_strategy.getClass().getSimpleName();
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+protected void readMessages(){
+
+  try {
+
+    int available_msgs=rb.waitForMessages(num_spins,wait_strategy);
+
+    int read_index=rb.readIndexLockless();
+
+    Message[] buf=rb.buf();
+
+    sendBundledMessages(buf,read_index,available_msgs);
+
+    rb.publishReadIndex(available_msgs);
+
+  }
+
+ catch (  Throwable t) {
+
+    ;
+
+  }
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+public RingBufferBundler(){
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+public RingBufferBundler(int capacity){
+
+  this(new RingBuffer<>(Message.class,assertPositive(capacity,"bundler capacity cannot be " + capacity)));
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+protected RingBufferBundler(RingBuffer<Message> rb){
+
+  this.rb=rb;
+
+  this.capacity=rb.capacity();
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+/** 
+
+ * Read and send messages in range [read-index .. read-index+available_msgs-1] 
+
+ */
+
+public void sendBundledMessages(final Message[] buf,final int read_index,final int available_msgs){
+
+  int max_bundle_size=transport.getMaxBundleSize();
+
+  byte[] cluster_name=transport.cluster_name.chars();
+
+  int start=read_index;
+
+  final int end=index(start + available_msgs - 1);
+
+  for (; ; ) {
+
+    Message msg=buf[start];
+
+    if (msg == null) {
+
+      if (start == end)       break;
+
+      start=advance(start);
+
+      continue;
+
+    }
+
+    Address dest=msg.dest();
+
+    try {
+
+      output.position(0);
+
+      Util.writeMessageListHeader(dest,msg.src(),cluster_name,1,output,dest == null);
+
+      int size_pos=output.position() - Global.INT_SIZE;
+
+      int num_msgs=marshalMessagesToSameDestination(dest,buf,start,end,max_bundle_size);
+
+      if (num_msgs > 1) {
+
+        int current_pos=output.position();
+
+        output.position(size_pos);
+
+        output.writeInt(num_msgs);
+
+        output.position(current_pos);
+
+      }
+
+      transport.doSend(output.buffer(),0,output.position(),dest);
+
+      if (transport.statsEnabled())       transport.incrBatchesSent(num_msgs);
+
+    }
+
+ catch (    Exception ex) {
+
+      log.error("failed to send message(s) to %s: %s",dest == null ? "group" : dest,ex.getMessage());
+
+    }
+
+    if (start == end)     break;
+
+    start=advance(start);
+
+  }
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+public String waitStrategy(){
+
+  return print(wait_strategy);
+
+}
+
+Location: RingBufferBundler.java
+
+Content: 
+
+public RingBufferBundler waitStrategy(String st){
+
+  wait_strategy=createWaitStrategy(st,YIELD);
+
+  return this;
+
+}
+

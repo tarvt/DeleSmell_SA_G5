@@ -1,0 +1,368 @@
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Encodes binary data as hexadecimal string object.
+
+ * @param data the binary data
+
+ * @param out the OutputStream to write the encoded object to
+
+ * @throws IOException if an I/O error occurs
+
+ */
+
+protected void encodeBinaryToHexString(byte[] data,OutputStream out) throws IOException {
+
+  out.write('<');
+
+  if (getDocumentSafely().isEncryptionActive()) {
+
+    data=getDocument().getEncryption().encrypt(data,this);
+
+  }
+
+  String hex=PDFText.toHex(data,false);
+
+  byte[] encoded=hex.getBytes("US-ASCII");
+
+  out.write(encoded);
+
+  out.write('>');
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Encodes a String (3.2.3 in PDF 1.4 specs)
+
+ * @param string the string to encode
+
+ * @return byte[] the encoded string
+
+ */
+
+protected byte[] encodeString(String string){
+
+  return encodeText(string);
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Encodes a Text String (3.8.1 in PDF 1.4 specs)
+
+ * @param text the text to encode
+
+ * @return byte[] the encoded text
+
+ */
+
+protected byte[] encodeText(String text){
+
+  if (getDocumentSafely().isEncryptionActive()) {
+
+    final byte[] buf=PDFText.toUTF16(text);
+
+    return PDFText.escapeByteArray(getDocument().getEncryption().encrypt(buf,this));
+
+  }
+
+ else {
+
+    return encode(PDFText.escapeText(text,false));
+
+  }
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Formats an object for serialization to PDF. <p> IMPORTANT: If you need to write out binary output, call {@link PDFDocument#flushTextBuffer(StringBuilder,OutputStream)} before writing any contentto the  {@link OutputStream}!
+
+ * @param obj the object
+
+ * @param out the OutputStream to write to
+
+ * @param textBuffer a text buffer for text output
+
+ * @throws IOException If an I/O error occurs
+
+ */
+
+protected void formatObject(Object obj,OutputStream out,StringBuilder textBuffer) throws IOException {
+
+  if (obj == null) {
+
+    textBuffer.append("null");
+
+  }
+
+ else   if (obj instanceof PDFWritable) {
+
+    ((PDFWritable)obj).outputInline(out,textBuffer);
+
+  }
+
+ else   if (obj instanceof Number) {
+
+    if (obj instanceof Double || obj instanceof Float) {
+
+      textBuffer.append(PDFNumber.doubleOut(((Number)obj).doubleValue()));
+
+    }
+
+ else {
+
+      textBuffer.append(obj.toString());
+
+    }
+
+  }
+
+ else   if (obj instanceof Boolean) {
+
+    textBuffer.append(obj.toString());
+
+  }
+
+ else   if (obj instanceof byte[]) {
+
+    PDFDocument.flushTextBuffer(textBuffer,out);
+
+    encodeBinaryToHexString((byte[])obj,out);
+
+  }
+
+ else {
+
+    PDFDocument.flushTextBuffer(textBuffer,out);
+
+    out.write(encodeText(obj.toString()));
+
+  }
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Returns the parent PDFDocument, but unlike <code>getDocument()</code> it throws an informative Exception if the parent document is unavailable instead of having a NullPointerException somewhere without a message.
+
+ * @return the parent PDFDocument
+
+ */
+
+public final PDFDocument getDocumentSafely(){
+
+  final PDFDocument doc=getDocument();
+
+  if (doc == null) {
+
+    throw new IllegalStateException("Parent PDFDocument is unavailable on " + getClass().getName());
+
+  }
+
+  return doc;
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Returns the PDF representation of the Object ID.
+
+ * @return the Object ID
+
+ */
+
+public String getObjectID(){
+
+  return getObjectNumber() + " " + getGeneration()+ " obj\n";
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Returns this objects's parent. The parent is null if it is a "direct object".
+
+ * @return the parent or null if there's no parent (or it hasn't been set)
+
+ */
+
+public PDFObject getParent(){
+
+  return this.parent;
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Indicates whether this PDFObject has already been assigned an object number.
+
+ * @return True if it has an object number
+
+ */
+
+public boolean hasObjectNumber(){
+
+  return hasObjNum;
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Creates and returns a reference to this object.
+
+ * @return the object reference
+
+ */
+
+public PDFReference makeReference(){
+
+  return new PDFReference(this);
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Default constructor.
+
+ */
+
+public PDFObject(){
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Constructor for direct objects.
+
+ * @param parent the containing PDFObject instance
+
+ */
+
+public PDFObject(PDFObject parent){
+
+  setParent(parent);
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Returns the PDF representation of a reference to this object.
+
+ * @return the reference string
+
+ */
+
+public String referencePDF(){
+
+  if (!hasObjectNumber()) {
+
+    throw new IllegalArgumentException("Cannot reference this object. It doesn't have an object number");
+
+  }
+
+  return makeReference().toString();
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+public void setObjectNumber(int objectNumber){
+
+  objNum=new PDFObjectNumber(objectNumber);
+
+  hasObjNum=true;
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+/** 
+
+ * Sets the object number
+
+ */
+
+public void setObjectNumber(PDFDocument document){
+
+  objNum.setDocument(document);
+
+  hasObjNum=true;
+
+  PDFDocument doc=getDocument();
+
+  setParent(null);
+
+  setDocument(doc);
+
+  if (log.isTraceEnabled()) {
+
+    log.trace("Assigning " + this + " object number "+ objNum);
+
+  }
+
+}
+
+Location: PDFObject.java
+
+Content: 
+
+public void setObjectNumber(PDFObjectNumber objectNumber){
+
+  objNum=objectNumber;
+
+  hasObjNum=true;
+
+}
+

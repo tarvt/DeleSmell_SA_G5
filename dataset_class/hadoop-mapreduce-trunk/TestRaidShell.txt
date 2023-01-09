@@ -1,0 +1,256 @@
+Location: TestRaidShell.java
+
+Content: 
+
+void corruptBlock(ExtendedBlock block) throws IOException {
+
+  assertTrue("Could not corrupt block",dfs.corruptBlockOnDataNodes(block) > 0);
+
+}
+
+Location: TestRaidShell.java
+
+Content: 
+
+private long getCRC(FileSystem fs,Path p) throws IOException {
+
+  CRC32 crc=new CRC32();
+
+  FSDataInputStream stm=fs.open(p);
+
+  for (int b=0; b > 0; b=stm.read()) {
+
+    crc.update(b);
+
+  }
+
+  stm.close();
+
+  return crc.getValue();
+
+}
+
+Location: TestRaidShell.java
+
+Content: 
+
+private void mySetup(int stripeLength,int timeBeforeHar) throws Exception {
+
+  new File(TEST_DIR).mkdirs();
+
+  conf=new Configuration();
+
+  conf.set("raid.config.file",CONFIG_FILE);
+
+  conf.setBoolean("raid.config.reload",true);
+
+  conf.setLong("raid.config.reload.interval",RELOAD_INTERVAL);
+
+  conf.setLong("raid.policy.rescan.interval",5000);
+
+  conf.set("fs.shell.delete.classname","org.apache.hadoop.hdfs.DFSClient");
+
+  conf.set("raid.classname","org.apache.hadoop.raid.LocalRaidNode");
+
+  conf.set("raid.server.address","localhost:0");
+
+  conf.setInt("hdfs.raid.stripeLength",stripeLength);
+
+  conf.set("hdfs.raid.locations","/destraid");
+
+  dfs=new MiniDFSCluster.Builder(conf).numDataNodes(NUM_DATANODES).build();
+
+  dfs.waitActive();
+
+  fileSys=dfs.getFileSystem();
+
+  namenode=fileSys.getUri().toString();
+
+  FileSystem.setDefaultUri(conf,namenode);
+
+  hftp="hftp://localhost.localdomain:" + dfs.getNameNodePort();
+
+  FileSystem.setDefaultUri(conf,namenode);
+
+  FileWriter fileWriter=new FileWriter(CONFIG_FILE);
+
+  fileWriter.write("<?xml version=\"1.0\"?>\n");
+
+  String str="<configuration> " + "<srcPath prefix=\"/user/dhruba/raidtest\"> " + "<policy name = \"RaidTest1\"> "+ "<erasureCode>xor</erasureCode> "+ "<destPath> /destraid</destPath> "+ "<property> "+ "<name>targetReplication</name> "+ "<value>1</value> "+ "<description>after RAIDing, decrease the replication factor of a file to this value."+ "</description> "+ "</property> "+ "<property> "+ "<name>metaReplication</name> "+ "<value>1</value> "+ "<description> replication factor of parity file"+ "</description> "+ "</property> "+ "<property> "+ "<name>modTimePeriod</name> "+ "<value>2000</value> "+ "<description> time (milliseconds) after a file is modified to make it "+ "a candidate for RAIDing "+ "</description> "+ "</property> ";
+
+  if (timeBeforeHar >= 0) {
+
+    str+="<property> " + "<name>time_before_har</name> " + "<value>" + timeBeforeHar + "</value> "+ "<description> amount of time waited before har'ing parity files"+ "</description> "+ "</property> ";
+
+  }
+
+  str+="</policy>" + "</srcPath>" + "</configuration>";
+
+  fileWriter.write(str);
+
+  fileWriter.close();
+
+}
+
+Location: TestRaidShell.java
+
+Content: 
+
+/** 
+
+ * Create a file with three stripes, corrupt a block each in two stripes, and wait for the the file to be fixed.
+
+ */
+
+public void testBlockFix() throws Exception {
+
+  LOG.info("Test testBlockFix started.");
+
+  long blockSize=8192L;
+
+  int stripeLength=3;
+
+  mySetup(stripeLength,-1);
+
+  Path file1=new Path("/user/dhruba/raidtest/file1");
+
+  Path destPath=new Path("/destraid/user/dhruba/raidtest");
+
+  Path parityFile=new Path(destPath,"file1");
+
+  long crc1=TestRaidDfs.createTestFilePartialLastBlock(fileSys,file1,1,7,blockSize);
+
+  long file1Len=fileSys.getFileStatus(file1).getLen();
+
+  LOG.info("Test testBlockFix created test files");
+
+  Configuration localConf=new Configuration(conf);
+
+  localConf.set(RaidNode.RAID_LOCATION_KEY,"/destraid");
+
+  localConf.setInt("raid.blockfix.interval",1000);
+
+  conf.set("raid.classname","org.apache.hadoop.raid.LocalRaidNode");
+
+  conf.set("raid.blockfix.classname","org.apache.hadoop.raid.LocalBlockFixer");
+
+  cnode=RaidNode.createRaidNode(null,localConf);
+
+  try {
+
+    TestRaidDfs.waitForFileRaided(LOG,fileSys,file1,destPath);
+
+    cnode.stop();
+
+    cnode.join();
+
+    cnode=null;
+
+    FileStatus srcStat=fileSys.getFileStatus(file1);
+
+    LocatedBlocks locations=RaidDFSUtil.getBlockLocations((DistributedFileSystem)fileSys,file1.toUri().getPath(),0,srcStat.getLen());
+
+    DistributedFileSystem dfs=(DistributedFileSystem)fileSys;
+
+    int[] corruptBlockIdxs=new int[]{0,4,6};
+
+    for (    int idx : corruptBlockIdxs) {
+
+      LOG.info("Corrupting block " + locations.get(idx).getBlock());
+
+      corruptBlock(locations.get(idx).getBlock());
+
+    }
+
+    TestBlockFixer.reportCorruptBlocks(fileSys,file1,corruptBlockIdxs,srcStat.getBlockSize());
+
+    waitForCorruptBlocks(corruptBlockIdxs.length,dfs,file1);
+
+    RaidShell shell=new RaidShell(conf);
+
+    String[] args=new String[2];
+
+    args[0]="-recoverBlocks";
+
+    args[1]=file1.toUri().getPath();
+
+    ToolRunner.run(shell,args);
+
+    waitForCorruptBlocks(0,dfs,file1);
+
+    assertTrue(TestRaidDfs.validateFile(dfs,file1,file1Len,crc1));
+
+    FileStatus parityStat=fileSys.getFileStatus(parityFile);
+
+    long parityCrc=getCRC(fileSys,parityFile);
+
+    locations=RaidDFSUtil.getBlockLocations(dfs,parityFile.toUri().getPath(),0,parityStat.getLen());
+
+    corruptBlock(locations.get(0).getBlock());
+
+    TestBlockFixer.reportCorruptBlocks(fileSys,parityFile,new int[]{0},srcStat.getBlockSize());
+
+    waitForCorruptBlocks(1,dfs,parityFile);
+
+    args[1]=parityFile.toUri().getPath();
+
+    ToolRunner.run(shell,args);
+
+    waitForCorruptBlocks(0,dfs,file1);
+
+    assertEquals(parityCrc,getCRC(fileSys,parityFile));
+
+  }
+
+ catch (  Exception e) {
+
+    LOG.info("Test testBlockFix Exception " + e + StringUtils.stringifyException(e));
+
+    throw e;
+
+  }
+
+ finally {
+
+    myTearDown();
+
+  }
+
+  LOG.info("Test testBlockFix completed.");
+
+}
+
+Location: TestRaidShell.java
+
+Content: 
+
+private void waitForCorruptBlocks(int numCorruptBlocks,DistributedFileSystem dfs,Path file) throws Exception {
+
+  String path=file.toUri().getPath();
+
+  FileStatus stat=dfs.getFileStatus(file);
+
+  long start=System.currentTimeMillis();
+
+  long actual=0;
+
+  do {
+
+    actual=RaidDFSUtil.corruptBlocksInFile(dfs,path,0,stat.getLen()).size();
+
+    if (actual == numCorruptBlocks)     break;
+
+    if (System.currentTimeMillis() - start > 120000)     break;
+
+    LOG.info("Waiting for " + numCorruptBlocks + " corrupt blocks in "+ path+ ", found "+ actual);
+
+    Thread.sleep(1000);
+
+  }
+
+ while (true);
+
+  assertEquals(numCorruptBlocks,actual);
+
+}
+

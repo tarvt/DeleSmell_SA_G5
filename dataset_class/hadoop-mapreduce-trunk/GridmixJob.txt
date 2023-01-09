@@ -1,0 +1,350 @@
+Location: GridmixJob.java
+
+Content: 
+
+@SuppressWarnings("deprecation") private static boolean checkMemoryUpperLimits(String jobKey,String limitKey,Configuration conf,boolean convertLimitToMB){
+
+  if (conf.get(limitKey) != null) {
+
+    long limit=conf.getLong(limitKey,JobConf.DISABLED_MEMORY_LIMIT);
+
+    if (limit >= 0) {
+
+      if (convertLimitToMB) {
+
+        limit/=(1024 * 1024);
+
+      }
+
+      long scaledConfigValue=conf.getLong(jobKey,JobConf.DISABLED_MEMORY_LIMIT);
+
+      if (scaledConfigValue > limit) {
+
+        throw new RuntimeException("Simulated job's configuration" + " parameter '" + jobKey + "' got scaled to a value '"+ scaledConfigValue+ "' which exceeds the upper limit of '"+ limit+ "' defined for the simulated cluster by the key '"+ limitKey+ "'. To disable High-Ram feature emulation, set '"+ GRIDMIX_HIGHRAM_EMULATION_ENABLE+ "' to 'false'.");
+
+      }
+
+      return true;
+
+    }
+
+  }
+
+  return false;
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+static void clearAll(){
+
+  descCache.clear();
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+@Override public int compareTo(Delayed other){
+
+  if (this == other) {
+
+    return 0;
+
+  }
+
+  if (other instanceof GridmixJob) {
+
+    final long otherNanos=((GridmixJob)other).submissionTimeNanos;
+
+    if (otherNanos < submissionTimeNanos) {
+
+      return 1;
+
+    }
+
+    if (otherNanos > submissionTimeNanos) {
+
+      return -1;
+
+    }
+
+    return id() - ((GridmixJob)other).id();
+
+  }
+
+  final long diff=getDelay(TimeUnit.NANOSECONDS) - other.getDelay(TimeUnit.NANOSECONDS);
+
+  return 0 == diff ? 0 : (diff > 0 ? 1 : -1);
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+/** 
+
+ * Sets the high ram job properties in the simulated job's configuration.
+
+ */
+
+@SuppressWarnings("deprecation") static void configureHighRamProperties(Configuration sourceConf,Configuration destConf){
+
+  scaleConfigParameter(sourceConf,destConf,MRConfig.MAPMEMORY_MB,MRJobConfig.MAP_MEMORY_MB,JobConf.DISABLED_MEMORY_LIMIT);
+
+  validateTaskMemoryLimits(destConf,MRJobConfig.MAP_MEMORY_MB,JTConfig.JT_MAX_MAPMEMORY_MB);
+
+  scaleConfigParameter(sourceConf,destConf,MRConfig.REDUCEMEMORY_MB,MRJobConfig.REDUCE_MEMORY_MB,JobConf.DISABLED_MEMORY_LIMIT);
+
+  validateTaskMemoryLimits(destConf,MRJobConfig.REDUCE_MEMORY_MB,JTConfig.JT_MAX_REDUCEMEMORY_MB);
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+public long getDelay(TimeUnit unit){
+
+  return unit.convert(submissionTimeNanos - System.nanoTime(),TimeUnit.NANOSECONDS);
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+JobStory getJobDesc(){
+
+  return jobdesc;
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+static int getJobSeqId(JobContext job){
+
+  return job.getConfiguration().getInt(GRIDMIX_JOB_SEQ,-1);
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+public GridmixJob(final Configuration conf,long submissionMillis,final JobStory jobdesc,Path outRoot,UserGroupInformation ugi,final int seq) throws IOException {
+
+  this.ugi=ugi;
+
+  this.jobdesc=jobdesc;
+
+  this.seq=seq;
+
+  ((StringBuilder)nameFormat.get().out()).setLength(JOB_NAME_PREFIX.length());
+
+  try {
+
+    job=this.ugi.doAs(new PrivilegedExceptionAction<Job>(){
+
+      public Job run() throws IOException {
+
+        String jobId=null == jobdesc.getJobID() ? "<unknown>" : jobdesc.getJobID().toString();
+
+        Job ret=new Job(conf,nameFormat.get().format("%06d",seq).toString());
+
+        ret.getConfiguration().setInt(GRIDMIX_JOB_SEQ,seq);
+
+        ret.getConfiguration().set(Gridmix.ORIGINAL_JOB_ID,jobId);
+
+        ret.getConfiguration().set(Gridmix.ORIGINAL_JOB_NAME,jobdesc.getName());
+
+        if (conf.getBoolean(GRIDMIX_USE_QUEUE_IN_TRACE,false)) {
+
+          setJobQueue(ret,jobdesc.getQueueName());
+
+        }
+
+ else {
+
+          setJobQueue(ret,conf.get(GRIDMIX_DEFAULT_QUEUE));
+
+        }
+
+        if (canEmulateCompression()) {
+
+          if (CompressionEmulationUtil.isCompressionEmulationEnabled(conf)) {
+
+            CompressionEmulationUtil.configureCompressionEmulation(jobdesc.getJobConf(),ret.getConfiguration());
+
+          }
+
+        }
+
+        if (conf.getBoolean(GRIDMIX_HIGHRAM_EMULATION_ENABLE,true)) {
+
+          configureHighRamProperties(jobdesc.getJobConf(),ret.getConfiguration());
+
+        }
+
+        return ret;
+
+      }
+
+    }
+
+);
+
+  }
+
+ catch (  InterruptedException e) {
+
+    throw new IOException(e);
+
+  }
+
+  submissionTimeNanos=TimeUnit.NANOSECONDS.convert(submissionMillis,TimeUnit.MILLISECONDS);
+
+  outdir=new Path(outRoot,"" + seq);
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+protected GridmixJob(final Configuration conf,long submissionMillis,final String name) throws IOException {
+
+  submissionTimeNanos=TimeUnit.NANOSECONDS.convert(submissionMillis,TimeUnit.MILLISECONDS);
+
+  jobdesc=null;
+
+  outdir=null;
+
+  seq=-1;
+
+  ugi=UserGroupInformation.getCurrentUser();
+
+  try {
+
+    job=this.ugi.doAs(new PrivilegedExceptionAction<Job>(){
+
+      public Job run() throws IOException {
+
+        Job ret=new Job(conf,name);
+
+        ret.getConfiguration().setInt(GRIDMIX_JOB_SEQ,seq);
+
+        setJobQueue(ret,conf.get(GRIDMIX_DEFAULT_QUEUE));
+
+        return ret;
+
+      }
+
+    }
+
+);
+
+  }
+
+ catch (  InterruptedException e) {
+
+    throw new IOException(e);
+
+  }
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+static List<InputSplit> pullDescription(int seq){
+
+  return descCache.remove(seq);
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+static List<InputSplit> pullDescription(JobContext jobCtxt){
+
+  return pullDescription(GridmixJob.getJobSeqId(jobCtxt));
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+static void pushDescription(int seq,List<InputSplit> splits){
+
+  if (null != descCache.putIfAbsent(seq,splits)) {
+
+    throw new IllegalArgumentException("Description exists for id " + seq);
+
+  }
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+private static void scaleConfigParameter(Configuration sourceConf,Configuration destConf,String clusterValueKey,String jobValueKey,long defaultValue){
+
+  long simulatedClusterDefaultValue=destConf.getLong(clusterValueKey,defaultValue);
+
+  long originalClusterDefaultValue=sourceConf.getLong(clusterValueKey,defaultValue);
+
+  long originalJobValue=sourceConf.getLong(jobValueKey,defaultValue);
+
+  double scaleFactor=(double)originalJobValue / originalClusterDefaultValue;
+
+  long simulatedJobValue=(long)(scaleFactor * simulatedClusterDefaultValue);
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("For the job configuration parameter '" + jobValueKey + "' and the cluster configuration parameter '"+ clusterValueKey+ "', the original job's configuration value"+ " is scaled from '"+ originalJobValue+ "' to '"+ simulatedJobValue+ "' using the default (unit) value of "+ "'"+ originalClusterDefaultValue+ "' for the original "+ " cluster and '"+ simulatedClusterDefaultValue+ "' for the"+ " simulated cluster.");
+
+  }
+
+  destConf.setLong(jobValueKey,simulatedJobValue);
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+private static void setJobQueue(Job job,String queue){
+
+  if (queue != null) {
+
+    job.getConfiguration().set(MRJobConfig.QUEUE_NAME,queue);
+
+  }
+
+}
+
+Location: GridmixJob.java
+
+Content: 
+
+@SuppressWarnings("deprecation") private static void validateTaskMemoryLimits(Configuration conf,String jobKey,String clusterMaxKey){
+
+  if (!checkMemoryUpperLimits(jobKey,JobConf.UPPER_LIMIT_ON_TASK_VMEM_PROPERTY,conf,true)) {
+
+    checkMemoryUpperLimits(jobKey,clusterMaxKey,conf,false);
+
+  }
+
+}
+

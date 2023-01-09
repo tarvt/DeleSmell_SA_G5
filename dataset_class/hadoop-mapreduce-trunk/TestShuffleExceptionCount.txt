@@ -1,0 +1,178 @@
+Location: TestShuffleExceptionCount.java
+
+Content: 
+
+private StackTraceElement[] constructStackTrace(){
+
+  StackTraceElement[] stack=new StackTraceElement[9];
+
+  stack[0]=new StackTraceElement("sun.nio.ch.EPollArrayWrapper","interrupt","",-2);
+
+  stack[1]=new StackTraceElement("sun.nio.ch.EPollArrayWrapper","interrupt","EPollArrayWrapper.java",256);
+
+  stack[2]=new StackTraceElement("sun.nio.ch.EPollSelectorImpl","wakeup","EPollSelectorImpl.java",175);
+
+  stack[3]=new StackTraceElement("org.mortbay.io.nio.SelectorManager$SelectSet","wakeup","SelectorManager.java",831);
+
+  stack[4]=new StackTraceElement("org.mortbay.io.nio.SelectorManager$SelectSet","doSelect","SelectorManager.java",709);
+
+  stack[5]=new StackTraceElement("org.mortbay.io.nio.SelectorManager","doSelect","SelectorManager.java",192);
+
+  stack[6]=new StackTraceElement("org.mortbay.jetty.nio.SelectChannelConnector","accept","SelectChannelConnector.java",124);
+
+  stack[7]=new StackTraceElement("org.mortbay.jetty.AbstractConnector$Acceptor","run","AbstractConnector.java",708);
+
+  stack[8]=new StackTraceElement("org.mortbay.thread.QueuedThreadPool$PoolThread","run","QueuedThreadPool.java",582);
+
+  return stack;
+
+}
+
+Location: TestShuffleExceptionCount.java
+
+Content: 
+
+private StackTraceElement[] constructStackTraceTwo(){
+
+  StackTraceElement[] stack=new StackTraceElement[11];
+
+  stack[0]=new StackTraceElement("sun.nio.ch.EPollArrayWrapper","interrupt","",-2);
+
+  stack[1]=new StackTraceElement("sun.nio.ch.EPollArrayWrapper","interrupt","EPollArrayWrapper.java",256);
+
+  stack[2]=new StackTraceElement("sun.nio.ch.EPollSelectorImpl","wakeup","EPollSelectorImpl.java",175);
+
+  stack[3]=new StackTraceElement("org.mortbay.io.nio.SelectorManager$SelectSet","wakeup","SelectorManager.java",831);
+
+  stack[4]=new StackTraceElement("org.mortbay.io.nio.SelectChannelEndPoint","updateKey","SelectChannelEndPoint.java",335);
+
+  stack[5]=new StackTraceElement("org.mortbay.io.nio.SelectChannelEndPoint","blockWritable","SelectChannelEndPoint.java",278);
+
+  stack[6]=new StackTraceElement("org.mortbay.jetty.AbstractGenerator$Output","blockForOutput","AbstractGenerator.java",545);
+
+  stack[7]=new StackTraceElement("org.mortbay.jetty.AbstractGenerator$Output","flush","AbstractGenerator.java",572);
+
+  stack[8]=new StackTraceElement("org.mortbay.jetty.HttpConnection$Output","flush","HttpConnection.java",1012);
+
+  stack[9]=new StackTraceElement("org.mortbay.jetty.AbstractGenerator$Output","write","AbstractGenerator.java",651);
+
+  stack[10]=new StackTraceElement("org.mortbay.jetty.AbstractGenerator$Output","write","AbstractGenerator.java",580);
+
+  return stack;
+
+}
+
+Location: TestShuffleExceptionCount.java
+
+Content: 
+
+@Test public void testCheckException() throws IOException, InterruptedException, ClassNotFoundException, InstantiationException, IllegalAccessException {
+
+  TestMapOutputServlet testServlet=new TestMapOutputServlet();
+
+  JobConf conf=new JobConf();
+
+  conf.setUser("testuser");
+
+  conf.setJobName("testJob");
+
+  conf.setSessionId("testSession");
+
+  ContextFactory factory=ContextFactory.getFactory();
+
+  factory.setAttribute("mapred.class","org.apache.hadoop.metrics.spi.NoEmitMetricsContext");
+
+  TaskTracker tt=new TaskTracker();
+
+  tt.setConf(conf);
+
+  ShuffleServerMetrics shuffleMetrics=tt.new ShuffleServerMetrics(conf);
+
+  String exceptionMsgRegex="Broken pipe";
+
+  String exceptionStackRegex=null;
+
+  IOException ie=new IOException("EOFException");
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  MetricsContext context=factory.getContext("mapred");
+
+  shuffleMetrics.doUpdates(context);
+
+  Map<String,Collection<OutputRecord>> records=context.getAllRecords();
+
+  Collection<OutputRecord> col=records.get("shuffleOutput");
+
+  OutputRecord outputRecord=col.iterator().next();
+
+  assertEquals(0,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+  ie=new IOException("Broken pipe");
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  shuffleMetrics.doUpdates(context);
+
+  assertEquals(1,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+  exceptionStackRegex=null;
+
+  exceptionMsgRegex=null;
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  shuffleMetrics.doUpdates(context);
+
+  assertEquals(2,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+  exceptionStackRegex=".*\\.doesnt\\$SelectSet\\.wakeup.*";
+
+  exceptionMsgRegex=null;
+
+  ie.setStackTrace(constructStackTrace());
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  shuffleMetrics.doUpdates(context);
+
+  assertEquals(2,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+  exceptionStackRegex=".*\\.SelectorManager\\$SelectSet\\.wakeup.*";
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  shuffleMetrics.doUpdates(context);
+
+  assertEquals(3,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+  exceptionMsgRegex="Broken pipe";
+
+  ie.setStackTrace(constructStackTraceTwo());
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  shuffleMetrics.doUpdates(context);
+
+  assertEquals(4,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+  exceptionStackRegex=".*[1-9]+BOGUSREGEX";
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  shuffleMetrics.doUpdates(context);
+
+  assertEquals(4,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+  exceptionStackRegex=".*\\.SelectorManager\\$SelectSet\\.wakeup.*";
+
+  exceptionMsgRegex="EOFException";
+
+  testServlet.checkException(ie,exceptionMsgRegex,exceptionStackRegex,shuffleMetrics);
+
+  shuffleMetrics.doUpdates(context);
+
+  assertEquals(4,outputRecord.getMetric("shuffle_exceptions_caught").intValue());
+
+}
+

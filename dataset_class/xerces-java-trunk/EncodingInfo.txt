@@ -1,0 +1,220 @@
+Location: EncodingInfo.java
+
+Content: 
+
+/** 
+
+ * Creates new <code>EncodingInfo</code> instance.
+
+ */
+
+public EncodingInfo(String ianaName,String javaName,int lastPrintable){
+
+  this.ianaName=ianaName;
+
+  this.javaName=EncodingMap.getIANA2JavaMapping(ianaName);
+
+  this.lastPrintable=lastPrintable;
+
+}
+
+Location: EncodingInfo.java
+
+Content: 
+
+/** 
+
+ * Returns a MIME charset name of this encoding.
+
+ */
+
+public String getIANAName(){
+
+  return this.ianaName;
+
+}
+
+Location: EncodingInfo.java
+
+Content: 
+
+/** 
+
+ * Returns a writer for this encoding based on an output stream.
+
+ * @return A suitable writer
+
+ * @exception UnsupportedEncodingException There is no convertorto support this encoding
+
+ */
+
+public Writer getWriter(OutputStream output) throws UnsupportedEncodingException {
+
+  if (javaName != null)   return new OutputStreamWriter(output,javaName);
+
+  javaName=EncodingMap.getIANA2JavaMapping(ianaName);
+
+  if (javaName == null)   return new OutputStreamWriter(output,"UTF8");
+
+  return new OutputStreamWriter(output,javaName);
+
+}
+
+Location: EncodingInfo.java
+
+Content: 
+
+/** 
+
+ * Checks whether the specified character is printable or not in this encoding. This method accomplishes this using a java.nio.CharsetEncoder. If NIO isn't available it will attempt use a sun.io.CharToByteConverter.
+
+ * @param ch a code point (0-0x10ffff)
+
+ */
+
+private boolean isPrintable0(char ch){
+
+  if (fCharsetEncoder == null && CharsetMethods.fgNIOCharsetAvailable && !fHaveTriedCharsetEncoder) {
+
+    if (fArgsForMethod == null) {
+
+      fArgsForMethod=new Object[1];
+
+    }
+
+    try {
+
+      fArgsForMethod[0]=javaName;
+
+      Object charset=CharsetMethods.fgCharsetForNameMethod.invoke(null,fArgsForMethod);
+
+      if (((Boolean)CharsetMethods.fgCharsetCanEncodeMethod.invoke(charset,(Object[])null)).booleanValue()) {
+
+        fCharsetEncoder=CharsetMethods.fgCharsetNewEncoderMethod.invoke(charset,(Object[])null);
+
+      }
+
+ else {
+
+        fHaveTriedCharsetEncoder=true;
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+      fHaveTriedCharsetEncoder=true;
+
+    }
+
+  }
+
+  if (fCharsetEncoder != null) {
+
+    try {
+
+      fArgsForMethod[0]=new Character(ch);
+
+      return ((Boolean)CharsetMethods.fgCharsetEncoderCanEncodeMethod.invoke(fCharsetEncoder,fArgsForMethod)).booleanValue();
+
+    }
+
+ catch (    Exception e) {
+
+      fCharsetEncoder=null;
+
+      fHaveTriedCharsetEncoder=false;
+
+    }
+
+  }
+
+  if (fCharToByteConverter == null) {
+
+    if (fHaveTriedCToB || !CharToByteConverterMethods.fgConvertersAvailable) {
+
+      return false;
+
+    }
+
+    if (fArgsForMethod == null) {
+
+      fArgsForMethod=new Object[1];
+
+    }
+
+    try {
+
+      fArgsForMethod[0]=javaName;
+
+      fCharToByteConverter=CharToByteConverterMethods.fgGetConverterMethod.invoke(null,fArgsForMethod);
+
+    }
+
+ catch (    Exception e) {
+
+      fHaveTriedCToB=true;
+
+      return false;
+
+    }
+
+  }
+
+  try {
+
+    fArgsForMethod[0]=new Character(ch);
+
+    return ((Boolean)CharToByteConverterMethods.fgCanConvertMethod.invoke(fCharToByteConverter,fArgsForMethod)).booleanValue();
+
+  }
+
+ catch (  Exception e) {
+
+    fCharToByteConverter=null;
+
+    fHaveTriedCToB=false;
+
+    return false;
+
+  }
+
+}
+
+Location: EncodingInfo.java
+
+Content: 
+
+/** 
+
+ * Checks whether the specified character is printable or not in this encoding.
+
+ * @param ch a code point (0-0x10ffff)
+
+ */
+
+public boolean isPrintable(char ch){
+
+  if (ch <= this.lastPrintable) {
+
+    return true;
+
+  }
+
+  return isPrintable0(ch);
+
+}
+
+Location: EncodingInfo.java
+
+Content: 
+
+public static void testJavaEncodingName(String name) throws UnsupportedEncodingException {
+
+  final byte[] bTest={(byte)'v',(byte)'a',(byte)'l',(byte)'i',(byte)'d'};
+
+  String s=new String(bTest,name);
+
+}
+

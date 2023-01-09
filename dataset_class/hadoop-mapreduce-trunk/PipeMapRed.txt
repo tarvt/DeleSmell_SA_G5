@@ -1,0 +1,582 @@
+Location: PipeMapRed.java
+
+Content: 
+
+void addEnvironment(Properties env,String nameVals){
+
+  if (nameVals == null)   return;
+
+  String[] nv=nameVals.split(" ");
+
+  for (int i=0; i < nv.length; i++) {
+
+    String[] pair=nv[i].split("=",2);
+
+    if (pair.length != 2) {
+
+      LOG.info("Skip env entry:" + nv[i]);
+
+    }
+
+ else {
+
+      envPut(env,pair[0],pair[1]);
+
+    }
+
+  }
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+void addJobConfToEnvironment(JobConf conf,Properties env){
+
+  Iterator it=conf.iterator();
+
+  while (it.hasNext()) {
+
+    Map.Entry en=(Map.Entry)it.next();
+
+    String name=(String)en.getKey();
+
+    String value=conf.get(name);
+
+    name=safeEnvVarName(name);
+
+    envPut(env,name,value);
+
+  }
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+abstract InputWriter createInputWriter() throws IOException ;
+
+Location: PipeMapRed.java
+
+Content: 
+
+InputWriter createInputWriter(Class<? extends InputWriter> inputWriterClass) throws IOException {
+
+  InputWriter inputWriter=ReflectionUtils.newInstance(inputWriterClass,job_);
+
+  inputWriter.initialize(this);
+
+  return inputWriter;
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+abstract OutputReader createOutputReader() throws IOException ;
+
+Location: PipeMapRed.java
+
+Content: 
+
+OutputReader createOutputReader(Class<? extends OutputReader> outputReaderClass) throws IOException {
+
+  OutputReader outputReader=ReflectionUtils.newInstance(outputReaderClass,job_);
+
+  outputReader.initialize(this);
+
+  return outputReader;
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+String envline(String var){
+
+  return var + "=" + StreamUtil.env().get(var)+ "\n";
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+void envPut(Properties env,String name,String value){
+
+  if (LOG.isDebugEnabled()) {
+
+    LOG.debug("Add  env entry:" + name + "="+ value);
+
+  }
+
+  env.put(name,value);
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+/** 
+
+ * Returns the DataInput from which the client output is read.
+
+ */
+
+public DataInput getClientInput(){
+
+  return clientIn_;
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+/** 
+
+ * Returns the DataOutput to which the client input is written.
+
+ */
+
+public DataOutput getClientOutput(){
+
+  return clientOut_;
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+public String getContext(){
+
+  String s=numRecInfo() + "\n";
+
+  s+="minRecWrittenToEnableSkip_=" + minRecWrittenToEnableSkip_ + " ";
+
+  s+=envline("HOST");
+
+  s+=envline("USER");
+
+  s+=envline("HADOOP_USER");
+
+  if (outThread_ != null) {
+
+    s+="last tool output: |" + outReader_.getLastOutput() + "|\n";
+
+  }
+
+  return s;
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+abstract boolean getDoPipe();
+
+Location: PipeMapRed.java
+
+Content: 
+
+/** 
+
+ * Returns the field separator to be used.
+
+ */
+
+public abstract byte[] getFieldSeparator();
+
+Location: PipeMapRed.java
+
+Content: 
+
+/** 
+
+ * Returns the input separator to be used.
+
+ */
+
+public abstract byte[] getInputSeparator();
+
+Location: PipeMapRed.java
+
+Content: 
+
+/** 
+
+ * Returns the number of key fields.
+
+ */
+
+public abstract int getNumOfKeyFields();
+
+Location: PipeMapRed.java
+
+Content: 
+
+/** 
+
+ * Returns the command to be spawned as a subprocess. Mapper/Reducer operations will delegate to it
+
+ */
+
+abstract String getPipeCommand(JobConf job);
+
+Location: PipeMapRed.java
+
+Content: 
+
+public void mapRedFinished(){
+
+  try {
+
+    if (!doPipe_) {
+
+      LOG.info("mapRedFinished");
+
+      return;
+
+    }
+
+    try {
+
+      if (clientOut_ != null) {
+
+        clientOut_.flush();
+
+        clientOut_.close();
+
+      }
+
+      waitOutputThreads();
+
+    }
+
+ catch (    IOException io) {
+
+      LOG.warn(io);
+
+    }
+
+    if (sim != null)     sim.destroy();
+
+    LOG.info("mapRedFinished");
+
+  }
+
+ catch (  RuntimeException e) {
+
+    LOG.info("PipeMapRed failed!",e);
+
+    throw e;
+
+  }
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+void maybeLogRecord(){
+
+  if (numRecRead_ >= nextRecReadLog_) {
+
+    String info=numRecInfo();
+
+    LOG.info(info);
+
+    if (nextRecReadLog_ < 100000) {
+
+      nextRecReadLog_*=10;
+
+    }
+
+ else {
+
+      nextRecReadLog_+=100000;
+
+    }
+
+  }
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+String numRecInfo(){
+
+  long elapsed=(System.currentTimeMillis() - startTime_) / 1000;
+
+  return "R/W/S=" + numRecRead_ + "/"+ numRecWritten_+ "/"+ numRecSkipped_+ " in:"+ safeDiv(numRecRead_,elapsed)+ " [rec/s]"+ " out:"+ safeDiv(numRecWritten_,elapsed)+ " [rec/s]";
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+String safeDiv(long n,long d){
+
+  return (d == 0) ? "NA" : "" + n / d + "=" + n + "/" + d;
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+String safeEnvVarName(String var){
+
+  StringBuffer safe=new StringBuffer();
+
+  int len=var.length();
+
+  for (int i=0; i < len; i++) {
+
+    char c=var.charAt(i);
+
+    char s;
+
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+
+      s=c;
+
+    }
+
+ else {
+
+      s='_';
+
+    }
+
+    safe.append(s);
+
+  }
+
+  return safe.toString();
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+void setStreamJobDetails(JobConf job){
+
+  String s=job.get("stream.minRecWrittenToEnableSkip_");
+
+  if (s != null) {
+
+    minRecWrittenToEnableSkip_=Long.parseLong(s);
+
+    LOG.info("JobConf set minRecWrittenToEnableSkip_ =" + minRecWrittenToEnableSkip_);
+
+  }
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+static String[] splitArgs(String args){
+
+  ArrayList argList=new ArrayList();
+
+  char[] ch=args.toCharArray();
+
+  int clen=ch.length;
+
+  int state=OUTSIDE;
+
+  int argstart=0;
+
+  for (int c=0; c <= clen; c++) {
+
+    boolean last=(c == clen);
+
+    int lastState=state;
+
+    boolean endToken=false;
+
+    if (!last) {
+
+      if (ch[c] == '\'') {
+
+        if (state == OUTSIDE) {
+
+          state=SINGLEQ;
+
+        }
+
+ else         if (state == SINGLEQ) {
+
+          state=OUTSIDE;
+
+        }
+
+        endToken=(state != lastState);
+
+      }
+
+ else       if (ch[c] == '"') {
+
+        if (state == OUTSIDE) {
+
+          state=DOUBLEQ;
+
+        }
+
+ else         if (state == DOUBLEQ) {
+
+          state=OUTSIDE;
+
+        }
+
+        endToken=(state != lastState);
+
+      }
+
+ else       if (ch[c] == ' ') {
+
+        if (state == OUTSIDE) {
+
+          endToken=true;
+
+        }
+
+      }
+
+    }
+
+    if (last || endToken) {
+
+      if (c == argstart) {
+
+      }
+
+ else {
+
+        String a;
+
+        a=args.substring(argstart,c);
+
+        argList.add(a);
+
+      }
+
+      argstart=c + 1;
+
+      lastState=state;
+
+    }
+
+  }
+
+  return (String[])argList.toArray(new String[0]);
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+void startOutputThreads(OutputCollector output,Reporter reporter) throws IOException {
+
+  inWriter_=createInputWriter();
+
+  outReader_=createOutputReader();
+
+  outThread_=new MROutputThread(outReader_,output,reporter);
+
+  outThread_.start();
+
+  errThread_=new MRErrorThread();
+
+  errThread_.setReporter(reporter);
+
+  errThread_.start();
+
+}
+
+Location: PipeMapRed.java
+
+Content: 
+
+void waitOutputThreads() throws IOException {
+
+  try {
+
+    if (outThread_ == null) {
+
+      OutputCollector collector=new OutputCollector(){
+
+        public void collect(        Object key,        Object value) throws IOException {
+
+        }
+
+      }
+
+;
+
+      Reporter reporter=Reporter.NULL;
+
+      startOutputThreads(collector,reporter);
+
+    }
+
+    int exitVal=sim.waitFor();
+
+    if (exitVal != 0) {
+
+      if (nonZeroExitIsFailure_) {
+
+        throw new RuntimeException("PipeMapRed.waitOutputThreads(): subprocess failed with code " + exitVal);
+
+      }
+
+ else {
+
+        LOG.info("PipeMapRed.waitOutputThreads(): subprocess exited with " + "code " + exitVal + " in "+ PipeMapRed.class.getName());
+
+      }
+
+    }
+
+    if (outThread_ != null) {
+
+      outThread_.join(joinDelay_);
+
+    }
+
+    if (errThread_ != null) {
+
+      errThread_.join(joinDelay_);
+
+    }
+
+    if (outerrThreadsThrowable != null) {
+
+      throw new RuntimeException(outerrThreadsThrowable);
+
+    }
+
+  }
+
+ catch (  InterruptedException e) {
+
+  }
+
+}
+

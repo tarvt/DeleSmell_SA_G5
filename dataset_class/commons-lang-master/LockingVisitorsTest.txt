@@ -1,0 +1,168 @@
+Location: LockingVisitorsTest.java
+
+Content: 
+
+protected boolean containsTrue(final boolean[] booleanArray){
+
+synchronized (booleanArray) {
+
+    return ArrayUtils.contains(booleanArray,true);
+
+  }
+
+}
+
+Location: LockingVisitorsTest.java
+
+Content: 
+
+private void runTest(final Duration delay,final boolean exclusiveLock,final LongConsumer runTimeCheck,final boolean[] booleanValues,final LockVisitor<boolean[],?> visitor) throws InterruptedException {
+
+  final boolean[] runningValues=new boolean[10];
+
+  final long startTimeMillis=System.currentTimeMillis();
+
+  for (int i=0; i < booleanValues.length; i++) {
+
+    final int index=i;
+
+    final FailableConsumer<boolean[],?> consumer=b -> {
+
+      b[index]=false;
+
+      ThreadUtils.sleep(delay);
+
+      b[index]=true;
+
+      set(runningValues,index,false);
+
+    }
+
+;
+
+    final Thread t=new Thread(() -> {
+
+      if (exclusiveLock) {
+
+        visitor.acceptWriteLocked(consumer);
+
+      }
+
+ else {
+
+        visitor.acceptReadLocked(consumer);
+
+      }
+
+    }
+
+);
+
+    set(runningValues,i,true);
+
+    t.start();
+
+  }
+
+  while (containsTrue(runningValues)) {
+
+    ThreadUtils.sleep(SHORT_DELAY);
+
+  }
+
+  final long endTimeMillis=System.currentTimeMillis();
+
+  for (  final boolean booleanValue : booleanValues) {
+
+    assertTrue(booleanValue);
+
+  }
+
+}
+
+Location: LockingVisitorsTest.java
+
+Content: 
+
+protected void set(final boolean[] booleanArray,final int offset,final boolean value){
+
+synchronized (booleanArray) {
+
+    booleanArray[offset]=value;
+
+  }
+
+}
+
+Location: LockingVisitorsTest.java
+
+Content: 
+
+@Test public void testReentrantReadWriteLockExclusive() throws Exception {
+
+  final boolean[] booleanValues=new boolean[10];
+
+  runTest(DELAY,true,millis -> assertTrue(millis >= TOTAL_DELAY.toMillis()),booleanValues,LockingVisitors.reentrantReadWriteLockVisitor(booleanValues));
+
+}
+
+Location: LockingVisitorsTest.java
+
+Content: 
+
+@Test public void testReentrantReadWriteLockNotExclusive() throws Exception {
+
+  final boolean[] booleanValues=new boolean[10];
+
+  runTest(DELAY,false,millis -> assertTrue(millis < TOTAL_DELAY.toMillis()),booleanValues,LockingVisitors.reentrantReadWriteLockVisitor(booleanValues));
+
+}
+
+Location: LockingVisitorsTest.java
+
+Content: 
+
+@Test public void testResultValidation(){
+
+  final Object hidden=new Object();
+
+  final StampedLockVisitor<Object> lock=LockingVisitors.stampedLockVisitor(hidden);
+
+  final Object o1=lock.applyReadLocked(h -> new Object());
+
+  assertNotNull(o1);
+
+  assertNotSame(hidden,o1);
+
+  final Object o2=lock.applyWriteLocked(h -> new Object());
+
+  assertNotNull(o2);
+
+  assertNotSame(hidden,o2);
+
+}
+
+Location: LockingVisitorsTest.java
+
+Content: 
+
+@Test public void testStampedLockExclusive() throws Exception {
+
+  final boolean[] booleanValues=new boolean[10];
+
+  runTest(DELAY,true,millis -> assertTrue(millis >= TOTAL_DELAY.toMillis()),booleanValues,LockingVisitors.stampedLockVisitor(booleanValues));
+
+}
+
+Location: LockingVisitorsTest.java
+
+Content: 
+
+@Test public void testStampedLockNotExclusive() throws Exception {
+
+  final boolean[] booleanValues=new boolean[10];
+
+  runTest(DELAY,false,millis -> assertTrue(millis < TOTAL_DELAY.toMillis()),booleanValues,LockingVisitors.stampedLockVisitor(booleanValues));
+
+}
+

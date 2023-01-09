@@ -1,0 +1,82 @@
+Location: RingBufferBundlerLockless.java
+
+Content: 
+
+protected int advanceWriteIndex(){
+
+  int num=0, start=write_index;
+
+  for (; ; ) {
+
+    if (buf[start] == null)     break;
+
+    num++;
+
+    start=index(start + 1);
+
+    if (start == tmp_write_index.get())     break;
+
+  }
+
+  write_index=start;
+
+  return num;
+
+}
+
+Location: RingBufferBundlerLockless.java
+
+Content: 
+
+protected int getPermitToWrite(){
+
+  int remaining=write_permits.decrementAndGet();
+
+  if (remaining < 0)   write_permits.incrementAndGet();
+
+  return remaining;
+
+}
+
+Location: RingBufferBundlerLockless.java
+
+Content: 
+
+protected int getWriteIndex(){
+
+  int permit=getPermitToWrite();
+
+  if (permit < 0)   return -1;
+
+  int next=tmp_write_index.getAndIncrement();
+
+  int next_index=index(next);
+
+  tmp_write_index.compareAndSet(next,next_index);
+
+  return next_index;
+
+}
+
+Location: RingBufferBundlerLockless.java
+
+Content: 
+
+public RingBufferBundlerLockless(){
+
+  this(1024);
+
+}
+
+Location: RingBufferBundlerLockless.java
+
+Content: 
+
+public RingBufferBundlerLockless(int capacity){
+
+  buf=new Message[Util.getNextHigherPowerOfTwo(capacity)];
+
+  this.write_permits=new AtomicInteger(buf.length);
+
+}
+

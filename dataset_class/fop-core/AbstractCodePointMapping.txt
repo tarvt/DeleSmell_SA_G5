@@ -1,0 +1,228 @@
+Location: AbstractCodePointMapping.java
+
+Content: 
+
+/** 
+
+ * Main constructor.
+
+ * @param name the name of the encoding
+
+ * @param table the table ([code point, unicode scalar value]+) with the mapping
+
+ */
+
+public AbstractCodePointMapping(String name,int[] table){
+
+  this(name,table,null);
+
+}
+
+Location: AbstractCodePointMapping.java
+
+Content: 
+
+/** 
+
+ * Extended constructor.
+
+ * @param name the name of the encoding
+
+ * @param table the table ([code point, unicode scalar value]+) with the mapping
+
+ * @param charNameMap all character names in the encoding (a value of null will be convertedto ".notdef")
+
+ */
+
+public AbstractCodePointMapping(String name,int[] table,String[] charNameMap){
+
+  this.name=name;
+
+  buildFromTable(table);
+
+  if (charNameMap != null) {
+
+    this.charNameMap=new String[256];
+
+    for (int i=0; i < 256; i++) {
+
+      String charName=charNameMap[i];
+
+      if (charName == null) {
+
+        this.charNameMap[i]=Glyphs.NOTDEF;
+
+      }
+
+ else {
+
+        this.charNameMap[i]=charName;
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: AbstractCodePointMapping.java
+
+Content: 
+
+/** 
+
+ * Builds the internal lookup structures based on a given table.
+
+ * @param table the table ([code point, unicode scalar value]+) with the mapping
+
+ */
+
+protected void buildFromTable(int[] table){
+
+  int nonLatin1=0;
+
+  latin1Map=new char[256];
+
+  unicodeMap=new char[256];
+
+  Arrays.fill(unicodeMap,CharUtilities.NOT_A_CHARACTER);
+
+  for (int i=0; i < table.length; i+=2) {
+
+    char unicode=(char)table[i + 1];
+
+    if (unicode < 256) {
+
+      if (latin1Map[unicode] == 0) {
+
+        latin1Map[unicode]=(char)table[i];
+
+      }
+
+    }
+
+ else {
+
+      ++nonLatin1;
+
+    }
+
+    if (unicodeMap[table[i]] == CharUtilities.NOT_A_CHARACTER) {
+
+      unicodeMap[table[i]]=unicode;
+
+    }
+
+  }
+
+  characters=new char[nonLatin1];
+
+  codepoints=new char[nonLatin1];
+
+  int top=0;
+
+  for (int i=0; i < table.length; i+=2) {
+
+    char c=(char)table[i + 1];
+
+    if (c >= 256) {
+
+      ++top;
+
+      for (int j=top - 1; j >= 0; --j) {
+
+        if (j > 0 && characters[j - 1] >= c) {
+
+          characters[j]=characters[j - 1];
+
+          codepoints[j]=codepoints[j - 1];
+
+        }
+
+ else {
+
+          characters[j]=c;
+
+          codepoints[j]=(char)table[i];
+
+          break;
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+Location: AbstractCodePointMapping.java
+
+Content: 
+
+/** 
+
+ * Returns the index of a character/glyph with the given name. Note that this method is relatively slow and should only be used for fallback operations.
+
+ * @param charName the character name
+
+ * @return the index of the character in the encoding or -1 if it doesn't exist
+
+ */
+
+public short getCodePointForGlyph(String charName){
+
+  String[] names=this.charNameMap;
+
+  if (names == null) {
+
+    names=getCharNameMap();
+
+  }
+
+  for (short i=0, c=(short)names.length; i < c; i++) {
+
+    if (names[i].equals(charName)) {
+
+      return i;
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+Location: AbstractCodePointMapping.java
+
+Content: 
+
+public String getNameFromCodePoint(int idx){
+
+  return getCharNameMap()[idx];
+
+}
+
+Location: AbstractCodePointMapping.java
+
+Content: 
+
+/** 
+
+ * Returns the main Unicode value that is associated with the given code point in the encoding. Note that multiple Unicode values can theoretically be mapped to one code point in the encoding.
+
+ * @param idx the code point in the encoding
+
+ * @return the Unicode value (or \uFFFF (NOT A CHARACTER) if no Unicode value is at that point)
+
+ */
+
+public final char getUnicodeForIndex(int idx){
+
+  return this.unicodeMap[idx];
+
+}
+

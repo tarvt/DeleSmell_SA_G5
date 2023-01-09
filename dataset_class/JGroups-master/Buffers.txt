@@ -1,0 +1,414 @@
+Location: Buffers.java
+
+Content: 
+
+public Buffers add(ByteBuffer buf){
+
+  if (buf == null)   return this;
+
+  if (spaceAvailable(1) || (makeSpace() && spaceAvailable(1)))   bufs[limit++]=buf;
+
+  return this;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+protected boolean adjustPosition(boolean null_complete_data){
+
+  while (position < limit) {
+
+    ByteBuffer buf=bufs[position];
+
+    if (buf.remaining() > 0)     return false;
+
+    if (null_complete_data)     bufs[position]=null;
+
+    position++;
+
+    if (next_to_copy < position)     next_to_copy=position;
+
+  }
+
+  return true;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+protected static void assertPositiveUnsignedShort(int num){
+
+  if (num < 1 || num > Short.MAX_VALUE) {
+
+    short tmp=(short)num;
+
+    throw new IllegalArgumentException(String.format("number %d must be a positive unsigned short",tmp));
+
+  }
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+public Buffers(ByteBuffer... data){
+
+  if (data == null)   throw new IllegalArgumentException("null buffer array");
+
+  assertPositiveUnsignedShort(data.length);
+
+  this.bufs=data;
+
+  for (  ByteBuffer b : this.bufs) {
+
+    if (b == null)     break;
+
+    limit++;
+
+  }
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Creates a new instance with an array of capacity buffers
+
+ * @param capacity Must be an unsigned positive short [1 .. Short.MAX_VALUE]
+
+ */
+
+public Buffers(int capacity){
+
+  bufs=new ByteBuffer[toPositiveUnsignedShort(capacity)];
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Copies a ByteBuffer by copying and wrapping the underlying array of a heap-based buffer. Direct buffers are converted to heap-based buffers 
+
+ */
+
+public static ByteBuffer copyBuffer(final ByteBuffer buf){
+
+  if (buf == null)   return null;
+
+  int offset=buf.hasArray() ? buf.arrayOffset() + buf.position() : buf.position(), len=buf.remaining();
+
+  byte[] tmp=new byte[len];
+
+  if (!buf.isDirect())   System.arraycopy(buf.array(),offset,tmp,0,len);
+
+ else {
+
+    for (int i=0; i < len; i++)     tmp[i]=buf.get(i + offset);
+
+  }
+
+  return ByteBuffer.wrap(tmp);
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+public boolean hasRemaining(){
+
+  for (int i=position; i < limit; i++) {
+
+    ByteBuffer buf=bufs[i];
+
+    if (buf != null && buf.hasRemaining())     return true;
+
+  }
+
+  return false;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+public Buffers limit(int new_limit){
+
+  this.limit=toPositiveUnsignedShort(new_limit);
+
+  return this;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+protected boolean makeSpace(){
+
+  if (position == limit) {
+
+    position=limit=next_to_copy=0;
+
+    return true;
+
+  }
+
+  if (position == 0)   return false;
+
+  int buffers_to_move=size();
+
+  for (int dest_index=0, src_index=position; dest_index < buffers_to_move; dest_index++, src_index++) {
+
+    bufs[dest_index]=bufs[src_index];
+
+  }
+
+  for (int i=buffers_to_move; i < limit; i++)   bufs[i]=null;
+
+  next_to_copy-=position;
+
+  limit=(short)buffers_to_move;
+
+  position=0;
+
+  next_to_copy=(short)Math.max(next_to_copy,position);
+
+  return true;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+public int nextToCopy(){
+
+  return next_to_copy;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+public Buffers nextToCopy(int next){
+
+  next_to_copy=toPositiveUnsignedShort(next);
+
+  return this;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Looks at all buffers in range [position .. limit-1] and nulls buffers that have no remaining data. Returns true if all buffers could be nulled, and false otherwise 
+
+ */
+
+protected boolean nullData(){
+
+  if (!adjustPosition(true))   return false;
+
+  if (position >= bufs.length)   makeSpace();
+
+  return true;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Reads length and then length bytes into the data buffer, which is grown if needed.
+
+ * @param ch The channel to read data from
+
+ * @return The data buffer (position is 0 and limit is length), or null if not all data could be read.
+
+ */
+
+public ByteBuffer readLengthAndData(SocketChannel ch) throws Exception {
+
+  if (bufs[0].hasRemaining() && ch.read(bufs[0]) < 0)   throw new EOFException();
+
+  if (bufs[0].hasRemaining())   return null;
+
+  int len=bufs[0].getInt(0);
+
+  if (bufs[1] == null || len > bufs[1].capacity())   bufs[1]=ByteBuffer.allocate(len);
+
+  ((java.nio.Buffer)bufs[1]).limit(len);
+
+  if (bufs[1].hasRemaining() && ch.read(bufs[1]) < 0)   throw new EOFException();
+
+  if (bufs[1].hasRemaining())   return null;
+
+  try {
+
+    return (ByteBuffer)((java.nio.Buffer)bufs[1].duplicate()).flip();
+
+  }
+
+  finally {
+
+    bufs[0].clear();
+
+    bufs[1].clear();
+
+  }
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Performs a scattering read into all (contiguous) non-null buffers in range [position .. limit]. Returns true if the scattering read was successful, else false. Note that to read the contents of the individual buffers, {@link ByteBuffer#clear()} has to be called (all buffers have their position == limit on a successful read).
+
+ */
+
+public boolean read(SocketChannel ch) throws Exception {
+
+  long bytes=ch.read(bufs,position,limit - position);
+
+  if (bytes == -1)   throw new EOFException();
+
+  return adjustPosition(false);
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Nulls the buffer at index 
+
+ */
+
+public Buffers remove(int index){
+
+  return set(index,null);
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+public Buffers set(int index,ByteBuffer buf){
+
+  this.bufs[index]=buf;
+
+  return this;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+protected boolean spaceAvailable(int num_buffers){
+
+  return bufs.length - limit >= num_buffers;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+protected static short toPositiveUnsignedShort(int num){
+
+  assertPositiveUnsignedShort(num);
+
+  return (short)num;
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Writes the buffers from position to limit to the given channel. Note that all buffers need to have their  {@link ByteBuffer#position} at the start of the data to be writtenbe at the start of the data to be written.
+
+ * @param ch The channel to write to
+
+ * @return True if all the bytes of the buffer were written successfully, false otherwise (partial write).
+
+ * @throws Exception Thrown if the write failed
+
+ */
+
+public boolean write(GatheringByteChannel ch) throws Exception {
+
+  int num_buffers_to_write=size();
+
+  if (num_buffers_to_write == 0)   return true;
+
+  if (ch != null) {
+
+    try {
+
+      ch.write(bufs,position,num_buffers_to_write);
+
+    }
+
+ catch (    ClosedChannelException closed_ex) {
+
+      throw closed_ex;
+
+    }
+
+catch (    NotYetConnectedException|IOException others) {
+
+      ;
+
+    }
+
+  }
+
+  return nullData();
+
+}
+
+Location: Buffers.java
+
+Content: 
+
+/** 
+
+ * Helper method which adds the buffers passed as arguments and then calls write() 
+
+ */
+
+public boolean write(GatheringByteChannel ch,ByteBuffer... buffers) throws Exception {
+
+  return add(buffers).write(ch);
+
+}
+

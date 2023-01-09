@@ -1,0 +1,746 @@
+Location: GossipRouter.java
+
+Content: 
+
+protected void addAddressMapping(Address sender,String group,Address addr,PhysicalAddress phys_addr,String logical_name){
+
+  ConcurrentMap<Address,Entry> m=address_mappings.get(group);
+
+  if (m == null) {
+
+    ConcurrentMap<Address,Entry> existing=this.address_mappings.putIfAbsent(group,m=new ConcurrentHashMap<>());
+
+    if (existing != null)     m=existing;
+
+  }
+
+  m.put(addr,new Entry(sender,phys_addr,logical_name));
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public int backlog(){
+
+  return backlog;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter backlog(int backlog){
+
+  this.backlog=backlog;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public String bindAddress(){
+
+  return bind_addr != null ? bind_addr.toString() : null;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter bindAddress(InetAddress addr){
+
+  this.bind_addr=addr;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+@ManagedOperation(description="Dumps the address mappings") public String dumpAddresssMappings(){
+
+  StringBuilder sb=new StringBuilder();
+
+  for (  Map.Entry<String,ConcurrentMap<Address,Entry>> entry : address_mappings.entrySet()) {
+
+    String group=entry.getKey();
+
+    Map<Address,Entry> val=entry.getValue();
+
+    if (val == null)     continue;
+
+    sb.append(group).append(":\n");
+
+    for (    Map.Entry<Address,Entry> entry2 : val.entrySet()) {
+
+      Address logical_addr=entry2.getKey();
+
+      Entry val2=entry2.getValue();
+
+      if (val2 == null)       continue;
+
+      sb.append(String.format("  %s: %s (client_addr: %s, uuid:%s)\n",val2.logical_name,val2.phys_addr,val2.client_addr,logical_addr));
+
+    }
+
+  }
+
+  return sb.toString();
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public boolean dumpMessages(){
+
+  return dump_msgs;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter dumpMessages(boolean flag){
+
+  dump_msgs=flag;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+@ManagedOperation(description="Dumps the contents of the routing table") public String dumpRoutingTable(){
+
+  return server.printConnections();
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected static void dump(GossipData data){
+
+  Util.parse(data.buffer,data.offset,data.length,MSG_CONSUMER,null,false);
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public boolean emitSuspectEvents(){
+
+  return emit_suspect_events;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter emitSuspectEvents(boolean flag){
+
+  emit_suspect_events=flag;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public long expiryTime(){
+
+  return expiry_time;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter expiryTime(long t){
+
+  this.expiry_time=t;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter(InetAddress bind_addr,int local_port){
+
+  this.port=local_port;
+
+  this.bind_addr=bind_addr;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter(String bind_addr,int local_port){
+
+  this.port=local_port;
+
+  try {
+
+    this.bind_addr=InetAddress.getByName(bind_addr);
+
+  }
+
+ catch (  UnknownHostException e) {
+
+    log.error("failed setting bind address %s: %s",bind_addr,e);
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void handleGetMembersRequest(Address sender,DataInput in){
+
+  GossipData req=readRequest(in,GossipType.GET_MBRS);
+
+  if (req == null)   return;
+
+  GossipData rsp=new GossipData(GossipType.GET_MBRS_RSP,req.getGroup(),null);
+
+  Map<Address,Entry> members=address_mappings.get(req.getGroup());
+
+  if (members != null) {
+
+    for (    Map.Entry<Address,Entry> entry : members.entrySet()) {
+
+      Address logical_addr=entry.getKey();
+
+      PhysicalAddress phys_addr=entry.getValue().phys_addr;
+
+      String logical_name=entry.getValue().logical_name;
+
+      PingData data=new PingData(logical_addr,true,logical_name,phys_addr);
+
+      rsp.addPingData(data);
+
+    }
+
+  }
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(rsp.serializedSize());
+
+  try {
+
+    rsp.writeTo(out);
+
+    server.send(sender,out.buffer(),0,out.position());
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("failed sending %d to %s: %s",GossipType.GET_MBRS_RSP,sender,ex);
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void handleRegister(Address sender,DataInput in){
+
+  GossipData req=readRequest(in,GossipType.REGISTER);
+
+  if (req != null) {
+
+    String group=req.getGroup();
+
+    Address addr=req.getAddress();
+
+    PhysicalAddress phys_addr=req.getPhysicalAddress();
+
+    String logical_name=req.getLogicalName();
+
+    addAddressMapping(sender,group,addr,phys_addr,logical_name);
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void handleUnregister(DataInput in){
+
+  GossipData req=readRequest(in,GossipType.UNREGISTER);
+
+  if (req != null)   removeAddressMapping(req.getGroup(),req.getAddress());
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public boolean jmx(){
+
+  return jmx;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter jmx(boolean flag){
+
+  jmx=flag;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public long lingerTimeout(){
+
+  return linger_timeout;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter lingerTimeout(long t){
+
+  this.linger_timeout=t;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public Address localAddress(){
+
+  return server.localAddress();
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public int port(){
+
+  return port;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter port(int port){
+
+  this.port=port;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+/** 
+
+ * Prints startup information.
+
+ */
+
+private void printStartupInfo(){
+
+  System.out.println("GossipRouter started at " + new Date());
+
+  System.out.print("Listening on port " + port);
+
+  System.out.println(" bound on address " + server.localAddress());
+
+  System.out.print("Backlog is " + backlog);
+
+  System.out.print(", linger timeout is " + linger_timeout);
+
+  System.out.println(", and read timeout is " + sock_read_timeout);
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected GossipData readRequest(DataInput in){
+
+  GossipData data=new GossipData();
+
+  try {
+
+    data.readFrom(in);
+
+    return data;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedReadingRequest"),ex);
+
+    return null;
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected GossipData readRequest(DataInput in,GossipType type){
+
+  GossipData data=new GossipData(type);
+
+  try {
+
+    data.readFrom(in,false);
+
+    return data;
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error(Util.getMessage("FailedReadingRequest"),ex);
+
+    return null;
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void removeAddressMapping(String group,Address addr){
+
+  Map<Address,Entry> m=address_mappings.get(group);
+
+  if (m == null)   return;
+
+  if (m.remove(addr) != null && m.isEmpty())   address_mappings.remove(group);
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void removeFromAddressMappings(Address client_addr){
+
+  if (client_addr == null)   return;
+
+  Set<Tuple<String,Address>> suspects=null;
+
+  for (  Map.Entry<String,ConcurrentMap<Address,Entry>> entry : address_mappings.entrySet()) {
+
+    ConcurrentMap<Address,Entry> map=entry.getValue();
+
+    for (    Map.Entry<Address,Entry> entry2 : map.entrySet()) {
+
+      Entry e=entry2.getValue();
+
+      if (client_addr.equals(e.client_addr)) {
+
+        map.remove(entry2.getKey());
+
+        log.debug("connection to %s closed",client_addr);
+
+        if (map.isEmpty())         address_mappings.remove(entry.getKey());
+
+        if (suspects == null)         suspects=new HashSet<>();
+
+        suspects.add(new Tuple<>(entry.getKey(),entry2.getKey()));
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  if (emit_suspect_events && suspects != null && !suspects.isEmpty()) {
+
+    for (    Tuple<String,Address> suspect : suspects) {
+
+      String group=suspect.getVal1();
+
+      Address addr=suspect.getVal2();
+
+      ConcurrentMap<Address,Entry> map=address_mappings.get(group);
+
+      if (map == null)       continue;
+
+      GossipData data=new GossipData(GossipType.SUSPECT,group,addr);
+
+      sendToAllMembersInGroup(map.entrySet(),data);
+
+    }
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void route(String group,Address dest,byte[] msg,int offset,int length){
+
+  ConcurrentMap<Address,Entry> map=address_mappings.get(group);
+
+  if (map == null)   return;
+
+  if (dest != null) {
+
+    Entry entry=map.get(dest);
+
+    if (entry != null)     sendToMember(entry.client_addr,msg,offset,length);
+
+ else     log.warn("dest %s in cluster %s not found",dest,group);
+
+  }
+
+ else {
+
+    Set<Map.Entry<Address,Entry>> dests=map.entrySet();
+
+    sendToAllMembersInGroup(dests,msg,offset,length);
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void sendToAllMembersInGroup(Set<Map.Entry<Address,Entry>> dests,byte[] buf,int offset,int len){
+
+  for (  Map.Entry<Address,Entry> entry : dests) {
+
+    Entry e=entry.getValue();
+
+    if (e == null)     continue;
+
+    try {
+
+      server.send(e.client_addr,buf,offset,len);
+
+    }
+
+ catch (    Exception ex) {
+
+      log.error("failed sending message to %s (%s): %s",e.logical_name,e.phys_addr,ex);
+
+    }
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void sendToAllMembersInGroup(Set<Map.Entry<Address,Entry>> dests,GossipData request){
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(request.serializedSize());
+
+  try {
+
+    request.writeTo(out);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("failed marshalling gossip data %s: %s; dropping request",request,ex);
+
+    return;
+
+  }
+
+  for (  Map.Entry<Address,Entry> entry : dests) {
+
+    Entry e=entry.getValue();
+
+    if (e == null)     continue;
+
+    try {
+
+      server.send(e.client_addr,out.buffer(),0,out.position());
+
+    }
+
+ catch (    Exception ex) {
+
+      log.error("failed sending message to %s (%s): %s",e.logical_name,e.phys_addr,ex);
+
+    }
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void sendToMember(Address dest,byte[] buf,int offset,int len){
+
+  try {
+
+    server.send(dest,buf,offset,len);
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("failed sending unicast message to %s: %s",dest,ex);
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+protected void sendToMember(Address dest,GossipData request){
+
+  ByteArrayDataOutputStream out=new ByteArrayDataOutputStream(request.serializedSize());
+
+  try {
+
+    request.writeTo(out);
+
+    server.send(dest,out.buffer(),0,out.position());
+
+  }
+
+ catch (  Exception ex) {
+
+    log.error("failed sending unicast message to %s: %s",dest,ex);
+
+  }
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public SocketFactory socketFactory(){
+
+  return socket_factory;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter socketFactory(SocketFactory sf){
+
+  this.socket_factory=sf;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public long socketReadTimeout(){
+
+  return sock_read_timeout;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter socketReadTimeout(long t){
+
+  this.sock_read_timeout=t;
+
+  return this;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public ThreadFactory threadPoolFactory(){
+
+  return thread_factory;
+
+}
+
+Location: GossipRouter.java
+
+Content: 
+
+public GossipRouter threadPoolFactory(ThreadFactory f){
+
+  this.thread_factory=f;
+
+  return this;
+
+}
+

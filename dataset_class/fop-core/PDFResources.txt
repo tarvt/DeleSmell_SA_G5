@@ -1,0 +1,342 @@
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * Add a ColorSpace dictionary to the resources.
+
+ * @param colorSpace the color space
+
+ */
+
+public void addColorSpace(PDFColorSpace colorSpace){
+
+  this.colorSpaces.put(new LazyName(colorSpace),colorSpace);
+
+  if (colorSpace instanceof PDFICCBasedColorSpace) {
+
+    PDFICCBasedColorSpace icc=(PDFICCBasedColorSpace)colorSpace;
+
+    String desc=ColorProfileUtil.getICCProfileDescription(icc.getICCStream().getICCProfile());
+
+    this.iccColorSpaces.put(desc,icc);
+
+  }
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+public void addContext(PDFResourceContext c){
+
+  contexts.add(c);
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * Add the fonts in the font info to this PDF document's Font Resources.
+
+ * @param doc PDF document to add fonts to
+
+ * @param fontInfo font info object to get font information from
+
+ */
+
+public void addFonts(PDFDocument doc,FontInfo fontInfo){
+
+  Map<String,Typeface> usedFonts=fontInfo.getUsedFonts();
+
+  for (  Map.Entry<String,Typeface> e : usedFonts.entrySet()) {
+
+    String f=e.getKey();
+
+    Typeface font=e.getValue();
+
+    if (font.hadMappingOperations()) {
+
+      FontDescriptor desc=null;
+
+      if (font instanceof FontDescriptor) {
+
+        desc=(FontDescriptor)font;
+
+      }
+
+      String encoding=font.getEncodingName();
+
+      if (font instanceof Symbol || font instanceof ZapfDingbats) {
+
+        encoding=null;
+
+      }
+
+      addFont(doc.getFactory().makeFont(f,font.getEmbedFontName(),encoding,font,desc));
+
+    }
+
+  }
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * add font object to resources list.
+
+ * @param font the PDFFont to add
+
+ */
+
+public void addFont(PDFFont font){
+
+  addFont(font.getName(),font);
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+public void addFont(String name,PDFDictionary font){
+
+  if (fontsObj != null) {
+
+    fontsObj.put(name,font);
+
+    fontsObjDict.put(name,font);
+
+  }
+
+ else {
+
+    fonts.put(name,font);
+
+  }
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * Add a named property.
+
+ * @param name name of property
+
+ * @param property reference to property value
+
+ */
+
+public void addProperty(String name,PDFReference property){
+
+  this.properties.put(name,property);
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * Add an XObject to the resources.
+
+ * @param xObject the XObject to add
+
+ */
+
+public void addXObject(PDFXObject xObject){
+
+  this.xObjects.add(xObject);
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+public void createFontsAsObj(){
+
+  fontsObj=new PDFDictionary();
+
+  getDocument().registerTrailerObject(fontsObj);
+
+  put("Font",fontsObj);
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+private void getChildren(Set<PDFObject> children,boolean isParent){
+
+  super.getChildren(children);
+
+  for (  PDFDictionary f : fonts.values()) {
+
+    children.add(f);
+
+    f.getChildren(children);
+
+  }
+
+  for (  PDFResourceContext c : contexts) {
+
+    for (    PDFXObject x : c.getXObjects()) {
+
+      children.add(x);
+
+      x.getChildren(children);
+
+    }
+
+    for (    PDFPattern x : c.getPatterns()) {
+
+      children.add(x);
+
+      x.getChildren(children);
+
+    }
+
+    for (    PDFShading x : c.getShadings()) {
+
+      children.add(x);
+
+      x.getChildren(children);
+
+    }
+
+    for (    PDFGState x : c.getGStates()) {
+
+      children.add(x);
+
+      x.getChildren(children);
+
+    }
+
+  }
+
+  if (!isParent) {
+
+    for (    PDFColorSpace x : colorSpaces.values()) {
+
+      children.add((PDFObject)x);
+
+      ((PDFObject)x).getChildren(children);
+
+    }
+
+  }
+
+  if (parent != null) {
+
+    parent.getChildren(children,true);
+
+  }
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * Returns a color space by name.
+
+ * @param name the name of the color space
+
+ * @return the requested color space or null if it wasn't found
+
+ */
+
+public PDFColorSpace getColorSpace(PDFName name){
+
+  for (  Map.Entry<LazyName,PDFColorSpace> x : colorSpaces.entrySet()) {
+
+    if (x.getKey().getName().equals(name)) {
+
+      return x.getValue();
+
+    }
+
+  }
+
+  return null;
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * Returns a ICCBased color space by profile name.
+
+ * @param desc the name of the color space
+
+ * @return the requested color space or null if it wasn't found
+
+ */
+
+public PDFICCBasedColorSpace getICCColorSpaceByProfileName(String desc){
+
+  PDFICCBasedColorSpace cs=this.iccColorSpaces.get(desc);
+
+  return cs;
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+public PDFResources getParentResources(){
+
+  return parent;
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+/** 
+
+ * create a /Resources object.
+
+ */
+
+public PDFResources(PDFDocument doc){
+
+  super();
+
+  setObjectNumber(doc);
+
+}
+
+Location: PDFResources.java
+
+Content: 
+
+public void setParentResources(PDFResources p){
+
+  parent=p;
+
+}
+

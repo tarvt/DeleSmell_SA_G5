@@ -1,0 +1,286 @@
+Location: SimulatorJobTracker.java
+
+Content: 
+
+/** 
+
+ * The cleanupJob method maintains the queue cleanQueue. When a job is finalized,  it is added to the cleanupQueue. Jobs are removed from the cleanupQueue so that its size is maintained to be less than that specified by JOBS_IN_MUMAK_MEMORY.
+
+ * @param job : The JobInProgress object that was just finalized and is going to be added to the cleanupQueue. 
+
+ */
+
+private void cleanupJob(JobInProgress job){
+
+  cleanupQueue.add(job.getJobID());
+
+  while (cleanupQueue.size() > JOBS_IN_MUMAK_MEMORY) {
+
+    JobID removedJob=cleanupQueue.poll();
+
+    retireJob(removedJob,"");
+
+  }
+
+}
+
+Location: SimulatorJobTracker.java
+
+Content: 
+
+/** 
+
+ * The getMapCompletion method is intended to inform taskTrackes when to change the status of reduce tasks from "shuffle" to "reduce". For all reduce tasks in this TaskTracker that are in the shuffle phase, getMapCompletionTasks finds the number of finished maps for  this job from the jobInProgress object. If this number equals the number of desired maps for this job, then it adds an  AllMapsCompletedTaskAction for this reduce task-attempt.
+
+ * @param status The status of the task tracker
+
+ * @return List of TaskTrackerActions
+
+ */
+
+private List<TaskTrackerAction> getMapCompletionTasks(TaskTrackerStatus status,List<TaskTrackerAction> tasksToKill){
+
+  boolean loggingEnabled=LOG.isDebugEnabled();
+
+  Set<TaskAttemptID> killedTasks=new HashSet<TaskAttemptID>();
+
+  if (tasksToKill != null) {
+
+    for (    TaskTrackerAction taskToKill : tasksToKill) {
+
+      killedTasks.add(((KillTaskAction)taskToKill).getTaskID());
+
+    }
+
+  }
+
+  String trackerName=status.getTrackerName();
+
+  List<TaskTrackerAction> actions=new ArrayList<TaskTrackerAction>();
+
+  for (  TaskStatus report : status.getTaskReports()) {
+
+    TaskAttemptID taskAttemptId=report.getTaskID();
+
+    SimulatorJobInProgress job=getSimulatorJob(taskAttemptId.getJobID());
+
+    if (job == null) {
+
+      Set<JobID> jobsToCleanup=trackerToJobsToCleanup.get(trackerName);
+
+      if (jobsToCleanup == null) {
+
+        jobsToCleanup=new HashSet<JobID>();
+
+        trackerToJobsToCleanup.put(trackerName,jobsToCleanup);
+
+      }
+
+      jobsToCleanup.add(taskAttemptId.getJobID());
+
+      continue;
+
+    }
+
+    JobStatus jobStatus=job.getStatus();
+
+    TaskInProgress tip=taskidToTIPMap.get(taskAttemptId);
+
+    if (jobStatus.getRunState() == JobStatus.RUNNING && tip.isRunningTask(taskAttemptId) && !killedTasks.contains(taskAttemptId) && !report.getIsMap() && report.getPhase() == TaskStatus.Phase.SHUFFLE) {
+
+      if (loggingEnabled) {
+
+        LOG.debug("Need map-completion information for REDUCEattempt " + taskAttemptId + " in tracker "+ trackerName);
+
+        LOG.debug("getMapCompletion: job=" + job.getJobID() + " pendingMaps="+ job.pendingMaps());
+
+      }
+
+      boolean canSendMapCompletion=false;
+
+      canSendMapCompletion=(job.finishedMaps() == job.desiredMaps());
+
+      if (canSendMapCompletion) {
+
+        if (loggingEnabled) {
+
+          LOG.debug("Adding MapCompletion for taskAttempt " + taskAttemptId + " in tracker "+ trackerName);
+
+          LOG.debug("FinishedMaps for job:" + job.getJobID() + " is = "+ job.finishedMaps()+ "/"+ job.desiredMaps());
+
+          LOG.debug("AllMapsCompleted for task " + taskAttemptId + " time="+ getClock().getTime());
+
+        }
+
+        actions.add(new AllMapsCompletedTaskAction(taskAttemptId));
+
+      }
+
+    }
+
+  }
+
+  return actions;
+
+}
+
+Location: SimulatorJobTracker.java
+
+Content: 
+
+/** 
+
+ * Return the SimulatorJob object given a jobID.
+
+ * @param jobid
+
+ * @return
+
+ */
+
+private SimulatorJobInProgress getSimulatorJob(JobID jobid){
+
+  return (SimulatorJobInProgress)jobs.get(jobid);
+
+}
+
+Location: SimulatorJobTracker.java
+
+Content: 
+
+private static synchronized void resetEngineClock(SimulatorEngine engine,SimulatorClock clock){
+
+  SimulatorJobTracker.engine=engine;
+
+  SimulatorJobTracker.clock=clock;
+
+}
+
+Location: SimulatorJobTracker.java
+
+Content: 
+
+/** 
+
+ * In addition to the standard JobConf object, the constructor for SimulatorJobTracker requires a  start time for simulation and a reference to the SimulatorEngine object. The clock of the JobTracker is set with this start time.
+
+ * @param conf the starting configuration of the SimulatorJobTracker.
+
+ * @param clock the SimulatorClock object that we use to maintain simulator time.
+
+ * @param simulatorEngine the simulatorEngine that is running the simulation.
+
+ */
+
+SimulatorJobTracker(JobConf conf,SimulatorClock clock,SimulatorEngine simulatorEngine) throws IOException {
+
+  super(conf,clock,true);
+
+  resetEngineClock(simulatorEngine,clock);
+
+  cleanupQueue=new LinkedList<JobID>();
+
+}
+
+Location: SimulatorJobTracker.java
+
+Content: 
+
+/** 
+
+ * Start the SimulatorJobTracker with given configuration after creating its own SimulatorEngine. Pretty much used for debugging only. 
+
+ * @param conf :The starting configuration of the SimulatorJobTracker
+
+ * @param startTime :The starting time of simulation
+
+ * @return void
+
+ * @throws IOException
+
+ * @throws InterruptedException
+
+ */
+
+public static SimulatorJobTracker startTracker(JobConf conf,long startTime) throws IOException, InterruptedException {
+
+  return startTracker(conf,startTime,new SimulatorEngine());
+
+}
+
+Location: SimulatorJobTracker.java
+
+Content: 
+
+/** 
+
+ * Starts the JobTracker with given configuration and a given time. It also starts the JobNotifier thread. 
+
+ * @param conf the starting configuration of the SimulatorJobTracker.
+
+ * @param startTime the starting time of simulation -- this is used toinitialize the clock.
+
+ * @param engine the SimulatorEngine that we talk to. 
+
+ * @throws IOException
+
+ */
+
+public static SimulatorJobTracker startTracker(JobConf conf,long startTime,SimulatorEngine engine) throws IOException {
+
+  SimulatorJobTracker result=null;
+
+  try {
+
+    SimulatorClock simClock=new SimulatorClock(startTime);
+
+    result=new SimulatorJobTracker(conf,simClock,engine);
+
+    result.taskScheduler.setTaskTrackerManager(result);
+
+  }
+
+ catch (  IOException e) {
+
+    LOG.warn("Error starting tracker: " + StringUtils.stringifyException(e));
+
+  }
+
+  if (result != null) {
+
+    JobEndNotifier.startNotifier();
+
+  }
+
+  return result;
+
+}
+
+Location: SimulatorJobTracker.java
+
+Content: 
+
+/** 
+
+ * Utility to validate the current simulation time
+
+ * @param newSimulationTime
+
+ */
+
+private void validateAndSetClock(long newSimulationTime){
+
+  long currentSimulationTime=clock.getTime();
+
+  if (newSimulationTime < currentSimulationTime) {
+
+    throw new IllegalArgumentException("Time has gone backwards! " + "newSimulationTime: " + newSimulationTime + " while currentTime: "+ currentSimulationTime);
+
+  }
+
+  assert (newSimulationTime == engine.getCurrentTime()) : " newTime =" + newSimulationTime + " engineTime = "+ engine.getCurrentTime();
+
+  clock.setTime(newSimulationTime);
+
+}
+

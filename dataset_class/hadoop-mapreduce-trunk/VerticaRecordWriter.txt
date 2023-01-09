@@ -1,0 +1,68 @@
+Location: VerticaRecordWriter.java
+
+Content: 
+
+public VerticaRecordWriter(Connection connection,String copyStmt,String writerTable,String delimiter,String terminator){
+
+  this.connection=connection;
+
+  this.copyStmt=copyStmt;
+
+  this.writerTable=writerTable;
+
+  this.delimiter=delimiter;
+
+  this.terminator=terminator;
+
+  try {
+
+    startCopyIn=Class.forName("com.vertica.PGStatement").getMethod("startCopyIn",String.class,InputStream.class);
+
+    finishCopyIn=Class.forName("com.vertica.PGStatement").getMethod("finishCopyIn");
+
+    addStreamToCopyIn=Class.forName("com.vertica.PGStatement").getMethod("addStreamToCopyIn",InputStream.class);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new RuntimeException("Vertica Formatter requies a the Vertica jdbc driver");
+
+  }
+
+}
+
+Location: VerticaRecordWriter.java
+
+Content: 
+
+@Override public void write(Text table,VerticaRecord record) throws IOException {
+
+  if (!table.toString().equals(writerTable))   throw new IOException("Writing to different table " + table.toString() + ". Expecting "+ writerTable);
+
+  String strRecord=record.toSQLString(delimiter,terminator);
+
+  ByteArrayInputStream bais=new ByteArrayInputStream(strRecord.getBytes());
+
+  try {
+
+    if (statement == null) {
+
+      statement=connection.createStatement();
+
+      startCopyIn.invoke(statement,copyStmt,bais);
+
+    }
+
+ else     addStreamToCopyIn.invoke(statement,bais);
+
+  }
+
+ catch (  Exception e) {
+
+    throw new IOException(e);
+
+  }
+
+}
+

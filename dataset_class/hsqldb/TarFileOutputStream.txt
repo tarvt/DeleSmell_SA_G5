@@ -1,0 +1,364 @@
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * @throws IllegalStateException if end of file not on a block boundary.
+
+ */
+
+public void assertAtBlockBoundary(){
+
+  if (bytesLeftInBlock() != 0) {
+
+    throw new IllegalArgumentException(RB.illegal_block_boundary.getString(Long.toString(bytesWritten)));
+
+  }
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+public int bytesLeftInBlock(){
+
+  int modulus=(int)(bytesWritten % 512L);
+
+  if (modulus == 0) {
+
+    return 0;
+
+  }
+
+  return 512 - modulus;
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * (Only) when this method returns successfully, the generated file will be a valid tar file. This method always performs a close, so you never need to call the close if your code makes it to this method. (You do need to call close if processing is aborted before calling finish()).
+
+ * @see #close
+
+ */
+
+public void finish() throws IOException {
+
+  try {
+
+    long finalBlock=bytesWritten / 512 + 2;
+
+    if (finalBlock % blocksPerRecord != 0) {
+
+      finalBlock=(finalBlock / blocksPerRecord + 1) * blocksPerRecord;
+
+    }
+
+    int finalPadBlocks=(int)(finalBlock - bytesWritten / 512L);
+
+    if (TarFileOutputStream.debug) {
+
+      System.out.println(RB.pad_block_write.getString(finalPadBlocks));
+
+    }
+
+    writePadBlocks(finalPadBlocks);
+
+  }
+
+ catch (  IOException ioe) {
+
+    try {
+
+      close();
+
+    }
+
+ catch (    IOException ne) {
+
+    }
+
+    throw ioe;
+
+  }
+
+  writeStream.close();
+
+  writeFile.renameTo(targetFile);
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * Implements java.io.Flushable.
+
+ * @see java.io.Flushable
+
+ */
+
+public void flush() throws IOException {
+
+  writeStream.flush();
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+public long getBytesWritten(){
+
+  return bytesWritten;
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * Rounds out the current block to the next block boundary. If we are currently at a block boundary, nothing is done.
+
+ */
+
+public void padCurrentBlock() throws IOException {
+
+  int padBytes=bytesLeftInBlock();
+
+  if (padBytes == 0) {
+
+    return;
+
+  }
+
+  write(ZERO_BLOCK,padBytes);
+
+  assertAtBlockBoundary();
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * Convenience wrapper to use default blocksPerRecord and compressionType.
+
+ * @see #TarFileOutputStream(File,int,int)
+
+ */
+
+public TarFileOutputStream(File targetFile) throws IOException {
+
+  this(targetFile,Compression.DEFAULT_COMPRESSION);
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * Convenience wrapper to use default blocksPerRecord.
+
+ * @see #TarFileOutputStream(File,int,int)
+
+ */
+
+public TarFileOutputStream(File targetFile,int compressionType) throws IOException {
+
+  this(targetFile,compressionType,TarFileOutputStream.Compression.DEFAULT_BLOCKS_PER_RECORD);
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * This class does no validation or enforcement of file naming conventions. If desired, the caller should enforce extensions like "tar" and "tar.gz" (and that they match the specified compression type). It also overwrites files without warning (just like FileOutputStream).
+
+ */
+
+public TarFileOutputStream(File targetFile,int compressionType,int blocksPerRecord) throws IOException {
+
+  this.blocksPerRecord=blocksPerRecord;
+
+  this.targetFile=targetFile;
+
+  writeFile=new File(targetFile.getParentFile(),targetFile.getName() + "-partial");
+
+  if (this.writeFile.exists()) {
+
+    throw new IOException(RB.move_work_file.getString(writeFile.getAbsolutePath()));
+
+  }
+
+  if (targetFile.exists() && !targetFile.canWrite()) {
+
+    throw new IOException(RB.cant_overwrite.getString(targetFile.getAbsolutePath()));
+
+  }
+
+  File parentDir=targetFile.getAbsoluteFile().getParentFile();
+
+  if (parentDir.exists() && parentDir.isDirectory()) {
+
+    if (!parentDir.canWrite()) {
+
+      throw new IOException(RB.cant_write_dir.getString(parentDir.getAbsolutePath()));
+
+    }
+
+  }
+
+ else {
+
+    throw new IOException(RB.no_parent_dir.getString(parentDir.getAbsolutePath()));
+
+  }
+
+  writeBuffer=new byte[blocksPerRecord * 512];
+
+switch (compressionType) {
+
+case TarFileOutputStream.Compression.NO_COMPRESSION:
+
+    writeStream=new FileOutputStream(writeFile);
+
+  break;
+
+case TarFileOutputStream.Compression.GZIP_COMPRESSION:
+
+writeStream=new GZIPOutputStream(new FileOutputStream(writeFile),writeBuffer.length);
+
+break;
+
+default :
+
+throw new IllegalArgumentException(RB.compression_unknown.getString(compressionType));
+
+}
+
+writeFile.setExecutable(false,true);
+
+writeFile.setExecutable(false,false);
+
+writeFile.setReadable(false,false);
+
+writeFile.setReadable(true,true);
+
+writeFile.setWritable(false,false);
+
+writeFile.setWritable(true,true);
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * Write a user-specified 512-byte block. For efficiency, write(int) should be used when writing file body content.
+
+ * @see #write(int)
+
+ */
+
+public void writeBlock(byte[] block) throws IOException {
+
+  if (block.length != 512) {
+
+    throw new IllegalArgumentException(RB.bad_block_write_len.getString(block.length));
+
+  }
+
+  write(block,block.length);
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * Writes a single zero'd block.
+
+ */
+
+public void writePadBlock() throws IOException {
+
+  writePadBlocks(1);
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * Writes the specified quantity of zero'd blocks.
+
+ */
+
+public void writePadBlocks(int blockCount) throws IOException {
+
+  for (int i=0; i < blockCount; i++) {
+
+    write(ZERO_BLOCK,ZERO_BLOCK.length);
+
+  }
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * This class and subclasses should write to the underlying writeStream <b>ONLY WITH THIS METHOD</b>. That way we can be confident that bytesWritten will always be accurate.
+
+ */
+
+public void write(byte[] byteArray,int byteCount) throws IOException {
+
+  writeStream.write(byteArray,0,byteCount);
+
+  bytesWritten+=byteCount;
+
+}
+
+Location: TarFileOutputStream.java
+
+Content: 
+
+/** 
+
+ * The normal way to write file data (as opposed to header data or padding) using this class.
+
+ */
+
+public void write(int byteCount) throws IOException {
+
+  write(writeBuffer,byteCount);
+
+}
+

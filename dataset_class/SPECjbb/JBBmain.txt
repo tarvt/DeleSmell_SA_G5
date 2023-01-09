@@ -1,0 +1,596 @@
+Location: JBBmain.java
+
+Content: 
+
+public void callReporter(String output_directory,String outRawFile_name,String outRawPrefix,String sequenceNumber){
+
+  String msg="Calling Reporter";
+
+  JBButil.getLog().info(msg);
+
+  System.out.println();
+
+  System.out.println();
+
+  System.out.println(msg);
+
+  boolean opte=true;
+
+  boolean opth=false;
+
+  String optr=outRawFile_name;
+
+  String optl=sequenceNumber;
+
+  boolean opts=false;
+
+  String optn=null;
+
+  String opto=output_directory + File.separator + outRawPrefix+ sequenceNumber+ ".html";
+
+  String file_Ascii=output_directory + File.separator + outRawPrefix+ sequenceNumber+ ".txt";
+
+  String optc=null;
+
+  String optS=null;
+
+  boolean optv=false;
+
+  spec.reporter.Report r;
+
+  try {
+
+    TextiReport ar=new spec.reporter.TextiReport(optn,optr,opts);
+
+    ar.print(file_Ascii);
+
+  }
+
+ catch (  Exception e) {
+
+  }
+
+  try {
+
+    r=new spec.reporter.Report(opte,opts,optn,optr,optv,optc,optl,opth,output_directory);
+
+  }
+
+ catch (  Exception e) {
+
+    opth=true;
+
+    JBButil.getLog().warning("Producing html chart in report instead of JPEG; see Users' Guide");
+
+    r=new spec.reporter.Report(opte,opts,optn,optr,optv,optc,optl,opth,output_directory);
+
+  }
+
+catch (  java.lang.InternalError e) {
+
+    opth=true;
+
+    JBButil.getLog().warning("Producing html chart in report instead of JPEG; see Users' Guide");
+
+    r=new spec.reporter.Report(opte,opts,optn,optr,optv,optc,optl,opth,output_directory);
+
+  }
+
+catch (  java.lang.UnsatisfiedLinkError e) {
+
+    opth=true;
+
+    JBButil.getLog().warning("Producing html chart in report instead of JPEG; see Users' Guide");
+
+    r=new spec.reporter.Report(opte,opts,optn,optr,optv,optc,optl,opth,output_directory);
+
+  }
+
+catch (  java.lang.Error e) {
+
+    opth=true;
+
+    JBButil.getLog().warning("Producing html chart in report instead of JPEG; see Users' Guide");
+
+    r=new spec.reporter.Report(opte,opts,optn,optr,optv,optc,optl,opth,output_directory);
+
+  }
+
+  r.print(opto);
+
+  try {
+
+    BufferedReader AscBr=new BufferedReader(new FileReader(file_Ascii));
+
+    String s;
+
+    while ((s=AscBr.readLine()) != null) {
+
+      System.out.println(s);
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    JBButil.getLog().log(Level.WARNING,"Error opening ASCII output file",e);
+
+  }
+
+  System.out.println("Output files: " + file_Ascii + ", "+ outRawFile_name+ ", "+ opto);
+
+  System.out.println();
+
+  System.out.println();
+
+  System.out.println("Reporter messages:");
+
+  System.out.println(r.messages());
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public String commandLineParser(String args[]){
+
+  String s=null;
+
+  if (args.length == 0) {
+
+    s=defaultPropsFileName;
+
+  }
+
+ else   if (args[0].equals("-id")) {
+
+    JBBmain.instanceId=Integer.parseInt(args[1]);
+
+  }
+
+ else   if (args[0].equals("-propfile")) {
+
+    if (args.length == 2) {
+
+      s=args[1];
+
+    }
+
+ else {
+
+      if (args.length == 1) {
+
+        System.out.println("Missing properties file name");
+
+        System.out.println("   Parameters:  -propfile <properties_file_name> [-id <instance_id>]");
+
+      }
+
+ else       if (args.length == 4 && args[2].equals("-id")) {
+
+        s=args[1];
+
+        JBBmain.instanceId=Integer.parseInt(args[3]);
+
+      }
+
+ else {
+
+        System.out.println("Too many parameters");
+
+        System.out.println("   Parameters:  -propfile <properties_file_name> [-id <instance_id>]");
+
+      }
+
+    }
+
+  }
+
+ else {
+
+    System.out.println("Unrecognized command line parameter:  " + args[0]);
+
+    System.out.println("   Parameters:  -propfile <properties_file_name>");
+
+  }
+
+  return s;
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public void DoARun(Company myCompany,short number_of_warehouses,int rampup_time,int measurement_time){
+
+  JBButil.getLog().entering("spec.jbb.JBBmain","DoARun");
+
+  short whID;
+
+  testnum++;
+
+  myCompany.setPropOutputPrefix("result.test" + testnum + ".");
+
+  System.out.println("Start User Threads");
+
+  JBButil.getLog().info("Start User Threads");
+
+  myCompany.prepareForStart();
+
+  try {
+
+    for (whID=1; whID <= number_of_warehouses; whID++) {
+
+      myCompany.startAutomated(whID,rampup_time,measurement_time);
+
+      startJBBthread(whID);
+
+      String msg="  started user thread for Warehouse " + whID;
+
+      System.out.println(msg);
+
+      JBButil.getLog().info(msg);
+
+    }
+
+  }
+
+ catch (  java.lang.ThreadDeath e) {
+
+    try {
+
+      JBButil.getLog().log(Level.WARNING,"ERROR:  A thread died, probably out of memory." + "  Increase the heap size and run again",e);
+
+    }
+
+ catch (    OutOfMemoryError oome) {
+
+      System.out.println("ERROR:  A thread died, probably out of memory." + "  Increase the heap size and run again");
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+catch (  java.lang.OutOfMemoryError e) {
+
+    try {
+
+      JBButil.getLog().log(Level.WARNING,"ERROR:  Out of memory error caught! " + "  Increase the heap size and run again.",e);
+
+    }
+
+ catch (    OutOfMemoryError oome) {
+
+      System.out.println("ERROR:  Out of memory error caught! " + "  Increase the heap size and run again.");
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+  myCompany.displayResultTotals(prop.showWarehouseDetail);
+
+  stopJBBthread();
+
+  JBButil.getLog().exiting("spec.jbb.JBBmain","DoARun");
+
+  flushLog();
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public boolean DoAValidationRun(Company myCompany){
+
+  short whID;
+
+  myCompany.prepareForStart();
+
+  myCompany.startValidation((short)1);
+
+  TransactionManager transMgr=new TransactionManager();
+
+  transMgr.initTransactionManager(myCompany,(short)1);
+
+  return transMgr.goValidate();
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public void doIt(){
+
+  JBButil.getLog().entering("spec.jbb.JBBmain","DOIT");
+
+  float min_btps=(float)((prop.minBTPSRatio * 100.0 / prop.waitTimePercent) * 2.3 / 60.0);
+
+  Transaction.setOrderLineCount(prop.orderlinesPerOrder);
+
+  myCompany=new Company();
+
+  if (prop.deterministicRandomSeed == true) {
+
+    JBButil.set_random_seed(deterministic_seed);
+
+  }
+
+  myCompany.setJVMInstanceValues(prop.jvm_instances);
+
+  myCompany.setMultiJVMRampingValues(prop.per_jvm_warehouse_rampup,prop.per_jvm_warehouse_rampdown);
+
+  myCompany.setPopulationValues(prop.warehousePopulationBase,JBBProperties.overrideItemTableSize);
+
+  Transaction.setLogWrite(prop.screenWriteFlag);
+
+  Transaction.setSteadyState(prop.steadyStateFlag);
+
+  int cur_warehouses=0;
+
+  int num_wh;
+
+  if (prop.sequenceOfWarehouses == null) {
+
+    for (num_wh=prop.startingNumberWarehouses; num_wh <= prop.endingNumberWarehouses; num_wh+=prop.incrementNumberWarehouses) {
+
+      if (!runWarehouse(cur_warehouses,num_wh,min_btps))       break;
+
+      cur_warehouses=num_wh;
+
+    }
+
+  }
+
+ else {
+
+    for (int seqndx=0; seqndx < prop.sequenceOfWarehouses.length; seqndx++) {
+
+      num_wh=prop.sequenceOfWarehouses[seqndx];
+
+      if (!runWarehouse(cur_warehouses,num_wh,min_btps))       break;
+
+      cur_warehouses=num_wh;
+
+    }
+
+  }
+
+  JBButil.getLog().exiting("spec.jbb.JBBmain","DOIT");
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public boolean doItForValidation(){
+
+  Transaction.setOrderLineCount(orderlinesPerOrder);
+
+  myCompany=new Company();
+
+  long validationSeed=528562479389981L;
+
+  JBButil.set_random_seed(validationSeed);
+
+  myCompany.setPopulationValues(warehousePopulationBase);
+
+  Transaction.setLogWrite(screenWriteFlag);
+
+  Transaction.setSteadyState(steadyStateFlag);
+
+  Transaction.setValidation(true);
+
+  increaseNumWarehouses(0,1,waitTimePercent);
+
+  boolean runValid=DoAValidationRun(myCompany);
+
+  Transaction.setValidation(false);
+
+  return runValid;
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+private void flushLog(){
+
+  Handler[] handlers=JBButil.getLog().getHandlers();
+
+  for (  Handler logHandler : handlers) {
+
+    logHandler.flush();
+
+  }
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+private void increaseNumWarehouses(int current,int next,int waitTimePercent){
+
+  JBButil.getLog().entering("spec.jbb.JBBmain","increaseNumWarehouses");
+
+  for (int i=current + 1; i <= next; i++) {
+
+    myCompany.primeWithDummyData((short)i,0);
+
+    myCompany.getTimerDataPtr((short)i).useWaitTimesPercentage(waitTimePercent);
+
+  }
+
+  JBButil.getLog().exiting("spec.jbb.JBBmain","increaseNumWarehouses");
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+private boolean initApplicationLogging(String logFileName){
+
+  StreamHandler handler=null;
+
+  try {
+
+    handler=new StreamHandler(new FileOutputStream(logFileName),new JBBLogFormatter());
+
+  }
+
+ catch (  FileNotFoundException fnfe) {
+
+    JBButil.getLog().log(Level.WARNING,"ERROR:  Unable to open logging file " + logFileName,fnfe);
+
+    return false;
+
+  }
+
+  handler.setLevel(prop.getApplicationLoggingLevel());
+
+  ConsoleHandler errHandler=new ConsoleHandler();
+
+  errHandler.setLevel(Level.WARNING);
+
+  Logger appLog=Logger.getLogger("spec.jbb");
+
+  appLog.setLevel(prop.getApplicationLoggingLevel());
+
+  appLog.setUseParentHandlers(false);
+
+  appLog.addHandler(handler);
+
+  appLog.addHandler(errHandler);
+
+  flushLog();
+
+  JBButil.setLog(appLog);
+
+  return true;
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public boolean runWarehouse(int cur_warehouses,int num_wh,float min_btps){
+
+  JBButil.getLog().entering("spec.jbb.JBBmain","runWarehouse");
+
+  System.out.println("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+
+  increaseNumWarehouses(cur_warehouses,num_wh,prop.waitTimePercent);
+
+  int measurementSeconds=0;
+
+  if (num_wh < prop.expectedPeakWarehouse) {
+
+    DoARun(myCompany,(short)myCompany.getMaxWarehouses(),0,prop.rampupSeconds);
+
+  }
+
+ else {
+
+    DoARun(myCompany,(short)myCompany.getMaxWarehouses(),0,prop.measurementSeconds);
+
+  }
+
+  if (prop.checkThroughput) {
+
+    TimerData companyTimerDataPtr=myCompany.getTimerDataPtr((short)0);
+
+    double result=companyTimerDataPtr.getBTPS();
+
+    if (result < (min_btps * num_wh)) {
+
+      System.out.println("result below min for warehouse");
+
+      JBButil.getLog().exiting("spec.jbb.JBBmain","runWarehouse");
+
+      return false;
+
+    }
+
+  }
+
+  JBButil.getLog().exiting("spec.jbb.JBBmain","runWarehouse");
+
+  return true;
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public synchronized void startJBBthread(short whID){
+
+  if (threadList == null) {
+
+    threadList=new Vector<Thread>();
+
+  }
+
+  ;
+
+  if (whIdStack == null) {
+
+    whIdStack=new Vector<Short>();
+
+  }
+
+  Thread whThread=new Thread(this);
+
+  threadList.add(whThread);
+
+  whIdStack.add(whID);
+
+  whThread.start();
+
+}
+
+Location: JBBmain.java
+
+Content: 
+
+public synchronized void stopJBBthread(){
+
+  while (!threadList.isEmpty()) {
+
+    try {
+
+      while (((Thread)threadList.firstElement()).isAlive()) {
+
+        JBButil.SecondsToSleep(1);
+
+      }
+
+      threadList.remove(0);
+
+    }
+
+ catch (    NoSuchElementException e) {
+
+      System.out.println("No first element in the thread list: ");
+
+      e.printStackTrace();
+
+    }
+
+  }
+
+}
+

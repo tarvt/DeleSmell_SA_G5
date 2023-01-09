@@ -1,0 +1,246 @@
+Location: CommonCrawlFormatWARC.java
+
+Content: 
+
+public CommonCrawlFormatWARC(Configuration nutchConf,CommonCrawlConfig config) throws IOException {
+
+  super(null,null,null,nutchConf,config);
+
+  this.out=new ByteArrayOutputStream();
+
+  ANVLRecord info=WARCUtils.getWARCInfoContent(nutchConf);
+
+  List<String> md=Collections.singletonList(info.toString());
+
+  this.outputDir=config.getOutputDir();
+
+  if (null == outputDir) {
+
+    String message="Missing output directory configuration: " + outputDir;
+
+    throw new RuntimeException(message);
+
+  }
+
+  File file=new File(outputDir);
+
+  long maxSize=WARCConstants.DEFAULT_MAX_WARC_FILE_SIZE;
+
+  if (config.getWarcSize() > 0) {
+
+    maxSize=config.getWarcSize();
+
+  }
+
+  WARCWriterPoolSettingsData settings=new WARCWriterPoolSettingsData(WriterPoolMember.DEFAULT_PREFIX,TEMPLATE,maxSize,config.isCompressed(),Arrays.asList(new File[]{file}),md,new UUIDGenerator());
+
+  writer=new WARCWriter(SERIALNO,settings);
+
+}
+
+Location: CommonCrawlFormatWARC.java
+
+Content: 
+
+public CommonCrawlFormatWARC(String url,Content content,Metadata metadata,Configuration nutchConf,CommonCrawlConfig config,ParseData parseData) throws IOException {
+
+  super(url,content,metadata,nutchConf,config);
+
+  this.out=new ByteArrayOutputStream();
+
+  this.parseData=parseData;
+
+  ANVLRecord info=WARCUtils.getWARCInfoContent(conf);
+
+  List<String> md=Collections.singletonList(info.toString());
+
+  this.outputDir=config.getOutputDir();
+
+  if (null == outputDir) {
+
+    String message="Missing output directory configuration: " + outputDir;
+
+    throw new RuntimeException(message);
+
+  }
+
+  File file=new File(outputDir);
+
+  long maxSize=WARCConstants.DEFAULT_MAX_WARC_FILE_SIZE;
+
+  if (config.getWarcSize() > 0) {
+
+    maxSize=config.getWarcSize();
+
+  }
+
+  WARCWriterPoolSettingsData settings=new WARCWriterPoolSettingsData(WriterPoolMember.DEFAULT_PREFIX,TEMPLATE,maxSize,config.isCompressed(),Arrays.asList(new File[]{file}),md,new UUIDGenerator());
+
+  writer=new WARCWriter(SERIALNO,settings);
+
+}
+
+Location: CommonCrawlFormatWARC.java
+
+Content: 
+
+@Override public String getJsonData() throws IOException {
+
+  long position=writer.getPosition();
+
+  try {
+
+    writer.checkSize();
+
+    if (writer.getPosition() != position) {
+
+      position=writer.getPosition();
+
+    }
+
+    URI id=writeResponse();
+
+    if (StringUtils.isNotBlank(metadata.get("_request_"))) {
+
+      writeRequest(id);
+
+    }
+
+  }
+
+ catch (  IOException e) {
+
+    throw e;
+
+  }
+
+catch (  ParseException e) {
+
+    LOG.error("Can't get a valid date from: {}",url);
+
+  }
+
+  return null;
+
+}
+
+Location: CommonCrawlFormatWARC.java
+
+Content: 
+
+public String getJsonData(String url,Content content,Metadata metadata,ParseData parseData) throws IOException {
+
+  this.url=url;
+
+  this.content=content;
+
+  this.metadata=metadata;
+
+  this.parseData=parseData;
+
+  return this.getJsonData();
+
+}
+
+Location: CommonCrawlFormatWARC.java
+
+Content: 
+
+protected URI writeRequest(URI id) throws IOException, ParseException {
+
+  WARCRecordInfo record=new WARCRecordInfo();
+
+  record.setType(WARCConstants.WARCRecordType.request);
+
+  record.setUrl(getUrl());
+
+  record.setCreate14DigitDate(DateUtils.getLog14Date(Long.parseLong(metadata.get("nutch.fetch.time"))));
+
+  record.setMimetype(WARCConstants.HTTP_REQUEST_MIMETYPE);
+
+  record.setRecordId(GENERATOR.getRecordID());
+
+  if (id != null) {
+
+    ANVLRecord headers=new ANVLRecord();
+
+    headers.addLabelValue(WARCConstants.HEADER_KEY_CONCURRENT_TO,'<' + id.toString() + '>');
+
+    record.setExtraHeaders(headers);
+
+  }
+
+  ByteArrayOutputStream output=new ByteArrayOutputStream();
+
+  output.write(metadata.get("_request_").getBytes());
+
+  record.setContentLength(output.size());
+
+  record.setContentStream(new ByteArrayInputStream(output.toByteArray()));
+
+  writer.writeRecord(record);
+
+  return record.getRecordId();
+
+}
+
+Location: CommonCrawlFormatWARC.java
+
+Content: 
+
+protected URI writeResponse() throws IOException, ParseException {
+
+  WARCRecordInfo record=new WARCRecordInfo();
+
+  record.setType(WARCConstants.WARCRecordType.response);
+
+  record.setUrl(getUrl());
+
+  record.setCreate14DigitDate(DateUtils.getLog14Date(Long.parseLong(metadata.get("nutch.fetch.time"))));
+
+  record.setMimetype(WARCConstants.HTTP_RESPONSE_MIMETYPE);
+
+  record.setRecordId(GENERATOR.getRecordID());
+
+  String IP=getResponseAddress();
+
+  if (StringUtils.isNotBlank(IP))   record.addExtraHeader(WARCConstants.HEADER_KEY_IP,IP);
+
+  if (ParseSegment.isTruncated(content))   record.addExtraHeader(WARCConstants.HEADER_KEY_TRUNCATED,"unspecified");
+
+  ByteArrayOutputStream output=new ByteArrayOutputStream();
+
+  String httpHeaders=metadata.get("_response.headers_");
+
+  httpHeaders=WARCUtils.fixHttpHeaders(httpHeaders,content.getContent().length);
+
+  if (StringUtils.isNotBlank(httpHeaders)) {
+
+    output.write(httpHeaders.getBytes());
+
+  }
+
+ else {
+
+    record.setType(WARCConstants.WARCRecordType.resource);
+
+    record.setMimetype(content.getContentType());
+
+  }
+
+  output.write(getResponseContent().getBytes());
+
+  record.setContentLength(output.size());
+
+  record.setContentStream(new ByteArrayInputStream(output.toByteArray()));
+
+  if (output.size() > 0) {
+
+    writer.writeRecord(record);
+
+  }
+
+  return record.getRecordId();
+
+}
+

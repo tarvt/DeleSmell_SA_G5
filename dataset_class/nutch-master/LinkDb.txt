@@ -1,0 +1,222 @@
+Location: LinkDb.java
+
+Content: 
+
+private static Job createJob(Configuration config,Path linkDb,boolean normalize,boolean filter) throws IOException {
+
+  Path newLinkDb=new Path(linkDb,Integer.toString(new Random().nextInt(Integer.MAX_VALUE)));
+
+  Job job=NutchJob.getInstance(config);
+
+  Configuration conf=job.getConfiguration();
+
+  job.setJobName("linkdb " + linkDb);
+
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+
+  job.setJarByClass(LinkDb.class);
+
+  job.setMapperClass(LinkDb.LinkDbMapper.class);
+
+  job.setJarByClass(LinkDbMerger.class);
+
+  job.setCombinerClass(LinkDbMerger.LinkDbMergeReducer.class);
+
+  if (normalize || filter) {
+
+    try {
+
+      FileSystem fs=linkDb.getFileSystem(config);
+
+      if (!fs.exists(linkDb)) {
+
+        conf.setBoolean(LinkDbFilter.URL_FILTERING,filter);
+
+        conf.setBoolean(LinkDbFilter.URL_NORMALIZING,normalize);
+
+      }
+
+    }
+
+ catch (    Exception e) {
+
+      LOG.warn("LinkDb createJob:: {}",e.getMessage());
+
+    }
+
+  }
+
+  job.setReducerClass(LinkDbMerger.LinkDbMergeReducer.class);
+
+  FileOutputFormat.setOutputPath(job,newLinkDb);
+
+  job.setOutputFormatClass(MapFileOutputFormat.class);
+
+  conf.setBoolean("mapreduce.output.fileoutputformat.compress",true);
+
+  job.setOutputKeyClass(Text.class);
+
+  job.setOutputValueClass(Inlinks.class);
+
+  return job;
+
+}
+
+Location: LinkDb.java
+
+Content: 
+
+public void invert(Path linkDb,Path[] segments,boolean normalize,boolean filter,boolean force) throws IOException, InterruptedException, ClassNotFoundException {
+
+  Job job=LinkDb.createJob(getConf(),linkDb,normalize,filter);
+
+  Path lock=new Path(linkDb,LOCK_NAME);
+
+  FileSystem fs=linkDb.getFileSystem(getConf());
+
+  LockUtil.createLockFile(fs,lock,force);
+
+  Path currentLinkDb=new Path(linkDb,CURRENT_NAME);
+
+  Configuration conf=job.getConfiguration();
+
+  SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+  long start=System.currentTimeMillis();
+
+  LOG.info("LinkDb: starting at {}",sdf.format(start));
+
+  LOG.info("LinkDb: linkdb: {}",linkDb);
+
+  LOG.info("LinkDb: URL normalize: {}",normalize);
+
+  LOG.info("LinkDb: URL filter: {}",filter);
+
+  if (conf.getBoolean(IGNORE_INTERNAL_LINKS,true)) {
+
+    LOG.info("LinkDb: internal links will be ignored.");
+
+  }
+
+  if (conf.getBoolean(IGNORE_EXTERNAL_LINKS,false)) {
+
+    LOG.info("LinkDb: external links will be ignored.");
+
+  }
+
+  if (conf.getBoolean(IGNORE_INTERNAL_LINKS,true) && conf.getBoolean(IGNORE_EXTERNAL_LINKS,false)) {
+
+    LOG.warn("LinkDb: internal and external links are ignored! " + "Nothing to do, actually. Exiting.");
+
+    LockUtil.removeLockFile(fs,lock);
+
+    return;
+
+  }
+
+  for (int i=0; i < segments.length; i++) {
+
+    LOG.info("LinkDb: adding segment: {}",segments[i]);
+
+    FileInputFormat.addInputPath(job,new Path(segments[i],ParseData.DIR_NAME));
+
+  }
+
+  try {
+
+    boolean success=job.waitForCompletion(true);
+
+    if (!success) {
+
+      String message="LinkDb job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+      LOG.error(message);
+
+      LockUtil.removeLockFile(fs,lock);
+
+      throw new RuntimeException(message);
+
+    }
+
+  }
+
+ catch (  IOException|InterruptedException|ClassNotFoundException e) {
+
+    LOG.error("LinkDb job failed: {}",e.getMessage());
+
+    LockUtil.removeLockFile(fs,lock);
+
+    throw e;
+
+  }
+
+  if (fs.exists(currentLinkDb)) {
+
+    LOG.info("LinkDb: merging with existing linkdb: {}",linkDb);
+
+    Path newLinkDb=FileOutputFormat.getOutputPath(job);
+
+    job=LinkDbMerger.createMergeJob(getConf(),linkDb,normalize,filter);
+
+    FileInputFormat.addInputPath(job,currentLinkDb);
+
+    FileInputFormat.addInputPath(job,newLinkDb);
+
+    try {
+
+      boolean success=job.waitForCompletion(true);
+
+      if (!success) {
+
+        String message="LinkDb job did not succeed, job status:" + job.getStatus().getState() + ", reason: "+ job.getStatus().getFailureInfo();
+
+        LOG.error(message);
+
+        NutchJob.cleanupAfterFailure(newLinkDb,lock,fs);
+
+        throw new RuntimeException(message);
+
+      }
+
+    }
+
+ catch (    IOException|InterruptedException|ClassNotFoundException e) {
+
+      LOG.error("LinkDb job failed: {}",e.getMessage());
+
+      NutchJob.cleanupAfterFailure(newLinkDb,lock,fs);
+
+      throw e;
+
+    }
+
+    fs.delete(newLinkDb,true);
+
+  }
+
+  LinkDb.install(job,linkDb);
+
+  long end=System.currentTimeMillis();
+
+  LOG.info("LinkDb: finished at {}, elapsed: {}",sdf.format(end),TimingUtil.elapsedTime(start,end));
+
+}
+
+Location: LinkDb.java
+
+Content: 
+
+public LinkDb(){
+
+}
+
+Location: LinkDb.java
+
+Content: 
+
+public LinkDb(Configuration conf){
+
+  setConf(conf);
+
+}
+
